@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: toward-us-private-beta
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci && npm run build && npm run test:app
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: toward-us-private-beta-db
+          property: connectionString
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: OPENAI_MODEL
+        value: gpt-5.4
+      - key: OPENAI_API_KEY
+        sync: false
+
+databases:
+  - name: toward-us-private-beta-db
+    databaseName: toward_us_private_beta
+    user: toward_us_app
+    plan: free
+    region: oregon
+    postgresMajorVersion: "18"
+    ipAllowList: []
