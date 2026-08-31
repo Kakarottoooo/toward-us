@@ -8,7 +8,7 @@ import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard, useKeyboard
 import DemoFlow from "./DemoFlow";
 
 type Language = "zh" | "en";
-type Screen = "home" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "analysis" | "history" | "historyDetail";
+type Screen = "home" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
 type Personality = "friend" | "counselor" | "direct";
 type User = { id: string; email: string; name: string; createdAt: string };
@@ -53,7 +53,7 @@ const copy = {
     room: "调解房间", connected: "已连接", waiting: "等待伴侣加入", emptyTitle: "先把发生的事说出来",
     emptyBody: "AI 会保持安静，直到你们主动请它加入；安全边界除外。", textPlaceholder: "说说你看到的事实、感受或需要…",
     send: "发送", aiJoin: "请 AI 加入", aiWorking: "AI 正在分别理解你们…", viewAnalysis: "查看这次调解",
-    speakingAs: "现在由谁表达", record: "开始共同录音", stop: "停止并转录", transcribing: "正在区分说话人并转录…",
+    speakingAs: "现在由谁表达", record: "开始共同录音", stop: "停止并转录", transcribing: "正在转录当前发言人…", speakerSelectedHint: "本次文字和整段录音都会记在已选中的人名下，无需模仿不同声音。",
     audioNote: "不保存原始录音，只保存转录。", voiceUnavailable: "当前浏览器或服务不支持语音，仍可使用文字。",
     privateTitle: "先只对你说", sharedTitle: "共同反馈", private: "给我的话", sharedFeedback: "共同结论", perspective: "双方视角",
     responsibility: "行为与责任", commonGround: "已经形成的共识", differences: "仍然不同的地方", nextSteps: "下一步",
@@ -79,7 +79,7 @@ const copy = {
     room: "Mediation room", connected: "Connected", waiting: "Waiting for partner", emptyTitle: "Start with what happened",
     emptyBody: "AI stays quiet until you invite it in, except when a safety boundary is crossed.", textPlaceholder: "Share facts, feelings, or needs…",
     send: "Send", aiJoin: "Invite AI", aiWorking: "AI is hearing each of you…", viewAnalysis: "View this mediation", speakingAs: "Speaking as",
-    record: "Start shared recording", stop: "Stop and transcribe", transcribing: "Separating speakers and transcribing…", audioNote: "Raw audio is not saved; only the transcript remains.",
+    record: "Start shared recording", stop: "Stop and transcribe", transcribing: "Transcribing the selected speaker…", speakerSelectedHint: "Text and the whole recording are assigned to the selected person—no voice imitation needed.", audioNote: "Raw audio is not saved; only the transcript remains.",
     voiceUnavailable: "Voice is unavailable here. Text still works.", privateTitle: "First, just for you", sharedTitle: "Shared feedback", private: "For me",
     sharedFeedback: "Shared view", perspective: "Both perspectives", responsibility: "Behavior and responsibility", commonGround: "Common ground",
     differences: "What remains different", nextSteps: "Next steps", validation: "What deserves care", reflection: "Something to reflect on",
@@ -120,7 +120,7 @@ function AccountPrototype() {
   }, []);
   useEffect(() => { if (screen === "dashboard" && user) loadActiveRooms(); }, [screen, user]);
   useEffect(() => {
-    if (!room || !["room", "analysis"].includes(screen)) return;
+    if (!room || screen !== "room") return;
     let active = true;
     const events = new EventSource(`/api/rooms/${room.code}/events`);
     events.addEventListener("room", (event) => { if (active) setRoom(JSON.parse((event as MessageEvent).data)); });
@@ -156,10 +156,9 @@ function AccountPrototype() {
   if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={toggleLanguage} onRefresh={refreshPairing} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "dashboard" && user && pairing) return <DashboardScreen user={user} pairing={pairing} rooms={activeRooms} language={language} onLanguage={toggleLanguage} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} t={t} />;
   if (screen === "setup") return <SetupScreen language={language} onBack={() => setScreen("dashboard")} onLanguage={toggleLanguage} onRoom={(next) => { setRoom(next); setScreen("room"); }} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "analysis" && room) return <AnalysisScreen room={room} language={language} onRoom={() => setScreen("room")} onHistory={async () => { await openHistoryDetail(room.code); }} onRoomUpdate={setRoom} setNotice={setNotice} t={t} />;
   if (screen === "history") return <HistoryScreen items={history} language={language} onBack={() => setScreen("dashboard")} onOpen={openHistoryDetail} t={t} />;
   if (screen === "historyDetail" && detail) return <HistoryDetailScreen detail={detail} language={language} onBack={() => setScreen("history")} t={t} />;
-  return <RoomScreen room={room} language={language} health={health} notice={notice} setNotice={setNotice} onAnalyze={() => setScreen("analysis")} onLeave={() => { setRoom(null); setScreen("dashboard"); }} t={t} />;
+  return <RoomScreen room={room} language={language} health={health} notice={notice} setNotice={setNotice} onHistory={async () => { if (room) await openHistoryDetail(room.code); }} onRoomUpdate={setRoom} onLeave={() => { setRoom(null); setScreen("dashboard"); }} t={t} />;
 }
 
 function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; onLanguage: () => void; onStart: () => void; t: typeof copy.zh }) {
@@ -264,44 +263,45 @@ function SetupScreen({ language, onBack, onLanguage, onRoom, notice, setNotice, 
     {notice && <p className="form-notice">{notice}</p>}<SplitButton label={t.createRoom} onClick={createRoom} disabled={busy} /></main></MobileScroll>;
 }
 
-function RoomScreen({ room, language, health, notice, setNotice, onAnalyze, onLeave, t }: { room: Room | null; language: Language; health: Health | null; notice: string; setNotice: (value: string) => void; onAnalyze: () => void; onLeave: () => void; t: typeof copy.zh }) {
+function RoomScreen({ room, language, health, notice, setNotice, onHistory, onRoomUpdate, onLeave, t }: { room: Room | null; language: Language; health: Health | null; notice: string; setNotice: (value: string) => void; onHistory: () => void; onRoomUpdate: (room: Room) => void; onLeave: () => void; t: typeof copy.zh }) {
   const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState(""); const [copied, setCopied] = useState(false);
   const [recording, setRecording] = useState(false); const [transcribing, setTranscribing] = useState(false); const [seconds, setSeconds] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const keyboard = useKeyboard(); const { bottomInset } = useKeyboardInsets();
+  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard(); const { bottomInset } = useKeyboardInsets();
   useEffect(() => { if (room?.currentParticipantId && !speakerId) setSpeakerId(room.currentParticipantId); }, [room?.currentParticipantId, speakerId]);
   useEffect(() => { if (!recording) return; const id = setInterval(() => setSeconds((value) => value + 1), 1000); return () => clearInterval(id); }, [recording]);
+  useEffect(() => { if (room?.analysisMeta) analysisRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [room?.analysisMeta?.generatedAt]);
   const participantMap = useMemo(() => new Map(room?.participants.map((participant) => [participant.id, participant]) || []), [room?.participants]);
   if (!room) return <div className="loading-screen"><Wordmark /><p>{language === "zh" ? "正在进入共同空间…" : "Opening your shared space…"}</p></div>;
   const send = async () => { if (!draft.trim()) return; const text = draft; setDraft(""); keyboard.hide(); try { await api(`/api/rooms/${room.code}/messages`, { method: "POST", body: JSON.stringify({ text, speakerId }) }); setNotice(""); } catch (error) { setDraft(text); setNotice((error as Error).message); } };
-  const analyze = async () => { keyboard.hide(); setNotice(""); try { await api(`/api/rooms/${room.code}/analyze`, { method: "POST" }); onAnalyze(); } catch (error) { setNotice((error as Error).message); } };
+  const analyze = async () => { keyboard.hide(); setNotice(""); try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/analyze`, { method: "POST" }); onRoomUpdate(result.room); } catch (error) { setNotice((error as Error).message); } };
   const startRecording = async () => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return setNotice(t.voiceUnavailable);
     try { keyboard.hide(); const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((value) => MediaRecorder.isTypeSupported(value)); const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined); chunksRef.current = [];
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-      recorder.onstop = async () => { setRecording(false); setTranscribing(true); stream.getTracks().forEach((track) => track.stop()); const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }); chunksRef.current = []; try { const response = await fetch(`/api/rooms/${room.code}/audio`, { method: "POST", headers: { "content-type": blob.type }, body: blob }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || t.voiceUnavailable); setNotice(""); } catch (error) { setNotice((error as Error).message); } finally { setTranscribing(false); setSeconds(0); } };
+      recorder.onstop = async () => { setRecording(false); setTranscribing(true); stream.getTracks().forEach((track) => track.stop()); const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }); chunksRef.current = []; try { const response = await fetch(`/api/rooms/${room.code}/audio`, { method: "POST", headers: { "content-type": blob.type, "x-toward-us-speaker-id": speakerId }, body: blob }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || t.voiceUnavailable); setNotice(""); } catch (error) { setNotice((error as Error).message); } finally { setTranscribing(false); setSeconds(0); } };
       recorderRef.current = recorder; recorder.start(1000); setRecording(true); setSeconds(0); setNotice("");
     } catch { setNotice(t.voiceUnavailable); }
   };
   const copyCode = async () => { await navigator.clipboard.writeText(room.code); setCopied(true); setTimeout(() => setCopied(false), 1400); };
-  const composerHeight = room.canControlAllSpeakers ? 176 : 142;
+  const composerHeight = room.canControlAllSpeakers ? 214 : 142;
   return <div className="room-shell" data-testid="room-screen" style={{ "--message-bottom": `${composerHeight + bottomInset}px` } as React.CSSProperties}><header className="room-header"><button onClick={onLeave}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><button onClick={copyCode}>{copied ? <CheckCircle size={21} weight="fill" /> : <Copy size={21} />}</button></header>
     <div className="room-presence"><div className="participant-pair">{room.participants.map((participant) => <span key={participant.id} className={participant.role === "A" ? "red-person" : "blue-person"}>{participant.name.slice(0, 1)}</span>)}{room.participants.length < 2 && <span className="empty-person">?</span>}</div><p>{room.participants.length < 2 ? t.waiting : t.connected}<i /></p><span className={`ai-status ${health?.aiReady ? "ready" : "fallback"}`}><Sparkle size={13} weight="fill" />{health?.aiReady ? t.modelReady : t.modelFallback}</span></div>
     <MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}
       {!room.messages.length ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const participant = participantMap.get(message.participantId); return <article key={message.id} className={`message ${participant?.role === "A" ? "side-a" : "side-b"}`}><header>{participant?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
-      {room.analysisMeta && <button className="analysis-ready" onClick={onAnalyze}><Sparkle size={20} weight="fill" /><span>{t.viewAnalysis}</span><ArrowRight size={18} /></button>}
+      {(room.analyzing || room.analysisMeta) && <AnalysisScreen analysisRef={analysisRef} room={room} language={language} onHistory={onHistory} onRoomUpdate={onRoomUpdate} setNotice={setNotice} t={t} />}
       <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
-    <footer className="composer" style={{ bottom: bottomInset }}>{room.canControlAllSpeakers && <div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} onClick={() => setSpeakerId(participant.id)} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
+    <footer className="composer" style={{ bottom: bottomInset }}>{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
   </div>;
 }
 
-function AnalysisScreen({ room, language, onRoom, onHistory, onRoomUpdate, setNotice, t }: { room: Room; language: Language; onRoom: () => void; onHistory: () => void; onRoomUpdate: (room: Room) => void; setNotice: (value: string) => void; t: typeof copy.zh }) {
+function AnalysisScreen({ room, language, analysisRef, onHistory, onRoomUpdate, setNotice, t }: { room: Room; language: Language; analysisRef: React.RefObject<HTMLElement | null>; onHistory: () => void; onRoomUpdate: (room: Room) => void; setNotice: (value: string) => void; t: typeof copy.zh }) {
   const [tab, setTab] = useState<"private" | "shared">("private"); const feedback = room.privateFeedback?.[room.currentParticipantId || ""]; const analysis = room.sharedAnalysis;
   const confirm = async () => { try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/confirm-archive`, { method: "POST" }); onRoomUpdate(result.room); } catch (error) { setNotice((error as Error).message); } };
-  return <MobileScroll className="paper-screen analysis-screen"><header className="simple-header"><button onClick={onRoom}><ArrowLeft size={22} /></button><span>{tab === "private" ? t.privateTitle : t.sharedTitle}</span><i /></header><main className="analysis-content"><div className="analysis-tabs"><button className={tab === "private" ? "selected" : ""} onClick={() => setTab("private")}><LockKey size={17} />{t.private}</button><button className={tab === "shared" ? "selected" : ""} onClick={() => setTab("shared")}><UsersThree size={17} />{t.sharedFeedback}</button></div>
+  return <section ref={analysisRef} className="demo-inline-analysis formal-inline-analysis" data-testid="room-ai-panel"><header className="inline-analysis-header"><div><Sparkle size={20} weight="fill" /><span>{tab === "private" ? t.privateTitle : t.sharedTitle}</span></div></header><main className="analysis-content"><div className="analysis-tabs"><button className={tab === "private" ? "selected" : ""} onClick={() => setTab("private")}><LockKey size={17} />{t.private}</button><button className={tab === "shared" ? "selected" : ""} onClick={() => setTab("shared")}><UsersThree size={17} />{t.sharedFeedback}</button></div>
     {!analysis ? <section className="analysis-loading"><Sparkle size={34} weight="fill" /><h1>{t.aiWorking}</h1></section> : tab === "private" ? <section>{feedback && <div className="private-letter"><span className="letter-mark">私 / PRIVATE</span><FeedbackBlock number="01" title={t.validation} body={feedback.validation} /><FeedbackBlock number="02" title={t.reflection} body={feedback.reflection} /><FeedbackBlock number="03" title={t.suggestion} body={feedback.suggestion} /></div>}<button className="primary-action" onClick={() => setTab("shared")}>{t.sharedFeedback}<ArrowRight size={20} /></button></section> : <section className="shared-analysis"><SharedAnalysisContent analysis={analysis} t={t} />
       <section className="confirmation-panel"><p><LockKey size={17} />{t.confirmHint}</p><div className="confirmation-progress"><i className={room.confirmation.confirmedCount > 0 ? "done" : ""} /><i className={room.confirmation.confirmedCount > 1 ? "done" : ""} /><span>{room.confirmation.confirmedCount}/{room.confirmation.requiredCount}</span></div>{room.confirmation.complete ? <button className="primary-action" onClick={onHistory}><CheckCircle size={20} weight="fill" />{t.archived}</button> : <button className="primary-action" onClick={confirm} disabled={room.confirmation.confirmedByCurrent}>{room.confirmation.confirmedByCurrent ? t.confirmedWaiting : t.confirmArchive}</button>}</section>
       {room.analysisMeta && <p className="analysis-meta"><Sparkle size={14} />{room.analysisMeta.source === "openai" ? `${room.analysisMeta.model} · ${new Date(room.analysisMeta.generatedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}` : t.modelFallback}<br />{room.analysisMeta.notice}</p>}</section>}
-    <div className="analysis-actions"><button className="secondary-action" onClick={onRoom}>{t.returnRoom}</button></div></main></MobileScroll>;
+    </main></section>;
 }
 
 function HistoryScreen({ items, language, onBack, onOpen, t }: { items: HistoryItem[]; language: Language; onBack: () => void; onOpen: (code: string) => void; t: typeof copy.zh }) {

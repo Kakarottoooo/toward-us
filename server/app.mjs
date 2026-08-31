@@ -63,7 +63,9 @@ export function createApiApp({ store, mediator, production = false }) {
       if (!Buffer.isBuffer(req.body) || req.body.length < 100) return res.status(400).json({ error: "没有收到有效录音。" });
 
       const transcript = await mediator.transcribe(req.body, req.headers["content-type"] || "audio/webm");
-      const additions = mapTranscriptToMessages(room, viewer.user.id, transcript.segments, transcript.text);
+      const requestedSpeakerId = String(req.headers["x-toward-us-speaker-id"] || "");
+      const selectedSpeaker = resolveSpeaker(room, viewer.user.id, requestedSpeakerId);
+      const additions = mapTranscriptToMessages(room, viewer.user.id, transcript.segments, transcript.text, selectedSpeaker?.id || null, Boolean(requestedSpeakerId));
       await store.updateRoomForUser(code, viewer.user.id, (draft) => {
         draft.messages.push(...additions);
         draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "));
@@ -89,7 +91,9 @@ export function createApiApp({ store, mediator, production = false }) {
       if (room.messages.length >= 30) return res.status(429).json({ error: "本次快速体验已达到表达上限。" });
 
       const transcript = await mediator.transcribe(req.body, req.headers["content-type"] || "audio/webm");
-      const additions = mapDemoTranscriptToMessages(room, actor.participant.id, transcript.segments, transcript.text);
+      const requestedSpeakerId = String(req.headers["x-toward-us-speaker-id"] || "");
+      const selectedSpeaker = resolveDemoSpeaker(room, actor, requestedSpeakerId);
+      const additions = mapDemoTranscriptToMessages(room, actor.participant.id, transcript.segments, transcript.text, selectedSpeaker?.id || null, Boolean(requestedSpeakerId));
       await store.updateDemoRoom(code, (draft) => {
         draft.messages.push(...additions.slice(0, Math.max(0, 30 - draft.messages.length)));
         draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "));
@@ -622,25 +626,25 @@ function resolveDemoSpeaker(room, actor, requestedId) {
   return actor.participant;
 }
 
-function mapTranscriptToMessages(room, viewerUserId, segments, fullText) {
+function mapTranscriptToMessages(room, viewerUserId, segments, fullText, selectedSpeakerId = null, manualSelection = false) {
   const viewer = room.participants.find((participant) => participant.userId === viewerUserId);
   const usableSegments = segments.filter((segment) => cleanText(segment.text));
-  if (!usableSegments.length && cleanText(fullText)) return [createMessage(viewer.id, cleanText(fullText), "voice")];
+  if (!usableSegments.length && cleanText(fullText)) return [createMessage(selectedSpeakerId || viewer.id, cleanText(fullText), "voice")];
   const labels = [...new Set(usableSegments.map((segment) => segment.speaker))];
   return usableSegments.map((segment) => {
-    let participantId = viewer.id;
-    if (room.mode === "shared" || labels.length > 1) participantId = room.participants[Math.max(0, labels.indexOf(segment.speaker))]?.id || viewer.id;
+    let participantId = selectedSpeakerId || viewer.id;
+    if (!manualSelection && (room.mode === "shared" || labels.length > 1)) participantId = room.participants[Math.max(0, labels.indexOf(segment.speaker))]?.id || viewer.id;
     return createMessage(participantId, cleanText(segment.text), "voice", { start: segment.start, end: segment.end, speakerLabel: segment.speaker });
   });
 }
 
-function mapDemoTranscriptToMessages(room, participantId, segments, fullText) {
+function mapDemoTranscriptToMessages(room, participantId, segments, fullText, selectedSpeakerId = null, manualSelection = false) {
   const usableSegments = segments.filter((segment) => cleanText(segment.text));
-  if (!usableSegments.length && cleanText(fullText)) return [createMessage(participantId, cleanText(fullText), "voice")];
+  if (!usableSegments.length && cleanText(fullText)) return [createMessage(selectedSpeakerId || participantId, cleanText(fullText), "voice")];
   const labels = [...new Set(usableSegments.map((segment) => segment.speaker))];
   return usableSegments.map((segment) => {
-    let resolvedParticipantId = participantId;
-    if (room.mode === "shared" || labels.length > 1) resolvedParticipantId = room.participants[Math.max(0, labels.indexOf(segment.speaker))]?.id || participantId;
+    let resolvedParticipantId = selectedSpeakerId || participantId;
+    if (!manualSelection && (room.mode === "shared" || labels.length > 1)) resolvedParticipantId = room.participants[Math.max(0, labels.indexOf(segment.speaker))]?.id || participantId;
     return createMessage(resolvedParticipantId, cleanText(segment.text), "voice", { start: segment.start, end: segment.end, speakerLabel: segment.speaker });
   });
 }

@@ -47,14 +47,16 @@ test("two accounts pair, mediate, confirm together, and review history", async (
   await expect(page.getByText("我愿意讨论，但希望先把预算和准备事项写清楚。")).toBeVisible();
 
   await page.getByTestId("room-screen").getByRole("button", { name: "请 AI 加入" }).click();
+  await expect(page.getByTestId("room-screen")).toBeVisible();
+  await expect(page.getByTestId("room-ai-panel")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".analysis-tabs").getByRole("button", { name: "共同结论" })).toBeVisible({ timeout: 60_000 });
   await page.locator(".analysis-tabs").getByRole("button", { name: "共同结论" }).click();
   await expect(page.getByText("确认保存为共同复盘", { exact: true })).toBeVisible();
+  await screenshotDevice(page, "qa/formal-room-inline-analysis-desktop.png");
   await page.getByText("确认保存为共同复盘", { exact: true }).click();
   await expect(page.getByText("我已确认，等待伴侣", { exact: true })).toBeVisible();
 
-  await expect(pageB.getByText("查看这次调解", { exact: true })).toBeVisible({ timeout: 20_000 });
-  await pageB.getByText("查看这次调解", { exact: true }).click();
+  await expect(pageB.getByTestId("room-ai-panel")).toBeVisible({ timeout: 20_000 });
   await pageB.locator(".analysis-tabs").getByRole("button", { name: "共同结论" }).click();
   await pageB.getByText("确认保存为共同复盘", { exact: true }).click();
   await expect(pageB.getByText("双方已确认并归档", { exact: true })).toBeVisible();

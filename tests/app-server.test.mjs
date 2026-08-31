@@ -72,6 +72,14 @@ test("archiving requires confirmation from both partners and then appears in sha
   await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pair.a.cookie, body: { text: "I want a clear date.", speakerId: pair.a.user.id }, expectedStatus: 201 });
   const attributed = await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pair.a.cookie, body: { text: "I want a budget first.", speakerId: partner.id }, expectedStatus: 201 });
   assert.equal(attributed.room.messages[1].participantId, partner.id);
+  const audioResponse = await fetch(`${baseUrl}/api/rooms/${code}/audio`, {
+    method: "POST",
+    headers: { cookie: pair.a.cookie, origin: baseUrl, "content-type": "audio/webm", "x-toward-us-speaker-id": partner.id },
+    body: Buffer.alloc(128, 1),
+  });
+  const audioPayload = await audioResponse.json();
+  assert.equal(audioResponse.status, 200, JSON.stringify(audioPayload));
+  assert.equal(audioPayload.room.messages.at(-1).participantId, partner.id);
   await request(`/api/rooms/${code}/analyze`, { method: "POST", cookie: pair.a.cookie });
 
   const first = await request(`/api/rooms/${code}/confirm-archive`, { method: "POST", cookie: pair.a.cookie });
@@ -147,6 +155,28 @@ test("one-device demo lets the host record consent and attribute both perspectiv
   assert.equal(secondView.room.messages[1].participantId, room.participants[1].id);
 });
 
+test("one-device demo voice obeys the manually selected speaker", async () => {
+  const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "shared", language: "zh", nameA: "红方", nameB: "蓝方" } });
+  const cookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
+  const room = createdResponse.payload.room;
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[0].id } });
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[1].id } });
+
+  const response = await fetch(`${baseUrl}/api/demo/rooms/${room.code}/audio`, {
+    method: "POST",
+    headers: {
+      cookie,
+      origin: baseUrl,
+      "content-type": "audio/webm",
+      "x-toward-us-speaker-id": room.participants[1].id,
+    },
+    body: Buffer.alloc(128, 1),
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.room.messages.at(-1).participantId, room.participants[1].id);
+});
+
 test("both demo participants can create accounts and jointly preserve the result", async () => {
   const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "remote", language: "en", nameA: "Demo A" } });
   const hostCookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
@@ -204,7 +234,7 @@ const fakeMediator = {
       safety: { level: 0, message: "safe" },
     };
   },
-  async transcribe() { return { text: "", duration: 0, segments: [] }; },
+  async transcribe() { return { text: "这段录音属于当前选择的人。", duration: 1, segments: [{ speaker: "speaker_0", text: "这段录音属于当前选择的人。", start: 0, end: 1 }] }; },
 };
 
 async function createPair(firstName, secondName) {

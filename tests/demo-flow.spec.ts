@@ -41,13 +41,17 @@ test("two guests scan in, consent, mediate, and preserve the review together", a
   await expect(hostPage.getByText("我愿意讨论，但希望先把预算和准备事项写清楚。")).toBeVisible();
 
   await hostPage.getByRole("button", { name: "请 AI 加入" }).click();
-  await expect(hostPage.locator(".demo-analysis")).toBeVisible({ timeout: 60_000 });
-  await expect(partnerPage.getByRole("button", { name: "查看 AI 分析" })).toBeVisible({ timeout: 20_000 });
-  await partnerPage.getByRole("button", { name: "查看 AI 分析" }).click();
-  await expect(partnerPage.locator(".demo-analysis")).toBeVisible();
+  await expect(hostPage.getByTestId("demo-room")).toBeVisible();
+  await expect(hostPage.getByTestId("demo-ai-panel")).toBeVisible({ timeout: 60_000 });
+  await expect(partnerPage.getByTestId("demo-ai-panel")).toBeVisible({ timeout: 20_000 });
+  await expect(hostPage).toHaveURL(new RegExp(`/demo\\?room=${roomCode}$`));
   await hostPage.locator(".analysis-tabs").getByRole("button", { name: "共同反馈" }).click();
   await partnerPage.locator(".analysis-tabs").getByRole("button", { name: "共同反馈" }).click();
   await expect(hostPage.getByRole("heading", { name: "想把这次体验留下来吗？" })).toBeVisible();
+  await screenshotDevice(hostPage, "qa/demo-room-inline-analysis-desktop.png");
+  await hostPage.setViewportSize({ width: 390, height: 844 });
+  await screenshotDevice(hostPage, "qa/demo-room-inline-analysis-mobile.png");
+  await hostPage.setViewportSize({ width: 1400, height: 1200 });
 
   expect((await host.request.post("/api/auth/register", { data: { name: "小红", email: `demo-host-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
   expect((await partner.request.post("/api/auth/register", { data: { name: "阿蓝", email: `demo-partner-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
@@ -67,6 +71,33 @@ test("two guests scan in, consent, mediate, and preserve the review together", a
 
   await host.close();
   await partner.close();
+});
+
+test("one-device room keeps manual speaker selection and both sides in one conversation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/demo");
+  await page.getByRole("button", { name: "共用一台手机" }).click();
+  await page.getByLabel("你的称呼").fill("小红");
+  await page.getByLabel("对方的称呼").fill("阿蓝");
+  await page.getByRole("button", { name: "创建临时房间" }).click();
+  await page.locator(".demo-consent-pair button:enabled").first().click();
+  await page.locator(".demo-consent-pair button:enabled").click();
+  await page.getByRole("button", { name: "开始表达" }).click();
+
+  const redSpeaker = page.getByRole("button", { name: "小红" });
+  const blueSpeaker = page.getByRole("button", { name: "阿蓝" });
+  await expect(redSpeaker).toHaveAttribute("aria-pressed", "true");
+  await page.getByPlaceholder("说说你看到的事实、感受或需要…").fill("这是我的看法。");
+  await page.locator(".send-button").click();
+  await blueSpeaker.click();
+  await expect(blueSpeaker).toHaveAttribute("aria-pressed", "true");
+  await page.getByPlaceholder("说说你看到的事实、感受或需要…").fill("这是对方的看法。");
+  await page.locator(".send-button").click();
+
+  await expect(page.locator(".message.side-a").getByText("这是我的看法。")).toBeVisible();
+  await expect(page.locator(".message.side-b").getByText("这是对方的看法。")).toBeVisible();
+  await expect(page.getByText("无需模仿不同声音")).toBeVisible();
+  await screenshotDevice(page, "qa/demo-room-speaker-selection-mobile.png");
 });
 
 async function screenshotDevice(page: Page, path: string) {
