@@ -70,7 +70,10 @@
   .device-screen [contenteditable="true"] { cursor: text !important; }
   .mobile-app-viewport { inset: 0 !important; }
   .keyboard-dock { display: none !important; }
-  .mobile-page { --mobile-safe-area-height: 0px; }
+  .mobile-page {
+    --mobile-safe-area-height: 0px;
+    --keyboard-height: 0px !important;
+  }
   .mobile-scroll { touch-action: pan-y; user-select: auto; }
 
   /* Brand website landing */
