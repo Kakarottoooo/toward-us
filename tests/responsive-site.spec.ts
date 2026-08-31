@@ -23,6 +23,9 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   await expect(desktopName).toHaveCSS("background-color", "rgba(251, 247, 239, 0.92)");
   await desktopName.fill("小彼");
   await expect(desktopName).toHaveValue("小彼");
+  await expect(desktopPage.getByTestId("keyboard-dock")).toHaveAttribute("data-visible", "true");
+  await expect(desktopPage.getByTestId("keyboard-dock")).toBeHidden();
+  await expect(desktopPage.locator(".mobile-scroll")).toHaveCSS("bottom", "0px");
 
   const mobile = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
   const mobilePage = await mobile.newPage();
@@ -42,6 +45,9 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   await expect(mobileName).toHaveCSS("border-top-style", "none");
   await mobileName.fill("小彼");
   await expect(mobileName).toHaveValue("小彼");
+  await expect(mobilePage.getByTestId("keyboard-dock")).toHaveAttribute("data-visible", "true");
+  await expect(mobilePage.getByTestId("keyboard-dock")).toBeHidden();
+  await expect(mobilePage.locator(".mobile-scroll")).toHaveCSS("bottom", "0px");
 
   await desktop.close();
   await mobile.close();

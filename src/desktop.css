@@ -22,7 +22,10 @@
   .device-screen { box-shadow: none; --device-safe-area-bottom: 0px !important; }
   .mobile-app-viewport { inset: 0 !important; }
   .keyboard-dock { display: none !important; }
-  .mobile-page { --mobile-safe-area-height: 0px; }
+  .mobile-page {
+    --mobile-safe-area-height: 0px;
+    --keyboard-height: 0px !important;
+  }
   .mobile-home-composition .home-wordmark strong { font-size: 10px; letter-spacing: .28em; margin-right: -.28em; }
 }
 
