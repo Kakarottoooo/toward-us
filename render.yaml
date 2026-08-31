@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm ci && npm run build && npm run test:app
+    buildCommand: npm ci --include=dev && npm run build && npm run test:app
     startCommand: npm start
     autoDeploy: true
     healthCheckPath: /api/health
