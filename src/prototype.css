@@ -34,7 +34,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .pause-mark i:nth-child(2) { width: 5px; height: 5px; border-radius: 50%; background: #77726d; }
 .pause-mark i:nth-child(3) { background: var(--jian-blue); }
 .home-wordmark { position: absolute; z-index: 2; left: 50%; bottom: 115px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; color: #333; }
-.home-wordmark strong { font-family: Georgia, serif; font-size: 15px; letter-spacing: .4em; font-weight: 500; margin-right: -.4em; }
+.home-wordmark strong { font-family: Georgia, serif; font-size: 15px; letter-spacing: .4em; font-weight: 500; margin-right: -.4em; white-space: nowrap; }
 .home-wordmark span { margin-top: 7px; color: #6f6a65; font-family: var(--jian-serif); font-size: 12px; }
 .home-actions { position: absolute; z-index: 3; left: 55px; right: 55px; bottom: 28px; }
 .split-cta { position: relative; width: 100%; height: 58px; display: grid; grid-template-columns: 68% 32%; border: 0; padding: 0; background: transparent; color: white; cursor: pointer; box-shadow: 0 11px 24px rgba(40, 27, 16, .14); }

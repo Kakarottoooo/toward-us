@@ -164,11 +164,29 @@ function AccountPrototype() {
 
 function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; onLanguage: () => void; onStart: () => void; t: typeof copy.zh }) {
   return <div className="home-screen" data-testid="home-screen">
-    <img className="home-art" src="/assets/brand/editorial-columns-background.png" alt="" aria-hidden="true" draggable={false} />
-    <LanguageSwitch language={language} onLanguage={onLanguage} />
-    <div className={`home-statement ${language === "en" ? "english" : "chinese"}`}><h1>{t.homeLine}</h1><PauseMark /></div>
-    <Wordmark />
-    <div className="home-actions"><SplitButton label={t.start} onClick={onStart} testId="start-button" /><p>{t.homeFooter}</p></div>
+    <div className="mobile-home-composition">
+      <img className="home-art" src="/assets/brand/editorial-columns-background.png" alt="" aria-hidden="true" draggable={false} />
+      <LanguageSwitch language={language} onLanguage={onLanguage} />
+      <div className={`home-statement ${language === "en" ? "english" : "chinese"}`}><h1>{t.homeLine}</h1><PauseMark /></div>
+      <Wordmark />
+      <div className="home-actions"><SplitButton label={t.start} onClick={onStart} testId="start-button" /><p>{t.homeFooter}</p></div>
+    </div>
+    <div className="desktop-home-composition" data-testid="desktop-home">
+      <DesktopBrandHeader language={language} onLanguage={onLanguage} onLogin={onStart} />
+      <div className="desktop-color-field desktop-color-field-red" aria-hidden="true" />
+      <div className="desktop-color-field desktop-color-field-blue" aria-hidden="true" />
+      <main className="desktop-home-hero">
+        <p className="desktop-kicker">TOWARD UNDERSTANDING, TOWARD US</p>
+        <h1>{t.homeLine}</h1>
+        <PauseMark />
+        <p className="desktop-home-support">{language === "zh" ? "不是争输赢，而是把彼此听清楚。" : "Not to win the argument, but to hear each other clearly."}</p>
+        <div className="desktop-home-actions">
+          <button className="desktop-primary-cta" onClick={() => location.assign("/demo")}>{language === "zh" ? "开始一次对话" : "Start a conversation"}<ArrowRight size={24} /></button>
+          <button className="desktop-secondary-cta" onClick={onStart}>{language === "zh" ? "登录共同空间" : "Enter your shared space"}</button>
+        </div>
+      </main>
+      <footer className="desktop-home-footer" id="how-it-works"><span>{language === "zh" ? "双人表达" : "Two voices"}</span><i /><span>{language === "zh" ? "私下反馈" : "Private reflection"}</span><i /><span>{language === "zh" ? "共同复盘" : "Shared review"}</span></footer>
+    </div>
   </div>;
 }
 
@@ -297,6 +315,7 @@ function HistoryDetailScreen({ detail, language, onBack, t }: { detail: HistoryD
 function SharedAnalysisContent({ analysis, t }: { analysis: SharedAnalysis; t: typeof copy.zh }) { return <><div className="analysis-heading"><p>{t.category} · {analysis.category}</p><h1>{analysis.title}</h1><span>{t.notVerdict}</span></div><p className="analysis-overview">{analysis.overview}</p><AnalysisSection title={t.perspective} index="01"><div className="perspective-grid">{analysis.perspectives.map((item, index) => <article key={item.participantId} className={index ? "blue-edge" : "red-edge"}><strong>{item.name}</strong><p>{item.view}</p></article>)}</div></AnalysisSection><AnalysisSection title={t.responsibility} index="02">{analysis.responsibility.map((item, index) => <div className="responsibility-item" key={`${item.side}-${index}`}><strong>{item.behavior}</strong><p>{item.assessment}</p></div>)}</AnalysisSection><AnalysisSection title={t.commonGround} index="03"><BulletList items={analysis.commonGround} tone="common" /></AnalysisSection><AnalysisSection title={t.differences} index="04"><BulletList items={analysis.differences} tone="different" /></AnalysisSection><AnalysisSection title={t.nextSteps} index="05"><ol className="next-step-list">{analysis.nextSteps.map((item, index) => <li key={item}><span>{String(index + 1).padStart(2, "0")}</span><p>{item}</p></li>)}</ol></AnalysisSection></>; }
 
 function BottomNav({ current, onHome, onHistory, onLogout, t }: { current: "home" | "history"; onHome: () => void; onHistory: () => void; onLogout: () => void; t: typeof copy.zh }) { return <nav className="bottom-nav"><button className={current === "history" ? "" : "active"} onClick={onHome}><House size={21} /><span>{t.ownSpace}</span></button><button className={current === "history" ? "active" : ""} onClick={onHistory}><ClockCounterClockwise size={21} /><span>{t.history}</span></button><button onClick={onLogout}><UserCircle size={21} /><span>{t.settings}</span></button></nav>; }
+function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: () => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark /><nav aria-label={language === "zh" ? "主导航" : "Main navigation"}><button onClick={() => location.assign("/demo")}>{language === "zh" ? "快速体验" : "Quick demo"}</button><a href="#how-it-works">{language === "zh" ? "如何工作" : "How it works"}</a><button onClick={onLogin}>{language === "zh" ? "我们的复盘" : "Our reviews"}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{language === "zh" ? "登录" : "Sign in"}<ArrowRight size={17} /></button></div></header>; }
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: () => void; compact?: boolean }) { return <button className={`language-switch ${compact ? "compact" : ""}`} onClick={onLanguage}><span className={language === "zh" ? "active" : ""}>中</span><i>/</i><span className={language === "en" ? "active" : ""}>EN</span></button>; }
 function Wordmark() { return <div className="home-wordmark" aria-label="Toward Us 彼此"><strong>T O W A R D&nbsp;&nbsp;U S</strong><span>｜彼此｜</span></div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }

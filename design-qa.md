@@ -104,6 +104,41 @@ final result: passed
 
 Visual and interaction result: passed. The invitation now defaults to the compact share state; the live QR expands only on request without clipping the 393 × 852 protected viewport.
 
+## Responsive desktop website extension — passed
+
+- Generated landing concept: `qa/desktop-landing-concept.png`.
+- Generated authenticated workspace concept: `qa/desktop-workspace-concept.png`.
+- Browser implementation evidence: `qa/desktop-landing-implementation.png`, `qa/desktop-auth-implementation.png`, `qa/desktop-demo-entry-implementation.png`, `qa/beta-dashboard-implementation.png`, `qa/demo-invite-final.png`, `qa/beta-history-implementation.png`, and `qa/beta-history-detail-implementation.png`.
+- Mobile non-regression evidence: `qa/mobile-home-responsive-implementation.png`.
+- Screenshot method: Codex in-app Browser at 1440 × 960 and 393 × 852; stateful two-account and two-guest evidence used repository Playwright at 1400 × 1200.
+- Image generation mode: built-in ImageGen. Prompt direction: a wide editorial Chinese relationship-mediation website on warm ivory paper, opposing granular vermilion and ultramarine fields, Song-style display typography, fine black rules, open composition, restrained bilingual navigation, split-color primary action, and no cards, glass, gradients-as-decoration, device frames, or generic SaaS styling.
+
+Fidelity ledger:
+
+1. Palette: warm ivory, vermilion, ultramarine, charcoal, and muted gray remain the only dominant colors.
+2. Composition: desktop uses a calm central editorial field under tension from two opposing color masses; authenticated pages keep the same two-sided relationship metaphor.
+3. Typography: Chinese display copy uses the established Song-style stack; navigation and controls use compact sans typography and wide tracking.
+4. Motifs: pause mark, paired circles, split red/blue CTA, fine rules, and granular source assets persist across public and authenticated surfaces.
+5. Responsive contract: 1440px renders a full website with desktop navigation; 393px renders the approved mobile composition directly in the viewport. Neither production mode shows a phone bezel, fake status bar, home indicator, or device picker.
+6. Product continuity: `/demo`, `/j/{code}`, authentication, room isolation, AI feedback, bilateral confirmation, and history retain one canonical implementation across breakpoints.
+7. Interaction states: empty workspace, active room, QR invitation, consent, conversation, private/shared analysis, one-of-two confirmation, archived history, and history detail were exercised after the responsive change.
+
+Above-the-fold copy diff:
+
+- The approved statement “在争执之外，我们选择彼此。” is unchanged.
+- Desktop adds the supporting line “不是争输赢，而是把彼此听清楚。” and separates the quick-demo action from formal-space sign-in.
+- Mobile keeps its approved statement, start action, language control, wordmark, and “暂停 · 倾听 · 修复” footer.
+
+Intentional differences from the generated concepts:
+
+- The implementation centers the desktop headline on two lines at 1440px so it remains readable across common laptop widths; the concept used one long line at 1600px.
+- Generated sample history rows were illustrative. The implementation renders only real rooms and archived reviews, so a new shared space truthfully shows an empty state.
+- Production color fields use CSS geometry for responsive cropping while mobile continues using the approved granular raster asset.
+
+No actionable P0, P1, or P2 visual mismatch remains. The desktop website and mobile full-screen experience pass the responsive product scope.
+
+final result: passed
+
 ## No-download QR demo extension — passed
 
 - Accepted source: `public/assets/brand/approved-visual-reference.png`.

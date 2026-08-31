@@ -6,7 +6,7 @@ test("two accounts pair, mediate, confirm together, and review history", async (
   const accountB = { name: "阿蓝", email: `toward-us-b-${suffix}@example.com`, password: "correct-horse-battery" };
 
   await page.goto("/");
-  await page.getByTestId("start-button").click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page.getByRole("heading", { name: "欢迎回来" })).toBeVisible();
   await screenshotDevice(page, "qa/beta-login-implementation.png");
 
