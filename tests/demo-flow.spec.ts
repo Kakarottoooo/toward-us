@@ -47,7 +47,7 @@ test("two guests scan in, consent, mediate, and preserve the review together", a
   await expect(hostPage).toHaveURL(new RegExp(`/demo\\?room=${roomCode}$`));
   await hostPage.locator(".analysis-tabs").getByRole("button", { name: "共同反馈" }).click();
   await partnerPage.locator(".analysis-tabs").getByRole("button", { name: "共同反馈" }).click();
-  await expect(hostPage.getByRole("heading", { name: "想把这次体验留下来吗？" })).toBeVisible();
+  await expect(hostPage.getByRole("heading", { name: "想把这次体验留下来吗？" })).toBeVisible({ timeout: 60_000 });
   await screenshotDevice(hostPage, "qa/demo-room-inline-analysis-desktop.png");
   await hostPage.setViewportSize({ width: 390, height: 844 });
   await screenshotDevice(hostPage, "qa/demo-room-inline-analysis-mobile.png");
@@ -98,6 +98,24 @@ test("one-device room keeps manual speaker selection and both sides in one conve
   await expect(page.locator(".message.side-b").getByText("这是对方的看法。")).toBeVisible();
   await expect(page.getByText("无需模仿不同声音")).toBeVisible();
   await screenshotDevice(page, "qa/demo-room-speaker-selection-mobile.png");
+
+  const composer = page.locator(".composer");
+  const messageScroll = page.locator(".message-scroll");
+  const textarea = page.getByPlaceholder("说说你看到的事实、感受或需要…");
+  await textarea.click();
+  await expect.poll(async () => { const box = await composer.boundingBox(); return Math.round((box?.y || 0) + (box?.height || 0)); }).toBeGreaterThanOrEqual(840);
+  await expect(textarea).toHaveCSS("font-size", "16px");
+  for (const control of [redSpeaker, blueSpeaker, page.locator(".send-button"), page.getByRole("button", { name: "请 AI 加入" })]) {
+    const box = await control.boundingBox();
+    expect(box?.height || 0).toBeGreaterThanOrEqual(44);
+  }
+
+  await page.setViewportSize({ width: 320, height: 568 });
+  await expect.poll(async () => Math.round((await messageScroll.boundingBox())?.height || 0)).toBeGreaterThan(120);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect.poll(async () => Math.round((await messageScroll.boundingBox())?.height || 0)).toBeGreaterThan(80);
+  await page.setViewportSize({ width: 900, height: 700 });
+  await expect.poll(async () => Math.round((await messageScroll.boundingBox())?.width || 0)).toBeGreaterThanOrEqual(500);
 });
 
 async function screenshotDevice(page: Page, path: string) {

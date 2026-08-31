@@ -3,7 +3,7 @@ import {
   Microphone, PaperPlaneRight, QrCode, Sparkle, StopCircle, UsersThree, WarningCircle, Waveform,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard, useKeyboardInsets } from "./mobile";
+import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import "./demo.css";
 
 type Language = "zh" | "en";
@@ -34,7 +34,7 @@ type Health = { ok: boolean; aiReady: boolean; model: string };
 
 const words = {
   zh: {
-    back: "返回", quick: "快速体验", entryTitle: "在争执之外，我们选择彼此。", choose: "选择进入方式",
+    back: "返回", send: "发送", quick: "快速体验", entryTitle: "在争执之外，我们选择彼此。", choose: "选择进入方式",
     shared: "共用一台手机", sharedHint: "一起使用，简单快捷", remote: "各用一台手机", remoteHint: "扫码加入，更私密",
     privacy: "原始录音不保存。临时转录与分析将在一小时后自动删除。", yourName: "你的称呼", partnerName: "对方的称呼", yourNamePlaceholder: "输入你的称呼", partnerNamePlaceholder: "输入对方称呼",
     create: "创建临时房间", joinTitle: "加入这次体验", joinHint: "输入称呼后，你将作为第二位参与者加入。", join: "加入房间",
@@ -54,7 +54,7 @@ const words = {
     switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "我不想和你争输赢，想和你好好把这件事说清楚。点击链接加入我们这次的 Toward Us 对话（15 分钟内有效）。",
   },
   en: {
-    back: "Back", quick: "Quick demo", entryTitle: "Beyond the argument, we choose each other.", choose: "Choose how to enter",
+    back: "Back", send: "Send", quick: "Quick demo", entryTitle: "Beyond the argument, we choose each other.", choose: "Choose how to enter",
     shared: "Share one phone", sharedHint: "Together, simple and quick", remote: "Use two phones", remoteHint: "Scan to join, more private",
     privacy: "Raw audio is never saved. Temporary transcripts and analysis are deleted after one hour.", yourName: "Your name", partnerName: "Partner name", yourNamePlaceholder: "Enter your name", partnerNamePlaceholder: "Enter your partner's name",
     create: "Create temporary room", joinTitle: "Join this demo", joinHint: "Enter your name to join as the second participant.", join: "Join room",
@@ -88,7 +88,7 @@ export default function DemoFlow() {
   const roomCode = room?.code || initialRoomCode();
   const joinUrl = room ? `${location.origin}/j/${room.code}` : "";
 
-  useEffect(() => { localStorage.setItem("toward-us.language", language); }, [language]);
+  useEffect(() => { localStorage.setItem("toward-us.language", language); document.documentElement.lang = language === "zh" ? "zh-CN" : "en"; }, [language]);
   useEffect(() => { api<Health>("/api/health").then(setHealth).catch(() => {}); api<{ user: Account | null }>("/api/auth/me").then((value) => setAccount(value.user)).catch(() => {}); }, []);
   useEffect(() => {
     const code = initialRoomCode();
@@ -176,10 +176,21 @@ function DemoConsent({ language, room, notice, busy, t, onLanguage, onConsent, o
 
 function DemoRoomScreen({ room, account, health, language, notice, t, onNotice, onRoom, onAccount, onExit }: { room: DemoRoom | null; account: Account | null; health: Health | null; language: Language; notice: string; t: typeof words.zh; onNotice: (value: string) => void; onRoom: (room: DemoRoom) => void; onAccount: (account: Account) => void; onExit: () => void }) {
   const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState(""); const [recording, setRecording] = useState(false); const [transcribing, setTranscribing] = useState(false); const [seconds, setSeconds] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard(); const { bottomInset } = useKeyboardInsets();
+  const [composerHeight, setComposerHeight] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard();
   useEffect(() => { if (room?.currentParticipantId && !speakerId) setSpeakerId(room.currentParticipantId); }, [room?.currentParticipantId, speakerId]);
   useEffect(() => { if (!recording) return; const timer = setInterval(() => setSeconds((value) => value + 1), 1000); return () => clearInterval(timer); }, [recording]);
   useEffect(() => { if (room?.analysisMeta) analysisRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [room?.analysisMeta?.generatedAt]);
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    const updateHeight = () => setComposerHeight(Math.ceil(composer.getBoundingClientRect().height));
+    updateHeight();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateHeight);
+    observer?.observe(composer);
+    window.addEventListener("resize", updateHeight);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", updateHeight); };
+  }, [room?.code, room?.canControlAllSpeakers]);
   const participants = useMemo(() => new Map(room?.participants.map((participant) => [participant.id, participant]) || []), [room?.participants]);
   if (!room) return <div className="loading-screen"><Wordmark /></div>;
   const send = async () => { if (!draft.trim()) return; const text = draft; setDraft(""); keyboard.hide(); try { const result = await api<{ room: DemoRoom }>(`/api/demo/rooms/${room.code}/messages`, { method: "POST", body: JSON.stringify({ text, speakerId }) }); onRoom(result.room); onNotice(""); } catch (error) { setDraft(text); onNotice((error as Error).message); } };
@@ -192,13 +203,13 @@ function DemoRoomScreen({ room, account, health, language, notice, t, onNotice, 
       recorderRef.current = recorder; recorder.start(1000); setRecording(true); setSeconds(0); onNotice("");
     } catch { onNotice(language === "zh" ? "没有获得麦克风权限，仍可使用文字。" : "Microphone permission was not granted. Text still works."); }
   };
-  const composerHeight = room.canControlAllSpeakers ? 214 : 142;
-  return <div className="room-shell" data-testid="demo-room" style={{ "--message-bottom": `${composerHeight + bottomInset}px` } as React.CSSProperties}><header className="room-header"><button onClick={onExit}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><span className="demo-expiry">{Math.max(1, Math.ceil((new Date(room.expiresAt).getTime() - Date.now()) / 60000))}m</span></header>
+  const measuredComposerHeight = composerHeight || (room.canControlAllSpeakers ? 214 : 142);
+  return <div className="room-shell" data-testid="demo-room" style={{ "--message-bottom": `${measuredComposerHeight}px` } as React.CSSProperties}><header className="room-header"><button onClick={onExit} aria-label={t.back}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><span className="demo-expiry">{Math.max(1, Math.ceil((new Date(room.expiresAt).getTime() - Date.now()) / 60000))}m</span></header>
     <div className="room-presence"><div className="participant-pair">{room.participants.map((participant) => <span key={participant.id} className={participant.role === "A" ? "red-person" : "blue-person"}>{participant.name.slice(0, 1)}</span>)}</div><p>{t.connected}<i /></p><span className={`ai-status ${health?.aiReady ? "ready" : "fallback"}`}><Sparkle size={13} weight="fill" />{health?.aiReady ? health.model : "Local"}</span></div>
     <MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}{!room.messages.length ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const person = participants.get(message.participantId); return <article key={message.id} className={`message ${person?.role === "A" ? "side-a" : "side-b"}`}><header>{person?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
       {(room.analyzing || room.analysisMeta) && <DemoInlineAnalysis analysisRef={analysisRef} room={room} account={account} notice={notice} t={t} onRoom={onRoom} onAccount={onAccount} onNotice={onNotice} onExit={onExit} />}
-      <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
-    <footer className="composer" style={{ bottom: bottomInset }}>{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.placeholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
+      <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing} aria-label={recording ? t.stop : t.record}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
+    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.placeholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
   </div>;
 }
 
@@ -214,7 +225,7 @@ function DemoInlineAnalysis({ room, account, notice, t, analysisRef, onRoom, onA
     </section>}</main></section>;
 }
 
-function DemoHeader({ language, onLanguage, onBack }: { language: Language; onLanguage: () => void; onBack: () => void }) { return <header className="demo-header"><button onClick={onBack}><ArrowLeft size={21} /></button><Wordmark /><button className="demo-language" onClick={onLanguage}><span className={language === "zh" ? "active" : ""}>中</span> / <span className={language === "en" ? "active" : ""}>EN</span></button></header>; }
+function DemoHeader({ language, onLanguage, onBack }: { language: Language; onLanguage: () => void; onBack: () => void }) { return <header className="demo-header"><button onClick={onBack} aria-label={language === "zh" ? "返回" : "Back"}><ArrowLeft size={21} /></button><Wordmark /><button className="demo-language" onClick={onLanguage}><span className={language === "zh" ? "active" : ""}>中</span> / <span className={language === "en" ? "active" : ""}>EN</span></button></header>; }
 function Wordmark() { return <div className="home-wordmark" aria-label="Toward Us 彼此"><strong>T O W A R D&nbsp;&nbsp;U S</strong><span>｜彼此｜</span></div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }

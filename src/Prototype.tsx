@@ -4,7 +4,7 @@ import {
   WarningCircle, Waveform,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard, useKeyboardInsets } from "./mobile";
+import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 
 type Language = "zh" | "en";
@@ -110,7 +110,7 @@ function AccountPrototype() {
   const keyboard = useKeyboard();
   const t = copy[language];
 
-  useEffect(() => { localStorage.setItem("toward-us.language", language); }, [language]);
+  useEffect(() => { localStorage.setItem("toward-us.language", language); document.documentElement.lang = language === "zh" ? "zh-CN" : "en"; }, [language]);
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
@@ -266,10 +266,21 @@ function SetupScreen({ language, onBack, onLanguage, onRoom, notice, setNotice, 
 function RoomScreen({ room, language, health, notice, setNotice, onHistory, onRoomUpdate, onLeave, t }: { room: Room | null; language: Language; health: Health | null; notice: string; setNotice: (value: string) => void; onHistory: () => void; onRoomUpdate: (room: Room) => void; onLeave: () => void; t: typeof copy.zh }) {
   const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState(""); const [copied, setCopied] = useState(false);
   const [recording, setRecording] = useState(false); const [transcribing, setTranscribing] = useState(false); const [seconds, setSeconds] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard(); const { bottomInset } = useKeyboardInsets();
+  const [composerHeight, setComposerHeight] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard();
   useEffect(() => { if (room?.currentParticipantId && !speakerId) setSpeakerId(room.currentParticipantId); }, [room?.currentParticipantId, speakerId]);
   useEffect(() => { if (!recording) return; const id = setInterval(() => setSeconds((value) => value + 1), 1000); return () => clearInterval(id); }, [recording]);
   useEffect(() => { if (room?.analysisMeta) analysisRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [room?.analysisMeta?.generatedAt]);
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    const updateHeight = () => setComposerHeight(Math.ceil(composer.getBoundingClientRect().height));
+    updateHeight();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateHeight);
+    observer?.observe(composer);
+    window.addEventListener("resize", updateHeight);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", updateHeight); };
+  }, [room?.code, room?.canControlAllSpeakers]);
   const participantMap = useMemo(() => new Map(room?.participants.map((participant) => [participant.id, participant]) || []), [room?.participants]);
   if (!room) return <div className="loading-screen"><Wordmark /><p>{language === "zh" ? "正在进入共同空间…" : "Opening your shared space…"}</p></div>;
   const send = async () => { if (!draft.trim()) return; const text = draft; setDraft(""); keyboard.hide(); try { await api(`/api/rooms/${room.code}/messages`, { method: "POST", body: JSON.stringify({ text, speakerId }) }); setNotice(""); } catch (error) { setDraft(text); setNotice((error as Error).message); } };
@@ -283,14 +294,14 @@ function RoomScreen({ room, language, health, notice, setNotice, onHistory, onRo
     } catch { setNotice(t.voiceUnavailable); }
   };
   const copyCode = async () => { await navigator.clipboard.writeText(room.code); setCopied(true); setTimeout(() => setCopied(false), 1400); };
-  const composerHeight = room.canControlAllSpeakers ? 214 : 142;
-  return <div className="room-shell" data-testid="room-screen" style={{ "--message-bottom": `${composerHeight + bottomInset}px` } as React.CSSProperties}><header className="room-header"><button onClick={onLeave}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><button onClick={copyCode}>{copied ? <CheckCircle size={21} weight="fill" /> : <Copy size={21} />}</button></header>
+  const measuredComposerHeight = composerHeight || (room.canControlAllSpeakers ? 214 : 142);
+  return <div className="room-shell" data-testid="room-screen" style={{ "--message-bottom": `${measuredComposerHeight}px` } as React.CSSProperties}><header className="room-header"><button onClick={onLeave} aria-label={t.back}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><button onClick={copyCode} aria-label={t.copyInvite}>{copied ? <CheckCircle size={21} weight="fill" /> : <Copy size={21} />}</button></header>
     <div className="room-presence"><div className="participant-pair">{room.participants.map((participant) => <span key={participant.id} className={participant.role === "A" ? "red-person" : "blue-person"}>{participant.name.slice(0, 1)}</span>)}{room.participants.length < 2 && <span className="empty-person">?</span>}</div><p>{room.participants.length < 2 ? t.waiting : t.connected}<i /></p><span className={`ai-status ${health?.aiReady ? "ready" : "fallback"}`}><Sparkle size={13} weight="fill" />{health?.aiReady ? t.modelReady : t.modelFallback}</span></div>
     <MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}
       {!room.messages.length ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const participant = participantMap.get(message.participantId); return <article key={message.id} className={`message ${participant?.role === "A" ? "side-a" : "side-b"}`}><header>{participant?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
       {(room.analyzing || room.analysisMeta) && <AnalysisScreen analysisRef={analysisRef} room={room} language={language} onHistory={onHistory} onRoomUpdate={onRoomUpdate} setNotice={setNotice} t={t} />}
-      <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
-    <footer className="composer" style={{ bottom: bottomInset }}>{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
+      <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing} aria-label={recording ? t.stop : t.record}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
+    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
   </div>;
 }
 

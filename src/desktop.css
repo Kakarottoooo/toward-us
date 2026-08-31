@@ -27,6 +27,26 @@
     --keyboard-height: 0px !important;
   }
   .mobile-home-composition .home-wordmark strong { font-size: 10px; letter-spacing: .28em; margin-right: -.28em; }
+  .device-screen input,
+  .device-screen textarea { font-size: 16px !important; }
+  .room-header button,
+  .demo-header > button,
+  .speaker-toggle button,
+  .send-button,
+  .invite-ai,
+  .record-orbit button,
+  .inline-analysis-header > button,
+  .analysis-tabs button { min-width: 44px; min-height: 44px; }
+}
+
+@media (max-width: 899px) and (max-height: 500px) and (orientation: landscape) {
+  .room-header { height: 64px; padding: 8px 16px; }
+  .room-presence { top: 64px; min-height: 54px; padding: 7px 16px; grid-template-rows: 21px 18px; }
+  .message-scroll { top: 118px; }
+  .speaker-selection-note { display: none; }
+  .speaker-control { margin-bottom: 5px; }
+  .composer { padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .invite-ai { margin-top: 5px; }
 }
 
 @media (min-width: 900px) {
@@ -246,4 +266,33 @@
   .room-presence { width: 220px; }
   .message-scroll { left: 220px; right: 340px; }
   .composer { width: 340px; }
+}
+
+@media (min-width: 900px) and (max-width: 1023px) {
+  .room-presence {
+    top: 78px;
+    right: 320px;
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 76px;
+    min-height: 76px;
+    padding: 13px 28px;
+    align-content: center;
+    grid-template-columns: auto auto 1fr;
+    grid-template-rows: 1fr;
+    gap: 16px;
+    border-right: 1px solid var(--jian-line);
+    border-bottom: 1px solid var(--jian-line);
+  }
+  .room-presence .participant-pair { grid-row: auto; }
+  .message-scroll { top: 154px; right: 320px; left: 0; }
+  .message-content { width: min(680px, calc(100% - 56px)); }
+  .composer { width: 320px; }
+}
+
+@media (pointer: coarse) {
+  .device-screen button,
+  .device-screen a,
+  .device-screen [role="button"] { min-height: 44px; }
 }
