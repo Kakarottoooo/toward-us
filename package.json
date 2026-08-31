@@ -10,6 +10,7 @@
     "check:runtime": "node scripts/check-mobile-runtime.mjs",
     "update:runtime-lock": "node scripts/update-mobile-runtime-lock.mjs",
     "test:runtime": "playwright test",
+    "test:responsive": "playwright test tests/responsive-site.spec.ts",
     "test:demo": "playwright test --config=playwright.demo.config.ts",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "npm run check:runtime",
