@@ -12,7 +12,12 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   await expect(desktopPage.getByRole("heading", { name: "在争执之外，我们选择彼此。" })).toBeVisible();
 
   await desktopPage.goto("/demo");
+  const desktopSharedChoice = desktopPage.getByRole("button", { name: "共用一台手机 一起使用，简单快捷" });
+  const desktopRemoteChoice = desktopPage.getByRole("button", { name: "各用一台手机 扫码加入，更私密" });
+  await expect(desktopSharedChoice).toHaveCSS("cursor", "pointer");
+  await expect(desktopRemoteChoice).toHaveCSS("cursor", "pointer");
   const desktopName = desktopPage.getByLabel("你的称呼");
+  await expect(desktopName).toHaveCSS("cursor", "text");
   await expect(desktopName).toHaveAttribute("placeholder", "输入你的称呼");
   await expect(desktopName).toHaveCSS("border-top-style", "solid");
   await expect(desktopName).toHaveCSS("background-color", "rgba(251, 247, 239, 0.92)");
@@ -30,7 +35,9 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   await expect(mobilePage.getByTestId("start-button")).toBeVisible();
 
   await mobilePage.goto("/demo");
+  await expect(mobilePage.getByRole("button", { name: "共用一台手机 一起使用，简单快捷" })).toHaveCSS("cursor", "none");
   const mobileName = mobilePage.getByLabel("你的称呼");
+  await expect(mobileName).toHaveCSS("cursor", "none");
   await expect(mobileName).toHaveAttribute("placeholder", "输入你的称呼");
   await expect(mobileName).toHaveCSS("border-top-style", "none");
   await mobileName.fill("小彼");

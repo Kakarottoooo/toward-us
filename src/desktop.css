@@ -57,6 +57,14 @@
   }
   .device-screen,
   .device-screen * { cursor: revert !important; }
+  .device-screen button,
+  .device-screen a,
+  .device-screen select,
+  .device-screen [role="button"] { cursor: pointer !important; }
+  .device-screen button:disabled { cursor: not-allowed !important; }
+  .device-screen input,
+  .device-screen textarea,
+  .device-screen [contenteditable="true"] { cursor: text !important; }
   .mobile-app-viewport { inset: 0 !important; }
   .keyboard-dock { display: none !important; }
   .mobile-page { --mobile-safe-area-height: 0px; }
