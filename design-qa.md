@@ -93,3 +93,41 @@ Remaining intentional differences:
 No actionable P0, P1, or P2 visual mismatch remains. The implementation was faithfully verified against the approved visual direction and the extension concept.
 
 final result: passed
+
+## No-download QR demo extension — passed
+
+- Accepted source: `public/assets/brand/approved-visual-reference.png`.
+- Generated extension concept: `qa/demo-flow-concept.png`.
+- Latest native implementation evidence: `qa/demo-invite-final.png` at 393 × 852 CSS px.
+- Screenshot method: Codex in-app Browser for DOM/state inspection; repository Playwright captured the native protected device screen because the acceptance path requires two isolated browser contexts.
+- Core flow: guest host → QR invite → isolated partner device → two consent actions → one message per person → AI analysis → two registrations → two save confirmations → formal shared history.
+
+Fidelity comparison:
+
+1. Palette: the accepted ivory, vermilion, ultramarine, ink, and muted gray tokens are unchanged.
+2. Composition: opposing granular rails frame one calm editorial center; the QR is the single dominant object on the invite state.
+3. Typography: Song-style Chinese display text, wide-tracked Toward Us wordmark, and compact sans UI copy preserve the hierarchy.
+4. Motifs: the three-part pause mark, paired color roles, clipped rails, and diagonal split action treatment continue the approved visual language.
+5. Container model: controls sit on the open paper field with fine rules; no glass panels, gradients, rounded card grid, or generic SaaS dashboard was introduced.
+6. Native viewport: entry, invite, consent, conversation, analysis, and conversion states were exercised at the protected iPhone 393 × 852 screen size; the latest QR state has no clipping or simulated-keyboard obstruction.
+7. Interaction and privacy: disabled creation, expiring invitation, two independent consent actions, private/shared analysis, one-of-two save, and completed conversion states were all exercised.
+
+Above-the-fold copy diff:
+
+- The approved home statement and formal landing copy were not changed.
+- The demo entry adds only “快速体验 / Quick demo,” mode selection, participant name, and the truthful one-hour retention notice.
+- The generated concept suggested local-only processing. The implementation intentionally says raw audio is not saved while temporary transcripts and analysis are server-held for up to one hour, because that matches the real two-device architecture.
+
+Material fix during QA:
+
+- The second device originally received completed AI state through SSE but had no visible navigation into the analysis. A shared “查看 AI 分析 / View AI analysis” action was added and the two-device acceptance test was rerun successfully.
+
+Intentional differences:
+
+- The QR code and room code are live, scannable values rather than the concept's illustrative placeholders.
+- The protected iPhone status bar, rounded screen corners, and home indicator remain.
+- The implementation uses the nearest installed Song-style system font instead of embedding a commercial reference typeface.
+
+No actionable P0, P1, or P2 visual mismatch remains. The QR demo was faithfully verified against both the approved visual source and the generated extension concept.
+
+final result: passed

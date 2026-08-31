@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { createPostgresStore } from "./postgres-store.mjs";
 
 const EMPTY_STATE = () => ({
-  version: 2,
+  version: 3,
   users: {},
   userByEmail: {},
   sessions: {},
@@ -11,6 +11,7 @@ const EMPTY_STATE = () => ({
   memberships: {},
   invitations: {},
   rooms: {},
+  demoRooms: {},
 });
 
 export async function createStore(filePath, databaseUrl = process.env.DATABASE_URL) {
@@ -25,7 +26,7 @@ export async function createFileStore(filePath) {
 
   try {
     const parsed = JSON.parse(await readFile(filePath, "utf8"));
-    state = { ...EMPTY_STATE(), ...parsed, version: 2 };
+    state = { ...EMPTY_STATE(), ...parsed, version: 3 };
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
@@ -120,6 +121,40 @@ export async function createFileStore(filePath) {
         .filter((room) => room.relationshipId === relationshipId && (!status || room.status === status))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((room) => structuredClone(room));
+    },
+    async createDemoRoom(room) {
+      state.demoRooms[room.code] = structuredClone(room);
+      await persist();
+      return structuredClone(room);
+    },
+    getDemoRoom(code) { return state.demoRooms[code] ? structuredClone(state.demoRooms[code]) : null; },
+    async updateDemoRoom(code, updater) {
+      const room = state.demoRooms[code];
+      if (!room) return null;
+      await updater(room);
+      room.updatedAt = new Date().toISOString();
+      await persist();
+      return structuredClone(room);
+    },
+    async deleteExpiredDemoRooms(now) {
+      let changed = false;
+      for (const [code, room] of Object.entries(state.demoRooms)) {
+        if (room.expiresAt <= now) { delete state.demoRooms[code]; changed = true; }
+      }
+      if (changed) await persist();
+    },
+    async finalizeDemoRoom(demoCode, { relationship, memberships, room, convertedAt }) {
+      const demo = state.demoRooms[demoCode];
+      if (!demo || demo.status !== "active" || memberships.some((membership) => state.memberships[membership.userId])) return null;
+      state.relationships[relationship.id] = structuredClone(relationship);
+      for (const membership of memberships) state.memberships[membership.userId] = structuredClone(membership);
+      state.rooms[room.code] = structuredClone(room);
+      demo.status = "converted";
+      demo.convertedAt = convertedAt;
+      demo.convertedRoomCode = room.code;
+      demo.updatedAt = convertedAt;
+      await persist();
+      return { demoRoom: structuredClone(demo), room: structuredClone(room) };
     },
   };
 }

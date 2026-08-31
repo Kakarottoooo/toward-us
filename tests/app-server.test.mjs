@@ -9,11 +9,12 @@ import { createFileStore } from "../server/store.mjs";
 let server;
 let baseUrl;
 let temporaryDirectory;
+let store;
 let counter = 0;
 
 before(async () => {
   temporaryDirectory = await mkdtemp(join(tmpdir(), "toward-us-test-"));
-  const store = await createFileStore(join(temporaryDirectory, "store.json"));
+  store = await createFileStore(join(temporaryDirectory, "store.json"));
   const app = createApiApp({ store, mediator: fakeMediator, production: false });
   server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
@@ -93,6 +94,88 @@ test("logout revokes the server session", async () => {
   await request("/api/auth/logout", { method: "POST", cookie: account.cookie, expectedStatus: 204, parseJson: false });
   const state = await request("/api/auth/me", { cookie: account.cookie });
   assert.equal(state.user, null);
+});
+
+test("quick demo rooms require two recording consents and isolate guest capabilities", async () => {
+  const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "remote", language: "zh", nameA: "红方" } });
+  assert.equal(createdResponse.status, 201, JSON.stringify(createdResponse.payload));
+  assert.match(createdResponse.headers.get("set-cookie") || "", /toward_us_demo=.*HttpOnly.*SameSite=Lax/);
+  assert.equal(createdResponse.headers.get("permissions-policy"), "microphone=(self), camera=()");
+  const hostCookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
+  const code = createdResponse.payload.room.code;
+
+  const preview = await request(`/api/demo/rooms/${code}/preview`);
+  assert.equal(preview.room.joinOpen, true);
+  assert.equal(Object.hasOwn(preview.room, "messages"), false);
+  await request(`/api/demo/rooms/${code}`, { expectedStatus: 404 });
+
+  const joinedResponse = await rawRequest(`/api/demo/rooms/${code}/join`, { method: "POST", body: { name: "蓝方" } });
+  assert.equal(joinedResponse.status, 200, JSON.stringify(joinedResponse.payload));
+  const partnerCookie = (joinedResponse.headers.get("set-cookie") || "").split(";")[0];
+  const hostId = createdResponse.payload.room.currentParticipantId;
+  const partnerId = joinedResponse.payload.room.currentParticipantId;
+
+  await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: hostCookie, body: { text: "还没同意。" }, expectedStatus: 409 });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { participantId: partnerId }, expectedStatus: 403 });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { participantId: hostId } });
+  const bothConsented = await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: partnerCookie, body: { participantId: partnerId } });
+  assert.equal(bothConsented.room.allConsented, true);
+
+  await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: hostCookie, body: { text: "我希望先说清楚事实。" }, expectedStatus: 201 });
+  await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: partnerCookie, body: { text: "我希望先被听完。" }, expectedStatus: 201 });
+  const analyzed = await request(`/api/demo/rooms/${code}/analyze`, { method: "POST", cookie: hostCookie });
+  assert.equal(analyzed.room.sharedAnalysis.title, "A shared view");
+  assert.deepEqual(Object.keys(analyzed.room.privateFeedback), [hostId]);
+
+  const otherDemo = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "remote", language: "zh", nameA: "旁观者" } });
+  const otherCookie = (otherDemo.headers.get("set-cookie") || "").split(";")[0];
+  await request(`/api/demo/rooms/${code}`, { cookie: otherCookie, expectedStatus: 404 });
+});
+
+test("one-device demo lets the host record consent and attribute both perspectives", async () => {
+  const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "shared", language: "zh", nameA: "红方", nameB: "蓝方" } });
+  assert.equal(createdResponse.status, 201, JSON.stringify(createdResponse.payload));
+  const cookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
+  const room = createdResponse.payload.room;
+  assert.equal(room.participants.length, 2);
+  assert.equal(room.canControlAllSpeakers, true);
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[0].id } });
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[1].id } });
+  await request(`/api/demo/rooms/${room.code}/messages`, { method: "POST", cookie, body: { speakerId: room.participants[0].id, text: "这是我的看法。" }, expectedStatus: 201 });
+  const secondView = await request(`/api/demo/rooms/${room.code}/messages`, { method: "POST", cookie, body: { speakerId: room.participants[1].id, text: "这是对方的看法。" }, expectedStatus: 201 });
+  assert.equal(secondView.room.messages[1].participantId, room.participants[1].id);
+});
+
+test("both demo participants can create accounts and jointly preserve the result", async () => {
+  const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "remote", language: "en", nameA: "Demo A" } });
+  const hostCookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
+  const code = createdResponse.payload.room.code;
+  const hostId = createdResponse.payload.room.currentParticipantId;
+  const joinedResponse = await rawRequest(`/api/demo/rooms/${code}/join`, { method: "POST", body: { name: "Demo B" } });
+  const partnerCookie = (joinedResponse.headers.get("set-cookie") || "").split(";")[0];
+  const partnerId = joinedResponse.payload.room.currentParticipantId;
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { participantId: hostId } });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: partnerCookie, body: { participantId: partnerId } });
+  await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: hostCookie, body: { text: "I need clarity." }, expectedStatus: 201 });
+  await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: partnerCookie, body: { text: "I need time." }, expectedStatus: 201 });
+  await request(`/api/demo/rooms/${code}/analyze`, { method: "POST", cookie: hostCookie });
+
+  const accountA = await register("DemoSaveA");
+  const accountB = await register("DemoSaveB");
+  const firstClaim = await request(`/api/demo/rooms/${code}/claim`, { method: "POST", cookie: `${hostCookie}; ${accountA.cookie}` });
+  assert.equal(firstClaim.saved, false);
+  assert.equal(firstClaim.room.claimCount, 1);
+  const secondClaim = await request(`/api/demo/rooms/${code}/claim`, { method: "POST", cookie: `${partnerCookie}; ${accountB.cookie}` });
+  assert.equal(secondClaim.saved, true);
+  assert.equal(secondClaim.room.status, "converted");
+
+  const accountStateA = await request("/api/auth/me", { cookie: accountA.cookie });
+  const accountStateB = await request("/api/auth/me", { cookie: accountB.cookie });
+  assert.equal(accountStateA.pairing.status, "active");
+  assert.equal(accountStateB.pairing.status, "active");
+  const historyA = await request("/api/history", { cookie: accountA.cookie });
+  assert.equal(historyA.items[0].code, secondClaim.historyCode);
+  assert.equal(historyA.items[0].title, "A shared view");
 });
 
 const fakeMediator = {

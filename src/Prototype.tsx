@@ -5,6 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard, useKeyboardInsets } from "./mobile";
+import DemoFlow from "./DemoFlow";
 
 type Language = "zh" | "en";
 type Screen = "home" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "analysis" | "history" | "historyDetail";
@@ -91,6 +92,10 @@ const copy = {
 };
 
 export default function Prototype() {
+  return location.pathname.startsWith("/demo") ? <DemoFlow /> : <AccountPrototype />;
+}
+
+function AccountPrototype() {
   const [language, setLanguage] = useState<Language>(() => localStorage.getItem("toward-us.language") === "en" ? "en" : "zh");
   const [screen, setScreen] = useState<Screen>("home");
   const [user, setUser] = useState<User | null>(null);

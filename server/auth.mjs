@@ -3,7 +3,9 @@ import { promisify } from "node:util";
 
 const scrypt = promisify(scryptCallback);
 export const SESSION_COOKIE = "toward_us_session";
+export const DEMO_COOKIE = "toward_us_demo";
 const SESSION_AGE_SECONDS = 60 * 60 * 24 * 30;
+const DEMO_AGE_SECONDS = 60 * 60;
 
 export async function hashPassword(password) {
   const salt = randomBytes(16);
@@ -35,10 +37,18 @@ export async function issueSession(store, userId) {
 }
 
 export function readSessionToken(req) {
+  return readCookie(req, SESSION_COOKIE);
+}
+
+export function readDemoToken(req) {
+  return readCookie(req, DEMO_COOKIE);
+}
+
+function readCookie(req, cookieName) {
   const cookies = String(req.headers.cookie || "").split(";");
   for (const entry of cookies) {
     const [name, ...parts] = entry.trim().split("=");
-    if (name === SESSION_COOKIE) return decodeURIComponent(parts.join("="));
+    if (name === cookieName) return decodeURIComponent(parts.join("="));
   }
   return "";
 }
@@ -53,6 +63,16 @@ export function setSessionCookie(res, token, production) {
 export function clearSessionCookie(res, production) {
   const secure = production ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=0`);
+}
+
+export function setDemoCookie(res, token, production) {
+  const secure = production ? "; Secure" : "";
+  res.append("Set-Cookie", `${DEMO_COOKIE}=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${DEMO_AGE_SECONDS}`);
+}
+
+export function clearDemoCookie(res, production) {
+  const secure = production ? "; Secure" : "";
+  res.append("Set-Cookie", `${DEMO_COOKIE}=; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
 export function createUser({ email, name, passwordHash }) {

@@ -71,6 +71,47 @@ export async function createPostgresStore(databaseUrl) {
       const result = await pool.query(`select r.payload from rooms r join relationship_members m on m.relationship_id=r.relationship_id where m.user_id=$1${filter} order by r.updated_at desc`, values);
       return result.rows.map((row) => row.payload);
     },
+    async createDemoRoom(room) {
+      await pool.query("insert into demo_rooms (code,status,payload,expires_at,created_at,updated_at) values ($1,$2,$3,$4,$5,$6)", [room.code, room.status, room, room.expiresAt, room.createdAt, room.updatedAt]);
+      return structuredClone(room);
+    },
+    async getDemoRoom(code) { return (await pool.query("select payload from demo_rooms where code=$1", [code])).rows[0]?.payload || null; },
+    async updateDemoRoom(code, updater) {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const result = await client.query("select payload from demo_rooms where code=$1 for update", [code]);
+        if (!result.rowCount) { await client.query("rollback"); return null; }
+        const room = result.rows[0].payload;
+        await updater(room);
+        room.updatedAt = new Date().toISOString();
+        await client.query("update demo_rooms set status=$2,payload=$3,expires_at=$4,updated_at=$5 where code=$1", [code, room.status, room, room.expiresAt, room.updatedAt]);
+        await client.query("commit");
+        return room;
+      } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+    },
+    async deleteExpiredDemoRooms(now) { await pool.query("delete from demo_rooms where expires_at <= $1", [now]); },
+    async finalizeDemoRoom(demoCode, { relationship, memberships, room, convertedAt }) {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const demoResult = await client.query("select payload from demo_rooms where code=$1 for update", [demoCode]);
+        if (!demoResult.rowCount || demoResult.rows[0].payload.status !== "active") { await client.query("rollback"); return null; }
+        const userIds = memberships.map((membership) => membership.userId);
+        if ((await client.query("select 1 from relationship_members where user_id = any($1::text[]) limit 1", [userIds])).rowCount) { await client.query("rollback"); return null; }
+        await client.query("insert into relationships (id,status,created_at,updated_at) values ($1,$2,$3,$4)", [relationship.id, relationship.status, relationship.createdAt, relationship.updatedAt]);
+        for (const membership of memberships) await client.query("insert into relationship_members (relationship_id,user_id,role,joined_at) values ($1,$2,$3,$4)", [membership.relationshipId, membership.userId, membership.role, membership.joinedAt]);
+        await client.query("insert into rooms (code,relationship_id,status,payload,created_at,updated_at) values ($1,$2,$3,$4,$5,$6)", [room.code, room.relationshipId, room.status, room, room.createdAt, room.updatedAt]);
+        const demo = demoResult.rows[0].payload;
+        demo.status = "converted";
+        demo.convertedAt = convertedAt;
+        demo.convertedRoomCode = room.code;
+        demo.updatedAt = convertedAt;
+        await client.query("update demo_rooms set status=$2,payload=$3,updated_at=$4 where code=$1", [demoCode, demo.status, demo, demo.updatedAt]);
+        await client.query("commit");
+        return { demoRoom: demo, room };
+      } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+    },
   };
 }
 
@@ -94,6 +135,8 @@ async function migrate(pool) {
     create table if not exists invitations (code text primary key, relationship_id text not null references relationships(id) on delete cascade, created_by_user_id text not null references users(id), created_at timestamptz not null, expires_at timestamptz not null, accepted_at timestamptz, accepted_by_user_id text references users(id));
     create table if not exists rooms (code text primary key, relationship_id text not null references relationships(id) on delete cascade, status text not null, payload jsonb not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists rooms_relationship_status_idx on rooms(relationship_id,status,updated_at desc);
+    create table if not exists demo_rooms (code text primary key, status text not null, payload jsonb not null, expires_at timestamptz not null, created_at timestamptz not null, updated_at timestamptz not null);
+    create index if not exists demo_rooms_expiry_idx on demo_rooms(expires_at);
   `);
 }
 

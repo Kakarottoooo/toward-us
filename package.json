@@ -10,6 +10,7 @@
     "check:runtime": "node scripts/check-mobile-runtime.mjs",
     "update:runtime-lock": "node scripts/update-mobile-runtime-lock.mjs",
     "test:runtime": "playwright test",
+    "test:demo": "playwright test --config=playwright.demo.config.ts",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "npm run check:runtime",
     "dev": "vite",
@@ -32,12 +33,14 @@
     "motion": "12.42.2",
     "openai": "^7.5.0",
     "pg": "^8.23.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
     "@types/express": "^5.0.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
