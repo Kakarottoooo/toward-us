@@ -36,7 +36,7 @@ const words = {
   zh: {
     back: "返回", quick: "快速体验", entryTitle: "在争执之外，我们选择彼此。", choose: "选择进入方式",
     shared: "共用一台手机", sharedHint: "一起使用，简单快捷", remote: "各用一台手机", remoteHint: "扫码加入，更私密",
-    privacy: "原始录音不保存。临时转录与分析将在一小时后自动删除。", yourName: "你的称呼", partnerName: "对方的称呼",
+    privacy: "原始录音不保存。临时转录与分析将在一小时后自动删除。", yourName: "你的称呼", partnerName: "对方的称呼", yourNamePlaceholder: "输入你的称呼", partnerNamePlaceholder: "输入对方称呼",
     create: "创建临时房间", joinTitle: "加入这次体验", joinHint: "输入称呼后，你将作为第二位参与者加入。", join: "加入房间",
     expired: "这个临时房间已满或已经过期。", invite: "邀请你的另一半", inviteHint: "把这封邀请发给 TA，打开链接即可加入；如果就在身边，也可以显示二维码。",
     shareCode: "备用房间码", valid: "15 分钟内有效", sendInvite: "发送邀请", copyLink: "复制链接", showQr: "对方在身边？显示二维码", hideQr: "收起二维码", ready: "我已准备好", connected: "你们已连接",
@@ -56,7 +56,7 @@ const words = {
   en: {
     back: "Back", quick: "Quick demo", entryTitle: "Beyond the argument, we choose each other.", choose: "Choose how to enter",
     shared: "Share one phone", sharedHint: "Together, simple and quick", remote: "Use two phones", remoteHint: "Scan to join, more private",
-    privacy: "Raw audio is never saved. Temporary transcripts and analysis are deleted after one hour.", yourName: "Your name", partnerName: "Partner name",
+    privacy: "Raw audio is never saved. Temporary transcripts and analysis are deleted after one hour.", yourName: "Your name", partnerName: "Partner name", yourNamePlaceholder: "Enter your name", partnerNamePlaceholder: "Enter your partner's name",
     create: "Create temporary room", joinTitle: "Join this demo", joinHint: "Enter your name to join as the second participant.", join: "Join room",
     expired: "This temporary room is full or has expired.", invite: "Invite your other half", inviteHint: "Send this invitation so they can join from the link, or show a QR code if you are together.",
     shareCode: "Backup room code", valid: "Valid for 15 minutes", sendInvite: "Send invitation", copyLink: "Copy link", showQr: "Together in person? Show QR", hideQr: "Hide QR", ready: "I’m ready", connected: "You’re connected",
@@ -144,7 +144,7 @@ function DemoEntry(props: { language: Language; mode: RoomMode; nameA: string; n
     <div className="demo-red-rail" /><div className="demo-blue-rail" />
     <main className="demo-entry-content"><div className={`demo-vertical-statement ${language === "en" ? "english" : ""}`}><h1>{t.entryTitle}</h1><PauseMark /></div>
       <section className="demo-choice"><h2>{t.choose}</h2><button className={mode === "shared" ? "selected red" : ""} onClick={() => onMode("shared")}><DeviceMobile size={29} /><span><strong>{t.shared}</strong><small>{t.sharedHint}</small></span><ArrowRight size={20} /></button><button className={mode === "remote" ? "selected blue" : ""} onClick={() => onMode("remote")}><UsersThree size={29} /><span><strong>{t.remote}</strong><small>{t.remoteHint}</small></span><ArrowRight size={20} /></button></section>
-      <section className="demo-names"><label><span>{t.yourName}</span><KeyboardInput value={nameA} onChange={(event) => onNameA(event.target.value)} maxLength={24} /></label>{mode === "shared" && <label><span>{t.partnerName}</span><KeyboardInput value={nameB} onChange={(event) => onNameB(event.target.value)} maxLength={24} /></label>}</section>
+      <section className="demo-names"><label><span>{t.yourName}</span><KeyboardInput value={nameA} onChange={(event) => onNameA(event.target.value)} placeholder={t.yourNamePlaceholder} maxLength={24} /></label>{mode === "shared" && <label><span>{t.partnerName}</span><KeyboardInput value={nameB} onChange={(event) => onNameB(event.target.value)} placeholder={t.partnerNamePlaceholder} maxLength={24} /></label>}</section>
       {notice && <p className="form-notice">{notice}</p>}<SplitButton label={t.create} onClick={onCreate} disabled={busy || !nameA.trim() || (mode === "shared" && !nameB.trim())} />
       <p className="demo-privacy"><LockKey size={16} weight="fill" />{t.privacy}</p>
     </main></MobileScroll>;
@@ -152,7 +152,7 @@ function DemoEntry(props: { language: Language; mode: RoomMode; nameA: string; n
 
 function DemoJoin({ language, preview, name, notice, busy, t, onLanguage, onName, onJoin, onExit }: { language: Language; preview: Preview | null; name: string; notice: string; busy: boolean; t: typeof words.zh; onLanguage: () => void; onName: (value: string) => void; onJoin: () => void; onExit: () => void }) {
   const unavailable = preview && !preview.joinOpen;
-  return <MobileScroll className="paper-screen demo-screen demo-join" data-testid="demo-join"><DemoHeader language={language} onLanguage={onLanguage} onBack={onExit} /><div className="demo-red-corner" /><div className="demo-blue-corner" /><main className="demo-centered"><Wordmark /><h1>{unavailable ? t.expired : t.joinTitle}</h1><PauseMark /><p>{unavailable ? t.privacy : t.joinHint}</p>{!unavailable && <><label className="demo-line-field"><span>{t.yourName}</span><KeyboardInput value={name} onChange={(event) => onName(event.target.value)} maxLength={24} autoFocus /></label>{notice && <p className="form-notice">{notice}</p>}<SplitButton label={t.join} onClick={onJoin} disabled={busy || !name.trim() || !preview?.joinOpen} /></>}</main></MobileScroll>;
+  return <MobileScroll className="paper-screen demo-screen demo-join" data-testid="demo-join"><DemoHeader language={language} onLanguage={onLanguage} onBack={onExit} /><div className="demo-red-corner" /><div className="demo-blue-corner" /><main className="demo-centered"><Wordmark /><h1>{unavailable ? t.expired : t.joinTitle}</h1><PauseMark /><p>{unavailable ? t.privacy : t.joinHint}</p>{!unavailable && <><label className="demo-line-field"><span>{t.yourName}</span><KeyboardInput value={name} onChange={(event) => onName(event.target.value)} placeholder={t.yourNamePlaceholder} maxLength={24} autoFocus /></label>{notice && <p className="form-notice">{notice}</p>}<SplitButton label={t.join} onClick={onJoin} disabled={busy || !name.trim() || !preview?.joinOpen} /></>}</main></MobileScroll>;
 }
 
 function DemoInvite({ language, room, qrUrl, joinUrl, t, onLanguage, onExit }: { language: Language; room: DemoRoom; qrUrl: string; joinUrl: string; t: typeof words.zh; onLanguage: () => void; onExit: () => void }) {

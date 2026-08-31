@@ -196,6 +196,20 @@
   .demo-choice h2 { grid-column: 1 / -1; font-size: 15px; }
   .demo-choice > button { border: 1px solid var(--jian-line); min-height: 92px; }
   .demo-names { grid-template-columns: 1fr 1fr; }
+  .demo-names label, .demo-line-field { display: grid; gap: 8px; }
+  .demo-names label span, .demo-line-field span { margin-bottom: 0; }
+  .demo-names input, .demo-line-field input {
+    height: 52px;
+    padding: 0 14px;
+    border: 1px solid var(--jian-line);
+    background: rgba(251, 247, 239, .92);
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .demo-names input::placeholder, .demo-line-field input::placeholder { color: #918b83; }
+  .demo-names input:focus, .demo-line-field input:focus {
+    border-color: var(--jian-ink);
+    background: var(--jian-paper-bright);
+  }
   .demo-entry-content > .split-cta { width: 520px; margin: 0 auto; }
   .demo-entry-content > .demo-privacy { justify-content: center; }
   .demo-centered { width: min(620px, calc(100vw - 160px)); min-height: calc(100% - 78px); margin: 0 auto; padding: 68px 30px 80px; }
