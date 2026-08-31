@@ -92,7 +92,7 @@ const copy = {
 };
 
 export default function Prototype() {
-  return location.pathname.startsWith("/demo") ? <DemoFlow /> : <AccountPrototype />;
+  return location.pathname.startsWith("/demo") || location.pathname.startsWith("/j/") ? <DemoFlow /> : <AccountPrototype />;
 }
 
 function AccountPrototype() {

@@ -14,10 +14,13 @@ test("two guests scan in, consent, mediate, and preserve the review together", a
   await expect(hostPage.locator(".demo-invite")).toBeVisible();
   const roomCode = new URL(hostPage.url()).searchParams.get("room");
   expect(roomCode).toMatch(/^[A-Z0-9]{8}$/);
+  await expect(hostPage.getByRole("button", { name: "发送邀请" })).toBeVisible();
+  await expect(hostPage.locator(".demo-qr")).toHaveCount(0);
+  await hostPage.getByRole("button", { name: "对方在身边？显示二维码" }).click();
   await expect(hostPage.locator(".demo-qr")).toBeVisible();
   await screenshotDevice(hostPage, "qa/demo-invite-final.png");
 
-  await partnerPage.goto(`/demo?room=${roomCode}`);
+  await partnerPage.goto(`/j/${roomCode}`);
   await expect(partnerPage.locator(".demo-join")).toBeVisible();
   await partnerPage.getByLabel("你的称呼").fill("阿蓝");
   await partnerPage.getByRole("button", { name: "加入房间" }).click();

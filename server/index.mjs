@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -17,8 +18,23 @@ const app = createApiApp({ store, mediator, production });
 if (production) {
   const clientRoot = resolve(root, "dist", "client");
   if (!existsSync(clientRoot)) throw new Error("Production build not found. Run npm run build first.");
+  const indexPath = resolve(clientRoot, "index.html");
+  const indexTemplate = await readFile(indexPath, "utf8");
+  app.get("/j/:code", (req, res) => {
+    const code = String(req.params.code || "").toUpperCase();
+    if (!/^[A-Z0-9]{8}$/.test(code)) return res.redirect(302, "/demo");
+    const host = String(req.get("host") || "");
+    if (!/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host)) return res.sendStatus(400);
+    const origin = `${req.protocol}://${host}`;
+    const html = indexTemplate
+      .replace('property="og:url" content="/demo"', `property="og:url" content="${origin}/j/${code}"`)
+      .replace('property="og:image" content="/assets/brand/share-preview.jpg"', `property="og:image" content="${origin}/assets/brand/share-preview.jpg"`)
+      .replace('name="twitter:image" content="/assets/brand/share-preview.jpg"', `name="twitter:image" content="${origin}/assets/brand/share-preview.jpg"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.type("html").send(html);
+  });
   app.use(express.static(clientRoot));
-  app.get("*path", (_req, res) => res.sendFile(resolve(clientRoot, "index.html")));
+  app.get("*path", (_req, res) => res.sendFile(indexPath));
 } else {
   const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({ root, appType: "spa", server: { middlewareMode: true } });

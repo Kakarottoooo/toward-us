@@ -103,6 +103,7 @@ test("quick demo rooms require two recording consents and isolate guest capabili
   assert.equal(createdResponse.headers.get("permissions-policy"), "microphone=(self), camera=()");
   const hostCookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
   const code = createdResponse.payload.room.code;
+  assert.ok(new Date(createdResponse.payload.room.joinExpiresAt).getTime() - new Date(createdResponse.payload.room.createdAt).getTime() >= 14.9 * 60 * 1000);
 
   const preview = await request(`/api/demo/rooms/${code}/preview`);
   assert.equal(preview.room.joinOpen, true);

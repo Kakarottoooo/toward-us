@@ -1,6 +1,6 @@
 import {
   ArrowLeft, ArrowRight, CheckCircle, Copy, DeviceMobile, HandHeart, LinkSimple, LockKey,
-  Microphone, PaperPlaneRight, ShareNetwork, Sparkle, StopCircle, UsersThree, WarningCircle, Waveform,
+  Microphone, PaperPlaneRight, QrCode, Sparkle, StopCircle, UsersThree, WarningCircle, Waveform,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard, useKeyboardInsets } from "./mobile";
@@ -38,8 +38,8 @@ const words = {
     shared: "共用一台手机", sharedHint: "一起使用，简单快捷", remote: "各用一台手机", remoteHint: "扫码加入，更私密",
     privacy: "原始录音不保存。临时转录与分析将在一小时后自动删除。", yourName: "你的称呼", partnerName: "对方的称呼",
     create: "创建临时房间", joinTitle: "加入这次体验", joinHint: "输入称呼后，你将作为第二位参与者加入。", join: "加入房间",
-    expired: "这个临时房间已满或已经过期。", invite: "邀请你的另一半", inviteHint: "请用 TA 的手机扫描二维码加入房间",
-    shareCode: "或分享房间码", valid: "10 分钟内有效", copyShare: "复制并分享", ready: "我已准备好", connected: "你们已连接",
+    expired: "这个临时房间已满或已经过期。", invite: "邀请你的另一半", inviteHint: "把这封邀请发给 TA，打开链接即可加入；如果就在身边，也可以显示二维码。",
+    shareCode: "备用房间码", valid: "15 分钟内有效", sendInvite: "发送邀请", copyLink: "复制链接", showQr: "对方在身边？显示二维码", hideQr: "收起二维码", ready: "我已准备好", connected: "你们已连接",
     consentHint: "开始前，请两个人分别确认录音与转录同意。", consent: "我同意录音与转录", consented: "已同意录音",
     localOnly: "原始音频只用于本次转录，不会保存。", start: "开始表达", room: "临时调解房间", waiting: "等待另一位加入",
     emptyTitle: "先把发生的事说出来", emptyBody: "AI 会保持安静，直到你们主动请它加入；安全边界除外。",
@@ -51,15 +51,15 @@ const words = {
     saveHint: "两个人分别登录或创建账号并确认后，这次复盘才会进入你们的共同历史。", login: "登录", register: "创建账号",
     name: "你的称呼", email: "邮箱", password: "密码（至少 10 个字符）", claim: "确认保存我的这一侧", claimed: "我已确认，等待对方",
     saved: "双方已确认，这次体验已经进入共同历史。", goAccount: "进入正式空间", switchRegister: "还没有账号？创建一个",
-    switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "加入我的 Toward Us 临时调解房间",
+    switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "我不想和你争输赢，想和你好好把这件事说清楚。点击链接加入我们这次的 Toward Us 对话（15 分钟内有效）。",
   },
   en: {
     back: "Back", quick: "Quick demo", entryTitle: "Beyond the argument, we choose each other.", choose: "Choose how to enter",
     shared: "Share one phone", sharedHint: "Together, simple and quick", remote: "Use two phones", remoteHint: "Scan to join, more private",
     privacy: "Raw audio is never saved. Temporary transcripts and analysis are deleted after one hour.", yourName: "Your name", partnerName: "Partner name",
     create: "Create temporary room", joinTitle: "Join this demo", joinHint: "Enter your name to join as the second participant.", join: "Join room",
-    expired: "This temporary room is full or has expired.", invite: "Invite your other half", inviteHint: "Ask them to scan this QR code with their phone",
-    shareCode: "Or share the room code", valid: "Valid for 10 minutes", copyShare: "Copy and share", ready: "I’m ready", connected: "You’re connected",
+    expired: "This temporary room is full or has expired.", invite: "Invite your other half", inviteHint: "Send this invitation so they can join from the link, or show a QR code if you are together.",
+    shareCode: "Backup room code", valid: "Valid for 15 minutes", sendInvite: "Send invitation", copyLink: "Copy link", showQr: "Together in person? Show QR", hideQr: "Hide QR", ready: "I’m ready", connected: "You’re connected",
     consentHint: "Before you begin, each person confirms recording and transcription consent.", consent: "I consent to recording and transcription", consented: "Recording consented",
     localOnly: "Raw audio is used only for this transcription and is not stored.", start: "Start expressing", room: "Temporary mediation room", waiting: "Waiting for the other person",
     emptyTitle: "Start with what happened", emptyBody: "AI stays quiet until you invite it in, except when a safety boundary is crossed.",
@@ -71,13 +71,13 @@ const words = {
     saveHint: "It enters shared history only after both people sign in or register and confirm.", login: "Sign in", register: "Create account",
     name: "Your name", email: "Email", password: "Password (10+ characters)", claim: "Confirm and save my side", claimed: "Confirmed — waiting for partner",
     saved: "Both confirmed. This experience is now in your shared history.", goAccount: "Open formal space", switchRegister: "New here? Create an account",
-    switchLogin: "Already registered? Sign in", exit: "Exit quick demo", shareText: "Join my Toward Us temporary mediation room",
+    switchLogin: "Already registered? Sign in", exit: "Exit quick demo", shareText: "I don’t want this to be about winning. I want us to understand each other. Join our Toward Us conversation with this 15-minute invitation.",
   },
 };
 
 export default function DemoFlow() {
   const [language, setLanguage] = useState<Language>(() => localStorage.getItem("toward-us.language") === "en" ? "en" : "zh");
-  const [step, setStep] = useState<DemoStep>(() => new URLSearchParams(location.search).get("room") ? "join" : "entry");
+  const [step, setStep] = useState<DemoStep>(() => initialRoomCode() ? "join" : "entry");
   const [mode, setMode] = useState<RoomMode>("remote");
   const [nameA, setNameA] = useState(""); const [nameB, setNameB] = useState(""); const [joinName, setJoinName] = useState("");
   const [room, setRoom] = useState<DemoRoom | null>(null); const [preview, setPreview] = useState<Preview | null>(null);
@@ -85,13 +85,13 @@ export default function DemoFlow() {
   const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const [qrUrl, setQrUrl] = useState("");
   const keyboard = useKeyboard();
   const t = words[language];
-  const roomCode = room?.code || new URLSearchParams(location.search).get("room")?.toUpperCase() || "";
-  const joinUrl = room ? `${location.origin}/demo?room=${room.code}` : "";
+  const roomCode = room?.code || initialRoomCode();
+  const joinUrl = room ? `${location.origin}/j/${room.code}` : "";
 
   useEffect(() => { localStorage.setItem("toward-us.language", language); }, [language]);
   useEffect(() => { api<Health>("/api/health").then(setHealth).catch(() => {}); api<{ user: Account | null }>("/api/auth/me").then((value) => setAccount(value.user)).catch(() => {}); }, []);
   useEffect(() => {
-    const code = new URLSearchParams(location.search).get("room")?.toUpperCase();
+    const code = initialRoomCode();
     if (!code) return;
     api<{ room: DemoRoom }>(`/api/demo/rooms/${code}`).then(({ room: existing }) => {
       setRoom(existing); setLanguage(existing.language);
@@ -157,9 +157,18 @@ function DemoJoin({ language, preview, name, notice, busy, t, onLanguage, onName
 
 function DemoInvite({ language, room, qrUrl, joinUrl, t, onLanguage, onExit }: { language: Language; room: DemoRoom; qrUrl: string; joinUrl: string; t: typeof words.zh; onLanguage: () => void; onExit: () => void }) {
   const [copied, setCopied] = useState(false);
-  const share = async () => { if (navigator.share) await navigator.share({ title: "Toward Us / 彼此", text: t.shareText, url: joinUrl }); else await navigator.clipboard.writeText(joinUrl); setCopied(true); setTimeout(() => setCopied(false), 1400); };
-  return <MobileScroll className="paper-screen demo-screen demo-invite" data-testid="demo-invite"><DemoHeader language={language} onLanguage={onLanguage} onBack={onExit} /><div className="demo-red-corner" /><div className="demo-blue-side" /><main className="demo-centered"><Wordmark /><h1>{t.invite}</h1><PauseMark /><p>{t.inviteHint}</p>{qrUrl && <img className="demo-qr" src={qrUrl} alt={`${t.invite} ${room.code}`} />}
-    <div className="demo-code"><span>{t.shareCode}</span><strong>{room.code}</strong><small>{t.valid}</small></div><button className="demo-share" onClick={share}>{copied ? <CheckCircle size={20} weight="fill" /> : <ShareNetwork size={20} />}{copied ? (language === "zh" ? "已复制" : "Copied") : t.copyShare}</button><p className="demo-waiting"><i />{t.waiting}</p></main></MobileScroll>;
+  const [showQr, setShowQr] = useState(false);
+  const copy = async () => { await navigator.clipboard.writeText(joinUrl); setCopied(true); setTimeout(() => setCopied(false), 1400); };
+  const share = async () => {
+    if (!navigator.share) return copy();
+    try { await navigator.share({ title: "Toward Us / 彼此", text: t.shareText, url: joinUrl }); }
+    catch (error) { if ((error as DOMException).name !== "AbortError") await copy(); }
+  };
+  return <MobileScroll className="paper-screen demo-screen demo-invite" data-testid="demo-invite"><DemoHeader language={language} onLanguage={onLanguage} onBack={onExit} /><div className="demo-red-corner" /><div className="demo-blue-side" /><main className="demo-centered"><Wordmark /><h1>{t.invite}</h1><PauseMark /><p>{t.inviteHint}</p>
+    <SplitButton label={t.sendInvite} onClick={share} />
+    <div className="demo-invite-secondary"><button onClick={copy}>{copied ? <CheckCircle size={18} weight="fill" /> : <Copy size={18} />}{copied ? (language === "zh" ? "已复制" : "Copied") : t.copyLink}</button><button onClick={() => setShowQr((value) => !value)}><QrCode size={18} />{showQr ? t.hideQr : t.showQr}</button></div>
+    {showQr && qrUrl && <div className="demo-qr-panel"><img className="demo-qr" src={qrUrl} alt={`${t.invite} ${room.code}`} /></div>}
+    <div className="demo-code"><span>{t.shareCode}</span><strong>{room.code}</strong><small>{t.valid}</small></div><p className="demo-waiting"><i />{t.waiting}</p></main></MobileScroll>;
 }
 
 function DemoConsent({ language, room, notice, busy, t, onLanguage, onConsent, onStart, onExit }: { language: Language; room: DemoRoom; notice: string; busy: boolean; t: typeof words.zh; onLanguage: () => void; onConsent: (id: string) => void; onStart: () => void; onExit: () => void }) {
@@ -213,3 +222,7 @@ function FeedbackBlock({ number, title, body }: { number: string; title: string;
 function DemoList({ title, items }: { title: string; items: string[] }) { return <section className="analysis-section"><header><span>—</span><h2>{title}</h2></header><ul className="demo-analysis-list">{items.map((item) => <li key={item}>{item}</li>)}</ul></section>; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload as T; }
 function formatSeconds(total: number) { return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`; }
+function initialRoomCode() {
+  const pathMatch = location.pathname.match(/^\/j\/([A-Z0-9]{8})\/?$/i);
+  return (pathMatch?.[1] || new URLSearchParams(location.search).get("room") || "").toUpperCase();
+}

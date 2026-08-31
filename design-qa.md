@@ -94,6 +94,16 @@ No actionable P0, P1, or P2 visual mismatch remains. The implementation was fait
 
 final result: passed
 
+## Remote invitation sharing extension
+
+- Primary action: native system share sheet with a calm invitation message and a direct `/j/{code}` join link.
+- Fallback order: copy link → reveal QR for in-person use → manually type the room code.
+- Link preview asset: `public/assets/brand/share-preview.jpg`, 1200 × 630, generated from the approved visual reference with no names, topics, room state, or other private data.
+- Preview metadata is generic and bilingual-product-safe; production `/j/{code}` responses render absolute Open Graph URLs without calling the room API or consuming the invitation.
+- Existing `/demo?room={code}` links remain accepted for backward compatibility.
+
+Visual and interaction result: passed. The invitation now defaults to the compact share state; the live QR expands only on request without clipping the 393 × 852 protected viewport.
+
 ## No-download QR demo extension — passed
 
 - Accepted source: `public/assets/brand/approved-visual-reference.png`.

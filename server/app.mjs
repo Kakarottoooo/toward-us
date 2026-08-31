@@ -24,7 +24,7 @@ const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const loginAttempts = new Map();
 const DEMO_CREATE_WINDOW_MS = 10 * 60 * 1000;
-const DEMO_JOIN_WINDOW_MS = 10 * 60 * 1000;
+const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 

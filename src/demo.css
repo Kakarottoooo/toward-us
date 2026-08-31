@@ -37,9 +37,11 @@
 .demo-join .demo-centered { padding-top: 125px; }.demo-join .demo-centered > .home-wordmark { margin-bottom: 76px; }
 .demo-line-field { display: block; margin: 35px 0 36px; text-align: left; }
 .demo-line-field input { height: 49px; font-size: 21px; }
-.demo-qr { width: 226px; height: 226px; display: block; margin: 25px auto 26px; padding: 11px; background: var(--jian-paper-bright); border: 1px solid rgba(37,37,37,.08); image-rendering: pixelated; }
-.demo-code { display: grid; gap: 6px; margin-bottom: 19px; }.demo-code span { color: var(--jian-muted); font-size: 10px; }.demo-code strong { font-family: Georgia, serif; font-size: 24px; letter-spacing: .22em; }.demo-code small { color: var(--jian-muted); font-size: 9px; }
-.demo-share { min-width: 150px; height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; background: transparent; color: var(--jian-red); font-size: 11px; }
+.demo-invite .demo-centered { padding-top: 57px; }.demo-invite .demo-centered > .home-wordmark { margin-bottom: 42px; }.demo-invite .split-cta { width: 100%; height: 58px; margin: 9px auto 10px; }
+.demo-invite-secondary { display: grid; grid-template-columns: .72fr 1.28fr; border-top: 1px solid var(--jian-line); border-bottom: 1px solid var(--jian-line); }
+.demo-invite-secondary button { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px; border: 0; background: transparent; color: var(--jian-ink); font-size: 9px; }.demo-invite-secondary button + button { border-left: 1px solid var(--jian-line); color: var(--jian-blue); }
+.demo-qr-panel { margin: 19px 0 2px; }.demo-qr { width: 213px; height: 213px; display: block; margin: 0 auto; padding: 10px; background: var(--jian-paper-bright); border: 1px solid rgba(37,37,37,.08); image-rendering: pixelated; }
+.demo-code { display: grid; gap: 6px; margin: 20px 0 15px; }.demo-code span { color: var(--jian-muted); font-size: 9px; }.demo-code strong { font-family: Georgia, serif; font-size: 21px; letter-spacing: .22em; }.demo-code small { color: var(--jian-muted); font-size: 9px; }
 .demo-waiting { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 23px !important; font-size: 10px !important; }.demo-waiting i { width: 7px; height: 7px; border-radius: 50%; background: var(--jian-blue); box-shadow: 0 0 0 5px rgba(7,61,185,.12); animation: demo-pulse 1.5s ease-in-out infinite; }
 .demo-consent .demo-centered { padding-top: 82px; }.demo-consent .demo-centered > .home-wordmark { margin-bottom: 60px; }
 .demo-consent-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 48px -20px 32px; }
