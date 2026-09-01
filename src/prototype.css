@@ -272,4 +272,55 @@ button { -webkit-tap-highlight-color: transparent; }
 .history-row strong { display: block; font-family: var(--jian-serif); font-size: 15px; font-weight: 540; }.history-row p { margin: 7px 0; color: var(--jian-muted); font-size: 10px; line-height: 1.5; }.history-row div > span { color: var(--jian-blue); font-size: 8px; }
 .history-transcript p { margin: 0; padding: 11px 0; border-top: 1px solid var(--jian-line); font-size: 11px; line-height: 1.6; }.history-transcript strong { display: block; margin-bottom: 4px; color: var(--jian-blue); font-size: 9px; }
 
+/* Borderless mediation canvas: conversation and AI share one continuous paper surface. */
+.mediation-workspace { position: absolute; z-index: 2; top: 170px; right: 0; bottom: var(--message-bottom); left: 0; min-height: 0; overflow: hidden; background: var(--jian-paper); }
+.mediation-workspace.ai-active { display: grid; grid-template-rows: minmax(0, var(--conversation-share)) 18px minmax(0, 1fr); }
+.conversation-pane, .ai-pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.mediation-workspace .message-scroll, .mediation-workspace .ai-scroll { position: relative !important; inset: auto !important; width: 100%; height: 100%; transition: none; }
+.mediation-workspace .message-content { min-height: 100%; padding-bottom: 24px; }
+.mediation-divider { z-index: 3; width: 100%; height: 18px; min-height: 18px !important; display: grid; place-items: center; padding: 0; border: 0; outline-offset: -2px; background: transparent; color: rgba(71, 76, 78, .37); cursor: ns-resize; touch-action: none; }
+.mediation-divider:hover, .mediation-divider:focus-visible { color: rgba(7, 61, 185, .68); }
+.mediation-divider svg { pointer-events: none; }
+.formal-inline-analysis, .demo-inline-analysis { min-height: 100%; margin: 0; border: 0; background: transparent; scroll-margin: 0; }
+.formal-inline-analysis .inline-analysis-header, .demo-inline-analysis .inline-analysis-header { padding: 0 22px; border: 0; background: transparent; }
+.formal-inline-analysis .analysis-content, .demo-inline-analysis .analysis-content { width: min(100%, 760px); margin: 0 auto; padding: 6px 22px 38px; }
+.live-partial { opacity: .62; }
+.live-partial p { box-shadow: inset 0 0 0 1px rgba(37,37,37,.08); }
+.live-control-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; margin-bottom: 7px; }
+.live-control-row > p { margin: 0; color: var(--jian-muted); font-size: 8px; line-height: 1.35; }
+.live-listen { min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--jian-blue); background: transparent; color: var(--jian-blue); font-size: 10px; font-weight: 750; cursor: pointer; }
+.live-listen.listening { border-color: var(--jian-red); color: var(--jian-red); }
+.live-listen:disabled { opacity: .5; }
+.ai-followup { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--jian-line); }
+.ai-thread { display: grid; gap: 12px; margin-bottom: 14px; }
+.ai-thread article { max-width: 88%; }
+.ai-thread article > span { display: block; margin: 0 5px 4px; color: var(--jian-muted); font-size: 9px; }
+.ai-thread article > p { margin: 0; padding: 11px 13px; font-size: 11px; line-height: 1.6; }
+.ai-question { justify-self: end; }
+.ai-question > span { text-align: right; color: var(--jian-blue) !important; }
+.ai-question > p { background: var(--jian-blue-soft); }
+.ai-reply > span { color: var(--jian-red) !important; }
+.ai-reply > p { background: rgba(255,255,255,.5); }
+.ai-reply.pending { opacity: .58; }
+.ai-question-row { display: grid; grid-template-columns: 1fr 42px; gap: 8px; align-items: end; }
+.ai-question-row textarea { width: 100%; min-height: 44px; max-height: 92px; padding: 11px 13px; resize: none; border: 1px solid var(--jian-line); border-radius: 0; outline: 0; background: rgba(255,255,255,.58); color: var(--jian-ink); font-size: 11px; line-height: 1.5; }
+.ai-question-row button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; background: var(--jian-blue); color: white; cursor: pointer; }
+.ai-question-row button:disabled { background: #b8b4ae; }
+
+@media (min-width: 900px) {
+  .mediation-workspace { top: 78px; right: 390px; bottom: 0; left: 270px; }
+  .mediation-workspace .message-content { width: min(760px, calc(100% - 80px)); margin: 0 auto; padding: 34px 0 28px; }
+  .mediation-workspace .analysis-content { padding-top: 8px; }
+  .live-control-row { margin-bottom: 12px; }
+  .live-listen { min-height: 42px; }
+}
+
+@media (min-width: 900px) and (max-width: 1120px) {
+  .mediation-workspace { right: 340px; left: 220px; }
+}
+
+@media (min-width: 900px) and (max-width: 1023px) {
+  .mediation-workspace { top: 154px; right: 320px; left: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }

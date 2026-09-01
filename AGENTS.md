@@ -8,6 +8,9 @@ Before planning or implementing any mobile-app change, read this `AGENTS.md` in 
 
 Before making substantial visual changes, use the Product Design plugin's `get-context` skill when the visual source is unclear or no longer matches the current goal. When the user gives durable prototype-specific design feedback, preferences, or decisions, record them in `AGENTS.md`.
 
+- The mediation room is AI-first and stays on one continuous ivory surface: transcript above, AI below, with no card border or hard divider. Preserve only one quiet centered drag touchpoint and let the transcript be pushed away.
+- In shared-device voice mode, attribute each completed realtime turn to the participant selected when speech begins. After the shared analysis, both participants continue the same public AI conversation in-place.
+
 ## Delivery and self-verification
 
 - Treat a reproducible product bug report as authorization to diagnose, fix, regression-test, deploy under existing authority, and verify production unless the user explicitly asks for analysis only.

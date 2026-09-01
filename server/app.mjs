@@ -50,6 +50,40 @@ export function createApiApp({ store, mediator, production = false }) {
     }
   });
 
+  app.post("/api/rooms/:code/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res) => {
+    try {
+      if (!sameOriginRequest(req)) return res.status(403).json({ error: "请求来源未通过安全检查。" });
+      const viewer = await authenticateRequest(store, req);
+      if (!viewer) return res.status(401).json({ error: "请先登录。" });
+      const code = normalizeCode(req.params.code);
+      const room = await store.getRoomForUser(code, viewer.user.id);
+      if (!room) return res.status(404).json({ error: "没有找到这个调解房间。" });
+      if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
+      if (!room.participants.some((participant) => participant.userId === viewer.user.id)) return res.status(403).json({ error: "请先加入这个房间。" });
+      if (typeof req.body !== "string" || !req.body.includes("v=0")) return res.status(400).json({ error: "没有收到有效的实时语音连接信息。" });
+      const answer = await mediator.createRealtimeSession({ sdp: req.body, language: room.language, safetyIdentifier: sessionId(viewer.user.id) });
+      res.type("application/sdp").send(answer);
+    } catch (error) {
+      res.status(error?.statusCode || 500).json({ error: error?.message || "实时语音暂时不可用。" });
+    }
+  });
+
+  app.post("/api/demo/rooms/:code/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res) => {
+    try {
+      if (!sameOriginRequest(req)) return res.status(403).json({ error: "请求来源未通过安全检查。" });
+      const code = normalizeLongCode(req.params.code);
+      const room = await store.getDemoRoom(code);
+      const actor = demoActor(room, readDemoToken(req));
+      if (!room || !actor) return res.status(404).json({ error: "临时房间不存在、已过期，或你没有访问权限。" });
+      if (!allDemoParticipantsConsented(room)) return res.status(409).json({ error: "双方同意录音与转录后才能开始表达。" });
+      if (typeof req.body !== "string" || !req.body.includes("v=0")) return res.status(400).json({ error: "没有收到有效的实时语音连接信息。" });
+      const answer = await mediator.createRealtimeSession({ sdp: req.body, language: room.language, safetyIdentifier: sessionId(actor.participant.id) });
+      res.type("application/sdp").send(answer);
+    } catch (error) {
+      res.status(error?.statusCode || 500).json({ error: error?.message || "实时语音暂时不可用。" });
+    }
+  });
+
   app.post("/api/rooms/:code/audio", express.raw({ type: () => true, limit: "24mb" }), async (req, res) => {
     try {
       if (!sameOriginRequest(req)) return res.status(403).json({ error: "请求来源未通过安全检查。" });
@@ -169,7 +203,7 @@ export function createApiApp({ store, mediator, production = false }) {
     if (nameB) participants.push(createDemoParticipant(nameB, "B", null, now.toISOString()));
     const room = {
       kind: "demo", code, mode, language, personality: "friend", creatorParticipantId: host.id,
-      participants, messages: [], analysis: null, analyzing: false, analysisCount: 0, status: "active",
+      participants, messages: [], analysis: null, aiConversation: [], analyzing: false, analysisCount: 0, status: "active",
       claims: {}, convertedAt: null, convertedRoomCode: null,
       safety: { level: 0, message: language === "en" ? "Conversation is within the mediation boundary." : "对话仍在可调解边界内。" },
       joinExpiresAt: new Date(now.getTime() + DEMO_JOIN_WINDOW_MS).toISOString(),
@@ -269,6 +303,29 @@ export function createApiApp({ store, mediator, production = false }) {
     res.status(201).json({ room: publicDemoRoom(updated, actor.participant.id, req.auth?.user?.id || null) });
   });
 
+  app.post("/api/demo/rooms/:code/transcripts", async (req, res) => {
+    const code = normalizeLongCode(req.params.code);
+    const room = await store.getDemoRoom(code);
+    const actor = demoActor(room, readDemoToken(req));
+    if (!room || !actor) return res.status(404).json({ error: "临时房间不存在、已过期，或你没有访问权限。" });
+    if (!allDemoParticipantsConsented(room)) return res.status(409).json({ error: "双方同意录音与转录后才能开始表达。" });
+    const text = cleanText(req.body?.text);
+    const itemId = cleanRealtimeItemId(req.body?.itemId);
+    if (!text || !itemId) return res.status(400).json({ error: "实时转录缺少完整内容或语音片段标识。" });
+    const speaker = resolveDemoSpeaker(room, actor, req.body?.speakerId);
+    if (!speaker) return res.status(403).json({ error: "当前设备不能代表这位参与者发言。" });
+    let created = false;
+    const updated = await store.updateDemoRoom(code, (draft) => {
+      if (draft.messages.some((message) => message.realtimeItemId === itemId)) return;
+      if (draft.messages.length >= 30) throw httpError(429, "本次快速体验已达到表达上限。");
+      draft.messages.push(createMessage(speaker.id, text, "voice", null, itemId));
+      draft.safety = mergeSafety(draft.safety, text);
+      created = true;
+    });
+    broadcastDemoRoom(code);
+    res.status(created ? 201 : 200).json({ room: publicDemoRoom(updated, actor.participant.id, req.auth?.user?.id || null) });
+  });
+
   app.post("/api/demo/rooms/:code/analyze", async (req, res) => {
     const code = normalizeLongCode(req.params.code);
     const room = await store.getDemoRoom(code);
@@ -298,6 +355,27 @@ export function createApiApp({ store, mediator, production = false }) {
     }
   });
 
+  app.post("/api/demo/rooms/:code/ask-ai", async (req, res) => {
+    const code = normalizeLongCode(req.params.code);
+    const room = await store.getDemoRoom(code);
+    const actor = demoActor(room, readDemoToken(req));
+    if (!room || !actor) return res.status(404).json({ error: "临时房间不存在、已过期，或你没有访问权限。" });
+    if (!room.analysis) return res.status(409).json({ error: "请先邀请 AI 完成第一轮分析。" });
+    const question = cleanText(req.body?.question);
+    if (!question) return res.status(400).json({ error: "请输入想继续问 AI 的问题。" });
+    if ((room.aiConversation || []).filter((entry) => entry.role === "user").length >= 6) return res.status(429).json({ error: "本次快速体验的 AI 追问已达到上限。" });
+    const answer = await mediator.answer(room, question);
+    const updated = await store.updateDemoRoom(code, (draft) => {
+      draft.aiConversation ||= [];
+      draft.aiConversation.push(
+        { id: randomUUID(), role: "user", participantId: actor.participant.id, text: question, createdAt: new Date().toISOString() },
+        { id: randomUUID(), role: "assistant", participantId: null, text: cleanText(answer), createdAt: new Date().toISOString() },
+      );
+    });
+    broadcastDemoRoom(code);
+    res.status(201).json({ room: publicDemoRoom(updated, actor.participant.id, req.auth?.user?.id || null) });
+  });
+
   app.post("/api/demo/rooms/:code/claim", requireAuth, async (req, res) => {
     const code = normalizeLongCode(req.params.code);
     const room = await store.getDemoRoom(code);
@@ -322,7 +400,7 @@ export function createApiApp({ store, mediator, production = false }) {
     const regularRoom = {
       code: regularCode, relationshipId: relationship.id, creatorUserId: users[0].id, mode: updated.mode, language: updated.language, personality: updated.personality,
       participants: participants.map((participant, index) => ({ id: participant.id, userId: users[index].id, name: participant.name, role: participant.role, joinedAt: participant.joinedAt })),
-      messages: updated.messages, analysis: updated.analysis, analyzing: false, status: "archived", archivedAt: now,
+      messages: updated.messages, analysis: updated.analysis, aiConversation: updated.aiConversation || [], analyzing: false, status: "archived", archivedAt: now,
       archiveConfirmation: { userIds: users.map((user) => user.id), requestedAt: now, completedAt: now },
       safety: updated.safety, createdAt: updated.createdAt, updatedAt: now,
     };
@@ -378,7 +456,7 @@ export function createApiApp({ store, mediator, production = false }) {
     const now = new Date().toISOString();
     const room = {
       code, relationshipId: pairing.relationship.id, creatorUserId: req.auth.user.id, mode, language, personality, participants,
-      messages: [], analysis: null, analyzing: false, status: "active", archivedAt: null,
+      messages: [], analysis: null, aiConversation: [], analyzing: false, status: "active", archivedAt: null,
       archiveConfirmation: { userIds: [], requestedAt: null, completedAt: null },
       safety: { level: 0, message: language === "en" ? "Conversation is within the mediation boundary." : "对话仍在可调解边界内。" },
       createdAt: now, updatedAt: now,
@@ -439,6 +517,27 @@ export function createApiApp({ store, mediator, production = false }) {
     res.status(201).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
   });
 
+  app.post("/api/rooms/:code/transcripts", requireAuth, async (req, res) => {
+    const code = normalizeCode(req.params.code);
+    const room = await store.getRoomForUser(code, req.auth.user.id);
+    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
+    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
+    const text = cleanText(req.body?.text);
+    const itemId = cleanRealtimeItemId(req.body?.itemId);
+    if (!text || !itemId) return res.status(400).json({ error: "实时转录缺少完整内容或语音片段标识。" });
+    const speaker = resolveSpeaker(room, req.auth.user.id, req.body?.speakerId);
+    if (!speaker) return res.status(403).json({ error: "当前账号不能代表这位参与者发言。" });
+    let created = false;
+    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
+      if (draft.messages.some((message) => message.realtimeItemId === itemId)) return;
+      draft.messages.push(createMessage(speaker.id, text, "voice", null, itemId));
+      draft.safety = mergeSafety(draft.safety, text);
+      created = true;
+    });
+    broadcastRoom(code);
+    res.status(created ? 201 : 200).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
+  });
+
   app.post("/api/rooms/:code/personality", requireAuth, async (req, res) => {
     const code = normalizeCode(req.params.code);
     const room = await store.getRoomForUser(code, req.auth.user.id);
@@ -472,6 +571,28 @@ export function createApiApp({ store, mediator, production = false }) {
       broadcastRoom(code);
       res.status(500).json({ error: error?.message || "AI 暂时无法完成分析。" });
     }
+  });
+
+  app.post("/api/rooms/:code/ask-ai", requireAuth, async (req, res) => {
+    const code = normalizeCode(req.params.code);
+    const room = await store.getRoomForUser(code, req.auth.user.id);
+    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
+    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
+    if (!room.analysis) return res.status(409).json({ error: "请先邀请 AI 完成第一轮分析。" });
+    const question = cleanText(req.body?.question);
+    if (!question) return res.status(400).json({ error: "请输入想继续问 AI 的问题。" });
+    if ((room.aiConversation || []).filter((entry) => entry.role === "user").length >= 20) return res.status(429).json({ error: "本次调解的 AI 追问已达到上限。" });
+    const answer = await mediator.answer(room, question);
+    const now = new Date().toISOString();
+    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
+      draft.aiConversation ||= [];
+      draft.aiConversation.push(
+        { id: randomUUID(), role: "user", participantId: req.auth.user.id, text: question, createdAt: now },
+        { id: randomUUID(), role: "assistant", participantId: null, text: cleanText(answer), createdAt: new Date().toISOString() },
+      );
+    });
+    broadcastRoom(code);
+    res.status(201).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
   });
 
   app.post("/api/rooms/:code/confirm-archive", requireAuth, async (req, res) => {
@@ -569,7 +690,7 @@ function publicRoom(room, viewerUserId) {
   const privateFeedback = room.analysis && viewer ? { [viewer.id]: room.analysis.private?.[viewer.id] } : null;
   return {
     code: room.code, mode: room.mode, language: room.language, personality: room.personality, status: room.status,
-    participants: room.participants.map(({ userId: _userId, ...participant }) => participant), messages: room.messages,
+    participants: room.participants.map(({ userId: _userId, ...participant }) => participant), messages: room.messages, aiConversation: room.aiConversation || [],
     analyzing: room.analyzing, safety: room.safety, sharedAnalysis: room.analysis?.shared || null, privateFeedback,
     analysisMeta: room.analysis ? { id: room.analysis.id, source: room.analysis.source, model: room.analysis.model, generatedAt: room.analysis.generatedAt, notice: room.analysis.notice } : null,
     currentParticipantId: viewer?.id || null,
@@ -590,7 +711,7 @@ function publicDemoRoom(room, participantId) {
   return {
     demo: true,
     code: room.code, mode: room.mode, language: room.language, personality: room.personality, status: room.status,
-    participants: room.participants.map(({ accessHash: _accessHash, ...participant }) => participant), messages: room.messages,
+    participants: room.participants.map(({ accessHash: _accessHash, ...participant }) => participant), messages: room.messages, aiConversation: room.aiConversation || [],
     analyzing: room.analyzing, safety: room.safety, sharedAnalysis: room.analysis?.shared || null, privateFeedback,
     analysisMeta: room.analysis ? { id: room.analysis.id, source: room.analysis.source, model: room.analysis.model, generatedAt: room.analysis.generatedAt, notice: room.analysis.notice } : null,
     currentParticipantId: viewer?.id || null,
@@ -649,7 +770,7 @@ function mapDemoTranscriptToMessages(room, participantId, segments, fullText, se
   });
 }
 
-function createMessage(participantId, text, source, timing = null) { return { id: randomUUID(), participantId, text, source, timing, createdAt: new Date().toISOString() }; }
+function createMessage(participantId, text, source, timing = null, realtimeItemId = null) { return { id: randomUUID(), participantId, text, source, timing, realtimeItemId, createdAt: new Date().toISOString() }; }
 function createParticipant(user, role) { return { id: user.id, userId: user.id, name: user.name, role, joinedAt: new Date().toISOString() }; }
 function createDemoParticipant(name, role, accessHash, joinedAt) { return { id: randomUUID(), name, role, accessHash, consentAt: null, joinedAt }; }
 
@@ -685,6 +806,7 @@ function normalizeCode(value) { return String(value || "").trim().toUpperCase().
 function normalizeLongCode(value) { return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8); }
 function cleanName(value, fallback) { return String(value || "").trim().replace(/[<>]/g, "").slice(0, 24) || fallback; }
 function cleanText(value) { return String(value || "").trim().replace(/\0/g, "").slice(0, 1200); }
+function cleanRealtimeItemId(value) { return String(value || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 120); }
 
 function isRateLimited(key) {
   const entry = loginAttempts.get(key);

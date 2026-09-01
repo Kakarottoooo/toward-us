@@ -94,6 +94,24 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         return buildFallbackAnalysis(room, "模型暂时不可用，已使用本地复盘框架。", model);
       }
     },
+    async answer(room, question) {
+      if (!client) return followUpFallback(room, question);
+      try {
+        const response = await client.responses.create({
+          model,
+          store: false,
+          max_output_tokens: 700,
+          input: [
+            { role: "developer", content: `${mediatorInstructions(room.language, room.personality, room.participants[0]?.name || "A", room.participants[1]?.name || "B")}\n这是共同空间里的公开追问。简洁回答当前问题，不重新宣布输赢，不泄露任何一方的私人反馈。只输出适合直接阅读的纯文本，不使用 Markdown 标记；除非检测到真实风险，否则不要输出 safety 等内部字段。` },
+            { role: "user", content: `${transcriptForModel(room, ...normalizedParticipants(room))}\n\n已生成的共同分析：${JSON.stringify(room.analysis?.shared || {})}\n\n共同追问记录：${JSON.stringify(room.aiConversation || [])}\n\n当前问题：${question}` },
+          ],
+        });
+        return sanitizeFollowUp(response.output_text) || followUpFallback(room, question);
+      } catch (error) {
+        console.error("AI follow-up failed; using local fallback:", error?.message || error);
+        return followUpFallback(room, question);
+      }
+    },
     async transcribe(buffer, mimeType = "audio/webm") {
       if (!client) {
         const error = new Error("语音转录需要配置 OPENAI_API_KEY。");
@@ -119,6 +137,37 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         segments: Array.isArray(result.segments) ? result.segments : [],
       };
     },
+    async createRealtimeSession({ sdp, language = "zh", safetyIdentifier }) {
+      if (!apiKey) {
+        const error = new Error("实时语音需要配置 OPENAI_API_KEY。");
+        error.statusCode = 503;
+        throw error;
+      }
+      const form = new FormData();
+      form.set("sdp", sdp);
+      form.set("session", JSON.stringify({
+        type: "transcription",
+        audio: {
+          input: {
+            noise_reduction: { type: "far_field" },
+            transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-live-transcribe", language: language === "en" ? "en" : "zh" },
+            turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 700, create_response: false, interrupt_response: false },
+          },
+        },
+      }));
+      const response = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, ...(safetyIdentifier ? { "OpenAI-Safety-Identifier": safetyIdentifier } : {}) },
+        body: form,
+      });
+      const answer = await response.text();
+      if (!response.ok) {
+        const error = new Error(`实时语音连接失败（${response.status}）。`);
+        error.statusCode = response.status >= 400 && response.status < 500 ? 502 : 503;
+        throw error;
+      }
+      return answer;
+    },
   };
 }
 
@@ -141,6 +190,16 @@ function transcriptForModel(room, a, b) {
   const names = new Map([[a.id, a.name], [b.id, b.name]]);
   const lines = room.messages.map((message, index) => `[${index + 1}] ${names.get(message.participantId) || "未知"}: ${message.text}`);
   return `房间模式：${room.mode === "shared" ? "同一台设备、同一个麦克风" : "两台设备"}\n调解人格：${room.personality}\n对话记录：\n${lines.join("\n")}`;
+}
+
+export function sanitizeFollowUp(value) {
+  return String(value || "")
+    .replace(/^\s*safety(?:\.level)?\s*[：:]\s*0\s*$/gimu, "")
+    .replace(/\*\*(.*?)\*\*/gs, "$1")
+    .replace(/__(.*?)__/gs, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function normalizeModelAnalysis(parsed, room, model) {
@@ -210,6 +269,13 @@ function privateFallback(name) {
     reflection: "试着区分：你最想证明的是什么，和你最希望对方理解的是什么。它们可能不是同一件事。",
     suggestion: "共同反馈前，先把一句指责改写成一个具体请求。",
   };
+}
+
+function followUpFallback(room, question) {
+  const language = room.language === "en";
+  return language
+    ? `For “${truncate(question, 90)}”, choose one concrete request, let each person answer once without interruption, and agree on when to revisit anything still unresolved.`
+    : `针对“${truncate(question, 90)}”，先把它改成一个具体请求；双方各完整回答一次，再约定仍未解决的部分什么时候继续谈。`;
 }
 
 function inferCategory(text) {

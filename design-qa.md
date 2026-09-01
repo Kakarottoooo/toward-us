@@ -1,3 +1,43 @@
+# Design QA — AI-first mediation workspace
+
+## Source and implementation
+
+- Approved source: `E:\CodexData\.codex\generated_images\01a054cc-ed7a-7743-bb78-ff76d26ba2aa\exec-c08d08ed-7391-430e-a5eb-70bbb340609e.png`
+- Mobile implementation: `qa/mediation-ai-first-mobile.png` (393 × 852 app viewport shown at 0.78 density inside the in-app Browser)
+- Desktop implementation: `qa/mediation-ai-first-desktop.png` (1280 × 720)
+- Combined comparison input: `qa/mediation-comparison.png`
+- State: two completed turns, shared AI analysis open, AI follow-up available, shared-device speaker controls and live listener visible.
+
+## Comparison history
+
+1. Initial implementation placed the shared AI follow-up after the account-save/archive surface. P2: this weakened the agreed AI-first hierarchy.
+2. Moved follow-up directly beneath the main analysis and above secondary save/confirmation actions. Retested with a real OpenAI answer.
+3. Compared the approved source and the 393 × 852 implementation in one side-by-side browser input. The implementation preserves the same continuous ivory surface, red/blue opposing transcript rhythm, AI-dominant lower region, editorial serif hierarchy, and a single quiet centered drag mark.
+4. Checked the desktop state separately. The transcript and AI analysis remain one continuous center column; participant presence and input become side rails without introducing a bordered AI card.
+
+## Severity review
+
+- P0: none.
+- P1: none.
+- P2: none after moving shared AI follow-up ahead of save/archive actions and cleaning AI follow-up prose for direct rendering.
+
+## Interaction review
+
+- Pointer drag changes the transcript/AI split continuously.
+- Separator exposes horizontal orientation and value bounds; Arrow keys and Home/End provide keyboard control.
+- Shared-device speaker choice remains available while listening; each speech turn keeps the speaker selected when speech starts.
+- Both participants can ask follow-up questions in the same shared AI panel; the thread persists and synchronizes with the room.
+- Mobile and desktop retain text-input, disabled, loading, and fallback states.
+
+## Final result
+
+passed
+
+
+---
+
+## Earlier QA archive
+
 # Toward Us / 彼此 Design QA
 
 ## Evidence

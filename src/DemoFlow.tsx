@@ -1,9 +1,11 @@
 import {
   ArrowLeft, ArrowRight, CheckCircle, Copy, DeviceMobile, HandHeart, LinkSimple, LockKey,
-  Microphone, PaperPlaneRight, QrCode, Sparkle, StopCircle, UsersThree, WarningCircle, Waveform,
+  Microphone, Minus, PaperPlaneRight, QrCode, Sparkle, StopCircle, UsersThree, WarningCircle, Waveform,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
+import { usePanelSplit } from "./usePanelSplit";
+import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./demo.css";
 
 type Language = "zh" | "en";
@@ -11,6 +13,7 @@ type DemoStep = "entry" | "join" | "invite" | "consent" | "room";
 type RoomMode = "remote" | "shared";
 type Participant = { id: string; name: string; role: "A" | "B"; consentAt: string | null; joinedAt: string };
 type Message = { id: string; participantId: string; text: string; source: "text" | "voice"; createdAt: string };
+type AiConversationEntry = { id: string; role: "user" | "assistant"; participantId: string | null; text: string; createdAt: string };
 type Feedback = { validation: string; reflection: string; suggestion: string };
 type SharedAnalysis = {
   title: string; overview: string; category: string;
@@ -20,7 +23,7 @@ type SharedAnalysis = {
 };
 type DemoRoom = {
   demo: true; code: string; mode: RoomMode; language: Language; personality: string; status: "active" | "converted";
-  participants: Participant[]; messages: Message[]; analyzing: boolean; safety: { level: number; message: string };
+  participants: Participant[]; messages: Message[]; aiConversation: AiConversationEntry[]; analyzing: boolean; safety: { level: number; message: string };
   sharedAnalysis: SharedAnalysis | null; privateFeedback: Record<string, Feedback> | null;
   analysisMeta: { source: string; model: string; generatedAt: string; notice: string } | null;
   currentParticipantId: string; canControlAllSpeakers: boolean;
@@ -43,15 +46,15 @@ const words = {
     consentHint: "开始前，请两个人分别确认录音与转录同意。", consent: "我同意录音与转录", consented: "已同意录音",
     localOnly: "原始音频只用于本次转录，不会保存。", start: "开始表达", room: "临时调解房间", waiting: "等待另一位加入",
     emptyTitle: "先把发生的事说出来", emptyBody: "AI 会保持安静，直到你们主动请它加入；安全边界除外。",
-    placeholder: "说说你看到的事实、感受或需要…", speakingAs: "现在由谁表达", record: "开始共同录音", stop: "停止并转录",
-    transcribing: "正在转录当前发言人…", audioNote: "不保存原始录音，只保存一小时内的临时转录。", speakerSelectedHint: "本次文字和整段录音都会记在已选中的人名下，无需模仿不同声音。", aiJoin: "请 AI 加入", viewAnalysis: "查看 AI 分析",
+    placeholder: "说说你看到的事实、感受或需要…", speakingAs: "现在由谁表达", record: "开启实时倾听", stop: "暂停倾听",
+    transcribing: "正在连接实时语音…", audioNote: "停顿后自动成句；原始音频不保存。", speakerSelectedHint: "每段话开始时会锁定当前姓名；说话期间切换不会改掉正在进行的这句话。", aiJoin: "请 AI 加入", viewAnalysis: "查看 AI 分析",
     aiWorking: "AI 正在分别理解你们…", private: "先只对你说", sharedFeedback: "共同反馈", validation: "先接住你的感受",
     reflection: "值得独自想一想", suggestion: "现在可以这样做", noVerdict: "这不是输赢裁决，而是一份可以共同修改的第三方视角。",
     common: "已经形成的共识", different: "仍然不同的地方", next: "下一步", saveTitle: "想把这次体验留下来吗？",
     saveHint: "两个人分别登录或创建账号并确认后，这次复盘才会进入你们的共同历史。", login: "登录", register: "创建账号",
     name: "你的称呼", email: "邮箱", password: "密码（至少 10 个字符）", claim: "确认保存我的这一侧", claimed: "我已确认，等待对方",
     saved: "双方已确认，这次体验已经进入共同历史。", goAccount: "进入正式空间", switchRegister: "还没有账号？创建一个",
-    switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "我不想和你争输赢，想和你好好把这件事说清楚。点击链接加入我们这次的 Toward Us 对话（15 分钟内有效）。",
+    switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "我不想和你争输赢，想和你好好把这件事说清楚。点击链接加入我们这次的 Toward Us 对话（15 分钟内有效）。", askAi: "继续问 AI", askAiPlaceholder: "追问这次分析，或请 AI 帮你们把下一句话说清楚…", askingAi: "AI 正在回应…",
   },
   en: {
     back: "Back", send: "Send", quick: "Quick demo", entryTitle: "Beyond the argument, we choose each other.", choose: "Choose how to enter",
@@ -63,15 +66,15 @@ const words = {
     consentHint: "Before you begin, each person confirms recording and transcription consent.", consent: "I consent to recording and transcription", consented: "Recording consented",
     localOnly: "Raw audio is used only for this transcription and is not stored.", start: "Start expressing", room: "Temporary mediation room", waiting: "Waiting for the other person",
     emptyTitle: "Start with what happened", emptyBody: "AI stays quiet until you invite it in, except when a safety boundary is crossed.",
-    placeholder: "Share facts, feelings, or needs…", speakingAs: "Speaking as", record: "Start shared recording", stop: "Stop and transcribe",
-    transcribing: "Transcribing the selected speaker…", audioNote: "Raw audio is not saved; temporary transcripts last one hour.", speakerSelectedHint: "Text and the whole recording are assigned to the selected person—no voice imitation needed.", aiJoin: "Invite AI", viewAnalysis: "View AI analysis",
+    placeholder: "Share facts, feelings, or needs…", speakingAs: "Speaking as", record: "Start live listening", stop: "Pause listening",
+    transcribing: "Connecting live voice…", audioNote: "Pauses complete each turn automatically; raw audio is not stored.", speakerSelectedHint: "The selected name is locked when each turn starts; switching mid-sentence will not reassign it.", aiJoin: "Invite AI", viewAnalysis: "View AI analysis",
     aiWorking: "AI is hearing each of you…", private: "First, just for you", sharedFeedback: "Shared feedback", validation: "What deserves care",
     reflection: "Something to reflect on", suggestion: "What you can do now", noVerdict: "This is not a winner/loser verdict. It is a third-party view you can revise together.",
     common: "Common ground", different: "What remains different", next: "Next steps", saveTitle: "Keep this experience?",
     saveHint: "It enters shared history only after both people sign in or register and confirm.", login: "Sign in", register: "Create account",
     name: "Your name", email: "Email", password: "Password (10+ characters)", claim: "Confirm and save my side", claimed: "Confirmed — waiting for partner",
     saved: "Both confirmed. This experience is now in your shared history.", goAccount: "Open formal space", switchRegister: "New here? Create an account",
-    switchLogin: "Already registered? Sign in", exit: "Exit quick demo", shareText: "I don’t want this to be about winning. I want us to understand each other. Join our Toward Us conversation with this 15-minute invitation.",
+    switchLogin: "Already registered? Sign in", exit: "Exit quick demo", shareText: "I don’t want this to be about winning. I want us to understand each other. Join our Toward Us conversation with this 15-minute invitation.", askAi: "Ask AI", askAiPlaceholder: "Ask about this analysis, or get help wording what to say next…", askingAi: "AI is responding…",
   },
 };
 
@@ -175,12 +178,10 @@ function DemoConsent({ language, room, notice, busy, t, onLanguage, onConsent, o
 }
 
 function DemoRoomScreen({ room, account, health, language, notice, t, onNotice, onRoom, onAccount, onExit }: { room: DemoRoom | null; account: Account | null; health: Health | null; language: Language; notice: string; t: typeof words.zh; onNotice: (value: string) => void; onRoom: (room: DemoRoom) => void; onAccount: (account: Account) => void; onExit: () => void }) {
-  const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState(""); const [recording, setRecording] = useState(false); const [transcribing, setTranscribing] = useState(false); const [seconds, setSeconds] = useState(0);
+  const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState("");
   const [composerHeight, setComposerHeight] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard();
+  const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard(); const split = usePanelSplit();
   useEffect(() => { if (room?.currentParticipantId && !speakerId) setSpeakerId(room.currentParticipantId); }, [room?.currentParticipantId, speakerId]);
-  useEffect(() => { if (!recording) return; const timer = setInterval(() => setSeconds((value) => value + 1), 1000); return () => clearInterval(timer); }, [recording]);
-  useEffect(() => { if (room?.analysisMeta) analysisRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [room?.analysisMeta?.generatedAt]);
   useEffect(() => {
     const composer = composerRef.current;
     if (!composer) return;
@@ -192,35 +193,34 @@ function DemoRoomScreen({ room, account, health, language, notice, t, onNotice, 
     return () => { observer?.disconnect(); window.removeEventListener("resize", updateHeight); };
   }, [room?.code, room?.canControlAllSpeakers]);
   const participants = useMemo(() => new Map(room?.participants.map((participant) => [participant.id, participant]) || []), [room?.participants]);
+  const voice = useRealtimeTranscription<{ room: DemoRoom }>({ endpoint: `/api/demo/rooms/${room?.code || ""}/realtime`, speakerId, onCommitted: (payload) => { if (payload.room) onRoom(payload.room); onNotice(""); }, onError: onNotice });
   if (!room) return <div className="loading-screen"><Wordmark /></div>;
   const send = async () => { if (!draft.trim()) return; const text = draft; setDraft(""); keyboard.hide(); try { const result = await api<{ room: DemoRoom }>(`/api/demo/rooms/${room.code}/messages`, { method: "POST", body: JSON.stringify({ text, speakerId }) }); onRoom(result.room); onNotice(""); } catch (error) { setDraft(text); onNotice((error as Error).message); } };
   const analyze = async () => { keyboard.hide(); onNotice(""); try { const result = await api<{ room: DemoRoom }>(`/api/demo/rooms/${room.code}/analyze`, { method: "POST" }); onRoom(result.room); } catch (error) { onNotice((error as Error).message); } };
-  const startRecording = async () => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return onNotice(language === "zh" ? "当前浏览器不支持语音，请使用文字。" : "Voice is unavailable; please use text.");
-    try { keyboard.hide(); const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((value) => MediaRecorder.isTypeSupported(value)); const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined); chunksRef.current = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-      recorder.onstop = async () => { setRecording(false); setTranscribing(true); stream.getTracks().forEach((track) => track.stop()); const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }); chunksRef.current = []; try { const response = await fetch(`/api/demo/rooms/${room.code}/audio`, { method: "POST", headers: { "content-type": blob.type, "x-toward-us-speaker-id": speakerId }, body: blob }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Transcription failed"); onRoom(payload.room); onNotice(""); } catch (error) { onNotice((error as Error).message); } finally { setTranscribing(false); setSeconds(0); } };
-      recorderRef.current = recorder; recorder.start(1000); setRecording(true); setSeconds(0); onNotice("");
-    } catch { onNotice(language === "zh" ? "没有获得麦克风权限，仍可使用文字。" : "Microphone permission was not granted. Text still works."); }
-  };
   const measuredComposerHeight = composerHeight || (room.canControlAllSpeakers ? 214 : 142);
+  const aiActive = Boolean(room.analyzing || room.analysisMeta);
+  const partialPerson = voice.partial ? participants.get(voice.partial.speakerId) : null;
   return <div className="room-shell" data-testid="demo-room" style={{ "--message-bottom": `${measuredComposerHeight}px` } as React.CSSProperties}><header className="room-header"><button onClick={onExit} aria-label={t.back}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><span className="demo-expiry">{Math.max(1, Math.ceil((new Date(room.expiresAt).getTime() - Date.now()) / 60000))}m</span></header>
     <div className="room-presence"><div className="participant-pair">{room.participants.map((participant) => <span key={participant.id} className={participant.role === "A" ? "red-person" : "blue-person"}>{participant.name.slice(0, 1)}</span>)}</div><p>{t.connected}<i /></p><span className={`ai-status ${health?.aiReady ? "ready" : "fallback"}`}><Sparkle size={13} weight="fill" />{health?.aiReady ? health.model : "Local"}</span></div>
-    <MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}{!room.messages.length ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const person = participants.get(message.participantId); return <article key={message.id} className={`message ${person?.role === "A" ? "side-a" : "side-b"}`}><header>{person?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
-      {(room.analyzing || room.analysisMeta) && <DemoInlineAnalysis analysisRef={analysisRef} room={room} account={account} notice={notice} t={t} onRoom={onRoom} onAccount={onAccount} onNotice={onNotice} onExit={onExit} />}
-      <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing} aria-label={recording ? t.stop : t.record}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
-    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.placeholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
+    <div ref={split.containerRef} className={`mediation-workspace ${aiActive ? "ai-active" : ""}`} style={split.style}>
+      <section className="conversation-pane"><MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}{!room.messages.length && !voice.partial ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const person = participants.get(message.participantId); return <article key={message.id} className={`message ${person?.role === "A" ? "side-a" : "side-b"}`}><header>{person?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}{voice.partial && <article className={`message live-partial ${partialPerson?.role === "A" ? "side-a" : "side-b"}`} data-testid="live-transcript"><header>{partialPerson?.name}<Waveform size={14} /></header><p>{voice.partial.text || (language === "zh" ? "正在听…" : "Listening…")}</p></article>}</main></MobileScroll></section>
+      {aiActive && <button className="mediation-divider" type="button" role="separator" aria-label={language === "zh" ? "拖动调整对话与 AI 分析空间" : "Resize conversation and AI analysis"} aria-orientation="horizontal" aria-valuemin={18} aria-valuemax={72} {...split.handleProps}><Minus size={30} weight="bold" /></button>}
+      {aiActive && <section className="ai-pane"><MobileScroll className="ai-scroll"><DemoInlineAnalysis analysisRef={analysisRef} room={room} account={account} notice={notice} t={t} onRoom={onRoom} onAccount={onAccount} onNotice={onNotice} onExit={onExit} /></MobileScroll></section>}
+    </div>
+    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="live-control-row"><button className={`live-listen ${voice.listening ? "listening" : ""}`} onClick={() => { keyboard.hide(); voice.listening ? voice.stop() : void voice.start(); }} disabled={voice.connecting} aria-label={voice.listening ? t.stop : t.record}>{voice.listening ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} weight="fill" />}<span>{voice.connecting ? t.transcribing : voice.listening ? t.stop : t.record}</span></button><p>{t.audioNote}</p></div><div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.placeholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div>{!aiActive && <button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button>}{notice && <p className="room-notice">{notice}</p>}</footer>
   </div>;
 }
 
 function DemoInlineAnalysis({ room, account, notice, t, analysisRef, onRoom, onAccount, onNotice, onExit }: { room: DemoRoom; account: Account | null; notice: string; t: typeof words.zh; analysisRef: React.RefObject<HTMLElement | null>; onRoom: (room: DemoRoom) => void; onAccount: (account: Account) => void; onNotice: (value: string) => void; onExit: () => void }) {
-  const [tab, setTab] = useState<"private" | "shared">(room.mode === "shared" ? "shared" : "private"); const [authMode, setAuthMode] = useState<"login" | "register">("register"); const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"private" | "shared">("shared"); const [authMode, setAuthMode] = useState<"login" | "register">("register"); const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [question, setQuestion] = useState(""); const [asking, setAsking] = useState(false); const [busy, setBusy] = useState(false);
   const keyboard = useKeyboard();
   const feedback = room.privateFeedback?.[room.currentParticipantId]; const analysis = room.sharedAnalysis;
   const claim = async (knownAccount = account) => { if (!knownAccount) return; setBusy(true); onNotice(""); try { const result = await api<{ room: DemoRoom }>(`/api/demo/rooms/${room.code}/claim`, { method: "POST" }); onRoom(result.room); } catch (error) { onNotice((error as Error).message); } finally { setBusy(false); } };
   const authenticate = async () => { keyboard.hide(); setBusy(true); onNotice(""); try { const result = await api<{ user: Account }>(authMode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify({ name, email, password }) }); onAccount(result.user); const claimed = await api<{ room: DemoRoom }>(`/api/demo/rooms/${room.code}/claim`, { method: "POST" }); onRoom(claimed.room); } catch (error) { onNotice((error as Error).message); } finally { setBusy(false); } };
+  const ask = async () => { if (!question.trim() || asking) return; const pending = question; setQuestion(""); setAsking(true); keyboard.hide(); try { const result = await api<{ room: DemoRoom }>(`/api/demo/rooms/${room.code}/ask-ai`, { method: "POST", body: JSON.stringify({ question: pending }) }); onRoom(result.room); onNotice(""); } catch (error) { setQuestion(pending); onNotice((error as Error).message); } finally { setAsking(false); } };
   return <section ref={analysisRef} className="demo-inline-analysis" data-testid="demo-ai-panel"><header className="inline-analysis-header"><div><Sparkle size={20} weight="fill" /><span>{tab === "private" ? t.private : t.sharedFeedback}</span></div><button type="button" onClick={onExit} aria-label={t.exit}><LinkSimple size={18} /></button></header><main className="analysis-content"><div className="analysis-tabs"><button className={tab === "private" ? "selected" : ""} onClick={() => setTab("private")} disabled={room.mode === "shared"}><LockKey size={17} />{t.private}</button><button className={tab === "shared" ? "selected" : ""} onClick={() => setTab("shared")}><UsersThree size={17} />{t.sharedFeedback}</button></div>
     {!analysis ? <section className="analysis-loading"><Sparkle size={34} weight="fill" /><h1>{t.aiWorking}</h1></section> : tab === "private" ? <section>{feedback && <div className="private-letter"><span className="letter-mark">私 / PRIVATE</span><FeedbackBlock number="01" title={t.validation} body={feedback.validation} /><FeedbackBlock number="02" title={t.reflection} body={feedback.reflection} /><FeedbackBlock number="03" title={t.suggestion} body={feedback.suggestion} /></div>}<button className="primary-action" onClick={() => setTab("shared")}>{t.sharedFeedback}<ArrowRight size={20} /></button></section> : <section className="shared-analysis"><div className="analysis-heading"><p>{analysis.category}</p><h1>{analysis.title}</h1><span>{t.noVerdict}</span></div><p className="analysis-overview">{analysis.overview}</p><DemoList title={t.common} items={analysis.commonGround} /><DemoList title={t.different} items={analysis.differences} /><DemoList title={t.next} items={analysis.nextSteps} />
+      <section className="ai-followup" aria-label={t.askAi}><div className="ai-thread">{(room.aiConversation || []).map((entry) => <article key={entry.id} className={entry.role === "assistant" ? "ai-reply" : "ai-question"}><span>{entry.role === "assistant" ? "AI" : room.participants.find((participant) => participant.id === entry.participantId)?.name || "You"}</span><p>{entry.text}</p></article>)}{asking && <article className="ai-reply pending"><span>AI</span><p>{t.askingAi}</p></article>}</div><div className="ai-question-row"><KeyboardTextarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.askAiPlaceholder} rows={1} maxLength={1200} /><button type="button" onClick={ask} disabled={!question.trim() || asking} aria-label={t.askAi}><PaperPlaneRight size={20} weight="fill" /></button></div></section>
       <section className="demo-save"><h2>{room.convertedRoomCode ? t.saved : t.saveTitle}</h2><p>{room.convertedRoomCode ? `${t.saved} · ${room.convertedRoomCode}` : t.saveHint}</p>{room.convertedRoomCode ? <button className="primary-action" onClick={onExit}>{t.goAccount}<ArrowRight size={19} /></button> : room.claimedByCurrent ? <button className="primary-action" disabled><CheckCircle size={19} weight="fill" />{t.claimed} · {room.claimCount}/2</button> : account ? <button className="primary-action" onClick={() => claim()} disabled={busy}>{t.claim}</button> : <div className="demo-auth"><div className="demo-auth-tabs"><button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>{t.register}</button><button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>{t.login}</button></div>{authMode === "register" && <KeyboardInput value={name} onChange={(event) => setName(event.target.value)} placeholder={t.name} maxLength={24} />}<KeyboardInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder={t.email} type="email" /><KeyboardInput value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t.password} type="password" /><button className="primary-action" onClick={authenticate} disabled={busy || !email || password.length < 10 || (authMode === "register" && !name)}>{authMode === "register" ? t.register : t.login}</button></div>}{notice && <p className="form-notice">{notice}</p>}</section>
     </section>}</main></section>;
 }
@@ -232,7 +232,6 @@ function SplitButton({ label, onClick, disabled }: { label: string; onClick: () 
 function FeedbackBlock({ number, title, body }: { number: string; title: string; body: string }) { return <article className="feedback-block"><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>; }
 function DemoList({ title, items }: { title: string; items: string[] }) { return <section className="analysis-section"><header><span>—</span><h2>{title}</h2></header><ul className="demo-analysis-list">{items.map((item) => <li key={item}>{item}</li>)}</ul></section>; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload as T; }
-function formatSeconds(total: number) { return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`; }
 function initialRoomCode() {
   const pathMatch = location.pathname.match(/^\/j\/([A-Z0-9]{8})\/?$/i);
   return (pathMatch?.[1] || new URLSearchParams(location.search).get("room") || "").toUpperCase();

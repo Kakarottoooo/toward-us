@@ -1,11 +1,13 @@
 import {
   ArrowLeft, ArrowRight, CheckCircle, ClockCounterClockwise, Copy, DeviceMobile, HandHeart, House,
-  LinkSimple, LockKey, Microphone, PaperPlaneRight, SignOut, Sparkle, StopCircle, UserCircle, UsersThree,
+  LinkSimple, LockKey, Microphone, Minus, PaperPlaneRight, SignOut, Sparkle, StopCircle, UserCircle, UsersThree,
   WarningCircle, Waveform,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
+import { usePanelSplit } from "./usePanelSplit";
+import { useRealtimeTranscription } from "./useRealtimeTranscription";
 
 type Language = "zh" | "en";
 type Screen = "home" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
@@ -16,6 +18,7 @@ type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string 
 type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; expiresAt: string } | null };
 type Participant = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 type Message = { id: string; participantId: string; text: string; source: "text" | "voice"; createdAt: string };
+type AiConversationEntry = { id: string; role: "user" | "assistant"; participantId: string | null; text: string; createdAt: string };
 type Feedback = { validation: string; reflection: string; suggestion: string };
 type SharedAnalysis = {
   title: string; overview: string; category: string;
@@ -26,6 +29,7 @@ type SharedAnalysis = {
 type Room = {
   code: string; mode: RoomMode; language: Language; personality: Personality; status: "active" | "archived";
   participants: Participant[]; messages: Message[]; analyzing: boolean; safety: { level: number; message: string };
+  aiConversation: AiConversationEntry[];
   sharedAnalysis: SharedAnalysis | null; privateFeedback: Record<string, Feedback> | null;
   analysisMeta: { source: string; model: string; generatedAt: string; notice: string } | null;
   currentParticipantId: string | null; canControlAllSpeakers: boolean;
@@ -53,8 +57,8 @@ const copy = {
     room: "调解房间", connected: "已连接", waiting: "等待伴侣加入", emptyTitle: "先把发生的事说出来",
     emptyBody: "AI 会保持安静，直到你们主动请它加入；安全边界除外。", textPlaceholder: "说说你看到的事实、感受或需要…",
     send: "发送", aiJoin: "请 AI 加入", aiWorking: "AI 正在分别理解你们…", viewAnalysis: "查看这次调解",
-    speakingAs: "现在由谁表达", record: "开始共同录音", stop: "停止并转录", transcribing: "正在转录当前发言人…", speakerSelectedHint: "本次文字和整段录音都会记在已选中的人名下，无需模仿不同声音。",
-    audioNote: "不保存原始录音，只保存转录。", voiceUnavailable: "当前浏览器或服务不支持语音，仍可使用文字。",
+    speakingAs: "现在由谁表达", record: "开启实时倾听", stop: "暂停倾听", transcribing: "正在连接实时语音…", speakerSelectedHint: "每段话开始时会锁定当前姓名；说话期间切换不会改掉正在进行的这句话。",
+    audioNote: "停顿后自动成句；原始音频不保存。", voiceUnavailable: "当前浏览器或服务不支持实时语音，仍可使用文字。",
     privateTitle: "先只对你说", sharedTitle: "共同反馈", private: "给我的话", sharedFeedback: "共同结论", perspective: "双方视角",
     responsibility: "行为与责任", commonGround: "已经形成的共识", differences: "仍然不同的地方", nextSteps: "下一步",
     validation: "先接住你的感受", reflection: "值得独自想一想", suggestion: "现在可以这样做", category: "本次议题",
@@ -62,7 +66,7 @@ const copy = {
     notVerdict: "这不是输赢裁决，而是一份可以共同修改的第三方视角。", confirmArchive: "确认保存为共同复盘",
     confirmedWaiting: "我已确认，等待伴侣", archived: "双方已确认并归档", confirmHint: "只有双方分别确认后，才会进入共同历史。",
     noHistory: "共同复盘会在双方确认后出现在这里。", agreements: "共同结论", stillDifferent: "仍有分歧", next: "下一步",
-    open: "查看", accountBoundary: "每个账号只能访问自己所属共同空间的数据。",
+    open: "查看", accountBoundary: "每个账号只能访问自己所属共同空间的数据。", askAi: "继续问 AI", askAiPlaceholder: "追问这次分析，或请 AI 帮你们把下一句话说清楚…", askingAi: "AI 正在回应…",
   },
   en: {
     homeLine: "Beyond the argument, we choose each other.", start: "Begin", homeFooter: "Pause · Listen · Repair", back: "Back",
@@ -79,7 +83,7 @@ const copy = {
     room: "Mediation room", connected: "Connected", waiting: "Waiting for partner", emptyTitle: "Start with what happened",
     emptyBody: "AI stays quiet until you invite it in, except when a safety boundary is crossed.", textPlaceholder: "Share facts, feelings, or needs…",
     send: "Send", aiJoin: "Invite AI", aiWorking: "AI is hearing each of you…", viewAnalysis: "View this mediation", speakingAs: "Speaking as",
-    record: "Start shared recording", stop: "Stop and transcribe", transcribing: "Transcribing the selected speaker…", speakerSelectedHint: "Text and the whole recording are assigned to the selected person—no voice imitation needed.", audioNote: "Raw audio is not saved; only the transcript remains.",
+    record: "Start live listening", stop: "Pause listening", transcribing: "Connecting live voice…", speakerSelectedHint: "The selected name is locked when each turn starts; switching mid-sentence will not reassign it.", audioNote: "Pauses complete each turn automatically; raw audio is not stored.",
     voiceUnavailable: "Voice is unavailable here. Text still works.", privateTitle: "First, just for you", sharedTitle: "Shared feedback", private: "For me",
     sharedFeedback: "Shared view", perspective: "Both perspectives", responsibility: "Behavior and responsibility", commonGround: "Common ground",
     differences: "What remains different", nextSteps: "Next steps", validation: "What deserves care", reflection: "Something to reflect on",
@@ -87,7 +91,7 @@ const copy = {
     modelReady: "AI mediator connected", notVerdict: "This is not a winner/loser verdict. It is a third-party view you can revise together.",
     confirmArchive: "Confirm and save as shared review", confirmedWaiting: "Confirmed — waiting for partner", archived: "Both confirmed and archived",
     confirmHint: "The review enters shared history only after both partners confirm.", noHistory: "Shared reviews appear here after both partners confirm.",
-    agreements: "Agreements", stillDifferent: "Differences", next: "Next step", open: "Open", accountBoundary: "Each account can access only its own shared-space data.",
+    agreements: "Agreements", stillDifferent: "Differences", next: "Next step", open: "Open", accountBoundary: "Each account can access only its own shared-space data.", askAi: "Ask AI", askAiPlaceholder: "Ask about this analysis, or get help wording what to say next…", askingAi: "AI is responding…",
   },
 };
 
@@ -265,12 +269,9 @@ function SetupScreen({ language, onBack, onLanguage, onRoom, notice, setNotice, 
 
 function RoomScreen({ room, language, health, notice, setNotice, onHistory, onRoomUpdate, onLeave, t }: { room: Room | null; language: Language; health: Health | null; notice: string; setNotice: (value: string) => void; onHistory: () => void; onRoomUpdate: (room: Room) => void; onLeave: () => void; t: typeof copy.zh }) {
   const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState(""); const [copied, setCopied] = useState(false);
-  const [recording, setRecording] = useState(false); const [transcribing, setTranscribing] = useState(false); const [seconds, setSeconds] = useState(0);
   const [composerHeight, setComposerHeight] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null); const chunksRef = useRef<Blob[]>([]); const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard();
+  const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard(); const split = usePanelSplit();
   useEffect(() => { if (room?.currentParticipantId && !speakerId) setSpeakerId(room.currentParticipantId); }, [room?.currentParticipantId, speakerId]);
-  useEffect(() => { if (!recording) return; const id = setInterval(() => setSeconds((value) => value + 1), 1000); return () => clearInterval(id); }, [recording]);
-  useEffect(() => { if (room?.analysisMeta) analysisRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [room?.analysisMeta?.generatedAt]);
   useEffect(() => {
     const composer = composerRef.current;
     if (!composer) return;
@@ -282,34 +283,39 @@ function RoomScreen({ room, language, health, notice, setNotice, onHistory, onRo
     return () => { observer?.disconnect(); window.removeEventListener("resize", updateHeight); };
   }, [room?.code, room?.canControlAllSpeakers]);
   const participantMap = useMemo(() => new Map(room?.participants.map((participant) => [participant.id, participant]) || []), [room?.participants]);
+  const voice = useRealtimeTranscription<{ room: Room }>({
+    endpoint: `/api/rooms/${room?.code || ""}/realtime`, speakerId,
+    onCommitted: (payload) => { if (payload.room) onRoomUpdate(payload.room); setNotice(""); },
+    onError: setNotice,
+  });
   if (!room) return <div className="loading-screen"><Wordmark /><p>{language === "zh" ? "正在进入共同空间…" : "Opening your shared space…"}</p></div>;
   const send = async () => { if (!draft.trim()) return; const text = draft; setDraft(""); keyboard.hide(); try { await api(`/api/rooms/${room.code}/messages`, { method: "POST", body: JSON.stringify({ text, speakerId }) }); setNotice(""); } catch (error) { setDraft(text); setNotice((error as Error).message); } };
   const analyze = async () => { keyboard.hide(); setNotice(""); try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/analyze`, { method: "POST" }); onRoomUpdate(result.room); } catch (error) { setNotice((error as Error).message); } };
-  const startRecording = async () => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return setNotice(t.voiceUnavailable);
-    try { keyboard.hide(); const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((value) => MediaRecorder.isTypeSupported(value)); const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined); chunksRef.current = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-      recorder.onstop = async () => { setRecording(false); setTranscribing(true); stream.getTracks().forEach((track) => track.stop()); const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }); chunksRef.current = []; try { const response = await fetch(`/api/rooms/${room.code}/audio`, { method: "POST", headers: { "content-type": blob.type, "x-toward-us-speaker-id": speakerId }, body: blob }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || t.voiceUnavailable); setNotice(""); } catch (error) { setNotice((error as Error).message); } finally { setTranscribing(false); setSeconds(0); } };
-      recorderRef.current = recorder; recorder.start(1000); setRecording(true); setSeconds(0); setNotice("");
-    } catch { setNotice(t.voiceUnavailable); }
-  };
   const copyCode = async () => { await navigator.clipboard.writeText(room.code); setCopied(true); setTimeout(() => setCopied(false), 1400); };
   const measuredComposerHeight = composerHeight || (room.canControlAllSpeakers ? 214 : 142);
+  const aiActive = Boolean(room.analyzing || room.analysisMeta);
+  const partialPerson = voice.partial ? participantMap.get(voice.partial.speakerId) : null;
   return <div className="room-shell" data-testid="room-screen" style={{ "--message-bottom": `${measuredComposerHeight}px` } as React.CSSProperties}><header className="room-header"><button onClick={onLeave} aria-label={t.back}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><button onClick={copyCode} aria-label={t.copyInvite}>{copied ? <CheckCircle size={21} weight="fill" /> : <Copy size={21} />}</button></header>
     <div className="room-presence"><div className="participant-pair">{room.participants.map((participant) => <span key={participant.id} className={participant.role === "A" ? "red-person" : "blue-person"}>{participant.name.slice(0, 1)}</span>)}{room.participants.length < 2 && <span className="empty-person">?</span>}</div><p>{room.participants.length < 2 ? t.waiting : t.connected}<i /></p><span className={`ai-status ${health?.aiReady ? "ready" : "fallback"}`}><Sparkle size={13} weight="fill" />{health?.aiReady ? t.modelReady : t.modelFallback}</span></div>
-    <MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}
-      {!room.messages.length ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const participant = participantMap.get(message.participantId); return <article key={message.id} className={`message ${participant?.role === "A" ? "side-a" : "side-b"}`}><header>{participant?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
-      {(room.analyzing || room.analysisMeta) && <AnalysisScreen analysisRef={analysisRef} room={room} language={language} onHistory={onHistory} onRoomUpdate={onRoomUpdate} setNotice={setNotice} t={t} />}
-      <section className="voice-panel"><div className={`record-orbit ${recording ? "recording" : ""}`}><button onClick={recording ? () => recorderRef.current?.stop() : startRecording} disabled={transcribing} aria-label={recording ? t.stop : t.record}>{recording ? <StopCircle size={31} weight="fill" /> : <Microphone size={29} weight="fill" />}</button></div><div><strong>{transcribing ? t.transcribing : recording ? `${t.stop} · ${formatSeconds(seconds)}` : t.record}</strong><p>{t.audioNote}</p></div></section>{notice && <p className="room-notice">{notice}</p>}</main></MobileScroll>
-    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} disabled={recording || transcribing} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div><button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button></footer>
+    <div ref={split.containerRef} className={`mediation-workspace ${aiActive ? "ai-active" : ""}`} style={split.style}>
+      <section className="conversation-pane" aria-label={language === "zh" ? "双方对话" : "Conversation"}><MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}
+        {!room.messages.length && !voice.partial ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const participant = participantMap.get(message.participantId); return <article key={message.id} className={`message ${participant?.role === "A" ? "side-a" : "side-b"}`}><header>{participant?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
+        {voice.partial && <article className={`message live-partial ${partialPerson?.role === "A" ? "side-a" : "side-b"}`} data-testid="live-transcript"><header>{partialPerson?.name}<Waveform size={14} /></header><p>{voice.partial.text || (language === "zh" ? "正在听…" : "Listening…")}</p></article>}
+      </main></MobileScroll></section>
+      {aiActive && <button className="mediation-divider" type="button" role="separator" aria-label={language === "zh" ? "拖动调整对话与 AI 分析空间" : "Resize conversation and AI analysis"} aria-orientation="horizontal" aria-valuemin={18} aria-valuemax={72} {...split.handleProps}><Minus size={30} weight="bold" /></button>}
+      {aiActive && <section className="ai-pane" aria-label={language === "zh" ? "AI 调解分析" : "AI mediation analysis"}><MobileScroll className="ai-scroll"><AnalysisScreen analysisRef={analysisRef} room={room} language={language} onHistory={onHistory} onRoomUpdate={onRoomUpdate} setNotice={setNotice} t={t} /></MobileScroll></section>}
+    </div>
+    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="live-control-row"><button className={`live-listen ${voice.listening ? "listening" : ""}`} onClick={() => { keyboard.hide(); voice.listening ? voice.stop() : void voice.start(); }} disabled={voice.connecting} aria-label={voice.listening ? t.stop : t.record}>{voice.listening ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} weight="fill" />}<span>{voice.connecting ? t.transcribing : voice.listening ? t.stop : t.record}</span></button><p>{t.audioNote}</p></div><div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div>{!aiActive && <button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button>}{notice && <p className="room-notice">{notice}</p>}</footer>
   </div>;
 }
 
 function AnalysisScreen({ room, language, analysisRef, onHistory, onRoomUpdate, setNotice, t }: { room: Room; language: Language; analysisRef: React.RefObject<HTMLElement | null>; onHistory: () => void; onRoomUpdate: (room: Room) => void; setNotice: (value: string) => void; t: typeof copy.zh }) {
-  const [tab, setTab] = useState<"private" | "shared">("private"); const feedback = room.privateFeedback?.[room.currentParticipantId || ""]; const analysis = room.sharedAnalysis;
+  const [tab, setTab] = useState<"private" | "shared">("shared"); const [question, setQuestion] = useState(""); const [asking, setAsking] = useState(false); const keyboard = useKeyboard(); const feedback = room.privateFeedback?.[room.currentParticipantId || ""]; const analysis = room.sharedAnalysis;
   const confirm = async () => { try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/confirm-archive`, { method: "POST" }); onRoomUpdate(result.room); } catch (error) { setNotice((error as Error).message); } };
-  return <section ref={analysisRef} className="demo-inline-analysis formal-inline-analysis" data-testid="room-ai-panel"><header className="inline-analysis-header"><div><Sparkle size={20} weight="fill" /><span>{tab === "private" ? t.privateTitle : t.sharedTitle}</span></div></header><main className="analysis-content"><div className="analysis-tabs"><button className={tab === "private" ? "selected" : ""} onClick={() => setTab("private")}><LockKey size={17} />{t.private}</button><button className={tab === "shared" ? "selected" : ""} onClick={() => setTab("shared")}><UsersThree size={17} />{t.sharedFeedback}</button></div>
+  const ask = async () => { if (!question.trim() || asking) return; const pending = question; setQuestion(""); setAsking(true); keyboard.hide(); try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/ask-ai`, { method: "POST", body: JSON.stringify({ question: pending }) }); onRoomUpdate(result.room); setNotice(""); } catch (error) { setQuestion(pending); setNotice((error as Error).message); } finally { setAsking(false); } };
+  return <section ref={analysisRef} className="formal-inline-analysis" data-testid="room-ai-panel"><header className="inline-analysis-header"><div><Sparkle size={20} weight="fill" /><span>{tab === "private" ? t.privateTitle : t.sharedTitle}</span></div></header><main className="analysis-content"><div className="analysis-tabs"><button className={tab === "private" ? "selected" : ""} onClick={() => setTab("private")}><LockKey size={17} />{t.private}</button><button className={tab === "shared" ? "selected" : ""} onClick={() => setTab("shared")}><UsersThree size={17} />{t.sharedFeedback}</button></div>
     {!analysis ? <section className="analysis-loading"><Sparkle size={34} weight="fill" /><h1>{t.aiWorking}</h1></section> : tab === "private" ? <section>{feedback && <div className="private-letter"><span className="letter-mark">私 / PRIVATE</span><FeedbackBlock number="01" title={t.validation} body={feedback.validation} /><FeedbackBlock number="02" title={t.reflection} body={feedback.reflection} /><FeedbackBlock number="03" title={t.suggestion} body={feedback.suggestion} /></div>}<button className="primary-action" onClick={() => setTab("shared")}>{t.sharedFeedback}<ArrowRight size={20} /></button></section> : <section className="shared-analysis"><SharedAnalysisContent analysis={analysis} t={t} />
+      <section className="ai-followup" aria-label={t.askAi}><div className="ai-thread">{(room.aiConversation || []).map((entry) => <article key={entry.id} className={entry.role === "assistant" ? "ai-reply" : "ai-question"}><span>{entry.role === "assistant" ? "AI" : room.participants.find((participant) => participant.id === entry.participantId)?.name || "You"}</span><p>{entry.text}</p></article>)}{asking && <article className="ai-reply pending"><span>AI</span><p>{t.askingAi}</p></article>}</div><div className="ai-question-row"><KeyboardTextarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.askAiPlaceholder} rows={1} maxLength={1200} /><button type="button" onClick={ask} disabled={!question.trim() || asking} aria-label={t.askAi}><PaperPlaneRight size={20} weight="fill" /></button></div></section>
       <section className="confirmation-panel"><p><LockKey size={17} />{t.confirmHint}</p><div className="confirmation-progress"><i className={room.confirmation.confirmedCount > 0 ? "done" : ""} /><i className={room.confirmation.confirmedCount > 1 ? "done" : ""} /><span>{room.confirmation.confirmedCount}/{room.confirmation.requiredCount}</span></div>{room.confirmation.complete ? <button className="primary-action" onClick={onHistory}><CheckCircle size={20} weight="fill" />{t.archived}</button> : <button className="primary-action" onClick={confirm} disabled={room.confirmation.confirmedByCurrent}>{room.confirmation.confirmedByCurrent ? t.confirmedWaiting : t.confirmArchive}</button>}</section>
       {room.analysisMeta && <p className="analysis-meta"><Sparkle size={14} />{room.analysisMeta.source === "openai" ? `${room.analysisMeta.model} · ${new Date(room.analysisMeta.generatedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}` : t.modelFallback}<br />{room.analysisMeta.notice}</p>}</section>}
     </main></section>;
@@ -335,4 +341,3 @@ function FeedbackBlock({ number, title, body }: { number: string; title: string;
 function AnalysisSection({ title, index, children }: { title: string; index: string; children: React.ReactNode }) { return <section className="analysis-section"><header><span>{index}</span><h2>{title}</h2></header>{children}</section>; }
 function BulletList({ items, tone }: { items: string[]; tone: "common" | "different" }) { return <ul className={`bullet-list ${tone}`}>{items.map((item) => <li key={item}>{tone === "common" ? <CheckCircle size={18} weight="fill" /> : <WarningCircle size={18} />}<span>{item}</span></li>)}</ul>; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }
-function formatSeconds(total: number) { return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`; }
