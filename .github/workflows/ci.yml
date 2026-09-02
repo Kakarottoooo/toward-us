@@ -26,6 +26,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Test application boundaries
         run: npm run test:app
+      - name: Test two-principal relationship workflow
+        run: npm run test:relationship
       - name: Test desktop and mobile interactions
         run: npm run test:responsive
       - name: Build production assets
