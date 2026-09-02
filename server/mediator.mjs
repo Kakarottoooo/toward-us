@@ -146,7 +146,9 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const form = new FormData();
       form.set("sdp", sdp);
       form.set("session", JSON.stringify({
-        type: "transcription",
+        type: "realtime",
+        model: process.env.OPENAI_REALTIME_MODEL || "gpt-realtime",
+        output_modalities: ["text"],
         audio: {
           input: {
             noise_reduction: { type: "far_field" },

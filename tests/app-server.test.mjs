@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
-import { sanitizeFollowUp } from "../server/mediator.mjs";
+import { createMediator, sanitizeFollowUp } from "../server/mediator.mjs";
 import { createFileStore } from "../server/store.mjs";
 
 let server;
@@ -18,6 +18,27 @@ test("shared AI follow-up is rendered as clean public prose", () => {
     sanitizeFollowUp('可以这样说： **“我愿意先听你说完。”**\n\nsafety.level：0'),
     '可以这样说： “我愿意先听你说完。”',
   );
+});
+
+test("WebRTC transcription is created as a realtime call with ASR input enabled", async () => {
+  const originalFetch = globalThis.fetch;
+  let session;
+  globalThis.fetch = async (_url, options) => {
+    session = JSON.parse(options.body.get("session"));
+    return new Response("v=0\r\ns=-\r\n", { status: 201, headers: { "content-type": "application/sdp" } });
+  };
+  try {
+    const mediator = createMediator({ apiKey: "test-key" });
+    const answer = await mediator.createRealtimeSession({ sdp: "v=0\r\ns=-\r\n", language: "zh" });
+    assert.match(answer, /^v=0/);
+    assert.equal(session.type, "realtime");
+    assert.equal(session.model, "gpt-realtime");
+    assert.deepEqual(session.output_modalities, ["text"]);
+    assert.equal(session.audio.input.transcription.model, "gpt-live-transcribe");
+    assert.equal(session.audio.input.turn_detection.create_response, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 before(async () => {
