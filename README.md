@@ -1,11 +1,17 @@
 # Toward Us / 彼此
 
-面向恋人和夫妻的双人 AI 调解与长期复盘产品。当前版本既有无需下载或登录的扫码快速体验，也有正式账号、伴侣绑定、按关系隔离的数据边界、双人确认、共同历史，以及可复现的 HTTPS + PostgreSQL 部署结构。
+面向恋人和夫妻的 **Multi-principal Relationship Agent**：属于两个人，帮助双方一起沟通、决定、计划、记住并履行承诺，同时不允许任何一方单独控制共同 Agent。原有 AI 调解、实时语音、扫码 demo 与长期复盘完整保留。
 
 同一个公网网址会按设备自适应：电脑打开是完整宽屏网站与工作台，手机打开是无设备外壳的全屏移动体验；两端共享同一套账号、邀请、房间与历史数据。
 
 ## 已实现
 
+- 新 Relationship Home：等待双方、即将到来、正在执行与站内通知；
+- 共同纪念日、双方各自的私人提醒、共同提醒；
+- Shared Lists / Wishlists，以及对伴侣完全不可见、可由 owner 揭晓的 Private Surprise；
+- Joint Decision：双方私密观点、分别确认的可共享摘要、共同 AI 方案、双方私密评价；
+- 独立 Agreement/Approval/Commitment/Outcome Review 对象；同版本双批准、双完成与共同复盘由服务端状态机保证；
+- Consent Kernel、provenance、per-user projection、最小 SSE payload；共同 Agent context 只由服务端从获准信息构建；
 - 邮箱和密码注册/登录，密码使用 scrypt 加盐哈希；
 - 服务器端会话与 `HttpOnly`、`SameSite=Lax` Cookie，浏览器不保存身份令牌；
 - 八位伴侣邀请码和邀请链接，一位用户只能属于一个共同空间；
@@ -56,6 +62,7 @@ npm run dev:full
 ```powershell
 npm run check:runtime
 npm run test:app
+npm run test:relationship
 npm run test:demo
 npm run build
 npx playwright test --config playwright.beta.config.ts
@@ -93,4 +100,4 @@ GitHub Actions 会在每次推送和 Pull Request 上运行后端测试、生产
 - 实时边说边调解与危机人工升级；
 - 生产负载、渗透测试和多地区容灾。
 
-完整的产品定位、用户流程、能力边界、技术架构、数据模型、安全设计和部署说明见 [docs/product-and-technology-overview.zh-CN.md](./docs/product-and-technology-overview.zh-CN.md)；逐项产品逻辑和已确认决策见 [docs/product-design.zh-CN.md](./docs/product-design.zh-CN.md)；视觉验收见 [design-qa.md](./design-qa.md)。公开仓库不会包含真实伴侣数据或私人争执记录。
+新方向、P0 实现、Consent Kernel、Relationship Graph、状态机、API、migration、Safe Share/Companion 设计边界与真实状态矩阵见 [docs/multi-principal-relationship-agent.zh-CN.md](./docs/multi-principal-relationship-agent.zh-CN.md)。原产品和技术介绍见 [docs/product-and-technology-overview.zh-CN.md](./docs/product-and-technology-overview.zh-CN.md)；逐项历史产品逻辑见 [docs/product-design.zh-CN.md](./docs/product-design.zh-CN.md)；视觉验收见 [design-qa.md](./design-qa.md)。公开仓库不会包含真实伴侣数据或私人争执记录。

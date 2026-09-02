@@ -11,6 +11,8 @@ Before making substantial visual changes, use the Product Design plugin's `get-c
 - The mediation room is AI-first and stays on one continuous ivory surface: transcript above, AI below, with no card border or hard divider. Preserve only one quiet centered drag touchpoint and let the transcript be pushed away.
 - In shared-device voice mode, attribute each completed realtime turn to the participant selected when speech begins. After the shared analysis, both participants continue the same public AI conversation in-place.
 - The product UI supports Simplified Chinese, English, and Spanish as complete interface languages. Use `ZH / EN / ES` in the selector. In English or Spanish mode, do not render the Chinese subtitle `彼此` or other Chinese interface text; keep only the English proper-name wordmark `TOWARD US`.
+- The formal product is a two-principal Relationship Agent, not a relationship score or a one-sided assistant. Private material stays owner-only; only an owner-confirmed shareable summary may enter the shared agent; agreements require both principals to approve the same version.
+- Preserve provenance, visibility, AI access scope, approval policy, and per-user server projection for every long-lived relationship object. Never rely on the frontend to hide another member's private data.
 
 ## Delivery and self-verification
 

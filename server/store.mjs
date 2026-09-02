@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createPostgresStore } from "./postgres-store.mjs";
+import { GRAPH_COLLECTIONS } from "./relationship-domain.mjs";
 
 const EMPTY_STATE = () => ({
-  version: 3,
+  version: 4,
   users: {},
   userByEmail: {},
   sessions: {},
@@ -12,6 +13,7 @@ const EMPTY_STATE = () => ({
   invitations: {},
   rooms: {},
   demoRooms: {},
+  relationshipGraph: Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, {}])),
 });
 
 export async function createStore(filePath, databaseUrl = process.env.DATABASE_URL) {
@@ -26,7 +28,8 @@ export async function createFileStore(filePath) {
 
   try {
     const parsed = JSON.parse(await readFile(filePath, "utf8"));
-    state = { ...EMPTY_STATE(), ...parsed, version: 3 };
+    state = { ...EMPTY_STATE(), ...parsed, version: 4 };
+    state.relationshipGraph = Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, parsed.relationshipGraph?.[collection] || {}]));
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
@@ -156,7 +159,44 @@ export async function createFileStore(filePath) {
       await persist();
       return { demoRoom: structuredClone(demo), room: structuredClone(room) };
     },
+    async createRelationshipRecord(collection, record) {
+      assertCollection(collection);
+      state.relationshipGraph[collection][record.id] = structuredClone(record);
+      await persist();
+      return structuredClone(record);
+    },
+    getRelationshipRecordForUser(collection, id, userId) {
+      assertCollection(collection);
+      const record = state.relationshipGraph[collection][id];
+      const membership = state.memberships[userId];
+      return record && membership?.relationshipId === record.relationshipId ? structuredClone(record) : null;
+    },
+    listRelationshipRecordsForUser(collection, userId) {
+      assertCollection(collection);
+      const relationshipId = state.memberships[userId]?.relationshipId;
+      if (!relationshipId) return [];
+      return Object.values(state.relationshipGraph[collection]).filter((record) => record.relationshipId === relationshipId).map((record) => structuredClone(record));
+    },
+    async updateRelationshipRecordForUser(collection, id, userId, updater) {
+      assertCollection(collection);
+      const record = state.relationshipGraph[collection][id];
+      const membership = state.memberships[userId];
+      if (!record || membership?.relationshipId !== record.relationshipId) return null;
+      await updater(record);
+      record.updatedAt = new Date().toISOString();
+      await persist();
+      return structuredClone(record);
+    },
+    async relationshipSnapshotForUser(userId) {
+      const relationshipId = state.memberships[userId]?.relationshipId;
+      if (!relationshipId) return null;
+      return Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, Object.values(state.relationshipGraph[collection]).filter((record) => record.relationshipId === relationshipId).map((record) => structuredClone(record))]));
+    },
   };
+}
+
+function assertCollection(collection) {
+  if (!GRAPH_COLLECTIONS.includes(collection)) throw new Error(`Unsupported relationship collection: ${collection}`);
 }
 
 function publicUser(user) {

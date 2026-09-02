@@ -1,4 +1,13 @@
 import { Pool } from "pg";
+import { GRAPH_COLLECTIONS } from "./relationship-domain.mjs";
+
+const GRAPH_TABLES = Object.freeze({
+  milestones: "relationship_milestones", reminders: "reminders", lists: "shared_lists", listItems: "shared_list_items",
+  issues: "relationship_issues", perspectives: "issue_perspectives", summaries: "shareable_summaries", proposals: "decision_proposals",
+  evaluations: "proposal_evaluations", agreements: "agreements", approvals: "agreement_approvals", commitments: "commitments",
+  outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
+  consentEvents: "consent_events", productEvents: "product_events",
+});
 
 export async function createPostgresStore(databaseUrl) {
   const pool = new Pool({ connectionString: databaseUrl, max: Number(process.env.DB_POOL_SIZE || 5), ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false } });
@@ -112,6 +121,46 @@ export async function createPostgresStore(databaseUrl) {
         return { demoRoom: demo, room };
       } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
     },
+    async createRelationshipRecord(collection, record) {
+      const table = graphTable(collection);
+      const result = await pool.query(`insert into ${table} (id,relationship_id,created_by_user_id,owner_user_id,visibility,status,version,due_at,review_at,expires_at,data,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`, graphValues(record));
+      return mapGraphRecord(result.rows[0]);
+    },
+    async getRelationshipRecordForUser(collection, id, userId) {
+      const table = graphTable(collection);
+      const result = await pool.query(`select r.* from ${table} r join relationship_members m on m.relationship_id=r.relationship_id where r.id=$1 and m.user_id=$2`, [id, userId]);
+      return mapGraphRecord(result.rows[0]);
+    },
+    async listRelationshipRecordsForUser(collection, userId) {
+      const table = graphTable(collection);
+      const result = await pool.query(`select r.* from ${table} r join relationship_members m on m.relationship_id=r.relationship_id where m.user_id=$1 order by r.created_at desc`, [userId]);
+      return result.rows.map(mapGraphRecord);
+    },
+    async updateRelationshipRecordForUser(collection, id, userId, updater) {
+      const table = graphTable(collection);
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const result = await client.query(`select r.* from ${table} r join relationship_members m on m.relationship_id=r.relationship_id where r.id=$1 and m.user_id=$2 for update of r`, [id, userId]);
+        if (!result.rowCount) { await client.query("rollback"); return null; }
+        const record = mapGraphRecord(result.rows[0]);
+        await updater(record);
+        record.updatedAt = new Date().toISOString();
+        const updated = await client.query(`update ${table} set owner_user_id=$2,visibility=$3,status=$4,version=$5,due_at=$6,review_at=$7,expires_at=$8,data=$9,updated_at=$10 where id=$1 returning *`, [record.id, record.ownerUserId, record.visibility, record.status, record.version, record.dueAt || null, record.reviewAt || null, record.expiresAt || null, record, record.updatedAt]);
+        await client.query("commit");
+        return mapGraphRecord(updated.rows[0]);
+      } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+    },
+    async relationshipSnapshotForUser(userId) {
+      const context = await loadRelationshipContext(pool, userId);
+      if (!context) return null;
+      const entries = await Promise.all(GRAPH_COLLECTIONS.map(async (collection) => {
+        const table = graphTable(collection);
+        const rows = (await pool.query(`select * from ${table} where relationship_id=$1 order by created_at desc`, [context.relationship.id])).rows.map(mapGraphRecord);
+        return [collection, rows];
+      }));
+      return Object.fromEntries(entries);
+    },
   };
 }
 
@@ -138,6 +187,45 @@ async function migrate(pool) {
     create table if not exists demo_rooms (code text primary key, status text not null, payload jsonb not null, expires_at timestamptz not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists demo_rooms_expiry_idx on demo_rooms(expires_at);
   `);
+  for (const table of Object.values(GRAPH_TABLES)) {
+    await pool.query(`
+      create table if not exists ${table} (
+        id text primary key,
+        relationship_id text not null references relationships(id) on delete cascade,
+        created_by_user_id text not null references users(id),
+        owner_user_id text not null references users(id),
+        visibility text not null,
+        status text not null,
+        version integer not null default 1,
+        due_at timestamptz,
+        review_at timestamptz,
+        expires_at timestamptz,
+        data jsonb not null,
+        created_at timestamptz not null,
+        updated_at timestamptz not null
+      );
+      create index if not exists ${table}_relationship_status_idx on ${table}(relationship_id,status,created_at desc);
+      create index if not exists ${table}_owner_idx on ${table}(owner_user_id,created_at desc);
+      create index if not exists ${table}_due_idx on ${table}(due_at) where due_at is not null;
+      create index if not exists ${table}_review_idx on ${table}(review_at) where review_at is not null;
+      create index if not exists ${table}_expiry_idx on ${table}(expires_at) where expires_at is not null;
+    `);
+  }
+}
+
+function graphTable(collection) {
+  const table = GRAPH_TABLES[collection];
+  if (!table) throw new Error(`Unsupported relationship collection: ${collection}`);
+  return table;
+}
+
+function graphValues(record) {
+  return [record.id, record.relationshipId, record.createdByUserId, record.ownerUserId, record.visibility, record.status, record.version, record.dueAt || null, record.reviewAt || null, record.expiresAt || null, record, record.createdAt, record.updatedAt];
+}
+
+function mapGraphRecord(row) {
+  if (!row) return null;
+  return { ...row.data, id: row.id, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, ownerUserId: row.owner_user_id, visibility: row.visibility, status: row.status, version: row.version, dueAt: iso(row.due_at) || row.data?.dueAt || null, reviewAt: iso(row.review_at) || row.data?.reviewAt || null, expiresAt: iso(row.expires_at) || row.data?.expiresAt || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) };
 }
 
 const iso = (value) => value ? new Date(value).toISOString() : null;

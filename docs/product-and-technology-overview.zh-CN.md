@@ -1,5 +1,7 @@
 # Toward Us / 彼此：完整产品与技术介绍
 
+> 2026-09-02 更新：产品已从单一“双人 AI 调解与复盘工具”深化为 Multi-principal Relationship Agent。新 P0 能力与权限边界以 [multi-principal-relationship-agent.zh-CN.md](./multi-principal-relationship-agent.zh-CN.md) 为准；本文继续保留原调解、demo、语音与部署说明。
+
 > 文档定位：面向潜在用户、合作伙伴、产品设计者和工程团队，解释 Toward Us 是什么、解决什么问题、如何使用、当前已经实现什么，以及系统如何工作。
 >
 > 当前阶段：私人 Beta。本文以仓库当前实现为准；“未来方向”不代表已经上线。

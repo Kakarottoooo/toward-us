@@ -6,12 +6,14 @@ import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
 import { createMediator, sanitizeFollowUp } from "../server/mediator.mjs";
 import { createFileStore } from "../server/store.mjs";
+import { nextOccurrence, publicRelationshipEvent } from "../server/relationship-domain.mjs";
 
 let server;
 let baseUrl;
 let temporaryDirectory;
 let store;
 let counter = 0;
+let lastDecisionContext = null;
 
 test("shared AI follow-up is rendered as clean public prose", () => {
   assert.equal(
@@ -40,6 +42,12 @@ test("WebRTC transcription is created as a realtime call with ASR input enabled"
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("relationship-domain contracts keep events minimal and yearly dates stable", () => {
+  assert.deepEqual(publicRelationshipEvent("issue.updated", "object-1", 3), { eventType: "issue.updated", objectId: "object-1", version: 3 });
+  assert.equal(nextOccurrence("2020-09-10", "yearly", new Date("2026-09-02T00:00:00Z")), "2026-09-10T12:00:00.000Z");
+  assert.equal(nextOccurrence("2020-08-10", "yearly", new Date("2026-09-02T00:00:00Z")), "2027-08-10T12:00:00.000Z");
 });
 
 before(async () => {
@@ -184,6 +192,90 @@ test("logout revokes the server session", async () => {
   await request("/api/auth/logout", { method: "POST", cookie: account.cookie, expectedStatus: 204, parseJson: false });
   const state = await request("/api/auth/me", { cookie: account.cookie });
   assert.equal(state.user, null);
+});
+
+test("P0 relationship graph enforces private reminders and private-surprise non-disclosure", async () => {
+  const pair = await createPair("GraphA", "GraphB");
+  const milestone = await request("/api/milestones", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { type: "anniversary", title: "Our anniversary", date: "2020-09-10", timezone: "America/Los_Angeles", recurringRule: "yearly" } });
+  await request(`/api/milestones/${milestone.milestone.id}/reminders`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { visibility: "private", minutesBefore: 20160, privateNotes: "SECRET_GIFT_REMINDER" } });
+  await request(`/api/milestones/${milestone.milestone.id}/reminders`, { method: "POST", cookie: pair.b.cookie, expectedStatus: 201, body: { visibility: "private", minutesBefore: 1440, privateNotes: "B_PRIVATE_REMINDER" } });
+  const list = await request("/api/lists", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { title: "Wishlist", type: "gifts" } });
+  const surprise = await request(`/api/lists/${list.list.id}/items`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { title: "Secret preparation", visibility: "private_surprise", estimatedCostRange: "private-budget" } });
+  const homeA = await request("/api/relationship/home", { cookie: pair.a.cookie });
+  const homeB = await request("/api/relationship/home", { cookie: pair.b.cookie });
+  assert.equal(homeA.graph.reminders.length, 1);
+  assert.equal(homeB.graph.reminders.length, 1);
+  assert.equal(homeA.graph.reminders[0].minutesBefore, 20160);
+  assert.equal(homeB.graph.reminders[0].minutesBefore, 1440);
+  assert.equal(homeA.graph.milestones[0].timezone, "America/Los_Angeles");
+  assert.equal(JSON.stringify(homeB).includes("SECRET_GIFT_REMINDER"), false);
+  assert.equal(homeA.graph.listItems.some((item) => item.id === surprise.item.id), true);
+  assert.equal(homeB.graph.listItems.some((item) => item.id === surprise.item.id), false);
+  assert.equal(JSON.stringify(homeB).includes("private-budget"), false);
+  const firstReveal = await request(`/api/list-items/${surprise.item.id}/reveal`, { method: "POST", cookie: pair.a.cookie });
+  const secondReveal = await request(`/api/list-items/${surprise.item.id}/reveal`, { method: "POST", cookie: pair.a.cookie });
+  assert.equal(secondReveal.item.version, firstReveal.item.version);
+  const revealed = await request("/api/relationship/home", { cookie: pair.b.cookie });
+  assert.equal(revealed.graph.listItems.some((item) => item.id === surprise.item.id), true);
+  await request(`/api/list-items/${surprise.item.id}`, { method: "DELETE", cookie: pair.a.cookie, expectedStatus: 204, parseJson: false });
+  const archived = await request("/api/relationship/home", { cookie: pair.b.cookie });
+  assert.equal(archived.graph.listItems.some((item) => item.id === surprise.item.id), false);
+});
+
+test("joint decision context excludes private perspective tokens and objects stay relationship-scoped", async () => {
+  const pair = await createPair("DecisionA", "DecisionB");
+  const outsider = await createPair("OutsiderA", "OutsiderB");
+  const issue = await request("/api/issues", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { title: "Where should we live?", category: "moving", sharedContext: "We need a decision this month." } });
+  const aPerspective = await request(`/api/issues/${issue.issue.id}/perspectives`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { goal: "Stay near work", importance: "Short commute", negotiables: "Try for six months", shareableText: "I value a shorter commute.", privateNotes: "PRIVATE_ONLY_SECRET_TOKEN_A" } });
+  await request(`/api/issues/${issue.issue.id}/shareable-summary`, { method: "POST", cookie: pair.a.cookie, body: { text: aPerspective.summary.text } });
+  const bPerspective = await request(`/api/issues/${issue.issue.id}/perspectives`, { method: "POST", cookie: pair.b.cookie, expectedStatus: 201, body: { goal: "Stay near family", importance: "Support network", negotiables: "Consider nearby areas", shareableText: "I value nearby family support.", privateNotes: "PRIVATE_ONLY_SECRET_TOKEN_B" } });
+  await request(`/api/issues/${issue.issue.id}/shareable-summary`, { method: "POST", cookie: pair.b.cookie, body: { text: bPerspective.summary.text } });
+  const viewA = await request(`/api/issues/${issue.issue.id}`, { cookie: pair.a.cookie });
+  const viewB = await request(`/api/issues/${issue.issue.id}`, { cookie: pair.b.cookie });
+  assert.deepEqual(viewA.perspectives.map((item) => item.ownerUserId), [pair.a.user.id]);
+  assert.deepEqual(viewB.perspectives.map((item) => item.ownerUserId), [pair.b.user.id]);
+  await request(`/api/issues/${issue.issue.id}`, { cookie: outsider.a.cookie, expectedStatus: 404 });
+  const generated = await request(`/api/issues/${issue.issue.id}/generate-options`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { language: "en" } });
+  assert.equal(generated.proposals.length, 3);
+  assert.equal(JSON.stringify(lastDecisionContext).includes("PRIVATE_ONLY_SECRET_TOKEN"), false);
+  assert.equal(lastDecisionContext.confirmedSummaries.length, 2);
+});
+
+test("agreement approval, commitment completion, and outcome review require both principals", async () => {
+  const pair = await createPair("OutcomeA", "OutcomeB");
+  const outsider = await createPair("OtherOutcomeA", "OtherOutcomeB");
+  const issue = await request("/api/issues", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { title: "Weekly time", category: "time" } });
+  for (const member of [pair.a, pair.b]) {
+    const perspective = await request(`/api/issues/${issue.issue.id}/perspectives`, { method: "POST", cookie: member.cookie, expectedStatus: 201, body: { goal: `${member.user.name} goal`, shareableText: `${member.user.name} can share this.` } });
+    await request(`/api/issues/${issue.issue.id}/shareable-summary`, { method: "POST", cookie: member.cookie, body: { text: perspective.summary.text } });
+  }
+  const options = await request(`/api/issues/${issue.issue.id}/generate-options`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201 });
+  await request(`/api/proposals/${options.proposals[2].id}/evaluations`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { value: "accept" } });
+  await request("/api/agreements", { method: "POST", cookie: pair.a.cookie, expectedStatus: 409, body: { sourceIssueId: issue.issue.id, proposalId: options.proposals[2].id } });
+  await request(`/api/proposals/${options.proposals[2].id}/evaluations`, { method: "POST", cookie: pair.b.cookie, expectedStatus: 201, body: { value: "accept_with_conditions", conditions: "Saturday morning" } });
+  const agreement = await request("/api/agreements", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { sourceIssueId: issue.issue.id, proposalId: options.proposals[2].id, title: "Two hours together", terms: ["Friday evening"], reviewAt: new Date(Date.now() + 86400000).toISOString() } });
+  const firstApproval = await request(`/api/agreements/${agreement.agreement.id}/approve`, { method: "POST", cookie: pair.a.cookie });
+  assert.equal(firstApproval.agreement.status, "awaiting_approvals");
+  const changed = await request(`/api/agreements/${agreement.agreement.id}`, { method: "PATCH", cookie: pair.b.cookie, body: { version: 1, terms: ["Saturday morning"] } });
+  assert.equal(changed.agreement.version, 2);
+  const afterB = await request(`/api/agreements/${agreement.agreement.id}/approve`, { method: "POST", cookie: pair.b.cookie });
+  assert.equal(afterB.approvedCount, 1);
+  assert.equal(afterB.agreement.status, "awaiting_approvals");
+  const active = await request(`/api/agreements/${agreement.agreement.id}/approve`, { method: "POST", cookie: pair.a.cookie });
+  assert.equal(active.agreement.status, "active");
+  await request("/api/commitments", { method: "POST", cookie: outsider.a.cookie, body: { agreementId: agreement.agreement.id, description: "cross relationship" }, expectedStatus: 409 });
+  const commitment = await request("/api/commitments", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { agreementId: agreement.agreement.id, ownerType: "both", description: "Protect Saturday morning", dueAt: new Date(Date.now() + 3600000).toISOString(), reviewAt: new Date(Date.now() - 1000).toISOString() } });
+  const oneDone = await request(`/api/commitments/${commitment.commitment.id}/complete`, { method: "POST", cookie: pair.a.cookie, body: { completionEvidence: "A completed" } });
+  assert.equal(oneDone.commitment.status, "active");
+  const bothDone = await request(`/api/commitments/${commitment.commitment.id}/complete`, { method: "POST", cookie: pair.b.cookie, body: { completionEvidence: "B completed" } });
+  assert.equal(bothDone.commitment.status, "completed");
+  const outcomeId = bothDone.outcome.id;
+  await request(`/api/outcome-reviews/${outcomeId}/responses`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { actionCompleted: true, improvement: "improved", effective: "Planning early helped", stillAccept: true, allowLearnedPattern: true, learnedPatternCandidate: "Choosing the time in advance helped in this situation." } });
+  await request(`/api/outcome-reviews/${outcomeId}/finalize`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 409 });
+  await request(`/api/outcome-reviews/${outcomeId}/responses`, { method: "POST", cookie: pair.b.cookie, expectedStatus: 201, body: { actionCompleted: true, improvement: "improved", effective: "Planning early helped", stillAccept: true, allowLearnedPattern: true, learnedPatternCandidate: "Choosing the time in advance helped in this situation." } });
+  const finalized = await request(`/api/outcome-reviews/${outcomeId}/finalize`, { method: "POST", cookie: pair.b.cookie, body: { learnedPattern: "Choosing the time in advance helped in this situation." } });
+  assert.equal(finalized.outcome.status, "completed");
+  assert.equal(finalized.outcome.learnedPattern, "Choosing the time in advance helped in this situation.");
 });
 
 test("quick demo rooms require two recording consents and isolate guest capabilities", async () => {
@@ -342,6 +434,17 @@ const fakeMediator = {
   },
   async answer(_room, question) {
     return `针对“${question}”，先约定一个时间，再轮流说。`;
+  },
+  async summarizePerspective(perspective) {
+    return { text: perspective.shareableText || perspective.goal, source: "test-private-agent" };
+  },
+  async generateDecisionOptions(context) {
+    lastDecisionContext = structuredClone(context);
+    return { source: "test-joint-agent", options: [
+      { title: "Closer to A", rationale: "A", tradeoffs: [], conditions: [], risks: [], disputedFacts: [] },
+      { title: "Closer to B", rationale: "B", tradeoffs: [], conditions: [], risks: [], disputedFacts: [] },
+      { title: "Minimax", rationale: "Both", tradeoffs: [], conditions: [], risks: [], disputedFacts: [] },
+    ] };
   },
 };
 

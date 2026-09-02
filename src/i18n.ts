@@ -24,5 +24,5 @@ export function brandLabel(language: Language) {
 }
 
 export function pageTitle(language: Language) {
-  return localized(language, "Toward Us 彼此 · 双人 AI 调解", "Toward Us · AI mediation for two", "Toward Us · Mediación con IA para dos");
+  return localized(language, "Toward Us 彼此 · 两个人的共同关系 Agent", "Toward Us · A shared relationship agent for two", "Toward Us · Un agente compartido de relación para dos");
 }

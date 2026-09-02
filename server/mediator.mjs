@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import { localDecisionOptions } from "./relationship-domain.mjs";
 
 const analysisSchema = {
   type: "object",
@@ -112,6 +113,41 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         return followUpFallback(room, question);
       }
     },
+    async summarizePerspective(perspective, language = "zh") {
+      const fallback = perspective.shareableText || [perspective.goal, perspective.importance, perspective.negotiables].filter(Boolean).join(" ").slice(0, 1200);
+      if (!client) return { text: fallback, source: "local" };
+      try {
+        const response = await client.responses.create({
+          model, store: false, max_output_tokens: 350,
+          input: [
+            { role: "developer", content: `You are a private relationship agent. Write one concise ${language === "zh" ? "Simplified Chinese" : language === "es" ? "Spanish" : "English"} shareable-summary draft. Include only information the user marked shareable. Do not diagnose, pressure, or expose private-only fields. Output plain text.` },
+            { role: "user", content: JSON.stringify({ goal: perspective.goal, importance: perspective.importance, negotiables: perspective.negotiables, shareableText: perspective.shareableText }) },
+          ],
+        });
+        return { text: response.output_text.trim() || fallback, source: "openai" };
+      } catch (error) {
+        console.error("Private perspective summary failed; using local fallback:", error?.message || error);
+        return { text: fallback, source: "local" };
+      }
+    },
+    async generateDecisionOptions(context, language = "zh") {
+      const fallback = localDecisionOptions(context, language);
+      if (!client) return { options: fallback, source: "local" };
+      try {
+        const response = await client.responses.create({
+          model, store: false, max_output_tokens: 1500,
+          text: { format: { type: "json_schema", name: "joint_decision_options", strict: true, schema: decisionOptionsSchema } },
+          input: [
+            { role: "developer", content: `You are the shared agent for two equal principals. Use only the supplied joint context. Produce three options: one closer to each person's confirmed summary and one minimizing the largest loss. Never reveal or infer private information, shame either person, or approve a decision for them. Write in ${language === "zh" ? "Simplified Chinese" : language === "es" ? "Spanish" : "English"}.` },
+            { role: "user", content: JSON.stringify(context) },
+          ],
+        });
+        return { options: JSON.parse(response.output_text).options, source: "openai" };
+      } catch (error) {
+        console.error("Joint decision generation failed; using local fallback:", error?.message || error);
+        return { options: fallback, source: "local" };
+      }
+    },
     async transcribe(buffer, mimeType = "audio/webm") {
       if (!client) {
         const error = new Error("语音转录需要配置 OPENAI_API_KEY。");
@@ -172,6 +208,16 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
     },
   };
 }
+
+const decisionOptionsSchema = {
+  type: "object", additionalProperties: false, required: ["options"],
+  properties: {
+    options: { type: "array", minItems: 3, maxItems: 4, items: { type: "object", additionalProperties: false, required: ["title", "rationale", "tradeoffs", "conditions", "risks", "disputedFacts"], properties: {
+      title: { type: "string" }, rationale: { type: "string" }, tradeoffs: { type: "array", items: { type: "string" } },
+      conditions: { type: "array", items: { type: "string" } }, risks: { type: "array", items: { type: "string" } }, disputedFacts: { type: "array", items: { type: "string" } },
+    } } },
+  },
+};
 
 function mediatorInstructions(language, personality, aName, bName) {
   const tone = {

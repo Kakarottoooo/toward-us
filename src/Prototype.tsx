@@ -6,9 +6,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
+import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
+import "./relationship.css";
 
 type Screen = "home" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
@@ -44,7 +46,7 @@ type Health = { ok: boolean; aiReady: boolean; model: string; audioPersistence: 
 const copy = {
   zh: {
     homeLine: "在争执之外，我们选择彼此。", start: "开始", homeFooter: "暂停 · 倾听 · 修复", back: "返回",
-    welcome: "欢迎回来", authHint: "你们共同经历的内容，只属于你们两个人。", email: "邮箱", password: "密码",
+    welcome: "欢迎回来", authHint: "它属于你们两个人，但任何一方都不能单独控制它。", email: "邮箱", password: "密码",
     displayName: "你的称呼", login: "登录", register: "创建账号", switchRegister: "还没有账号？创建一个",
     switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
@@ -70,7 +72,7 @@ const copy = {
   },
   en: {
     homeLine: "Beyond the argument, we choose each other.", start: "Begin", homeFooter: "Pause · Listen · Repair", back: "Back",
-    welcome: "Welcome back", authHint: "What you share belongs only to the two of you.", email: "Email", password: "Password",
+    welcome: "Welcome back", authHint: "It belongs to both of you, but neither person controls it alone.", email: "Email", password: "Password",
     displayName: "Your name", login: "Sign in", register: "Create account", switchRegister: "New here? Create an account",
     switchLogin: "Already registered? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
     createInvite: "Create partner invite", copyInvite: "Copy invite link", copied: "Copied", waitingPartner: "Waiting for your partner",
@@ -95,7 +97,7 @@ const copy = {
   },
   es: {
     homeLine: "Más allá de la discusión, nos elegimos.", start: "Comenzar", homeFooter: "Pausar · Escuchar · Reparar", back: "Volver",
-    welcome: "Bienvenido de nuevo", authHint: "Lo que comparten les pertenece únicamente a ustedes dos.", email: "Correo electrónico", password: "Contraseña",
+    welcome: "Bienvenido de nuevo", authHint: "Les pertenece a ambos, pero ninguno lo controla por sí solo.", email: "Correo electrónico", password: "Contraseña",
     displayName: "Tu nombre", login: "Iniciar sesión", register: "Crear cuenta", switchRegister: "¿Eres nuevo? Crea una cuenta",
     switchLogin: "¿Ya tienes cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
     createInvite: "Crear invitación", copyInvite: "Copiar enlace", copied: "Copiado", waitingPartner: "Esperando a tu pareja",
@@ -208,13 +210,13 @@ function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; 
         <p className="desktop-kicker">{localized(language, "走向理解，走向彼此", "TOWARD UNDERSTANDING, TOWARD US", "HACIA EL ENTENDIMIENTO, HACIA NOSOTROS")}</p>
         <h1>{t.homeLine}</h1>
         <PauseMark />
-        <p className="desktop-home-support">{localized(language, "不是争输赢，而是把彼此听清楚。", "Not to win the argument, but to hear each other clearly.", "No se trata de ganar, sino de escucharse con claridad.")}</p>
+        <p className="desktop-home-support">{localized(language, "属于两个人的共同关系 Agent。帮助你们一起沟通、决定、计划、记住，并把说过的话真正做到。", "A shared relationship agent for two people. It helps you communicate, decide, plan, remember, and follow through together.", "Un agente de relación compartido para dos personas. Les ayuda a comunicarse, decidir, planear, recordar y cumplir juntos.")}</p>
         <div className="desktop-home-actions">
           <button className="desktop-primary-cta" onClick={() => location.assign("/demo")}>{localized(language, "开始一次对话", "Start a conversation", "Iniciar una conversación")}<ArrowRight size={24} /></button>
           <button className="desktop-secondary-cta" onClick={onStart}>{localized(language, "登录共同空间", "Enter your shared space", "Entrar al espacio compartido")}</button>
         </div>
       </main>
-      <footer className="desktop-home-footer" id="how-it-works"><span>{localized(language, "双人表达", "Two voices", "Dos voces")}</span><i /><span>{localized(language, "私下反馈", "Private reflection", "Reflexión privada")}</span><i /><span>{localized(language, "共同复盘", "Shared review", "Revisión compartida")}</span></footer>
+      <footer className="desktop-home-footer" id="how-it-works"><span>{localized(language, "一起沟通", "Communicate", "Comunicarse")}</span><i /><span>{localized(language, "一起决定与计划", "Decide & plan", "Decidir y planear")}</span><i /><span>{localized(language, "共同履行与复盘", "Follow through & review", "Cumplir y revisar")}</span></footer>
     </div>
   </div>;
 }
@@ -270,15 +272,21 @@ function DashboardScreen({ user, pairing, rooms, language, onLanguage, onSetup, 
   user: User; pairing: Pairing; rooms: RoomSummary[]; language: Language; onLanguage: (language: Language) => void; onSetup: () => void; onJoin: (code: string, join: boolean) => void;
   onHistory: () => void; onLogout: () => void; notice: string; setNotice: (value: string) => void; busy: boolean; t: typeof copy.zh;
 }) {
-  const [code, setCode] = useState(""); const partner = pairing.members.find((member) => member.id !== user.id);
-  return <div className="paper-screen dashboard-screen" data-testid="dashboard-screen"><header className="dashboard-header"><Wordmark language={language} /><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
-    <MobileScroll className="dashboard-scroll"><main className="dashboard-content"><section className="shared-space"><p>{t.ownSpace}</p><h1>{user.name}<i>＋</i>{partner?.name}</h1><span>{t.paired}</span><div className="paired-circles"><b>{user.name.slice(0, 1)}</b><i>＋</i><b>{partner?.name.slice(0, 1)}</b></div></section>
-      <SplitButton label={t.startMediation} onClick={onSetup} />
-      <section className="join-rail"><label className="editorial-field code-field"><span>{t.joinRoom}</span><KeyboardInput value={code} onChange={(event) => { setNotice(""); setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6)); }} placeholder={t.roomCode} maxLength={6} /></label><button onClick={() => onJoin(code, true)} disabled={busy || code.length !== 6} aria-label={t.joinRoom} data-testid="join-active-room"><ArrowRight size={20} /></button></section>
-      {notice && <p className="form-notice" role="alert">{notice}</p>}
-      <section className="active-list"><header><h2>{t.activeRooms}</h2><span>{rooms.length}</span></header>{!rooms.length ? <p>{t.noActive}</p> : rooms.map((item) => <button key={item.code} onClick={() => onJoin(item.code, !item.joined)}><span>{new Date(item.updatedAt).toLocaleDateString(languageTag(language))}</span><strong>{item.title}</strong><i>{item.code}</i><ArrowRight size={18} /></button>)}</section>
-      <p className="boundary-note"><LockKey size={15} />{t.accountBoundary}</p>
-    </main></MobileScroll><BottomNav current="home" onHome={() => {}} onHistory={onHistory} onLogout={onLogout} t={t} /></div>;
+  const partner = pairing.members.find((member) => member.id !== user.id);
+  return <RelationshipHome
+    user={{ id: user.id, name: user.name }}
+    partnerName={partner?.name || ""}
+    language={language}
+    rooms={rooms}
+    notice={notice}
+    busy={busy}
+    onLanguage={onLanguage}
+    onSetup={onSetup}
+    onJoin={onJoin}
+    onHistory={onHistory}
+    onLogout={onLogout}
+    onNotice={setNotice}
+  />;
 }
 
 function SetupScreen({ language, onBack, onLanguage, onRoom, notice, setNotice, busy, setBusy, t }: {

@@ -1,5 +1,7 @@
 # 双人 AI 关系调解产品设计文档
 
+> 2026-09-02 更新：长期产品方向与已经实现的 P0 Relationship Agent 纵向切片见 [multi-principal-relationship-agent.zh-CN.md](./multi-principal-relationship-agent.zh-CN.md)。本文保留此前调解产品的完整决策历史。
+
 > 文档性质：持续维护的产品逻辑唯一真相源（Living Product Spec）  
 > 当前版本：v1.1
 > 首次整理：2026-08-30  

@@ -18,6 +18,7 @@ import {
   validPassword,
   verifyPassword,
 } from "./auth.mjs";
+import { createRelationshipRouter } from "./relationship-router.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
@@ -628,6 +629,8 @@ export function createApiApp({ store, mediator, production = false }) {
     res.json({ item: historyDetail(room) });
   });
 
+  app.use("/api", createRelationshipRouter({ store, mediator }));
+
   function broadcastRoom(code) {
     for (const client of eventClients.get(code) || []) {
       Promise.resolve(store.getRoomForUser(code, client.userId)).then((room) => { if (room) sendEvent(client.res, publicRoom(room, client.userId)); }).catch(() => {});
@@ -646,6 +649,11 @@ export function createApiApp({ store, mediator, production = false }) {
     for (const client of clients) if (client.res === response) clients.delete(client);
     if (!clients.size) eventClients.delete(code);
   }
+
+  app.use((error, _req, res, _next) => {
+    if (res.headersSent) return;
+    res.status(error?.statusCode || 500).json({ error: error?.statusCode ? error.message : "服务器暂时无法完成这个请求。" });
+  });
 
   return app;
 }

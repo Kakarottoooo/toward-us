@@ -1,0 +1,9 @@
+import { Bell, Check } from "@phosphor-icons/react";
+import { localized, type Language } from "../../i18n";
+import { jsonBody, relationshipApi } from "../relationship/api";
+import type { GraphRecord } from "../relationship/types";
+
+export function NotificationCenter({ language, notifications, onChanged }: { language: Language; notifications: GraphRecord[]; onChanged: () => Promise<void> }) {
+  const read = async (id: string) => { await relationshipApi(`/api/notifications/${id}/read`, jsonBody({})); await onChanged(); };
+  return <section className="relationship-feature" aria-labelledby="notifications-title"><header><div><Bell size={23} /><h2 id="notifications-title">{localized(language, "通知中心", "Notification center", "Centro de notificaciones")}</h2></div><p>{localized(language, "通知默认使用模糊文案，不在锁屏或列表标题暴露敏感主题。", "Notifications use discreet copy and do not expose sensitive topics in external surfaces.", "Las notificaciones usan textos discretos y no exponen temas sensibles en superficies externas.")}</p></header><div className="relationship-rows">{notifications.length ? notifications.map((item) => <article key={item.id}><div><strong>{item.type === "shared_item_added" ? localized(language, "Toward Us 有一项共同空间更新。", "There is an update in your Toward Us shared space.", "Hay una actualización en su espacio compartido de Toward Us.") : localized(language, "Toward Us 有一项更新。", "There is an update in Toward Us.", "Hay una actualización en Toward Us.")}</strong><span>{localized(language, "站内通知", "In-app notification", "Notificación en la aplicación")}</span></div>{!item.readAt && <button onClick={() => read(item.id)}><Check size={16} />{localized(language, "已读", "Mark read", "Marcar como leída")}</button>}</article>) : <p className="relationship-empty">{localized(language, "目前没有需要处理的通知。", "Nothing needs your attention right now.", "No hay notificaciones pendientes.")}</p>}</div></section>;
+}
