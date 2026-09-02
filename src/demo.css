@@ -4,8 +4,11 @@
 .demo-header .home-wordmark { position: static; transform: none; align-self: center; justify-self: center; margin: 0; }
 .demo-header .home-wordmark strong { font-size: 8px; letter-spacing: .34em; }
 .demo-header .home-wordmark span { margin-top: 3px; font-size: 11px; }
-.demo-language { justify-self: end; color: #9d9891 !important; font-size: 11px; white-space: nowrap; }
-.demo-language .active { color: var(--jian-red); border-bottom: 1px solid currentColor; padding-bottom: 3px; }
+.demo-language { justify-self: end; display: flex; align-items: center; gap: 4px; color: #9d9891 !important; font-size: 10px; white-space: nowrap; }
+.demo-language > span { display: flex; align-items: center; gap: 4px; }
+.demo-language i { font-style: normal; }
+.demo-language button { padding: 0 0 3px; border: 0; border-bottom: 1px solid transparent; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.demo-language button.active { color: var(--jian-red); border-bottom-color: currentColor; }
 .demo-red-rail, .demo-blue-rail, .demo-red-corner, .demo-blue-corner, .demo-blue-side { position: absolute; z-index: 0; pointer-events: none; }
 .demo-red-rail { top: 0; bottom: 0; left: -41px; width: 102px; background: linear-gradient(90deg, var(--jian-red) 0 63%, rgba(255,59,36,0) 100%); filter: saturate(1.05); }
 .demo-blue-rail { top: 165px; right: -51px; bottom: 0; width: 111px; background: linear-gradient(270deg, var(--jian-blue) 0 60%, rgba(7,61,185,0) 100%); clip-path: polygon(35% 7%, 100% 0, 100% 100%, 0 100%); }

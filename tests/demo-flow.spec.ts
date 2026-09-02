@@ -96,7 +96,7 @@ test("one-device room keeps manual speaker selection and both sides in one conve
 
   await expect(page.locator(".message.side-a").getByText("这是我的看法。")).toBeVisible();
   await expect(page.locator(".message.side-b").getByText("这是对方的看法。")).toBeVisible();
-  await expect(page.getByText("无需模仿不同声音")).toBeVisible();
+  await expect(page.getByText("每段话开始时会锁定当前姓名；说话期间切换不会改掉正在进行的这句话。")).toBeVisible();
   await screenshotDevice(page, "qa/demo-room-speaker-selection-mobile.png");
 
   const composer = page.locator(".composer");

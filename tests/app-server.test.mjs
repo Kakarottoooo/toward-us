@@ -29,12 +29,13 @@ test("WebRTC transcription is created as a realtime call with ASR input enabled"
   };
   try {
     const mediator = createMediator({ apiKey: "test-key" });
-    const answer = await mediator.createRealtimeSession({ sdp: "v=0\r\ns=-\r\n", language: "zh" });
+    const answer = await mediator.createRealtimeSession({ sdp: "v=0\r\ns=-\r\n", language: "es" });
     assert.match(answer, /^v=0/);
     assert.equal(session.type, "realtime");
     assert.equal(session.model, "gpt-realtime");
     assert.deepEqual(session.output_modalities, ["text"]);
     assert.equal(session.audio.input.transcription.model, "gpt-live-transcribe");
+    assert.equal(session.audio.input.transcription.language, "es");
     assert.equal(session.audio.input.turn_detection.create_response, false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -222,11 +223,13 @@ test("quick demo rooms require two recording consents and isolate guest capabili
   await request(`/api/demo/rooms/${code}`, { cookie: otherCookie, expectedStatus: 404 });
 });
 
-test("one-device demo lets the host record consent and attribute both perspectives", async () => {
-  const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "shared", language: "zh", nameA: "红方", nameB: "蓝方" } });
+test("one-device demo preserves Spanish while the host attributes both perspectives", async () => {
+  const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "shared", language: "es", nameA: "Rojo", nameB: "Azul" } });
   assert.equal(createdResponse.status, 201, JSON.stringify(createdResponse.payload));
   const cookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
   const room = createdResponse.payload.room;
+  assert.equal(room.language, "es");
+  assert.match(room.safety.message, /mediación/i);
   assert.equal(room.participants.length, 2);
   assert.equal(room.canControlAllSpeakers, true);
   await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[0].id } });

@@ -59,7 +59,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
     aiReady: Boolean(client),
     model,
     async analyze(room) {
-      if (!client) return buildFallbackAnalysis(room, "未配置模型服务，已使用本地复盘框架。", model);
+      if (!client) return buildFallbackAnalysis(room, localText(room.language, "未配置模型服务，已使用本地复盘框架。", "Model service is not configured; the local reflection framework was used.", "El servicio del modelo no está configurado; se utilizó el marco de reflexión local."), model);
 
       try {
         const [a, b] = normalizedParticipants(room);
@@ -91,7 +91,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         return normalizeModelAnalysis(parsed, room, model);
       } catch (error) {
         console.error("AI mediation failed; using local fallback:", error?.message || error);
-        return buildFallbackAnalysis(room, "模型暂时不可用，已使用本地复盘框架。", model);
+        return buildFallbackAnalysis(room, localText(room.language, "模型暂时不可用，已使用本地复盘框架。", "The model is temporarily unavailable; the local reflection framework was used.", "El modelo no está disponible temporalmente; se utilizó el marco de reflexión local."), model);
       }
     },
     async answer(room, question) {
@@ -152,7 +152,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         audio: {
           input: {
             noise_reduction: { type: "far_field" },
-            transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-live-transcribe", language: language === "en" ? "en" : "zh" },
+            transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-live-transcribe", language: language === "es" ? "es" : language === "en" ? "en" : "zh" },
             turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 700, create_response: false, interrupt_response: false },
           },
         },
@@ -179,7 +179,7 @@ function mediatorInstructions(language, personality, aName, bName) {
     counselor: "专业、克制、善于把情绪翻译成需要",
     direct: "直接、清晰，但不羞辱任何一方",
   }[personality] || "温和、真诚";
-  const outputLanguage = language === "en" ? "English" : "简体中文";
+  const outputLanguage = language === "es" ? "español" : language === "en" ? "English" : "简体中文";
   return `你是情侣与夫妻的第三方调解者。请用${outputLanguage}输出，并保持${tone}的语气。
 你的目标是帮助双方降低对抗、理解事实与需要、形成可执行的下一步；绝不宣布谁输谁赢。
 你可以明确指出具体行为的责任与伤害，但不要把人贴成好人或坏人。只根据记录判断，不补写事实。
@@ -190,8 +190,13 @@ function mediatorInstructions(language, personality, aName, bName) {
 
 function transcriptForModel(room, a, b) {
   const names = new Map([[a.id, a.name], [b.id, b.name]]);
-  const lines = room.messages.map((message, index) => `[${index + 1}] ${names.get(message.participantId) || "未知"}: ${message.text}`);
-  return `房间模式：${room.mode === "shared" ? "同一台设备、同一个麦克风" : "两台设备"}\n调解人格：${room.personality}\n对话记录：\n${lines.join("\n")}`;
+  const unknown = localText(room.language, "未知", "Unknown", "Desconocido");
+  const lines = room.messages.map((message, index) => `[${index + 1}] ${names.get(message.participantId) || unknown}: ${message.text}`);
+  return localText(room.language,
+    `房间模式：${room.mode === "shared" ? "同一台设备、同一个麦克风" : "两台设备"}\n调解人格：${room.personality}\n对话记录：\n${lines.join("\n")}`,
+    `Room mode: ${room.mode === "shared" ? "one shared device and microphone" : "two devices"}\nMediator style: ${room.personality}\nConversation transcript:\n${lines.join("\n")}`,
+    `Modo de sala: ${room.mode === "shared" ? "un dispositivo y micrófono compartidos" : "dos dispositivos"}\nEstilo de mediación: ${room.personality}\nTranscripción de la conversación:\n${lines.join("\n")}`,
+  );
 }
 
 export function sanitizeFollowUp(value) {
@@ -211,7 +216,7 @@ function normalizeModelAnalysis(parsed, room, model) {
     generatedAt: new Date().toISOString(),
     source: "openai",
     model,
-    notice: "AI 结论是辅助视角，不替代专业心理、医疗或法律意见。",
+    notice: localText(room.language, "AI 结论是辅助视角，不替代专业心理、医疗或法律意见。", "AI provides an additional perspective and does not replace professional psychological, medical, or legal advice.", "La IA ofrece una perspectiva adicional y no sustituye el asesoramiento psicológico, médico o legal profesional."),
     shared: {
       title: parsed.title,
       overview: parsed.overview,
@@ -235,9 +240,10 @@ function normalizeModelAnalysis(parsed, room, model) {
 
 function buildFallbackAnalysis(room, notice, model) {
   const [a, b] = normalizedParticipants(room);
-  const category = inferCategory(room.messages.map((message) => message.text).join(" "));
-  const latestA = [...room.messages].reverse().find((message) => message.participantId === a.id)?.text || "还没有充分表达自己的看法。";
-  const latestB = [...room.messages].reverse().find((message) => message.participantId === b.id)?.text || "还没有充分表达自己的看法。";
+  const category = inferCategory(room.messages.map((message) => message.text).join(" "), room.language);
+  const notExpressed = localText(room.language, "还没有充分表达自己的看法。", "They have not fully expressed their perspective yet.", "Aún no ha expresado plenamente su perspectiva.");
+  const latestA = [...room.messages].reverse().find((message) => message.participantId === a.id)?.text || notExpressed;
+  const latestB = [...room.messages].reverse().find((message) => message.participantId === b.id)?.text || notExpressed;
   return {
     id: crypto.randomUUID(),
     generatedAt: new Date().toISOString(),
@@ -245,59 +251,64 @@ function buildFallbackAnalysis(room, notice, model) {
     model,
     notice,
     shared: {
-      title: "先把立场放到同一张桌面上",
-      overview: "目前更像是双方都在保护自己的需要，但表达方式让彼此先听见了压力，而不是需要。这个结论可以保留分歧，不要求立刻达成一致。",
+      title: localText(room.language, "先把立场放到同一张桌面上", "Put both perspectives on the same table", "Pongan ambas perspectivas sobre la misma mesa"),
+      overview: localText(room.language, "目前更像是双方都在保护自己的需要，但表达方式让彼此先听见了压力，而不是需要。这个结论可以保留分歧，不要求立刻达成一致。", "Both people seem to be protecting important needs, but the way they are being expressed makes pressure easier to hear than the needs themselves. You can keep the disagreement without forcing immediate agreement.", "Ambas personas parecen estar protegiendo necesidades importantes, pero la forma de expresarlas hace que se perciba antes la presión que la necesidad. Pueden conservar el desacuerdo sin forzar un acuerdo inmediato."),
       category,
       perspectives: [
-        { participantId: a.id, name: a.name, view: `你目前强调的是：“${truncate(latestA)}”` },
-        { participantId: b.id, name: b.name, view: `你目前强调的是：“${truncate(latestB)}”` },
+        { participantId: a.id, name: a.name, view: localText(room.language, `你目前强调的是：“${truncate(latestA)}”`, `What you are emphasizing is: “${truncate(latestA)}”`, `Lo que estás destacando es: «${truncate(latestA)}»`) },
+        { participantId: b.id, name: b.name, view: localText(room.language, `你目前强调的是：“${truncate(latestB)}”`, `What you are emphasizing is: “${truncate(latestB)}”`, `Lo que estás destacando es: «${truncate(latestB)}»`) },
       ],
-      responsibility: [{ side: "both", behavior: "需要把事实、感受和要求分开表达", assessment: "当前记录不足以判断单方责任，但双方都能先调整表达方式。" }],
-      commonGround: ["你们愿意把这件事带到同一个空间里处理", "你们都希望自己的感受被认真对待"],
-      differences: ["对事件含义和优先级的理解仍然不同"],
-      nextSteps: ["每人用一句话说清事实，不评价对方动机", "轮流补完：我感到……因为我需要……", "只选一个今天能做到的小动作，不要求解决全部问题"],
+      responsibility: [{ side: "both", behavior: localText(room.language, "需要把事实、感受和要求分开表达", "Separate facts, feelings, and requests", "Separar los hechos, los sentimientos y las peticiones"), assessment: localText(room.language, "当前记录不足以判断单方责任，但双方都能先调整表达方式。", "There is not enough information to assign responsibility to one person, but both can adjust how they express themselves.", "No hay información suficiente para atribuir la responsabilidad a una sola persona, pero ambos pueden ajustar cómo se expresan.") }],
+      commonGround: [localText(room.language, "你们愿意把这件事带到同一个空间里处理", "You are both willing to address this in the same space", "Ambos están dispuestos a abordar esto en el mismo espacio"), localText(room.language, "你们都希望自己的感受被认真对待", "You both want your feelings to be taken seriously", "Ambos quieren que sus sentimientos se tomen en serio")],
+      differences: [localText(room.language, "对事件含义和优先级的理解仍然不同", "You still understand the meaning and priority of the situation differently", "Siguen entendiendo de manera distinta el significado y la prioridad de la situación")],
+      nextSteps: [localText(room.language, "每人用一句话说清事实，不评价对方动机", "Each person states one fact without judging the other's motive", "Cada persona expresa un hecho sin juzgar la intención de la otra"), localText(room.language, "轮流补完：我感到……因为我需要……", "Take turns completing: I feel… because I need…", "Túrnense para completar: Siento… porque necesito…"), localText(room.language, "只选一个今天能做到的小动作，不要求解决全部问题", "Choose one small action you can take today instead of solving everything", "Elijan una pequeña acción que puedan realizar hoy, sin intentar resolverlo todo")],
     },
     private: {
-      [a.id]: privateFallback(a.name),
-      [b.id]: privateFallback(b.name),
+      [a.id]: privateFallback(a.name, room.language),
+      [b.id]: privateFallback(b.name, room.language),
     },
-    safety: room.safety || { level: 0, message: "未检测到需要立即中止调解的安全信号。" },
+    safety: room.safety || { level: 0, message: localText(room.language, "未检测到需要立即中止调解的安全信号。", "No safety signal requiring an immediate stop was detected.", "No se detectó ninguna señal de seguridad que requiera detenerse de inmediato.") },
   };
 }
 
-function privateFallback(name) {
+function privateFallback(name, language) {
   return {
-    validation: `${name}，你的感受值得被认真看见。`,
-    reflection: "试着区分：你最想证明的是什么，和你最希望对方理解的是什么。它们可能不是同一件事。",
-    suggestion: "共同反馈前，先把一句指责改写成一个具体请求。",
+    validation: localText(language, `${name}，你的感受值得被认真看见。`, `${name}, your feelings deserve to be taken seriously.`, `${name}, tus sentimientos merecen ser tomados en serio.`),
+    reflection: localText(language, "试着区分：你最想证明的是什么，和你最希望对方理解的是什么。它们可能不是同一件事。", "Try to separate what you most want to prove from what you most want your partner to understand. They may not be the same thing.", "Intenta distinguir entre lo que más quieres demostrar y lo que más deseas que tu pareja comprenda. Puede que no sean lo mismo."),
+    suggestion: localText(language, "共同反馈前，先把一句指责改写成一个具体请求。", "Before the shared feedback, turn one accusation into a specific request.", "Antes de la reflexión compartida, convierte una acusación en una petición concreta."),
   };
 }
 
 function followUpFallback(room, question) {
-  const language = room.language === "en";
-  return language
-    ? `For “${truncate(question, 90)}”, choose one concrete request, let each person answer once without interruption, and agree on when to revisit anything still unresolved.`
-    : `针对“${truncate(question, 90)}”，先把它改成一个具体请求；双方各完整回答一次，再约定仍未解决的部分什么时候继续谈。`;
+  return localText(room.language,
+    `针对“${truncate(question, 90)}”，先把它改成一个具体请求；双方各完整回答一次，再约定仍未解决的部分什么时候继续谈。`,
+    `For “${truncate(question, 90)}”, choose one concrete request, let each person answer once without interruption, and agree on when to revisit anything still unresolved.`,
+    `Para «${truncate(question, 90)}», formulen una petición concreta, dejen que cada persona responda una vez sin interrupciones y acuerden cuándo retomarán lo que siga pendiente.`,
+  );
 }
 
-function inferCategory(text) {
+function inferCategory(text, language = "zh") {
   const normalized = text.toLowerCase();
-  if (/结婚|婚礼|孩子|买房|未来|marriage|wedding|future/.test(normalized)) return "未来与承诺";
-  if (/钱|花费|收入|预算|money|budget/.test(normalized)) return "金钱与分配";
-  if (/信任|隐瞒|骗|手机|trust|lie/.test(normalized)) return "信任与透明";
-  if (/父母|家人|朋友|边界|隐私|boundary|privacy/.test(normalized)) return "边界与关系网络";
-  if (/家务|迟到|计划|chores|late|schedule/.test(normalized)) return "日常协作";
-  return "沟通与情绪需要";
+  if (/结婚|婚礼|孩子|买房|未来|marriage|wedding|future|matrimonio|boda|futuro/.test(normalized)) return localText(language, "未来与承诺", "Future and commitment", "Futuro y compromiso");
+  if (/钱|花费|收入|预算|money|budget|dinero|presupuesto/.test(normalized)) return localText(language, "金钱与分配", "Money and allocation", "Dinero y distribución");
+  if (/信任|隐瞒|骗|手机|trust|lie|confianza|mentira/.test(normalized)) return localText(language, "信任与透明", "Trust and transparency", "Confianza y transparencia");
+  if (/父母|家人|朋友|边界|隐私|boundary|privacy|familia|límites|privacidad/.test(normalized)) return localText(language, "边界与关系网络", "Boundaries and relationships", "Límites y relaciones");
+  if (/家务|迟到|计划|chores|late|schedule|tareas|tarde|horario/.test(normalized)) return localText(language, "日常协作", "Everyday coordination", "Coordinación cotidiana");
+  return localText(language, "沟通与情绪需要", "Communication and emotional needs", "Comunicación y necesidades emocionales");
 }
 
 function normalizedParticipants(room) {
   const participants = [...room.participants];
   while (participants.length < 2) {
-    participants.push({ id: `pending-${participants.length}`, name: room.language === "en" ? "Partner" : "TA" });
+    participants.push({ id: `pending-${participants.length}`, name: localText(room.language, "TA", "Partner", "Pareja") });
   }
   return participants.slice(0, 2);
 }
 
 function truncate(text, limit = 72) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function localText(language, zh, en, es) {
+  return language === "zh" ? zh : language === "es" ? es : en;
 }

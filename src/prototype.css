@@ -18,8 +18,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .home-screen, .paper-screen, .room-shell, .loading-screen { width: 100%; height: 100%; background: var(--jian-paper); color: var(--jian-ink); font-family: var(--jian-sans); }
 .home-screen { position: relative; overflow: hidden; }
 .home-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; user-select: none; }
-.language-switch { position: absolute; z-index: 2; top: 56px; right: 24px; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: #aaa49e; font-weight: 650; font-size: 18px; letter-spacing: .04em; cursor: pointer; }
-.language-switch span.active { color: var(--jian-red); border-bottom: 1.5px solid currentColor; padding-bottom: 4px; }
+.language-switch { position: absolute; z-index: 2; top: 56px; right: 24px; display: flex; align-items: center; gap: 7px; color: #aaa49e; font-weight: 650; font-size: 16px; letter-spacing: .04em; }
+.language-switch > span { display: flex; align-items: center; gap: 7px; }
+.language-switch button { padding: 0 0 4px; border: 0; border-bottom: 1.5px solid transparent; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
+.language-switch button.active { color: var(--jian-red); border-bottom-color: currentColor; }
 .language-switch i { font-style: normal; color: #aaa49e; }
 .home-statement { position: absolute; z-index: 2; top: 146px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
 .home-statement h1 { margin: 0; writing-mode: vertical-rl; text-orientation: upright; font-family: var(--jian-serif); font-size: 35px; font-weight: 500; line-height: 1.3; letter-spacing: .1em; }
@@ -178,8 +180,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .quiet-action { height: 38px; border: 0; background: transparent; color: var(--jian-muted); font-size: 10px; cursor: pointer; }
 
 /* Private beta identity, pairing, history, and confirmation surfaces. */
-.language-switch.compact { position: static; margin-left: auto; font-size: 12px; gap: 5px; }
-.language-switch.compact span.active { padding-bottom: 2px; }
+.language-switch.compact { position: static; margin-left: auto; font-size: 11px; gap: 4px; }
+.language-switch.compact > span { gap: 4px; }
+.language-switch.compact button { padding-bottom: 2px; }
 .split-cta:disabled { opacity: .42; cursor: not-allowed; }
 .editorial-top { position: sticky; z-index: 8; top: 0; height: 104px; padding: 50px 22px 12px; display: flex; align-items: center; background: transparent; }
 .editorial-top > button:first-child { width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; color: var(--jian-ink); }
@@ -275,6 +278,7 @@ button { -webkit-tap-highlight-color: transparent; }
 /* Borderless mediation canvas: conversation and AI share one continuous paper surface. */
 .mediation-workspace { position: absolute; z-index: 2; top: 170px; right: 0; bottom: var(--message-bottom); left: 0; min-height: 0; overflow: hidden; background: var(--jian-paper); }
 .mediation-workspace.ai-active { display: grid; grid-template-rows: minmax(0, var(--conversation-share)) 18px minmax(0, 1fr); }
+.mediation-workspace:not(.ai-active) .conversation-pane { height: 100%; }
 .conversation-pane, .ai-pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .mediation-workspace .message-scroll, .mediation-workspace .ai-scroll { position: relative !important; inset: auto !important; width: 100%; height: 100%; transition: none; }
 .mediation-workspace .message-content { min-height: 100%; padding-bottom: 24px; }
@@ -321,6 +325,14 @@ button { -webkit-tap-highlight-color: transparent; }
 
 @media (min-width: 900px) and (max-width: 1023px) {
   .mediation-workspace { top: 154px; right: 320px; left: 0; }
+}
+
+@media (max-width: 899px) and (max-height: 500px) {
+  .room-header { height: 60px; padding: 8px 20px; }
+  .room-presence { top: 60px; min-height: 44px; padding: 4px 20px; grid-template-rows: 18px 16px; }
+  .participant-pair span { width: 28px; height: 28px; }
+  .message-scroll { top: 104px; }
+  .mediation-workspace { top: 104px; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }

@@ -21,6 +21,7 @@ import {
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
+const LANGUAGES = new Set(["zh", "en", "es"]);
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const loginAttempts = new Map();
 const DEMO_CREATE_WINDOW_MS = 10 * 60 * 1000;
@@ -102,7 +103,7 @@ export function createApiApp({ store, mediator, production = false }) {
       const additions = mapTranscriptToMessages(room, viewer.user.id, transcript.segments, transcript.text, selectedSpeaker?.id || null, Boolean(requestedSpeakerId));
       await store.updateRoomForUser(code, viewer.user.id, (draft) => {
         draft.messages.push(...additions);
-        draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "));
+        draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "), draft.language);
       });
       broadcastRoom(code);
       res.json({ messagesAdded: additions.length, transcriptDeleted: true, room: publicRoom(await store.getRoomForUser(code, viewer.user.id), viewer.user.id) });
@@ -130,7 +131,7 @@ export function createApiApp({ store, mediator, production = false }) {
       const additions = mapDemoTranscriptToMessages(room, actor.participant.id, transcript.segments, transcript.text, selectedSpeaker?.id || null, Boolean(requestedSpeakerId));
       await store.updateDemoRoom(code, (draft) => {
         draft.messages.push(...additions.slice(0, Math.max(0, 30 - draft.messages.length)));
-        draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "));
+        draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "), draft.language);
       });
       broadcastDemoRoom(code);
       const updated = await store.getDemoRoom(code);
@@ -192,9 +193,9 @@ export function createApiApp({ store, mediator, production = false }) {
     await store.deleteExpiredDemoRooms(new Date().toISOString());
     if (isDemoCreateLimited(req.ip)) return res.status(429).json({ error: "这台设备创建临时房间过于频繁，请稍后再试。" });
     const mode = req.body?.mode === "shared" ? "shared" : "remote";
-    const language = req.body?.language === "en" ? "en" : "zh";
-    const nameA = cleanName(req.body?.nameA, language === "en" ? "Me" : "我");
-    const nameB = mode === "shared" ? cleanName(req.body?.nameB, language === "en" ? "Partner" : "TA") : null;
+    const language = normalizeLanguage(req.body?.language);
+    const nameA = cleanName(req.body?.nameA, localText(language, "我", "Me", "Yo"));
+    const nameB = mode === "shared" ? cleanName(req.body?.nameB, localText(language, "TA", "Partner", "Pareja")) : null;
     const token = randomBytes(32).toString("base64url");
     const now = new Date();
     const code = await createUniqueDemoCode(store);
@@ -205,7 +206,7 @@ export function createApiApp({ store, mediator, production = false }) {
       kind: "demo", code, mode, language, personality: "friend", creatorParticipantId: host.id,
       participants, messages: [], analysis: null, aiConversation: [], analyzing: false, analysisCount: 0, status: "active",
       claims: {}, convertedAt: null, convertedRoomCode: null,
-      safety: { level: 0, message: language === "en" ? "Conversation is within the mediation boundary." : "对话仍在可调解边界内。" },
+      safety: { level: 0, message: safetyBoundaryMessage(language) },
       joinExpiresAt: new Date(now.getTime() + DEMO_JOIN_WINDOW_MS).toISOString(),
       expiresAt: new Date(now.getTime() + DEMO_ROOM_MS).toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString(),
     };
@@ -232,7 +233,7 @@ export function createApiApp({ store, mediator, production = false }) {
     try {
       const updated = await store.updateDemoRoom(code, (draft) => {
         if (draft.status !== "active" || draft.mode !== "remote" || draft.participants.length >= 2 || draft.joinExpiresAt <= now) throw httpError(409, "房间已满、已过期，或不接受第二台设备加入。");
-        joinedParticipant = createDemoParticipant(cleanName(req.body?.name, draft.language === "en" ? "Partner" : "TA"), "B", accessHash, now);
+        joinedParticipant = createDemoParticipant(cleanName(req.body?.name, localText(draft.language, "TA", "Partner", "Pareja")), "B", accessHash, now);
         draft.participants.push(joinedParticipant);
       });
       if (!updated) return res.status(404).json({ error: "这个临时房间不存在或已经过期。" });
@@ -297,7 +298,7 @@ export function createApiApp({ store, mediator, production = false }) {
     if (!speaker) return res.status(403).json({ error: "当前设备不能代表这位参与者发言。" });
     const updated = await store.updateDemoRoom(code, (draft) => {
       draft.messages.push(createMessage(speaker.id, text, "text"));
-      draft.safety = mergeSafety(draft.safety, text);
+      draft.safety = mergeSafety(draft.safety, text, draft.language);
     });
     broadcastDemoRoom(code);
     res.status(201).json({ room: publicDemoRoom(updated, actor.participant.id, req.auth?.user?.id || null) });
@@ -319,7 +320,7 @@ export function createApiApp({ store, mediator, production = false }) {
       if (draft.messages.some((message) => message.realtimeItemId === itemId)) return;
       if (draft.messages.length >= 30) throw httpError(429, "本次快速体验已达到表达上限。");
       draft.messages.push(createMessage(speaker.id, text, "voice", null, itemId));
-      draft.safety = mergeSafety(draft.safety, text);
+      draft.safety = mergeSafety(draft.safety, text, draft.language);
       created = true;
     });
     broadcastDemoRoom(code);
@@ -447,7 +448,7 @@ export function createApiApp({ store, mediator, production = false }) {
     const pairing = await store.getRelationshipContext(req.auth.user.id);
     if (!pairing || pairing.relationship.status !== "active" || pairing.members.length !== 2) return res.status(409).json({ error: "需要先由双方账号加入共同空间。" });
     const mode = req.body?.mode === "shared" ? "shared" : "remote";
-    const language = req.body?.language === "en" ? "en" : "zh";
+    const language = normalizeLanguage(req.body?.language);
     const personality = PERSONALITIES.has(req.body?.personality) ? req.body.personality : "friend";
     const code = await createUniqueCode(store, 6, "room");
     const participants = pairing.members
@@ -458,7 +459,7 @@ export function createApiApp({ store, mediator, production = false }) {
       code, relationshipId: pairing.relationship.id, creatorUserId: req.auth.user.id, mode, language, personality, participants,
       messages: [], analysis: null, aiConversation: [], analyzing: false, status: "active", archivedAt: null,
       archiveConfirmation: { userIds: [], requestedAt: null, completedAt: null },
-      safety: { level: 0, message: language === "en" ? "Conversation is within the mediation boundary." : "对话仍在可调解边界内。" },
+      safety: { level: 0, message: safetyBoundaryMessage(language) },
       createdAt: now, updatedAt: now,
     };
     await store.createRoom(room);
@@ -511,7 +512,7 @@ export function createApiApp({ store, mediator, production = false }) {
     if (!speaker) return res.status(403).json({ error: "当前账号不能代表这位参与者发言。" });
     await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
       draft.messages.push(createMessage(speaker.id, text, "text"));
-      draft.safety = mergeSafety(draft.safety, text);
+      draft.safety = mergeSafety(draft.safety, text, draft.language);
     });
     broadcastRoom(code);
     res.status(201).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
@@ -531,7 +532,7 @@ export function createApiApp({ store, mediator, production = false }) {
     await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
       if (draft.messages.some((message) => message.realtimeItemId === itemId)) return;
       draft.messages.push(createMessage(speaker.id, text, "voice", null, itemId));
-      draft.safety = mergeSafety(draft.safety, text);
+      draft.safety = mergeSafety(draft.safety, text, draft.language);
       created = true;
     });
     broadcastRoom(code);
@@ -730,9 +731,9 @@ function publicDemoRoom(room, participantId) {
 }
 
 function roomSummary(room, viewerUserId) {
-  return { code: room.code, mode: room.mode, status: room.status, participantCount: room.participants.length, title: room.analysis?.shared?.title || "尚未生成共同反馈", updatedAt: room.updatedAt, joined: room.participants.some((participant) => participant.userId === viewerUserId) };
+  return { code: room.code, mode: room.mode, status: room.status, participantCount: room.participants.length, title: room.analysis?.shared?.title || localText(room.language, "尚未生成共同反馈", "Shared feedback not generated", "Reflexión compartida pendiente"), updatedAt: room.updatedAt, joined: room.participants.some((participant) => participant.userId === viewerUserId) };
 }
-function historySummary(room) { return { code: room.code, title: room.analysis?.shared?.title || "一次共同复盘", category: room.analysis?.shared?.category || "communication", overview: room.analysis?.shared?.overview || "", archivedAt: room.archivedAt, commonGroundCount: room.analysis?.shared?.commonGround?.length || 0, differenceCount: room.analysis?.shared?.differences?.length || 0 }; }
+function historySummary(room) { return { code: room.code, title: room.analysis?.shared?.title || localText(room.language, "一次共同复盘", "A shared review", "Una revisión compartida"), category: room.analysis?.shared?.category || "communication", overview: room.analysis?.shared?.overview || "", archivedAt: room.archivedAt, commonGroundCount: room.analysis?.shared?.commonGround?.length || 0, differenceCount: room.analysis?.shared?.differences?.length || 0 }; }
 function historyDetail(room) { return { ...historySummary(room), participants: room.participants.map(({ userId: _userId, ...participant }) => participant), messages: room.messages, sharedAnalysis: room.analysis?.shared || null, analysisMeta: room.analysis ? { source: room.analysis.source, model: room.analysis.model, generatedAt: room.analysis.generatedAt, notice: room.analysis.notice } : null }; }
 
 function resolveSpeaker(room, viewerUserId, requestedId) {
@@ -833,10 +834,14 @@ function recordDemoCreate(key) {
 
 function httpError(statusCode, message) { const error = new Error(message); error.statusCode = statusCode; return error; }
 
-function mergeSafety(current, text) {
+function mergeSafety(current, text, language = "zh") {
   const normalized = text.toLowerCase();
-  if (/杀了你|弄死你|打死你|砍死|自杀|不想活|kill you|hurt you|suicide|end my life/.test(normalized)) return { level: 3, message: "检测到可能的暴力或自伤风险。请立刻停止争论、拉开距离并优先联系可信任的人或当地紧急支持。AI 调解不适合继续处理当下风险。" };
-  if (/废物|贱人|滚开|闭嘴|傻逼|操你|idiot|shut up|worthless/.test(normalized) && current.level < 2) return { level: 2, message: "对话里出现了人身攻击。先暂停，不评价人格，只描述具体行为和感受。" };
-  if (/你总是|你从不|随便你|懒得说|always|never listen/.test(normalized) && current.level < 1) return { level: 1, message: "语气正在升级。建议一次只说一件事，并让对方完整说完。" };
+  if (/杀了你|弄死你|打死你|砍死|自杀|不想活|kill you|hurt you|suicide|end my life|matarte|hacerte daño|suicidio|no quiero vivir/.test(normalized)) return { level: 3, message: localText(language, "检测到可能的暴力或自伤风险。请立刻停止争论、拉开距离并优先联系可信任的人或当地紧急支持。AI 调解不适合继续处理当下风险。", "Possible violence or self-harm risk detected. Stop the argument, create distance, and contact someone you trust or local emergency support. AI mediation should not continue during an immediate risk.", "Se detectó un posible riesgo de violencia o autolesión. Detengan la discusión, tomen distancia y contacten a alguien de confianza o a los servicios de emergencia locales. La mediación con IA no debe continuar ante un riesgo inmediato.") };
+  if (/废物|贱人|滚开|闭嘴|傻逼|操你|idiot|shut up|worthless|idiota|cállate|inútil/.test(normalized) && current.level < 2) return { level: 2, message: localText(language, "对话里出现了人身攻击。先暂停，不评价人格，只描述具体行为和感受。", "A personal attack appeared in the conversation. Pause, avoid judging character, and describe only the specific behavior and feeling.", "Apareció un ataque personal en la conversación. Pausen, eviten juzgar el carácter y describan solo la conducta y el sentimiento concretos.") };
+  if (/你总是|你从不|随便你|懒得说|always|never listen|siempre haces|nunca escuchas/.test(normalized) && current.level < 1) return { level: 1, message: localText(language, "语气正在升级。建议一次只说一件事，并让对方完整说完。", "The tone is escalating. Address one issue at a time and let the other person finish.", "El tono está subiendo. Hablen de un tema a la vez y dejen que la otra persona termine.") };
   return current;
 }
+
+function normalizeLanguage(value) { return LANGUAGES.has(value) ? value : "zh"; }
+function localText(language, zh, en, es) { return language === "zh" ? zh : language === "es" ? es : en; }
+function safetyBoundaryMessage(language) { return localText(language, "对话仍在可调解边界内。", "Conversation is within the mediation boundary.", "La conversación se mantiene dentro de los límites de la mediación."); }
