@@ -31,6 +31,80 @@ export function createRelationshipRouter({ store, mediator }) {
     req.on("close", () => { bucket.delete(client); if (!bucket.size) clients.delete(context.relationship.id); });
   });
 
+  router.get("/private-agent/threads", async (req, res) => {
+    const context = await activeRelationship(store, req, res); if (!context) return;
+    const records = await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id);
+    res.json({ threads: records.filter((item) => item.ownerUserId === req.auth.user.id && canViewRecord(item, req.auth.user.id)).map((item) => projectRecord(item, req.auth.user.id)) });
+  });
+  router.post("/private-agent/threads", async (req, res) => {
+    const context = await activeRelationship(store, req, res); if (!context) return;
+    const intentType = req.body?.intentType === "plan" ? "plan" : "decision";
+    const issueId = clean(req.body?.issueId, 80) || null;
+    if (issueId) { const issue = await store.getRelationshipRecordForUser("issues", issueId, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" }); }
+    const thread = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", approvalPolicy: "owner", status: "exploring", intentType, issueId, language: ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh", messages: [], draft: {}, readyToShare: false, source: "member" });
+    await store.createRelationshipRecord("privateAgentThreads", thread); await audit(store, thread, req.auth.user.id, "private_agent_thread.created"); emit(thread, "private_agent_thread.updated", req.auth.user.id);
+    res.status(201).json({ thread: projectRecord(thread, req.auth.user.id) });
+  });
+  router.get("/private-agent/threads/:id", async (req, res) => {
+    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
+    res.json({ thread: projectRecord(thread, req.auth.user.id) });
+  });
+  router.post("/private-agent/threads/:id/messages", async (req, res) => {
+    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
+    const text = clean(req.body?.text, 2000); if (!text) return res.status(400).json({ error: "请先说点什么。" });
+    const updated = await appendPrivateAgentTurn(store, mediator, thread, req.auth.user.id, text, req.body?.language || "zh", clean(req.body?.itemId, 120));
+    emit(updated, "private_agent_thread.updated", req.auth.user.id); res.json({ thread: projectRecord(updated, req.auth.user.id) });
+  });
+  router.post("/private-agent/threads/:id/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res, next) => {
+    try {
+      const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
+      const answer = await mediator.createRealtimeSession({ sdp: req.body, language: thread.language || "zh", safetyIdentifier: req.auth.user.id }); res.type("application/sdp").send(answer);
+    } catch (error) { next(error); }
+  });
+  router.post("/private-agent/threads/:id/transcripts", async (req, res) => {
+    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
+    const text = clean(req.body?.text, 2000); const itemId = clean(req.body?.itemId, 120); if (!text) return res.status(400).json({ error: "没有识别到可保存的语音。" });
+    if (itemId && (thread.messages || []).some((item) => item.itemId === itemId)) return res.json({ thread: projectRecord(thread, req.auth.user.id) });
+    const updated = await appendPrivateAgentTurn(store, mediator, thread, req.auth.user.id, text, thread.language || "zh", itemId);
+    emit(updated, "private_agent_thread.updated", req.auth.user.id); res.json({ thread: projectRecord(updated, req.auth.user.id) });
+  });
+  router.post("/private-agent/threads/:id/share-decision", async (req, res) => {
+    const context = await activeRelationship(store, req, res); if (!context) return;
+    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread || thread.intentType !== "decision") return res.status(404).json({ error: "没有找到这个私人决定对话。" });
+    if (thread.sharedObjectId) { const issue = await store.getRelationshipRecordForUser("issues", thread.sharedObjectId, req.auth.user.id); return res.json({ issue, thread }); }
+    const draft = thread.draft || {}; const title = clean(req.body?.title, 160) || clean(draft.title, 160); const summaryText = clean(req.body?.summary, 1600) || clean(draft.shareableSummary, 1600);
+    if (!title || !summaryText) return res.status(409).json({ error: "先和 Agent 把要讨论的事情与可分享观点整理清楚。" });
+    let issue = thread.issueId ? await store.getRelationshipRecordForUser("issues", thread.issueId, req.auth.user.id) : null;
+    if (!issue) {
+      issue = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "collecting_perspectives", title, category: ISSUE_CATEGORIES.has(draft.category) ? draft.category : "custom", sharedContext: summaryText, sourceThreadId: thread.id });
+      await store.createRelationshipRecord("issues", issue); await audit(store, issue, req.auth.user.id, "issue.shared_from_private_agent");
+    }
+    const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id);
+    let perspective = snapshot.perspectives.find((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && !item.archivedAt);
+    if (!perspective) {
+      perspective = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", approvalPolicy: "owner", status: "submitted", issueId: issue.id, goal: clean(draft.goal, 1200) || summaryText, importance: clean(draft.importance, 1200), constraints: clean(draft.constraints, 1200), negotiables: clean(draft.negotiables, 1200), concerns: clean(draft.concerns, 1200), privateNotes: "", rawPerspective: "", sourceThreadId: thread.id });
+      await store.createRelationshipRecord("perspectives", perspective);
+    }
+    let summary = snapshot.summaries.find((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && item.status === "confirmed");
+    if (!summary) {
+      summary = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: req.auth.user.id, visibility: "shareable_summary", aiAccessScope: "joint", approvalPolicy: "owner", status: "confirmed", issueId: issue.id, perspectiveId: perspective.id, text: summaryText, source: thread.source || "private-agent", confirmedAt: new Date().toISOString() });
+      await store.createRelationshipRecord("summaries", summary);
+    }
+    const updated = await store.updateRelationshipRecordForUser("privateAgentThreads", thread.id, req.auth.user.id, (record) => { record.status = "shared"; record.sharedObjectId = issue.id; record.sharedAt = new Date().toISOString(); record.version += 1; });
+    await audit(store, updated, req.auth.user.id, "private_agent_thread.shared"); await notifyMembers(context, req.auth.user.id, "decision_shared", `${req.auth.user.name} 想和你一起考虑：${title}`, `/decisions/${issue.id}`); emit(issue, "issue.updated"); emit(updated, "private_agent_thread.updated", req.auth.user.id);
+    res.status(201).json({ issue, summary, thread: projectRecord(updated, req.auth.user.id) });
+  });
+  router.post("/private-agent/threads/:id/apply-plan", async (req, res) => {
+    const context = await activeRelationship(store, req, res); if (!context) return;
+    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread || thread.intentType !== "plan") return res.status(404).json({ error: "没有找到这个私人计划对话。" });
+    if (thread.sharedObjectId) { const milestone = await store.getRelationshipRecordForUser("milestones", thread.sharedObjectId, req.auth.user.id); return res.json({ milestone, thread }); }
+    const draft = thread.draft || {}; const title = clean(req.body?.title, 120) || clean(draft.title, 120); const date = cleanDate(req.body?.date || draft.date); if (!title || !date) return res.status(409).json({ error: "先和 Agent 确认计划名称与日期。" });
+    const milestone = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title, date, timezone: clean(req.body?.timezone, 64) || "UTC", recurringRule: draft.recurringRule === "yearly" ? "yearly" : "once", jointlyConfirmed: false, notes: clean(draft.shareableSummary, 1200), sourceThreadId: thread.id });
+    await store.createRelationshipRecord("milestones", milestone); const updated = await store.updateRelationshipRecordForUser("privateAgentThreads", thread.id, req.auth.user.id, (record) => { record.status = "shared"; record.sharedObjectId = milestone.id; record.sharedAt = new Date().toISOString(); record.version += 1; });
+    await audit(store, milestone, req.auth.user.id, "milestone.shared_from_private_agent"); await notifyMembers(context, req.auth.user.id, "plan_shared", `${req.auth.user.name} 添加了共同计划：${title}`, `/plans/${milestone.id}`); emit(milestone, "milestone.updated"); emit(updated, "private_agent_thread.updated", req.auth.user.id);
+    res.status(201).json({ milestone, thread: projectRecord(updated, req.auth.user.id) });
+  });
+
   router.get("/milestones", listRoute("milestones"));
   router.post("/milestones", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
@@ -221,3 +295,19 @@ const clampInt = (value, min, max, fallback) => Number.isFinite(Number(value)) ?
 const safeUrl = (value) => { try { const url = new URL(String(value || "")); return ["http:", "https:"].includes(url.protocol) ? url.toString().slice(0, 1200) : ""; } catch { return ""; } };
 const statusError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const capabilities = () => ({ p0RelationshipAgent: true, memories: false, checkins: false, sharedCompanion: false, calendarIntegration: false, safeShare: false, moneyProtocol: false, intimacyMatching: false, nativeBackgroundLocation: false });
+
+async function ownedPrivateThread(store, id, userId) {
+  const thread = await store.getRelationshipRecordForUser("privateAgentThreads", id, userId);
+  return thread?.ownerUserId === userId && thread.visibility === "private" ? thread : null;
+}
+
+async function appendPrivateAgentTurn(store, mediator, thread, userId, text, language, itemId = "") {
+  const userMessage = { id: randomUUID(), role: "user", text, itemId: itemId || null, createdAt: new Date().toISOString() };
+  const messages = [...(thread.messages || []), userMessage].slice(-30);
+  const result = await mediator.continuePrivateAgentThread({ intentType: thread.intentType, messages, draft: thread.draft || {} }, language);
+  const assistantMessage = { id: randomUUID(), role: "assistant", text: clean(result.reply, 2000), createdAt: new Date().toISOString() };
+  const updated = await store.updateRelationshipRecordForUser("privateAgentThreads", thread.id, userId, (record) => {
+    record.messages = [...messages, assistantMessage].slice(-30); record.draft = result.draft || record.draft || {}; record.readyToShare = Boolean(result.readyToShare); record.source = result.source || "local"; record.status = record.sharedObjectId ? "shared" : "draft_ready"; record.version += 1;
+  });
+  await audit(store, updated, userId, "private_agent_thread.message_added"); return updated;
+}

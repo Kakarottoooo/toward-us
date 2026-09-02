@@ -241,6 +241,41 @@ test("joint decision context excludes private perspective tokens and objects sta
   assert.equal(lastDecisionContext.confirmedSummaries.length, 2);
 });
 
+test("private Agent keeps even a decision topic hidden until its owner explicitly shares it", async () => {
+  const pair = await createPair("PrivateThinkerA", "PrivateThinkerB");
+  const created = await request("/api/private-agent/threads", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { intentType: "decision" } });
+  const thought = await request(`/api/private-agent/threads/${created.thread.id}/messages`, { method: "POST", cookie: pair.a.cookie, body: { language: "en", text: "SECRET_TOPIC: I may want to move closer to work." } });
+  assert.equal(thought.thread.ownerUserId, pair.a.user.id);
+  const realtime = await fetch(`${baseUrl}/api/private-agent/threads/${created.thread.id}/realtime`, { method: "POST", headers: { cookie: pair.a.cookie, "content-type": "application/sdp" }, body: "v=0\r\no=private-offer" });
+  assert.equal(realtime.status, 200);
+  assert.match(await realtime.text(), /test-answer/);
+  const voiceThought = await request(`/api/private-agent/threads/${created.thread.id}/transcripts`, { method: "POST", cookie: pair.a.cookie, body: { itemId: "private-voice-1", text: "A private voice thought." } });
+  assert.equal(voiceThought.thread.messages.some((item) => item.itemId === "private-voice-1"), true);
+  const beforeA = await request("/api/relationship/home", { cookie: pair.a.cookie });
+  const beforeB = await request("/api/relationship/home", { cookie: pair.b.cookie });
+  assert.equal(beforeA.graph.privateAgentThreads.length, 1);
+  assert.equal(beforeB.graph.privateAgentThreads.length, 0);
+  assert.equal(beforeB.graph.issues.length, 0);
+  assert.equal(JSON.stringify(beforeB).includes("SECRET_TOPIC"), false);
+  await request(`/api/private-agent/threads/${created.thread.id}`, { cookie: pair.b.cookie, expectedStatus: 404 });
+
+  const shared = await request(`/api/private-agent/threads/${created.thread.id}/share-decision`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: {} });
+  const continued = await request(`/api/private-agent/threads/${created.thread.id}/messages`, { method: "POST", cookie: pair.a.cookie, body: { language: "en", text: "One more private refinement after sharing." } });
+  assert.equal(continued.thread.status, "shared");
+  await request(`/api/private-agent/threads/${created.thread.id}/share-decision`, { method: "POST", cookie: pair.a.cookie, body: {} });
+  const afterB = await request("/api/relationship/home", { cookie: pair.b.cookie });
+  assert.equal(afterB.graph.issues.some((item) => item.id === shared.issue.id), true);
+  assert.equal(afterB.graph.issues.length, 1);
+  assert.equal(afterB.graph.privateAgentThreads.length, 0);
+  assert.equal(afterB.graph.summaries.length, 1);
+  assert.equal(JSON.stringify(afterB).includes("SECRET_TOPIC"), true);
+
+  const partnerThread = await request("/api/private-agent/threads", { method: "POST", cookie: pair.b.cookie, expectedStatus: 201, body: { intentType: "decision", issueId: shared.issue.id } });
+  await request(`/api/private-agent/threads/${partnerThread.thread.id}/messages`, { method: "POST", cookie: pair.b.cookie, body: { language: "en", text: "B_PRIVATE_THOUGHT: I need family nearby." } });
+  const afterA = await request("/api/relationship/home", { cookie: pair.a.cookie });
+  assert.equal(JSON.stringify(afterA).includes("B_PRIVATE_THOUGHT"), false);
+});
+
 test("agreement approval, commitment completion, and outcome review require both principals", async () => {
   const pair = await createPair("OutcomeA", "OutcomeB");
   const outsider = await createPair("OtherOutcomeA", "OtherOutcomeB");
@@ -434,6 +469,10 @@ const fakeMediator = {
   },
   async answer(_room, question) {
     return `针对“${question}”，先约定一个时间，再轮流说。`;
+  },
+  async continuePrivateAgentThread({ intentType, messages, draft }) {
+    const text = [...messages].reverse().find((item) => item.role === "user")?.text || "";
+    return { source: "test-private-agent", reply: "I organized this privately.", readyToShare: true, draft: { title: draft.title || text.slice(0, 80), category: "custom", goal: draft.goal || text, importance: "", constraints: "", negotiables: "", concerns: "", shareableSummary: draft.shareableSummary || text, date: "", recurringRule: intentType === "plan" ? "once" : "once" } };
   },
   async summarizePerspective(perspective) {
     return { text: perspective.shareableText || perspective.goal, source: "test-private-agent" };

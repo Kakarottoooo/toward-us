@@ -4,6 +4,7 @@ export type GraphRecord = {
 };
 
 export type RelationshipGraph = {
+  privateAgentThreads: GraphRecord[];
   milestones: GraphRecord[]; reminders: GraphRecord[]; lists: GraphRecord[]; listItems: GraphRecord[]; issues: GraphRecord[];
   perspectives: GraphRecord[]; summaries: GraphRecord[]; proposals: GraphRecord[]; evaluations: GraphRecord[]; agreements: GraphRecord[];
   approvals: GraphRecord[]; commitments: GraphRecord[]; outcomes: GraphRecord[]; outcomeResponses: GraphRecord[]; notifications: GraphRecord[];

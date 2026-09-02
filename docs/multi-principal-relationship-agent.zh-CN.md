@@ -24,7 +24,7 @@ English positioning:
 
 | 层级 | 状态 | 当前能力 |
 | --- | --- | --- |
-| P0 | **implemented** | Relationship Home、纪念日、私人/共同提醒、共同清单、私人惊喜与揭晓、Joint Decision、私密 perspective、可共享摘要、方案、私密评价、Agreement 双批准、Commitment、Outcome Review、通知中心、审计事件、SSE 刷新 |
+| P0 | **implemented** | 红蓝 Relationship Home、私密 Agent 对话与实时语音、显式分享边界、对话生成决定/计划、纪念日、私人/共同提醒、共同清单、私人惊喜与揭晓、Joint Decision、可共享摘要、方案、私密评价、Agreement 双批准、Commitment、Outcome Review、通知中心、审计事件、SSE 刷新 |
 | 原调解产品 | **preserved** | 正式账号、伴侣绑定、两设备/同设备、文字与实时语音、说话人锁定、私人/共同反馈、共同 AI 追问、双确认归档、历史、无账号 demo、二维码/深链 |
 | P1 Memories | **designed but not implemented** | Home 保留真实空状态；没有伪造回忆、memory API 或数据库表 |
 | P1 Check-ins / Companion | **feature flagged off; not implemented** | 不显示伪可用入口；没有关系分数、惩罚或“宠物因冲突受伤”机制 |
@@ -52,6 +52,10 @@ English positioning:
 - **shared relationship**：双方可读；只有显式 `aiAccessScope=joint` 的内容才可能进入 Shared Agent。
 - **public/external**：P0 不存在把关系数据公开发布的路径。
 
+交互原则是：“对话是输入，结构化对象是 AI 的输出，用户只负责纠正、确认与授权。” 新决定和计划默认不要求填写 SaaS 表单；表单只保留在“手动编辑（备用）”中。
+
+潜在共同决定先进入 `privateAgentThreads`。不只内容私密，**话题存在本身也私密**：对方看不到 thread、标题、数量、SSE 事件或通知。用户可以继续和自己的 Agent 澄清观点；只有本人执行 `share-decision` 后，服务端才创建 shared issue、本人 private perspective 与 confirmed shareable summary，并第一次通知对方。对方随后在自己独立的 private thread 中思考，再自行分享摘要。共享 Agent 在两份 confirmed summary 之前不能生成方案，Agreement 仍要求双方批准同一版本。
+
 每个 Graph record 都带有：`relationshipId`、`createdByUserId`、`ownerUserId`、`visibility`、`aiAccessScope`、`approvalPolicy`、`status`、`version`、时间戳、过期/撤回/归档字段和 `provenance`。
 
 读取链固定为：`session user -> relationship_members -> object.relationship_id -> per-user projection`。
@@ -62,12 +66,13 @@ English positioning:
 
 `buildJointDecisionContext` 只加入当前 shared issue、双方分别确认且 `aiAccessScope=joint` 的 shareable summaries、已生效 agreements、相关 commitments 和安全规则。它不接收 raw perspective、private notes、private evaluation 或 private reminder。自动测试在私人 perspective 中放入 secret token，并断言模型 context 不包含它。
 
-Private Agent 与 Shared Agent 走不同函数和不同输入路径：`summarizePerspective` 只处理本人私密输入；`generateDecisionOptions` 只接受服务端 builder 的结果。两条 OpenAI 调用都设置 `store:false`。
+Private Agent 与 Shared Agent 走不同函数和不同输入路径：`continuePrivateAgentThread` 只处理 owner 的私密 thread；`summarizePerspective` 保留给手动备用流程；`generateDecisionOptions` 只接受服务端 builder 的结果。OpenAI 调用均设置 `store:false`。私密语音复用 Realtime 转录，但 transcript 只提交回 owner-only thread，原始音频不落盘。
 
 ## 5. Relationship Graph 与数据库
 
 | Collection | PostgreSQL table |
 | --- | --- |
+| privateAgentThreads | `private_agent_threads` |
 | milestones / reminders | `relationship_milestones` / `reminders` |
 | lists / listItems | `shared_lists` / `shared_list_items` |
 | issues / perspectives / summaries | `relationship_issues` / `issue_perspectives` / `shareable_summaries` |
@@ -86,8 +91,10 @@ Migration 位于 `server/postgres-store.mjs` 的启动 migration：只 `create t
 
 ### Joint Decision
 
-`collecting_perspectives -> confirmed summaries (2) -> evaluating -> private evaluations (2 per selected proposal) -> agreement_pending`
+`private exploring (invisible to partner) -> owner explicitly shares -> collecting_perspectives -> confirmed summaries (2) -> evaluating -> private evaluations (2 per selected proposal) -> agreement_pending`
 
+- 开始私密思考不会创建 shared issue，也不会通知伴侣。
+- `share-decision` 是唯一从未共享 thread 创建或加入 shared issue 的边界。
 - Perspective 原文是 private；Private Agent 先生成 shareable summary draft。
 - 本人确认后才变为 `confirmed + joint`。
 - 两份 confirmed summary 之前 Shared Agent 不能生成方案。
@@ -125,6 +132,7 @@ Migration 位于 `server/postgres-store.mjs` 的启动 migration：只 `create t
 所有路由要求正式登录和已完成的双人关系：
 
 - Home/SSE：`GET /api/relationship/home`、`GET /api/relationship/events`
+- Private Agent：`GET|POST /api/private-agent/threads`、`GET /api/private-agent/threads/:id`、`POST /api/private-agent/threads/:id/messages|realtime|transcripts|share-decision|apply-plan`
 - Milestones：`GET|POST /api/milestones`、`PATCH|DELETE /api/milestones/:id`、`POST /api/milestones/:id/reminders`
 - Lists：`GET|POST /api/lists`、`POST /api/lists/:id/items`、`PATCH|DELETE /api/list-items/:id`、`POST /api/list-items/:id/reveal`
 - Decisions：`GET|POST /api/issues`、`GET /api/issues/:id`、`POST /api/issues/:id/perspectives|shareable-summary|generate-options`、`POST /api/proposals/:id/evaluations`
@@ -174,7 +182,7 @@ npm run build
 npm run test:sites
 ```
 
-`test:relationship` 使用两个隔离浏览器 context，覆盖桌面/手机、绑定、Home、milestone、私人 reminder、wishlist/private surprise、双方 perspective/summary/evaluation、Agreement 双批准、Commitment 双完成和私密 token 不泄漏。
+`test:relationship` 使用两个隔离浏览器 context，覆盖桌面/手机、三语切换、红蓝 Home、对话生成计划、私密议题在分享前连“存在”都不泄漏、显式分享、伴侣独立私密思考、双方 summary/evaluation、Agreement 双批准和 Commitment 双完成。服务端测试另以 secret token 验证 owner-only thread 的列表、direct read、Home projection 与分享边界。
 
 ## 13. 生产部署与剩余风险
 

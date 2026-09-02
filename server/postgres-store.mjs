@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { GRAPH_COLLECTIONS } from "./relationship-domain.mjs";
 
 const GRAPH_TABLES = Object.freeze({
+  privateAgentThreads: "private_agent_threads",
   milestones: "relationship_milestones", reminders: "reminders", lists: "shared_lists", listItems: "shared_list_items",
   issues: "relationship_issues", perspectives: "issue_perspectives", summaries: "shareable_summaries", proposals: "decision_proposals",
   evaluations: "proposal_evaluations", agreements: "agreements", approvals: "agreement_approvals", commitments: "commitments",

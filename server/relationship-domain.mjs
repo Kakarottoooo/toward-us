@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 export const GRAPH_COLLECTIONS = Object.freeze([
+  "privateAgentThreads",
   "milestones", "reminders", "lists", "listItems", "issues", "perspectives", "summaries",
   "proposals", "evaluations", "agreements", "approvals", "commitments", "outcomes",
   "outcomeResponses", "notifications", "consentEvents", "productEvents",

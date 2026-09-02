@@ -113,6 +113,24 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         return followUpFallback(room, question);
       }
     },
+    async continuePrivateAgentThread({ intentType, messages, draft }, language = "zh") {
+      const fallback = localPrivateAgentTurn({ intentType, messages, draft }, language);
+      if (!client) return { ...fallback, source: "local" };
+      try {
+        const response = await client.responses.create({
+          model, store: false, max_output_tokens: 900,
+          text: { format: { type: "json_schema", name: "private_relationship_agent", strict: true, schema: privateAgentSchema } },
+          input: [
+            { role: "developer", content: privateAgentInstructions(intentType, language) },
+            { role: "user", content: JSON.stringify({ messages, currentDraft: draft || {} }) },
+          ],
+        });
+        return { ...JSON.parse(response.output_text), source: "openai" };
+      } catch (error) {
+        console.error("Private relationship agent failed; using local fallback:", error?.message || error);
+        return { ...fallback, source: "local" };
+      }
+    },
     async summarizePerspective(perspective, language = "zh") {
       const fallback = perspective.shareableText || [perspective.goal, perspective.importance, perspective.negotiables].filter(Boolean).join(" ").slice(0, 1200);
       if (!client) return { text: fallback, source: "local" };
@@ -218,6 +236,49 @@ const decisionOptionsSchema = {
     } } },
   },
 };
+
+const privateAgentSchema = {
+  type: "object", additionalProperties: false, required: ["reply", "readyToShare", "draft"],
+  properties: {
+    reply: { type: "string" },
+    readyToShare: { type: "boolean" },
+    draft: {
+      type: "object", additionalProperties: false,
+      required: ["title", "category", "goal", "importance", "constraints", "negotiables", "concerns", "shareableSummary", "date", "recurringRule"],
+      properties: {
+        title: { type: "string" }, category: { type: "string" }, goal: { type: "string" }, importance: { type: "string" },
+        constraints: { type: "string" }, negotiables: { type: "string" }, concerns: { type: "string" }, shareableSummary: { type: "string" },
+        date: { type: "string" }, recurringRule: { type: "string", enum: ["once", "yearly"] },
+      },
+    },
+  },
+};
+
+function privateAgentInstructions(intentType, language) {
+  const outputLanguage = language === "es" ? "Spanish" : language === "en" ? "English" : "Simplified Chinese";
+  const mode = intentType === "plan" ? "turn the conversation into a concrete personal or shared date/plan" : "help the user understand a possible joint decision before they choose whether to share it";
+  return `You are one person's private relationship Agent. Write in ${outputLanguage}. Your task is to ${mode}.
+This entire conversation, including the existence of its topic, is private to the current user. Never address the partner, imply the partner has been notified, or pressure the user to share. Reflect first, ask at most one useful question, and maintain a structured draft from only what the user said. You may gently offer sharing only when the user appears clear enough; readyToShare means the draft is coherent, never that sharing happened. The user alone authorizes sharing.
+For decisions, shareableSummary must be a respectful first-person summary suitable to show the partner. For plans, title and an ISO YYYY-MM-DD date are required before readyToShare can be true. Use category custom if uncertain and recurringRule once unless clearly yearly. Never diagnose either person or invent motives.`;
+}
+
+function localPrivateAgentTurn({ intentType, messages, draft }, language) {
+  const text = [...messages].reverse().find((item) => item.role === "user")?.text?.trim() || "";
+  const date = /\b(20\d{2}-\d{2}-\d{2})\b/.exec(text)?.[1] || draft?.date || "";
+  const title = draft?.title || text.slice(0, 80);
+  const next = {
+    title, category: draft?.category || "custom", goal: draft?.goal || text, importance: draft?.importance || "",
+    constraints: draft?.constraints || "", negotiables: draft?.negotiables || "", concerns: draft?.concerns || "",
+    shareableSummary: draft?.shareableSummary || text, date, recurringRule: draft?.recurringRule || "once",
+  };
+  const readyToShare = intentType === "plan" ? Boolean(title && date) : Boolean(title && next.shareableSummary);
+  const reply = language === "es"
+    ? (intentType === "plan" && !date ? "Lo he organizado como un plan privado. ¿Qué fecha quieres usar? Puedes decirla como AAAA-MM-DD." : "He organizado lo que acabas de decir. Sigue siendo privado. Puedes seguir pensando conmigo o compartir el borrador cuando te represente bien.")
+    : language === "en"
+      ? (intentType === "plan" && !date ? "I’ve organized this as a private plan. What date should it use? You can say it as YYYY-MM-DD." : "I’ve organized what you said. It is still private. Keep thinking with me, or share the draft when it represents you well.")
+      : (intentType === "plan" && !date ? "我先把它整理成了一个私人计划。你希望定在哪一天？可以直接说 YYYY-MM-DD。" : "我已经把你刚才的想法整理好了。它仍然完全私密；你可以继续和我想，也可以等它真正代表你之后再分享。" );
+  return { reply, readyToShare, draft: next };
+}
 
 function mediatorInstructions(language, personality, aName, bName) {
   const tone = {
