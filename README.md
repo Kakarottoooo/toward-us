@@ -42,6 +42,8 @@ npm run dev:full
 
 - `OPENAI_API_KEY`：可选；未配置时文字和本地复盘仍工作，语音转录不可用；
 - `OPENAI_MODEL`：默认 `gpt-5.4`；
+- `OPENAI_REALTIME_MODEL`：实时语音会话模型，默认 `gpt-realtime`；
+- `OPENAI_TRANSCRIBE_MODEL`：实时输入转录模型，默认 `gpt-live-transcribe`；
 - `DATABASE_URL`：可选；存在时使用 PostgreSQL，不存在时使用本地 JSON；
 - `DB_POOL_SIZE`：PostgreSQL 连接池大小，默认 5；
 - `PORT`：本地默认 5173。
@@ -90,4 +92,4 @@ GitHub Actions 会在每次推送和 Pull Request 上运行后端测试、生产
 - 实时边说边调解与危机人工升级；
 - 生产负载、渗透测试和多地区容灾。
 
-视觉验收见 [design-qa.md](./design-qa.md)，完整产品逻辑和已确认决策见 [docs/product-design.zh-CN.md](./docs/product-design.zh-CN.md)。公开仓库不会包含真实伴侣数据或私人争执记录。
+完整的产品定位、用户流程、能力边界、技术架构、数据模型、安全设计和部署说明见 [docs/product-and-technology-overview.zh-CN.md](./docs/product-and-technology-overview.zh-CN.md)；逐项产品逻辑和已确认决策见 [docs/product-design.zh-CN.md](./docs/product-design.zh-CN.md)；视觉验收见 [design-qa.md](./design-qa.md)。公开仓库不会包含真实伴侣数据或私人争执记录。
