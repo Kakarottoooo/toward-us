@@ -125,7 +125,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
   router.delete("/private-agent/threads/:id", async (req, res) => {
     const thread = await owned(req.params.id, req.auth.user.id); if (!thread) throw fail(404, "Private conversation not found.");
     if (Number(req.body?.version) !== thread.version || req.body?.confirm !== true) throw fail(409, "Confirm deletion of the current version.");
-    await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await tx.deleteRelationshipRecordForUser("privateAgentThreads", thread.id, req.auth.user.id); await audit(tx, thread, req.auth.user.id, "private_agent_thread.deleted"); });
+    await store.transaction(`user:${req.auth.user.id}`, async (tx) => { const current = await owned(thread.id, req.auth.user.id, tx); if (!current || current.version !== Number(req.body.version)) throw fail(409, "Conversation changed. Confirm deletion again."); await tx.deleteRelationshipRecordForUser("privateAgentThreads", thread.id, req.auth.user.id); await audit(tx, thread, req.auth.user.id, "private_agent_thread.deleted"); });
     emit(thread, "private_agent_thread.deleted", req.auth.user.id); res.sendStatus(204);
   });
   return router;

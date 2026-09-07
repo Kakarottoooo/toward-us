@@ -20,7 +20,12 @@ import {
 } from "./auth.mjs";
 import { createRelationshipRouter } from "./relationship-router.mjs";
 import { createPrivateAgentRouter } from "./private-agent-router.mjs";
-import { createPrivacyRouter } from "./privacy-router.mjs";
+import { createMemoryRouter } from "./memory-router.mjs";
+import { buildMemoryContext } from "./memory-domain.mjs";
+import { createReminderRouter } from "./reminder-router.mjs";
+import { createReminderService } from "./reminder-service.mjs";
+import { createPushDelivery } from "./push-delivery.mjs";
+import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
@@ -32,9 +37,14 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator, production = false, memoryContext }) {
+export function createApiApp({ store, mediator, production = false, memoryContext = buildMemoryContext, reminderService }) {
   const app = express();
   const eventClients = new Map();
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET });
+
+  const runDue = reminders.runDue.bind(reminders);
+  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); return result; };
+  app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -49,7 +59,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.get("/api/health", async (_req, res) => {
     try {
       await store.ping();
-      res.json({ ok: true, aiReady: mediator.aiReady, model: mediator.model, audioPersistence: "none", storage: store.kind });
+      res.json({ ok: true, aiReady: mediator.aiReady, model: mediator.model, audioPersistence: "none", storage: store.kind, commit: process.env.RENDER_GIT_COMMIT || process.env.BUILD_COMMIT || null });
     } catch {
       res.status(503).json({ ok: false, error: "storage_unavailable" });
     }
@@ -148,6 +158,8 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use(express.json({ limit: "256kb" }));
   app.use((req, res, next) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !req.path.startsWith("/api/")) return next();
+    // This single server-to-server endpoint has its own constant-time Bearer gate.
+    if (req.method === "POST" && req.path === "/api/internal/reminders/run") return next();
     return sameOriginRequest(req) ? next() : res.status(403).json({ error: "请求来源未通过安全检查。" });
   });
   app.use(async (req, _res, next) => {
@@ -632,12 +644,17 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.json({ item: historyDetail(room) });
   });
 
+  const relationshipRouter = createRelationshipRouter({ store, mediator });
+  const emit = (...args) => relationshipRouter.emitRecord?.(...args);
   const closeConnections = (userIds) => {
     for (const clients of eventClients.values()) for (const client of clients) if (userIds.includes(client.userId)) client.res.end();
+    relationshipRouter.closeUserConnections?.(userIds);
   };
-  app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext }));
+  app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
   app.use("/api", createPrivacyRouter({ store, production, closeConnections }));
-  app.use("/api", createRelationshipRouter({ store, mediator }));
+  app.use("/api", createReminderRouter({ service: reminders }));
+  app.use("/api", createMemoryRouter({ store, emit }));
+  app.use("/api", relationshipRouter);
 
   function broadcastRoom(code) {
     for (const client of eventClients.get(code) || []) {
