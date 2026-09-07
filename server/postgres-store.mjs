@@ -34,6 +34,7 @@ export async function createPostgresStore(databaseUrl) {
       };
     },
   };
+  const mapCollections = async (operation) => { if (!transactions.getStore()) return Promise.all(GRAPH_COLLECTIONS.map(operation)); const results = []; for (const collection of GRAPH_COLLECTIONS) results.push(await operation(collection)); return results; };
   await migrate(pool);
 
   const store = {
@@ -83,7 +84,7 @@ export async function createPostgresStore(databaseUrl) {
     async getPrivacySnapshot(userId) {
       const rows = (await pool.query("select distinct r.* from relationships r where exists (select 1 from relationship_members m where m.relationship_id=r.id and m.user_id=$1) or exists (select 1 from relationship_former_members m where m.relationship_id=r.id and m.user_id=$1)", [userId])).rows;
       const ids = rows.map((row) => row.id);
-      const graph = Object.fromEntries(await Promise.all(GRAPH_COLLECTIONS.map(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)])));
+      const graph = Object.fromEntries(await mapCollections(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)]));
       const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
       return { relationships: rows.map(mapRelationship), graph, rooms };
     },
@@ -253,7 +254,7 @@ export async function createPostgresStore(databaseUrl) {
       return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);
     },
     async relationshipSnapshotForUser(userId) {
-      const entries = await Promise.all(GRAPH_COLLECTIONS.map(async (collection) => [collection, await store.listRelationshipRecordsForUser(collection, userId)]));
+      const entries = await mapCollections(async (collection) => [collection, await store.listRelationshipRecordsForUser(collection, userId)]);
       return Object.fromEntries(entries);
     },
   };

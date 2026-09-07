@@ -528,4 +528,3 @@ const clampInt = (value, min, max, fallback) => Number.isFinite(Number(value)) ?
 const safeUrl = (value) => { try { const url = new URL(String(value || "")); return ["http:", "https:"].includes(url.protocol) ? url.toString().slice(0, 1200) : ""; } catch { return ""; } };
 const statusError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const capabilities = () => ({ p0RelationshipAgent: true, memories: true, checkins: true, sharedCompanion: true, calendarIntegration: false, safeShare: true, privateAgentBeforePairing: true, privacyControls: true, recoveryCodes: true, durableReminders: true, moneyProtocol: false, intimacyMatching: false, nativeBackgroundLocation: false });
-

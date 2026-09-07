@@ -191,4 +191,3 @@ pgTest("PostgreSQL rejects an invitation whose relationship ended after the requ
   assert.equal(await store.acceptInvitation(created.pairing.invitation.code, b.user.id, startedAt), null);
   assert.equal(await store.getRelationshipContext(b.user.id), null);
 });
-

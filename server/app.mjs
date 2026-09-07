@@ -702,7 +702,7 @@ async function authenticateRequest(store, req) {
   const session = await store.getSession(sessionId(token));
   if (!session) return null;
   const user = await store.getUserById(session.userId);
-  return user ? { user, session } : null;
+  return user && user.passwordHash !== "deleted" ? { user, session } : null;
 }
 
 async function appState(store, user) {
