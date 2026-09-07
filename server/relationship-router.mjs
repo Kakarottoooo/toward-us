@@ -485,7 +485,7 @@ async function jointDiscussionContext(tx, issue, userId) {
   if (!relationship || relationship.relationship.status !== "active" || relationship.members.length !== 2 || !relationship.members.every((member) => summaries.some((item) => item.ownerUserId === member.userId))) throw decisionError(409, "both_summaries");
   const confirmedSummaries = relationship.members.map((member) => summaries.filter((item) => item.ownerUserId === member.userId).sort((a, b) => b.version - a.version)[0]).map(({ id, ownerUserId, text, version }) => ({ id, ownerUserId, text, version }));
   const agreement = snapshot.agreements.filter((item) => item.sourceIssueId === issue.id && !item.archivedAt && !item.withdrawnAt && ["draft", "awaiting_approvals", "active"].includes(item.status)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-  const authorizedMemories = buildMemoryContext(snapshot.memories, { userId, relationshipId: issue.relationshipId, scope: "joint", query: `${issue.title} ${(issue.discussion || []).at(-1)?.text || ""}` }).memories;
+  const authorizedMemories = buildMemoryContext(snapshot.memories, { userId, relationshipId: issue.relationshipId, scope: "joint", query: `${issue.title} ${(issue.discussion || []).filter(message => message.role === "user").at(-1)?.text || ""}` }).memories;
   return {
     issue: { id: issue.id, title: issue.title, category: issue.category }, confirmedSummaries, authorizedMemories,
     agreement: agreement ? { id: agreement.id, title: agreement.title, summary: agreement.summary, terms: agreement.terms, unresolvedPoints: agreement.unresolvedPoints, version: agreement.version, status: agreement.status } : null,

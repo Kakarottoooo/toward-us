@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
+import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { createDecisionAgent } from "../server/decision-agent.mjs";
 
 let server, base, directory, store;
@@ -14,6 +15,7 @@ const mediator = {
   async generateDecisionOptions() { return { source: "test", options: [{ title: "Try a shorter visit", rationale: "One hour each Sunday", conditions: [], tradeoffs: [], risks: [], disputedFacts: [] }] }; },
 };
 before(async () => {
+  await mkdir(join(process.cwd(), "work"), { recursive: true });
   directory = await mkdtemp(join(process.cwd(), "work", "decisions-"));
   store = await createFileStore(join(directory, "state.json"));
   const previousKey = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "";
@@ -22,7 +24,7 @@ before(async () => {
   await new Promise((resolve) => server.once("listening", resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(async () => { await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+after(async () => { if (server) await new Promise((resolve) => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
 
 async function call(path, user, body, status = 200, method = body === undefined ? "GET" : "POST") {
   const response = await fetch(`${base}/api${path}`, { method, headers: { "content-type": "application/json", ...(user ? { cookie: user.cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -118,7 +120,9 @@ test("concurrent completion and reviews are idempotent and cannot cross relation
 
 test("discussion drafts are editable, never approve themselves, and changed agreements reject stale approval", async () => {
   const { a, b, issue, agreement } = await activate(await agreementFixture());
+  for (const text of ["month", "AI unavailable"]) await store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: issue.relationshipId, userId: a.user.id, visibility: "jointly_confirmed", aiAccessScope: "joint", text, memberUserIds: [a.user.id, b.user.id], approvals: [a, b].map(actor => ({ userId: actor.user.id, version: 1 })) }));
   const { issue: discussed } = await call(`/issues/${issue.id}/messages`, a, { text: "Please change visits to once a month", language: "en", itemId: "same-turn" });
+  assert.equal(discussed.discussionDraft.sourceRefs.length, 4, "Two summaries and two current memory grants are pinned to the draft");
   const unchanged = (await call(`/issues/${issue.id}`, b)).agreements[0];
   assert.equal(unchanged.version, agreement.version);
   assert.equal(unchanged.status, "active");
