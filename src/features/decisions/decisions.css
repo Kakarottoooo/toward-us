@@ -1,0 +1,34 @@
+.decision-workspace .decision-editor,
+.decision-workspace .decision-review-form { display: grid; gap: 16px; margin-top: 20px; }
+.decision-workspace label { display: grid; gap: 7px; }
+.decision-workspace textarea,
+.decision-workspace input:not([type="checkbox"]),
+.decision-workspace select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; font: inherit; color: inherit; border: 1px solid rgba(35, 45, 61, .2); border-radius: 10px; background: rgba(255, 255, 255, .55); padding: 11px 12px; }
+.decision-workspace textarea { resize: vertical; min-height: 64px; }
+.decision-workspace .decision-consent { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.65; }
+.decision-workspace .decision-consent input { flex: 0 0 auto; width: 19px; height: 19px; margin-top: 4px; accent-color: #476f9a; }
+.decision-workspace button:disabled { cursor: not-allowed; opacity: .5; }
+.decision-workspace :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid #476f9a; outline-offset: 3px; }
+.decision-workspace .decision-hint { color: #68645e; font-size: 13px; line-height: 1.75; }
+.decision-workspace .decision-discussion { padding-block: 28px; }
+.decision-workspace .decision-discussion-messages { display: grid; gap: 16px; margin-block: 22px; }
+.decision-workspace .decision-discussion-messages article { padding: 10px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.decision-workspace .decision-discussion-messages article strong { font-size: 12px; color: #44688d; }
+.decision-workspace .decision-discussion-messages .owner-message strong { color: #a75358; }
+.decision-workspace .decision-shared-composer { display: grid; gap: 10px; }
+.decision-workspace .decision-draft { margin-top: 24px; padding: 20px; background: rgba(235, 230, 218, .45); border-radius: 12px; }
+.decision-workspace .decision-change-tools { margin-block: 18px; }
+.decision-workspace .decision-change-tools summary { cursor: pointer; padding-block: 10px; }
+.decision-workspace .decision-change-tools label { margin-block: 12px; }
+.decision-workspace .decision-own-review { margin-block: 20px; padding: 14px 18px; border-left: 3px solid #476f9a; }
+.decision-workspace .decision-own-review small { color: #68645e; }
+.decision-workspace .decision-learning-candidates { display: grid; gap: 10px; }
+.decision-workspace .decision-learning-candidates button { text-align: left; white-space: normal; }
+.decision-workspace .row-actions { flex-wrap: wrap; }
+.decision-workspace :is(.decision-agreement, .decision-commitment, .decision-outcome) > button { margin: 8px 10px 8px 0; }
+.decision-workspace :is(p, li, blockquote, button) { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .decision-workspace .decision-draft { padding: 14px; }
+  .decision-workspace .row-actions button { flex: 1 1 140px; }
+  .decision-workspace .decision-editor button { width: 100%; }
+}
