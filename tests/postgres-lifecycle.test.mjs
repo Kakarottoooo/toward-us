@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { randomBytes, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { Pool } from "pg";
 import { createPostgresStore } from "../server/postgres-store.mjs";
 import { createApiApp } from "../server/app.mjs";
@@ -30,11 +31,22 @@ async function fixture(t, provider = async () => ({ statusCode: 201 })) {
   let store;
   let server;
   t.after(async () => {
-    if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
-    await store?.close();
-    assert.match(database, /^toward_test_[a-f0-9]{32}$/);
-    await admin.query(`drop database "${database}" with (force)`);
-    await admin.end();
+    try {
+      if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+      await store?.close();
+      // pg-pool can resolve end() before its clients finish their socket shutdown.
+      // Wait for PostgreSQL to observe disconnection; FORCE would terminate those clients.
+      const deadline = Date.now() + 5000;
+      let remaining;
+      do {
+        remaining = (await admin.query("select count(*)::int as count from pg_stat_activity where datname=$1", [database])).rows[0].count;
+        if (remaining === 0) break;
+        await delay(20);
+      } while (Date.now() < deadline);
+      assert.equal(remaining, 0, "Temporary PostgreSQL database still has connections after pool shutdown");
+      assert.match(database, /^toward_test_[a-f0-9]{32}$/);
+      await admin.query(`drop database "${database}"`);
+    } finally { await admin.end(); }
   });
   store = await createPostgresStore(databaseUrl.href);
   let clock = new Date("2026-09-07T12:00:00.000Z"); const sent = [];
