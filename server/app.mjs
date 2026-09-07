@@ -19,6 +19,8 @@ import {
   verifyPassword,
 } from "./auth.mjs";
 import { createRelationshipRouter } from "./relationship-router.mjs";
+import { createPrivateAgentRouter } from "./private-agent-router.mjs";
+import { createPrivacyRouter } from "./privacy-router.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
@@ -30,7 +32,7 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator, production = false }) {
+export function createApiApp({ store, mediator, production = false, memoryContext }) {
   const app = express();
   const eventClients = new Map();
 
@@ -38,6 +40,7 @@ export function createApiApp({ store, mediator, production = false }) {
   app.set("trust proxy", 1);
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use((req, res, next) => {
+    if (req.path.startsWith("/api/")) res.setHeader("Cache-Control", "no-store");
     res.setHeader("Permissions-Policy", "microphone=(self), camera=()");
     if (production && req.headers["x-forwarded-proto"] !== "https") return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
     next();
@@ -629,6 +632,11 @@ export function createApiApp({ store, mediator, production = false }) {
     res.json({ item: historyDetail(room) });
   });
 
+  const closeConnections = (userIds) => {
+    for (const clients of eventClients.values()) for (const client of clients) if (userIds.includes(client.userId)) client.res.end();
+  };
+  app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext }));
+  app.use("/api", createPrivacyRouter({ store, production, closeConnections }));
   app.use("/api", createRelationshipRouter({ store, mediator }));
 
   function broadcastRoom(code) {

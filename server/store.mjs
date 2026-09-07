@@ -11,6 +11,7 @@ const EMPTY_STATE = () => ({
   sessions: {},
   relationships: {},
   memberships: {},
+  formerMemberships: {},
   invitations: {},
   rooms: {},
   demoRooms: {},
@@ -96,6 +97,52 @@ export async function createFileStore(filePath) {
       const session = state().sessions[id];
       if (!session || session.expiresAt <= new Date().toISOString()) return null;
       return { ...session };
+    },
+    async deleteUserSessions(userId) { for (const [id, session] of Object.entries(state().sessions)) if (session.userId === userId) delete state().sessions[id]; await persist(); },
+    async updateUserPassword(userId, passwordHash) { if (!state().users[userId]) return false; state().users[userId].passwordHash = passwordHash; await persist(); return true; },
+    async leaveRelationship(userId) {
+      const context = relationshipContext(userId); if (!context) return null;
+      const id = context.relationship.id;
+      const members = context.members.map(({ user, ...member }) => member);
+      state().formerMemberships[id] = members;
+      state().relationships[id].status = "ended"; state().relationships[id].updatedAt = new Date().toISOString();
+      for (const invitation of Object.values(state().invitations)) if (invitation.relationshipId === id) invitation.expiresAt = new Date().toISOString();
+      for (const member of members) delete state().memberships[member.userId];
+      for (const collection of ["privateAgentThreads", "memories", "checkins"]) for (const record of Object.values(state().relationshipGraph[collection])) {
+        if (record.relationshipId === id && record.visibility === "private") { record.relationshipId = null; record.previousRelationshipId = id; record.status = "closed"; record.aiAccessScope = "none"; record.version += 1; }
+      }
+      await persist(); return { relationshipId: id, memberIds: members.map((member) => member.userId) };
+    },
+    async getPrivacySnapshot(userId) {
+      const ids = new Set(Object.entries(state().formerMemberships).filter(([, members]) => members.some((member) => member.userId === userId)).map(([id]) => id));
+      const current = state().memberships[userId]?.relationshipId; if (current) ids.add(current);
+      return {
+        relationships: [...ids].map((id) => structuredClone(state().relationships[id])),
+        graph: Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => ids.has(record.relationshipId) || record.ownerUserId === userId).map((record) => structuredClone(record))])),
+        rooms: Object.values(state().rooms).filter((room) => ids.has(room.relationshipId)).map((room) => structuredClone(room)),
+      };
+    },
+    async deletePrivateData(userId) {
+      let deleted = 0;
+      for (const collection of GRAPH_COLLECTIONS) {
+        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs"].includes(collection)) continue;
+        for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) { delete state().relationshipGraph[collection][id]; deleted += 1; }
+      }
+      for (const room of Object.values(state().rooms)) if (room.analysis?.private) delete room.analysis.private[userId];
+      await persist(); return deleted;
+    },
+    async deleteAccount(userId) {
+      await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
+      for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
+      const user = state().users[userId]; if (!user) return false;
+      delete state().userByEmail[user.email]; user.email = `${userId}@deleted.invalid`; user.name = "Deleted user"; user.passwordHash = "deleted";
+      for (const room of Object.values(state().rooms)) {
+        const participantIds = new Set((room.participants || []).filter((person) => person.userId === userId).map((person) => person.id));
+        for (const person of room.participants || []) if (participantIds.has(person.id)) person.name = "Deleted user";
+        room.messages = (room.messages || []).filter((message) => !participantIds.has(message.participantId));
+        room.aiConversation = (room.aiConversation || []).filter((message) => message.userId !== userId && !participantIds.has(message.participantId));
+      }
+      await persist(); return true;
     },
     async deleteSession(id) { delete state().sessions[id]; await persist(); },
     getRelationshipContext(userId) { return relationshipContext(userId); },
@@ -222,7 +269,7 @@ export async function createFileStore(filePath) {
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,
-    typeof value === "function" && /^(create|update|delete|accept|finalize)/.test(name)
+    typeof value === "function" && /^(create|update|delete|accept|finalize|leave)/.test(name)
       ? (...args) => transaction("file", () => value(...args)) : value,
   ]));
   return store;

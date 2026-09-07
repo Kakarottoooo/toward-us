@@ -61,6 +61,58 @@ export async function createPostgresStore(databaseUrl) {
     },
     async createSession(session) { await pool.query("insert into sessions (id,user_id,created_at,expires_at) values ($1,$2,$3,$4)", [session.id, session.userId, session.createdAt, session.expiresAt]); return session; },
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
+    async deleteUserSessions(userId) { await pool.query("delete from sessions where user_id=$1", [userId]); },
+    async updateUserPassword(userId, passwordHash) { return (await pool.query("update users set password_hash=$2 where id=$1", [userId, passwordHash])).rowCount > 0; },
+    async leaveRelationship(userId) {
+      const initial = await store.getRelationshipContext(userId); if (!initial) return null;
+      return store.transaction(`relationship:${initial.relationship.id}`, async () => {
+        const context = await store.getRelationshipContext(userId); if (!context) return null;
+        const id = context.relationship.id;
+        await pool.query("insert into relationship_former_members (relationship_id,user_id,role,joined_at) select relationship_id,user_id,role,joined_at from relationship_members where relationship_id=$1 on conflict do nothing", [id]);
+        await pool.query("update relationships set status='ended',updated_at=now() where id=$1", [id]);
+        await pool.query("update invitations set expires_at=now() where relationship_id=$1", [id]);
+        await pool.query("delete from relationship_members where relationship_id=$1", [id]);
+        for (const collection of ["privateAgentThreads", "memories", "checkins"]) {
+          const table = graphTable(collection);
+          await pool.query(`update ${table} set relationship_id=null,status='closed',version=version+1,data=data || jsonb_build_object('relationshipId',null,'previousRelationshipId',$1::text,'status','closed','aiAccessScope','none','version',version+1) where relationship_id=$1 and visibility='private'`, [id]);
+        }
+        return { relationshipId: id, memberIds: context.members.map((member) => member.userId) };
+      });
+    },
+    async getPrivacySnapshot(userId) {
+      const rows = (await pool.query("select distinct r.* from relationships r where exists (select 1 from relationship_members m where m.relationship_id=r.id and m.user_id=$1) or exists (select 1 from relationship_former_members m where m.relationship_id=r.id and m.user_id=$1)", [userId])).rows;
+      const ids = rows.map((row) => row.id);
+      const graph = Object.fromEntries(await Promise.all(GRAPH_COLLECTIONS.map(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)])));
+      const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
+      return { relationships: rows.map(mapRelationship), graph, rooms };
+    },
+    async deletePrivateData(userId) {
+      return store.transaction(`user:${userId}`, async () => {
+        let deleted = 0;
+        for (const collection of GRAPH_COLLECTIONS) {
+          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs"].includes(collection)) continue;
+          deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
+        }
+        await pool.query("update rooms set payload=jsonb_set(payload,'{analysis,private}',(payload#>'{analysis,private}') - $1) where payload#>'{analysis,private}' ? $1", [userId]);
+        return deleted;
+      });
+    },
+    async deleteAccount(userId) {
+      const context = await store.getRelationshipContext(userId);
+      return store.transaction(context ? `relationship:${context.relationship.id}` : `user:${userId}`, async () => {
+        await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
+        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
+        const snapshot = await store.getPrivacySnapshot(userId);
+        for (const room of snapshot.rooms) {
+          const participantIds = new Set((room.participants || []).filter((person) => person.userId === userId).map((person) => person.id));
+          for (const person of room.participants || []) if (participantIds.has(person.id)) person.name = "Deleted user";
+          room.messages = (room.messages || []).filter((message) => !participantIds.has(message.participantId));
+          room.aiConversation = (room.aiConversation || []).filter((message) => message.userId !== userId && !participantIds.has(message.participantId));
+          await pool.query("update rooms set payload=$2,updated_at=now() where code=$1", [room.code, room]);
+        }
+        return (await pool.query("update users set email=$2,name='Deleted user',password_hash='deleted' where id=$1", [userId, `${userId}@deleted.invalid`])).rowCount > 0;
+      });
+    },
     async deleteSession(id) { await pool.query("delete from sessions where id = $1", [id]); },
     async getRelationshipContext(userId) { return loadRelationshipContext(pool, userId); },
     async createInvitation({ relationship, membership, invitation }) {
@@ -228,6 +280,14 @@ async function migrate(pool) {
     create index if not exists rooms_relationship_status_idx on rooms(relationship_id,status,updated_at desc);
     create table if not exists demo_rooms (code text primary key, status text not null, payload jsonb not null, expires_at timestamptz not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists demo_rooms_expiry_idx on demo_rooms(expires_at);
+  `);
+  await pool.query(`
+    alter table relationships drop constraint if exists relationships_status_check;
+    alter table relationships add constraint relationships_status_check check(status in ('pending','active','ended'));
+    create table if not exists relationship_former_members (
+      relationship_id text not null references relationships(id), user_id text not null references users(id),
+      role text not null, joined_at timestamptz not null, primary key(relationship_id,user_id)
+    );
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
     await pool.query(`
