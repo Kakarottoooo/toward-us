@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 
 test("personal records stay owner-only before and after pairing; transactions roll back and serialize", async () => {
-  const directory = await mkdtemp(resolve(process.env.TEMP || "work", "toward-store-"));
+  const base = resolve(process.env.TEMP || "work");
+  await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(resolve(base, "toward-store-"));
   const store = await createFileStore(resolve(directory, "store.json"));
   try {
     await store.createUser({ id: "a", email: "a@example.test", name: "A", passwordHash: "unused", createdAt: new Date().toISOString() });
