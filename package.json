@@ -20,8 +20,9 @@
     "prebuild": "npm run check:runtime",
     "build": "tsc && vite build && node scripts/prepare-sites-build.mjs",
     "start": "node server/index.mjs --production",
-    "test:app": "node --test tests/app-server.test.mjs tests/render-blueprint.test.mjs",
-    "verify:deploy": "node scripts/verify-deployment.mjs"
+    "test:app": "node --test tests/app-server.test.mjs tests/render-blueprint.test.mjs tests/lifecycle-store.test.mjs tests/personal-privacy.test.mjs tests/memory-lifecycle.test.mjs tests/reminder-delivery.test.mjs tests/decision-lifecycle.test.mjs",
+    "verify:deploy": "node scripts/verify-deployment.mjs",
+    "test:postgres": "node --test tests/postgres-lifecycle.test.mjs"
   },
   "dependencies": {
     "@fontsource/roboto": "5.2.10",
@@ -37,7 +38,8 @@
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

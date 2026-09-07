@@ -22,7 +22,7 @@ async function fixture(run) {
     return { ...result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
   const register = async (name) => request("/api/auth/register", { method: "POST", body: { name, email: `${name}@example.test`, password }, status: 201 });
-  try { await run({ store, request, register }); }
+  try { await run({ store, request, register, mediator }); }
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -82,4 +82,45 @@ test("leaving ends shared access, export excludes partner secrets, and private d
   await request("/api/privacy/delete-private", { cookie: a.cookie, method: "POST", body: { password, confirm: true } });
   const final = await request("/api/privacy/export", { cookie: a.cookie, method: "POST", body: { password } });
   assert.equal(JSON.stringify(final).includes("A_PRIVATE"), false); assert.equal(JSON.stringify(final).includes("Shared history"), true);
+}));
+
+
+test("memory withdrawal survives a model fallback without leaking through the old draft", () => fixture(async ({ register, request, mediator }) => {
+  const a = await register("memory-fallback-a"); const cookie = a.cookie;
+  const { memory } = await request("/api/memories", { cookie, method: "POST", body: { text: "SYNTHETIC_WITHDRAWN_MEMORY", allowPrivateAI: true }, status: 201 });
+  const { thread } = await request("/api/private-agent/threads", { cookie, method: "POST", body: { intentType: "decision" }, status: 201 });
+  let turn = 0, captured;
+  mediator.continuePrivateAgentThread = async (input) => { captured = input; turn += 1; return { source: turn === 2 ? "local" : "openai", reply: "A draft", readyToShare: true, draft: turn === 1 ? { title: "A title", shareableSummary: memory.text } : input.draft }; };
+  const send = () => request(`/api/private-agent/threads/${thread.id}/messages`, { cookie, method: "POST", body: { text: "Please continue." } });
+  await send(); await send();
+  await request(`/api/memories/${memory.id}`, { cookie, method: "PATCH", body: { text: memory.text, expectedVersion: memory.version, allowPrivateAI: false } });
+  await send();
+  assert.equal(captured.memory.memories.length, 0);
+  assert.equal(JSON.stringify(captured).includes(memory.text), false);
+}));
+
+test("a delayed old-password login cannot create a valid session after account recovery", () => fixture(async ({ store, register, request }) => {
+  const a = await register("login-race-a");
+  const { recoveryCode } = await request("/api/privacy/recovery-code", { cookie: a.cookie, method: "POST", body: { password } });
+  const original = store.getUserByEmail.bind(store); let release, entered;
+  const started = new Promise(resolve => { entered = resolve; }); const gate = new Promise(resolve => { release = resolve; }); let first = true;
+  store.getUserByEmail = async email => { const user = await original(email); if (first) { first = false; entered(); await gate; } return user; };
+  const pending = request("/api/auth/login", { method: "POST", body: { email: a.user.email, password }, status: 401 });
+  await started;
+  await request("/api/auth/recover", { method: "POST", body: { email: a.user.email, recoveryCode, password: "replacement-password-26" }, status: 204 });
+  release(); await pending;
+  assert.equal((await request("/api/auth/me", { cookie: a.cookie })).user, null);
+}));
+
+test("reauthentication is checked after a queued recovery-code rotation acquires its transaction", () => fixture(async ({ store, register, request }) => {
+  const a = await register("rotation-race-a");
+  const { recoveryCode } = await request("/api/privacy/recovery-code", { cookie: a.cookie, method: "POST", body: { password } });
+  const original = store.transaction.bind(store); let release, entered;
+  const started = new Promise(resolve => { entered = resolve; }); const gate = new Promise(resolve => { release = resolve; }); let first = true;
+  store.transaction = async (key, callback) => { if (first && key === `user:${a.user.id}`) { first = false; entered(); await gate; } return original(key, callback); };
+  const pending = request("/api/privacy/recovery-code", { cookie: a.cookie, method: "POST", body: { password }, status: 403 });
+  await started;
+  await request("/api/auth/recover", { method: "POST", body: { email: a.user.email, recoveryCode, password: "replacement-password-26" }, status: 204 });
+  release(); await pending;
+  assert.equal((await store.getRelationshipRecordForUser("accountSettings", `account:${a.user.id}`, a.user.id)).recoveryCodeHash, undefined);
 }));

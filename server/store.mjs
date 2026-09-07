@@ -85,6 +85,7 @@ export async function createFileStore(filePath) {
       return id ? { ...state().users[id] } : null;
     },
     getUserById(id) { return state().users[id] ? { ...state().users[id] } : null; },
+    getUserForUpdate(id) { return store.getUserById(id); },
     async createUser(user) {
       if (state().userByEmail[user.email]) return null;
       state().users[user.id] = { ...user };
@@ -157,7 +158,7 @@ export async function createFileStore(filePath) {
     getInvitation(code) { return state().invitations[code] ? { ...state().invitations[code] } : null; },
     async acceptInvitation(code, userId, acceptedAt) {
       const invitation = state().invitations[code];
-      if (!invitation || invitation.acceptedAt || invitation.expiresAt <= acceptedAt || invitation.createdByUserId === userId || state().memberships[userId]) return null;
+      if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId || state().memberships[userId]) return null;
       const relationship = state().relationships[invitation.relationshipId];
       if (!relationship || relationship.status !== "pending") return null;
       state().memberships[userId] = { userId, relationshipId: relationship.id, role: "B", joinedAt: acceptedAt };

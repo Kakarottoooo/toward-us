@@ -180,3 +180,15 @@ pgTest("PostgreSQL account recovery consumes one code atomically and invalidates
   const exported = await f.request("/privacy/export", { actor: { ...a, cookie: login.cookie }, method: "POST", body: { password: newPassword } });
   assert.equal(JSON.stringify(exported).includes(recovery.recoveryCode), false); assert.equal(JSON.stringify(exported).includes("recoveryCodeHash"), false);
 });
+
+
+pgTest("PostgreSQL rejects an invitation whose relationship ended after the request started", async (t) => {
+  const { store, register, request } = await fixture(t);
+  const a = await register("late-invite-a"), b = await register("late-invite-b");
+  const created = await request("/partner/invitations", { actor: a, method: "POST", body: {}, status: 201 });
+  const startedAt = new Date(Date.now() - 1000).toISOString();
+  await store.leaveRelationship(a.user.id);
+  assert.equal(await store.acceptInvitation(created.pairing.invitation.code, b.user.id, startedAt), null);
+  assert.equal(await store.getRelationshipContext(b.user.id), null);
+});
+

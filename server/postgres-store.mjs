@@ -55,6 +55,7 @@ export async function createPostgresStore(databaseUrl) {
     async ping() { await pool.query("select 1"); return true; },
     async getUserByEmail(email) { return mapUser((await pool.query("select * from users where email = $1", [email])).rows[0]); },
     async getUserById(id) { return mapUser((await pool.query("select * from users where id = $1", [id])).rows[0]); },
+    async getUserForUpdate(id) { if (!transactions.getStore()) throw new Error("User lock requires a transaction"); return mapUser((await pool.query("select * from users where id=$1 for update", [id])).rows[0]); },
     async createUser(user) {
       const result = await pool.query("insert into users (id,email,name,password_hash,created_at) values ($1,$2,$3,$4,$5) on conflict (email) do nothing returning *", [user.id, user.email, user.name, user.passwordHash, user.createdAt]);
       return mapUser(result.rows[0]);
@@ -100,6 +101,7 @@ export async function createPostgresStore(databaseUrl) {
     async deleteAccount(userId) {
       const context = await store.getRelationshipContext(userId);
       return store.transaction(context ? `relationship:${context.relationship.id}` : `user:${userId}`, async () => {
+        await store.getUserForUpdate(userId);
         await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
         for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
         const snapshot = await store.getPrivacySnapshot(userId);
@@ -129,18 +131,18 @@ export async function createPostgresStore(databaseUrl) {
     },
     async getInvitation(code) { return mapInvitation((await pool.query("select * from invitations where code = $1", [code])).rows[0]); },
     async acceptInvitation(code, userId, acceptedAt) {
-      const client = await pool.connect();
-      try {
-        await client.query("begin");
-        const invitation = mapInvitation((await client.query("select * from invitations where code = $1 for update", [code])).rows[0]);
-        if (!invitation || invitation.acceptedAt || invitation.expiresAt <= acceptedAt || invitation.createdByUserId === userId) { await client.query("rollback"); return null; }
-        if ((await client.query("select 1 from relationship_members where user_id = $1", [userId])).rowCount) { await client.query("rollback"); return null; }
-        await client.query("insert into relationship_members (relationship_id,user_id,role,joined_at) values ($1,$2,'B',$3)", [invitation.relationshipId, userId, acceptedAt]);
-        await client.query("update invitations set accepted_at=$2, accepted_by_user_id=$3 where code=$1", [code, acceptedAt, userId]);
-        await client.query("update relationships set status='active', updated_at=$2 where id=$1 and status='pending'", [invitation.relationshipId, acceptedAt]);
-        await client.query("commit");
-        return loadRelationshipContext(pool, userId);
-      } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+      const initial = await store.getInvitation(code); if (!initial) return null;
+      return store.transaction(`relationship:${initial.relationshipId}`, async () => {
+        const invitation = mapInvitation((await pool.query("select * from invitations where code=$1 for update", [code])).rows[0]);
+        const relationship = (await pool.query("select status from relationships where id=$1 for update", [initial.relationshipId])).rows[0];
+        if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId || relationship?.status !== "pending") return null;
+        if ((await pool.query("select 1 from relationship_members where user_id=$1", [userId])).rowCount) return null;
+        await pool.query("insert into relationship_members (relationship_id,user_id,role,joined_at) values ($1,$2,'B',$3)", [invitation.relationshipId,userId,acceptedAt]);
+        await pool.query("update invitations set accepted_at=$2,accepted_by_user_id=$3 where code=$1", [code,acceptedAt,userId]);
+        const changed = await pool.query("update relationships set status='active',updated_at=$2 where id=$1 and status='pending'", [invitation.relationshipId,acceptedAt]);
+        if (changed.rowCount !== 1) throw new Error("Relationship changed during invitation acceptance");
+        return loadRelationshipContext(pool,userId);
+      });
     },
     async createRoom(room) { await pool.query("insert into rooms (code,relationship_id,status,payload,created_at,updated_at) values ($1,$2,$3,$4,$5,$6)", [room.code, room.relationshipId, room.status, room, room.createdAt, room.updatedAt]); return structuredClone(room); },
     async getRoomByCode(code) { return (await pool.query("select payload from rooms where code=$1", [code])).rows[0]?.payload || null; },

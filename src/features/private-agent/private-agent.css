@@ -1,0 +1,9 @@
+.agent-share-preview { padding: 20px; border: 1px solid #b74237; background: #fff9ef; border-radius: 12px; margin: 12px 0; }
+.agent-share-preview h3 { margin-top: 0; font-size: 18px; }
+.agent-share-preview label { display: grid; gap: 6px; margin: 12px 0; }
+.agent-share-preview input, .agent-share-preview textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; background: white; border: 1px solid #bdb4a7; border-radius: 6px; font: inherit; }
+.agent-share-preview p, .agent-boundary { font-size: 13px; color: #64594f; line-height: 1.6; }
+.agent-share-preview > div, .agent-private-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.agent-share-preview button, .agent-private-actions button { padding: 10px 12px; border: 1px solid #bdb4a7; background: transparent; border-radius: 6px; cursor: pointer; }
+.agent-private-actions { font-size: 12px; padding: 8px 0; }
+.agent-share-preview button:last-child { background: #244ca2; color: white; }

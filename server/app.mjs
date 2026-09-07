@@ -185,11 +185,15 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     const email = normalizeEmail(req.body?.email);
     const key = `${req.ip}:${email}`;
     if (isRateLimited(key)) return res.status(429).json({ error: "尝试次数过多，请稍后再试。" });
-    const user = await store.getUserByEmail(email);
-    const valid = await verifyPassword(String(req.body?.password || ""), user?.passwordHash || "scrypt$16384$YQ$YQ");
-    if (!user || !valid) { recordFailedAttempt(key); return res.status(401).json({ error: "邮箱或密码不正确。" }); }
+    const candidate = await store.getUserByEmail(email);
+    const authenticated = candidate && await store.transaction(`user:${candidate.id}`, async (tx) => {
+      const user = await tx.getUserForUpdate(candidate.id);
+      if (!user || user.email !== email || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) return null;
+      return { user, ...(await issueSession(tx, user.id)) };
+    });
+    if (!authenticated) { recordFailedAttempt(key); return res.status(401).json({ error: "邮箱或密码不正确。" }); }
     loginAttempts.delete(key);
-    const { token } = await issueSession(store, user.id);
+    const { token, user } = authenticated;
     setSessionCookie(res, token, production);
     res.json(await appState(store, user));
   });
@@ -200,7 +204,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   });
 
   app.post("/api/auth/logout", async (req, res) => {
-    if (req.auth) await store.deleteSession(req.auth.session.id);
+    if (req.auth) { await store.deleteSession(req.auth.session.id); closeConnections([req.auth.user.id]); }
     clearSessionCookie(res, production);
     res.status(204).end();
   });

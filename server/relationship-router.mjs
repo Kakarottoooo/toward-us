@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
+import { buildMemoryContext } from "./memory-domain.mjs";
 import { createDecisionAgent } from "./decision-agent.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
@@ -30,80 +31,6 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const bucket = clients.get(context.relationship.id) || new Set(); bucket.add(client); clients.set(context.relationship.id, bucket);
     res.write(`event: ready\ndata: ${JSON.stringify({ eventType: "ready" })}\n\n`);
     req.on("close", () => { bucket.delete(client); if (!bucket.size) clients.delete(context.relationship.id); });
-  });
-
-  router.get("/private-agent/threads", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
-    const records = await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id);
-    res.json({ threads: records.filter((item) => item.ownerUserId === req.auth.user.id && canViewRecord(item, req.auth.user.id)).map((item) => projectRecord(item, req.auth.user.id)) });
-  });
-  router.post("/private-agent/threads", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
-    const intentType = req.body?.intentType === "plan" ? "plan" : "decision";
-    const issueId = clean(req.body?.issueId, 80) || null;
-    if (issueId) { const issue = await store.getRelationshipRecordForUser("issues", issueId, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" }); }
-    const thread = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", approvalPolicy: "owner", status: "exploring", intentType, issueId, language: ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh", messages: [], draft: {}, readyToShare: false, source: "member" });
-    await store.createRelationshipRecord("privateAgentThreads", thread); await audit(store, thread, req.auth.user.id, "private_agent_thread.created"); emit(thread, "private_agent_thread.updated", req.auth.user.id);
-    res.status(201).json({ thread: projectRecord(thread, req.auth.user.id) });
-  });
-  router.get("/private-agent/threads/:id", async (req, res) => {
-    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
-    res.json({ thread: projectRecord(thread, req.auth.user.id) });
-  });
-  router.post("/private-agent/threads/:id/messages", async (req, res) => {
-    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
-    const text = clean(req.body?.text, 2000); if (!text) return res.status(400).json({ error: "请先说点什么。" });
-    const updated = await appendPrivateAgentTurn(store, mediator, thread, req.auth.user.id, text, req.body?.language || "zh", clean(req.body?.itemId, 120));
-    emit(updated, "private_agent_thread.updated", req.auth.user.id); res.json({ thread: projectRecord(updated, req.auth.user.id) });
-  });
-  router.post("/private-agent/threads/:id/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res, next) => {
-    try {
-      const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
-      const answer = await mediator.createRealtimeSession({ sdp: req.body, language: thread.language || "zh", safetyIdentifier: req.auth.user.id }); res.type("application/sdp").send(answer);
-    } catch (error) { next(error); }
-  });
-  router.post("/private-agent/threads/:id/transcripts", async (req, res) => {
-    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread) return res.status(404).json({ error: "没有找到这个私人对话。" });
-    const text = clean(req.body?.text, 2000); const itemId = clean(req.body?.itemId, 120); if (!text) return res.status(400).json({ error: "没有识别到可保存的语音。" });
-    if (itemId && (thread.messages || []).some((item) => item.itemId === itemId)) return res.json({ thread: projectRecord(thread, req.auth.user.id) });
-    const updated = await appendPrivateAgentTurn(store, mediator, thread, req.auth.user.id, text, thread.language || "zh", itemId);
-    emit(updated, "private_agent_thread.updated", req.auth.user.id); res.json({ thread: projectRecord(updated, req.auth.user.id) });
-  });
-  router.post("/private-agent/threads/:id/share-decision", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
-    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread || thread.intentType !== "decision") return res.status(404).json({ error: "没有找到这个私人决定对话。" });
-    if (thread.sharedObjectId) { const issue = await store.getRelationshipRecordForUser("issues", thread.sharedObjectId, req.auth.user.id); return res.json({ issue, thread }); }
-    const draft = thread.draft || {}; const title = clean(req.body?.title, 160) || clean(draft.title, 160); const summaryText = clean(req.body?.summary, 1600) || clean(draft.shareableSummary, 1600);
-    if (!title || !summaryText) return res.status(409).json({ error: "先和 Agent 把要讨论的事情与可分享观点整理清楚。" });
-    let issue = thread.issueId ? await store.getRelationshipRecordForUser("issues", thread.issueId, req.auth.user.id) : null;
-    if (!issue) {
-      issue = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "collecting_perspectives", title, category: ISSUE_CATEGORIES.has(draft.category) ? draft.category : "custom", sharedContext: summaryText, sourceThreadId: thread.id });
-      await store.createRelationshipRecord("issues", issue); await audit(store, issue, req.auth.user.id, "issue.shared_from_private_agent");
-    }
-    const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id);
-    let perspective = snapshot.perspectives.find((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && !item.archivedAt);
-    if (!perspective) {
-      perspective = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", approvalPolicy: "owner", status: "submitted", issueId: issue.id, goal: clean(draft.goal, 1200) || summaryText, importance: clean(draft.importance, 1200), constraints: clean(draft.constraints, 1200), negotiables: clean(draft.negotiables, 1200), concerns: clean(draft.concerns, 1200), privateNotes: "", rawPerspective: "", sourceThreadId: thread.id });
-      await store.createRelationshipRecord("perspectives", perspective);
-    }
-    let summary = snapshot.summaries.find((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && item.status === "confirmed");
-    if (!summary) {
-      summary = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: req.auth.user.id, visibility: "shareable_summary", aiAccessScope: "joint", approvalPolicy: "owner", status: "confirmed", issueId: issue.id, perspectiveId: perspective.id, text: summaryText, source: thread.source || "private-agent", confirmedAt: new Date().toISOString() });
-      await store.createRelationshipRecord("summaries", summary);
-    }
-    const updated = await store.updateRelationshipRecordForUser("privateAgentThreads", thread.id, req.auth.user.id, (record) => { record.status = "shared"; record.sharedObjectId = issue.id; record.sharedAt = new Date().toISOString(); record.version += 1; });
-    await audit(store, updated, req.auth.user.id, "private_agent_thread.shared"); await notifyMembers(context, req.auth.user.id, "decision_shared", `${req.auth.user.name} 想和你一起考虑：${title}`, `/decisions/${issue.id}`); emit(issue, "issue.updated"); emit(updated, "private_agent_thread.updated", req.auth.user.id);
-    res.status(201).json({ issue, summary, thread: projectRecord(updated, req.auth.user.id) });
-  });
-  router.post("/private-agent/threads/:id/apply-plan", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
-    const thread = await ownedPrivateThread(store, req.params.id, req.auth.user.id); if (!thread || thread.intentType !== "plan") return res.status(404).json({ error: "没有找到这个私人计划对话。" });
-    if (thread.sharedObjectId) { const milestone = await store.getRelationshipRecordForUser("milestones", thread.sharedObjectId, req.auth.user.id); return res.json({ milestone, thread }); }
-    const draft = thread.draft || {}; const title = clean(req.body?.title, 120) || clean(draft.title, 120); const date = cleanDate(req.body?.date || draft.date); if (!title || !date) return res.status(409).json({ error: "先和 Agent 确认计划名称与日期。" });
-    const milestone = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title, date, timezone: clean(req.body?.timezone, 64) || "UTC", recurringRule: draft.recurringRule === "yearly" ? "yearly" : "once", jointlyConfirmed: false, notes: clean(draft.shareableSummary, 1200), sourceThreadId: thread.id });
-    await store.createRelationshipRecord("milestones", milestone); const updated = await store.updateRelationshipRecordForUser("privateAgentThreads", thread.id, req.auth.user.id, (record) => { record.status = "shared"; record.sharedObjectId = milestone.id; record.sharedAt = new Date().toISOString(); record.version += 1; });
-    await audit(store, milestone, req.auth.user.id, "milestone.shared_from_private_agent"); await notifyMembers(context, req.auth.user.id, "plan_shared", `${req.auth.user.name} 添加了共同计划：${title}`, `/plans/${milestone.id}`); emit(milestone, "milestone.updated"); emit(updated, "private_agent_thread.updated", req.auth.user.id);
-    res.status(201).json({ milestone, thread: projectRecord(updated, req.auth.user.id) });
   });
 
   router.get("/milestones", listRoute("milestones"));
@@ -287,7 +214,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     if (!candidate || candidate.id !== req.body?.draftId || candidate.confirmedAt) throw decisionError(409, "draft_changed");
     if (req.body?.confirmed !== true) throw decisionError(400, "confirm_draft");
     const context = await jointDiscussionContext(tx, issue, userId);
-    if (JSON.stringify(candidate.sourceRefs) !== JSON.stringify(context.confirmedSummaries.map(({ id, version }) => ({ id, version })))) throw decisionError(409, "draft_changed");
+    if (JSON.stringify(candidate.sourceRefs) !== JSON.stringify([...context.confirmedSummaries, ...context.authorizedMemories].map(({ id, version }) => ({ id, version })))) throw decisionError(409, "draft_changed");
     const values = agreementValues(req.body);
     let agreement;
     if (candidate.agreementId) {
@@ -498,7 +425,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       if (JSON.stringify(fresh.confirmedSummaries) !== JSON.stringify(context.confirmedSummaries) || JSON.stringify(fresh.agreement) !== JSON.stringify(context.agreement)) {
         return tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussion = [...draft.discussion, { id: randomUUID(), role: "assistant", source: "local", text: DECISION_ERRORS.context_changed[language === "en" ? 1 : language === "es" ? 2 : 0], createdAt: new Date().toISOString() }]; draft.version += 1; });
       }
-      const draft = { ...result.draft, id: randomUUID(), agreementId: context.agreement?.id || null, agreementVersion: context.agreement?.version || null, source: result.source, createdAt: new Date().toISOString(), confirmedAt: null, sourceRefs: context.confirmedSummaries.map((summary) => ({ id: summary.id, version: summary.version })) };
+      const draft = { ...result.draft, id: randomUUID(), agreementId: context.agreement?.id || null, agreementVersion: context.agreement?.version || null, source: result.source, createdAt: new Date().toISOString(), confirmedAt: null, sourceRefs: [...context.confirmedSummaries, ...context.authorizedMemories].map((summary) => ({ id: summary.id, version: summary.version })) };
       const record = await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (next) => {
         next.discussion = [...(next.discussion || []), { id: randomUUID(), role: "assistant", text: result.reply, source: result.source, createdAt: new Date().toISOString(), sourceRefs: draft.sourceRefs, draftId: draft.id }].slice(-80);
         next.discussionDraft = draft; next.discussionLanguage = language; next.version += 1;
@@ -519,8 +446,10 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   function updateOwnedShared(collection, fields) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可修改的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { for (const field of fields) if (req.body?.[field] !== undefined) draft[field] = typeof req.body[field] === "string" ? clean(req.body[field], 1200) : req.body[field]; draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.updated`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.json({ item: projectRecord(record, req.auth.user.id) }); }; }
   function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可归档的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
   function notificationMutation(field) { return async (req, res) => { const current = await store.getRelationshipRecordForUser("notifications", req.params.id, req.auth.user.id); if (!current || current.ownerUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到通知。" }); const notification = await store.updateRelationshipRecordForUser("notifications", current.id, req.auth.user.id, (draft) => { draft[field] = new Date().toISOString(); draft.version += 1; }); res.json({ notification }); }; }
-  function emit(record, eventType, ownerUserId = null) { const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
+  function emit(record, eventType, ownerUserId = null) { if (!record) return; const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
   async function notifyMembers(context, actorId, type, title, actionUrl) { if (!context?.members) return; const current = await store.listRelationshipRecordsForUser("notifications", actorId); for (const member of context.members.filter((item) => item.userId !== actorId)) { const dedupeKey = `${type}:${actionUrl}:${member.userId}`; if (current.some((item) => item.dedupeKey === dedupeKey && !item.dismissedAt)) continue; const notification = createRelationshipRecord({ relationshipId: context.relationship.id, userId: actorId, ownerUserId: member.userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "unread", type, title, actionUrl, dedupeKey, readAt: null, dismissedAt: null }); await store.createRelationshipRecord("notifications", notification); emit(notification, "notification.updated", member.userId); } }
+  router.emitRecord = emit;
+  router.closeUserConnections = (userIds) => { for (const bucket of clients.values()) for (const client of bucket) if (userIds.includes(client.userId)) { client.res.write('event: access-ended\ndata: {}\n\n'); client.res.end(); } };
   return router;
 }
 
@@ -556,10 +485,11 @@ async function jointDiscussionContext(tx, issue, userId) {
   if (!relationship || relationship.relationship.status !== "active" || relationship.members.length !== 2 || !relationship.members.every((member) => summaries.some((item) => item.ownerUserId === member.userId))) throw decisionError(409, "both_summaries");
   const confirmedSummaries = relationship.members.map((member) => summaries.filter((item) => item.ownerUserId === member.userId).sort((a, b) => b.version - a.version)[0]).map(({ id, ownerUserId, text, version }) => ({ id, ownerUserId, text, version }));
   const agreement = snapshot.agreements.filter((item) => item.sourceIssueId === issue.id && !item.archivedAt && !item.withdrawnAt && ["draft", "awaiting_approvals", "active"].includes(item.status)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const authorizedMemories = buildMemoryContext(snapshot.memories, { userId, relationshipId: issue.relationshipId, scope: "joint", query: `${issue.title} ${(issue.discussion || []).at(-1)?.text || ""}` }).memories;
   return {
-    issue: { id: issue.id, title: issue.title, category: issue.category }, confirmedSummaries,
+    issue: { id: issue.id, title: issue.title, category: issue.category }, confirmedSummaries, authorizedMemories,
     agreement: agreement ? { id: agreement.id, title: agreement.title, summary: agreement.summary, terms: agreement.terms, unresolvedPoints: agreement.unresolvedPoints, version: agreement.version, status: agreement.status } : null,
-    messages: (issue.discussion || []).filter((item) => item.role === "user" || (item.sourceRefs || []).every((ref) => confirmedSummaries.some((summary) => summary.id === ref.id && summary.version === ref.version))).slice(-24).map(({ role, actorUserId, text }) => ({ role, actorUserId, text })),
+    messages: (issue.discussion || []).filter((item) => item.role === "user" || (item.sourceRefs || []).every((ref) => [...confirmedSummaries, ...authorizedMemories].some((summary) => summary.id === ref.id && summary.version === ref.version))).slice(-24).map(({ role, actorUserId, text }) => ({ role, actorUserId, text })),
   };
 }
 const DECISION_ERRORS = {
@@ -597,20 +527,5 @@ const validIso = (value) => { const date = new Date(value || ""); return Number.
 const clampInt = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.round(Number(value)))) : fallback;
 const safeUrl = (value) => { try { const url = new URL(String(value || "")); return ["http:", "https:"].includes(url.protocol) ? url.toString().slice(0, 1200) : ""; } catch { return ""; } };
 const statusError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
-const capabilities = () => ({ p0RelationshipAgent: true, memories: false, checkins: false, sharedCompanion: false, calendarIntegration: false, safeShare: false, moneyProtocol: false, intimacyMatching: false, nativeBackgroundLocation: false });
+const capabilities = () => ({ p0RelationshipAgent: true, memories: true, checkins: true, sharedCompanion: true, calendarIntegration: false, safeShare: true, privateAgentBeforePairing: true, privacyControls: true, recoveryCodes: true, durableReminders: true, moneyProtocol: false, intimacyMatching: false, nativeBackgroundLocation: false });
 
-async function ownedPrivateThread(store, id, userId) {
-  const thread = await store.getRelationshipRecordForUser("privateAgentThreads", id, userId);
-  return thread?.ownerUserId === userId && thread.visibility === "private" ? thread : null;
-}
-
-async function appendPrivateAgentTurn(store, mediator, thread, userId, text, language, itemId = "") {
-  const userMessage = { id: randomUUID(), role: "user", text, itemId: itemId || null, createdAt: new Date().toISOString() };
-  const messages = [...(thread.messages || []), userMessage].slice(-30);
-  const result = await mediator.continuePrivateAgentThread({ intentType: thread.intentType, messages, draft: thread.draft || {} }, language);
-  const assistantMessage = { id: randomUUID(), role: "assistant", text: clean(result.reply, 2000), createdAt: new Date().toISOString() };
-  const updated = await store.updateRelationshipRecordForUser("privateAgentThreads", thread.id, userId, (record) => {
-    record.messages = [...messages, assistantMessage].slice(-30); record.draft = result.draft || record.draft || {}; record.readyToShare = Boolean(result.readyToShare); record.source = result.source || "local"; record.status = record.sharedObjectId ? "shared" : "draft_ready"; record.version += 1;
-  });
-  await audit(store, updated, userId, "private_agent_thread.message_added"); return updated;
-}

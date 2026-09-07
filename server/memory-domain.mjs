@@ -16,7 +16,7 @@ export function projectMemoryRecord(record, userId, relationshipId) {
   return projected;
 }
 
-export function buildMemoryContext(records, { userId, relationshipId = null, scope }) {
+export function buildMemoryContext(records, { userId, relationshipId = null, scope, query = "" }) {
   if (!["private", "joint"].includes(scope) || !userId) return { memories: [], references: [] };
   const now = Date.now();
   const memories = (Array.isArray(records) ? records : records?.memories || []).filter((record) => {
@@ -24,8 +24,12 @@ export function buildMemoryContext(records, { userId, relationshipId = null, sco
     if (record.expiresAt && (!Number.isFinite(Date.parse(record.expiresAt)) || Date.parse(record.expiresAt) <= now)) return false;
     if (scope === "private" && record.visibility === "private") return record.ownerUserId === userId && record.aiAccessScope === "private" && (!record.relationshipId || record.relationshipId === relationshipId);
     return Boolean(relationshipId && record.relationshipId === relationshipId && record.visibility === "jointly_confirmed" && record.aiAccessScope === "joint" && (record.memberUserIds || []).includes(userId) && hasCurrentMemoryApprovals(record));
-  }).map(({ id, text, version, provenance }) => ({ id, text, version, provenance: structuredClone(provenance || {}) }));
-  return { memories, references: memories.map(({ id, version, provenance }) => ({ id, version, provenance })) };
+  });
+  const terms = [...new Intl.Segmenter(undefined, { granularity: "word" }).segment(String(query).toLowerCase())].filter(part => part.isWordLike && part.segment.length > 1).map(part => part.segment);
+  const score = record => terms.reduce((sum, term) => sum + Number(record.text.toLowerCase().includes(term)), 0);
+  memories.sort((a, b) => score(b) - score(a) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  const selected = memories.slice(0, 8).map(({ id, text, version, provenance }) => ({ id, text, version, provenance: structuredClone(provenance || {}) }));
+  return { memories: selected, references: selected.map(({ id, version, provenance }) => ({ id, version, provenance })) };
 }
 
 export function sharePreview(record, text) {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { buildMemoryContext } from "./memory-domain.mjs";
 
 export const GRAPH_COLLECTIONS = Object.freeze([
   "privateAgentThreads",
@@ -56,7 +57,7 @@ export function projectGraph(snapshot, userId) {
   ]));
 }
 
-export function buildJointDecisionContext(snapshot, issueId) {
+export function buildJointDecisionContext(snapshot, issueId, userId) {
   const issue = (snapshot.issues || []).find((candidate) => candidate.id === issueId);
   if (!issue) return null;
   const summaries = (snapshot.summaries || [])
@@ -73,6 +74,7 @@ export function buildJointDecisionContext(snapshot, issueId) {
     confirmedSummaries: summaries,
     activeAgreements: agreements,
     commitments,
+    authorizedMemories: buildMemoryContext(snapshot.memories, { userId, relationshipId: issue.relationshipId, scope: "joint", query: issue.title }).memories,
     safety: { rule: "Do not infer motives, reveal private data, shame either person, or approve on their behalf." },
   };
 }

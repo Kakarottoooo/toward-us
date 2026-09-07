@@ -6,13 +6,16 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
+import { PersonalHome } from "./features/private-agent/PersonalHome";
+import { PrivacySettings } from "./features/privacy/PrivacySettings";
+import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./relationship.css";
 
-type Screen = "home" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
+type Screen = "home" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
 type Personality = "friend" | "counselor" | "direct";
 type User = { id: string; email: string; name: string; createdAt: string };
@@ -146,7 +149,7 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) setScreen(state.pairing?.status === "active" ? "dashboard" : "pairing");
+      if (state.user) setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
     }).catch(() => {});
     api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
   }, []);
@@ -162,7 +165,7 @@ function AccountPrototype() {
 
   const selectLanguage = (value: Language) => setLanguage(value);
   const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {
-    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(state.pairing?.status === "active" ? "dashboard" : "pairing");
+    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
   };
   const refreshPairing = async () => {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
@@ -183,10 +186,14 @@ function AccountPrototype() {
     setDetail(detailResult.item); setHistory(listResult.items); setScreen("historyDetail");
   };
 
-  if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? pairing?.status === "active" ? "dashboard" : "pairing" : "auth")} t={t} />;
-  if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "dashboard" && user && pairing) return <DashboardScreen user={user} pairing={pairing} rooms={activeRooms} language={language} onLanguage={selectLanguage} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} t={t} />;
+  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setRoom(null); setScreen(state.user ? state.pairing?.status === "active" ? "dashboard" : "personal" : "home"); };
+  if (screen === "recovery") return <AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} />;
+  if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onLanguage={selectLanguage} onPair={() => setScreen("pairing")} onShared={() => setScreen("dashboard")} onPrivacy={() => setScreen("privacy")} onLogout={logout} />;
+  if (screen === "privacy" && user) return <div className="paper-screen relationship-shell"><header className="simple-header"><button onClick={() => setScreen(pairing?.status === "active" ? "dashboard" : "personal")} aria-label={t.back}><ArrowLeft size={22} /></button><span>{localized(language, "隐私与账号", "Privacy & account", "Privacidad y cuenta")}</span><LanguageSwitch language={language} onLanguage={selectLanguage} compact /></header><main className="relationship-main"><PrivacySettings language={language} onChanged={async () => {}} onLeft={reloadIdentity} onDeleted={reloadIdentity} /></main></div>;
+  if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? pairing?.status === "active" ? "dashboard" : "personal" : "auth")} t={t} />;
+  if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("personal")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "dashboard" && user && pairing) return <DashboardScreen user={user} pairing={pairing} rooms={activeRooms} onAccessChanged={reloadIdentity} onPersonal={() => setScreen("personal")} onPrivacy={() => setScreen("privacy")} language={language} onLanguage={selectLanguage} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} t={t} />;
   if (screen === "setup") return <SetupScreen language={language} onBack={() => setScreen("dashboard")} onLanguage={selectLanguage} onRoom={(next) => { setRoom(next); setScreen("room"); }} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "history") return <HistoryScreen items={history} language={language} onBack={() => setScreen("dashboard")} onOpen={openHistoryDetail} t={t} />;
   if (screen === "historyDetail" && detail) return <HistoryDetailScreen detail={detail} language={language} onBack={() => setScreen("history")} t={t} />;
@@ -221,8 +228,8 @@ function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; 
   </div>;
 }
 
-function AuthScreen({ language, onLanguage, onBack, onAuth, notice, setNotice, busy, setBusy, t }: {
-  language: Language; onLanguage: (language: Language) => void; onBack: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => void;
+function AuthScreen({ language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
+  language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => void;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -243,13 +250,14 @@ function AuthScreen({ language, onLanguage, onBack, onAuth, notice, setNotice, b
       <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" /><small>{t.passwordHint}</small></label>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && !name.trim())} testId="auth-submit" />
+      {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
       <button className="auth-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
     </main>
   </MobileScroll>;
 }
 
-function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onLogout, notice, setNotice, busy, setBusy, t }: {
-  user: User; pairing: Pairing | null; language: Language; onLanguage: (language: Language) => void; onRefresh: () => Promise<void>; onLogout: () => void;
+function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onBack, onLogout, notice, setNotice, busy, setBusy, t }: {
+  user: User; pairing: Pairing | null; language: Language; onLanguage: (language: Language) => void; onRefresh: () => Promise<void>; onBack: () => void; onLogout: () => void;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get("invite")?.toUpperCase() || "");
@@ -260,7 +268,7 @@ function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onLogou
   const copyInvite = async () => { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><button onClick={onLogout} aria-label={t.logout}><SignOut size={20} /></button><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{pairing ? t.waitingPartner : t.invitePartner}</h1><PauseMark /></div>
-      <p className="pairing-lead">{pairing ? t.waitingHint : t.inviteHint}</p>
+      <button className="text-action" onClick={onBack}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button><p className="pairing-lead">{pairing ? t.waitingHint : t.inviteHint}</p>
       {!pairing ? <><button className="primary-action" onClick={createInvite} disabled={busy}><LinkSimple size={20} />{t.createInvite}</button><div className="join-divider"><span>OR</span></div>
         <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))} maxLength={8} data-testid="invite-code" /></label><button className="secondary-action" onClick={accept} disabled={busy || code.length !== 8}>{t.acceptInvite}</button></> :
         <><div className="invite-code-panel"><span>{t.inviteCode}</span><strong>{pairing.invitation?.code}</strong><button onClick={copyInvite}><Copy size={18} />{copied ? t.copied : t.copyInvite}</button></div><div className="waiting-pair"><span>{user.name.slice(0, 1)}</span><i>＋</i><span>?</span></div><button className="secondary-action" onClick={onRefresh}>{localized(language, "检查是否已加入", "Check connection", "Comprobar conexión")}</button></>}
@@ -268,14 +276,17 @@ function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onLogou
     </main></MobileScroll>;
 }
 
-function DashboardScreen({ user, pairing, rooms, language, onLanguage, onSetup, onJoin, onHistory, onLogout, notice, setNotice, busy, t }: {
-  user: User; pairing: Pairing; rooms: RoomSummary[]; language: Language; onLanguage: (language: Language) => void; onSetup: () => void; onJoin: (code: string, join: boolean) => void;
+function DashboardScreen({ user, pairing, rooms, onPersonal, onPrivacy, onAccessChanged, language, onLanguage, onSetup, onJoin, onHistory, onLogout, notice, setNotice, busy, t }: {
+  user: User; pairing: Pairing; rooms: RoomSummary[]; onPersonal: () => void; onPrivacy: () => void; onAccessChanged: () => void; language: Language; onLanguage: (language: Language) => void; onSetup: () => void; onJoin: (code: string, join: boolean) => void;
   onHistory: () => void; onLogout: () => void; notice: string; setNotice: (value: string) => void; busy: boolean; t: typeof copy.zh;
 }) {
   const partner = pairing.members.find((member) => member.id !== user.id);
   return <RelationshipHome
     user={{ id: user.id, name: user.name }}
     partnerName={partner?.name || ""}
+    onPersonal={onPersonal}
+    onPrivacy={onPrivacy}
+    onAccessChanged={onAccessChanged}
     language={language}
     rooms={rooms}
     notice={notice}

@@ -51,17 +51,19 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
     if (itemId && thread.messages.some((message) => message.itemId === itemId)) return res.json({ thread });
     const context = await store.getRelationshipContext(userId);
     const memories = await store.listRelationshipRecordsForUser("memories", userId);
-    const approvedMemory = memoryContext(memories, { userId, relationshipId: context?.relationship.status === "active" ? context.relationship.id : null, scope: "private" });
+    const approvedMemory = memoryContext(memories, { userId, relationshipId: context?.relationship.status === "active" ? context.relationship.id : null, scope: "private", query: content });
     const userMessage = { id: randomUUID(), role: "user", text: content, itemId: itemId || null, createdAt: new Date().toISOString() };
-    const result = await mediator.continuePrivateAgentThread({ intentType: thread.intentType, messages: [...thread.messages, userMessage].slice(-30), draft: thread.draft || {}, memory: approvedMemory }, thread.language);
+    const result = await mediator.continuePrivateAgentThread({ intentType: thread.intentType, messages: [...thread.messages.filter(message => !(message.memoryReferences || []).some(ref => !approvedMemory.references.some(current => current.id === ref.id && current.version === ref.version))), userMessage].slice(-30), draft: (thread.draftMemoryReferences || []).some(ref => !approvedMemory.references.some(current => current.id === ref.id && current.version === ref.version)) ? {} : thread.draft || {}, memory: approvedMemory }, thread.language);
     const updated = await store.transaction(`user:${userId}`, async (tx) => {
       const latest = await owned(thread.id, userId, tx);
       if (!latest || latest.status === "closed") throw fail(409, text(req, "对话状态已变化，请刷新。", "The conversation changed. Refresh and retry.", "La conversación cambió. Actualiza e inténtalo de nuevo."));
       if (itemId && latest.messages.some((message) => message.itemId === itemId)) return latest;
+      const currentMemory = memoryContext(await tx.listRelationshipRecordsForUser("memories", userId), { userId, relationshipId: context?.relationship.status === "active" ? context.relationship.id : null, scope: "private", query: content });
+      if (approvedMemory.references.some(ref => !currentMemory.references.some(current => current.id === ref.id && current.version === ref.version))) throw fail(409, "Memory consent changed. Retry with the current context.");
       if (latest.version !== thread.version) throw fail(409, text(req, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const record = await tx.updateRelationshipRecordForUser("privateAgentThreads", thread.id, userId, (draft) => {
-        draft.messages = [...draft.messages, userMessage, { id: randomUUID(), role: "assistant", text: clean(result.reply, 4000), createdAt: new Date().toISOString() }];
-        draft.draft = result.draft || draft.draft; draft.readyToShare = Boolean(result.readyToShare); draft.source = result.source || "local";
+        draft.messages = [...draft.messages, userMessage, { id: randomUUID(), role: "assistant", text: clean(result.reply, 4000), memoryReferences: approvedMemory.references, createdAt: new Date().toISOString() }];
+        draft.draft = result.draft || {}; draft.draftMemoryReferences = approvedMemory.references; draft.readyToShare = Boolean(result.readyToShare); draft.source = result.source || "local";
         draft.status = draft.sharedObjectId ? "shared" : "draft_ready"; draft.version += 1;
         draft.memoryReferences = approvedMemory.references || [];
       });
