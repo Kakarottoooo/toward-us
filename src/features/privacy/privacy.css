@@ -1,3 +1,4 @@
+.simple-header.privacy-page-header { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; }
 .privacy-workspace { color: #292925; }
 .privacy-workspace > header { display: flex; align-items: center; gap: 12px; }
 .privacy-workspace p { line-height: 1.75; color: #66665e; }

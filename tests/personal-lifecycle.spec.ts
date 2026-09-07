@@ -34,5 +34,11 @@ test("an unpaired person can think, keep daily memories, schedule a reminder and
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("Privacidad y cuenta", { exact: true }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  for (const language of ["ZH", "EN", "ES"]) {
+    const button = page.getByRole("button", { name: language, exact: true });
+    const bounds = await button.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  }
   await page.screenshot({ path: testInfo.outputPath("personal-privacy-mobile-es.png"), fullPage: true });
 });
