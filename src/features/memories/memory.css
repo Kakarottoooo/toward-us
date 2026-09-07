@@ -1,0 +1,52 @@
+.memory-workspace { color: #292925; }
+.memory-workspace header > div { display: flex; align-items: center; gap: 12px; }
+.memory-workspace header p { max-width: 760px; line-height: 1.65; color: #68675f; }
+.memory-workspace label { display: grid; gap: 8px; font-size: 14px; line-height: 1.55; }
+.memory-workspace input:not([type="checkbox"]), .memory-workspace textarea, .memory-workspace select { width: 100%; min-width: 0; border: 1px solid #d7d4c9; border-radius: 9px; background: #fffdf7; color: inherit; padding: 12px; font: inherit; }
+.memory-workspace textarea { min-height: 106px; resize: vertical; line-height: 1.65; }
+.memory-workspace button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; max-width: 100%; border: 1px solid #294d70; border-radius: 8px; padding: 10px 15px; background: #294d70; color: #fffdf7; font: inherit; font-size: 14px; line-height: 1.4; cursor: pointer; }
+.memory-workspace button:hover:not(:disabled) { background: #213f5c; }
+.memory-workspace button.memory-quiet { color: #4e555b; border-color: transparent; background: transparent; }
+.memory-workspace button.memory-quiet:hover:not(:disabled) { background: #eae6db; }
+.memory-workspace button:disabled { opacity: .48; cursor: not-allowed; }
+.memory-workspace :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid #ae4845; outline-offset: 3px; }
+.memory-composer { display: grid; gap: 16px; margin: 24px 0; padding: 22px 0; border-block: 1px solid #dedbd0; }
+.memory-composer > button { justify-self: start; }
+.memory-workspace .memory-checkbox { display: flex; align-items: flex-start; gap: 10px; }
+.memory-checkbox input { width: 18px; height: 18px; margin: 3px 0; flex-shrink: 0; accent-color: #294d70; }
+.memory-source-picker summary { cursor: pointer; padding-block: 6px; color: #294d70; font-size: 14px; }
+.memory-source-picker label { margin-top: 12px; }
+.memory-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 24px 0 16px; }
+.memory-toolbar h3 { margin: 0; font-size: 17px; font-weight: 500; }
+.memory-workspace .memory-search { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 180px; }
+.memory-search svg { flex-shrink: 0; color: #73736a; }
+.memory-empty { padding: 28px 4px; color: #727167; line-height: 1.75; }
+.memory-timeline { padding: 0; margin: 0; list-style: none; }
+.memory-timeline > li { padding: 24px 0; border-bottom: 1px solid #dedbd0; }
+.memory-timeline > li:first-child { padding-top: 8px; }
+.memory-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: #77766d; font-size: 12px; line-height: 1.5; }
+.memory-meta > span:first-child { color: #294d70; }
+.memory-meta time { margin-left: auto; }
+.memory-entry h4 { margin: 12px 0 0; font-size: 15px; font-weight: 500; }
+.memory-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 14px 0; font-size: 16px; }
+.memory-provenance, .memory-consent { margin: 8px 0; color: #6b6a61; font-size: 12px; line-height: 1.65; }
+.memory-consent { color: #415b70; }
+.memory-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.memory-delete { margin-top: 8px; font-size: 13px; }
+.memory-delete > button { margin-right: 6px; }
+.memory-edit, .memory-share-composer { display: grid; gap: 14px; padding: 18px; margin-top: 16px; border-left: 2px solid #ae4845; background: #f1ede2; border-radius: 0 8px 8px 0; }
+.memory-share-composer h4 { margin: 0; line-height: 1.5; }
+.memory-share-composer > p, .memory-share-preview p { color: #66665d; font-size: 13px; line-height: 1.7; margin: 0; }
+.memory-workspace blockquote { margin: 12px 0; padding-left: 16px; border-left: 2px solid #bdb7aa; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; }
+.memory-share-preview { padding: 16px; background: #fffdf7; border: 1px solid #d7d4c9; border-radius: 8px; }
+.memory-share-preview strong { font-size: 13px; color: #294d70; }
+.checkin-options { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.memory-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 600px) {
+  .checkin-options { grid-template-columns: 1fr; }
+  .memory-meta time { margin-left: 0; }
+  .memory-edit, .memory-share-composer { padding: 14px; }
+  .memory-actions { gap: 4px; }
+  .memory-toolbar .memory-search { flex-basis: 100%; }
+  .memory-workspace button { font-size: 13px; }
+}
