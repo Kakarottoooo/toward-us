@@ -5,7 +5,16 @@ export const GRAPH_COLLECTIONS = Object.freeze([
   "milestones", "reminders", "lists", "listItems", "issues", "perspectives", "summaries",
   "proposals", "evaluations", "agreements", "approvals", "commitments", "outcomes",
   "outcomeResponses", "notifications", "consentEvents", "productEvents",
+  "memories", "checkins", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings",
 ]);
+
+export const PERSONAL_COLLECTIONS = new Set(["privateAgentThreads", "memories", "checkins", "reminders", "notifications", "consentEvents", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings"]);
+const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences"]);
+
+export function assertRecordScope(collection, record) {
+  if (!record.ownerUserId || !record.createdByUserId) throw new Error("A record requires an owner and a creator.");
+  if (!record.relationshipId && (!PERSONAL_COLLECTIONS.has(collection) || record.visibility !== "private")) throw new Error("Unpaired records must be private and belong to a personal collection.");
+}
 
 const PRIVATE_VISIBILITIES = new Set(["private", "private_surprise"]);
 const JOINT_VISIBILITIES = new Set(["shared", "jointly_confirmed", "revealed"]);
@@ -43,7 +52,7 @@ export function projectRecord(record, userId) {
 export function projectGraph(snapshot, userId) {
   return Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [
     collection,
-    (snapshot[collection] || []).map((record) => projectRecord(record, userId)).filter(Boolean),
+    INTERNAL_COLLECTIONS.has(collection) ? [] : (snapshot[collection] || []).map((record) => projectRecord(record, userId)).filter(Boolean),
   ]));
 }
 
