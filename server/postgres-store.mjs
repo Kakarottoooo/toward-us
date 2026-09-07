@@ -1,8 +1,10 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
-import { GRAPH_COLLECTIONS } from "./relationship-domain.mjs";
+import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
 const GRAPH_TABLES = Object.freeze({
   privateAgentThreads: "private_agent_threads",
+  memories: "relationship_memories", checkins: "relationship_checkins", deliveryPreferences: "delivery_preferences", pushSubscriptions: "push_subscriptions", deliveryJobs: "delivery_jobs", accountSettings: "account_settings",
   milestones: "relationship_milestones", reminders: "reminders", lists: "shared_lists", listItems: "shared_list_items",
   issues: "relationship_issues", perspectives: "issue_perspectives", summaries: "shareable_summaries", proposals: "decision_proposals",
   evaluations: "proposal_evaluations", agreements: "agreements", approvals: "agreement_approvals", commitments: "commitments",
@@ -11,11 +13,45 @@ const GRAPH_TABLES = Object.freeze({
 });
 
 export async function createPostgresStore(databaseUrl) {
-  const pool = new Pool({ connectionString: databaseUrl, max: Number(process.env.DB_POOL_SIZE || 5), ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false } });
+  const rawPool = new Pool({ connectionString: databaseUrl, max: Number(process.env.DB_POOL_SIZE || 5), ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false } });
+  const transactions = new AsyncLocalStorage();
+  // Existing single-record operations participate in an outer lifecycle transaction.
+  // Their local BEGIN/COMMIT must never commit the caller's multi-record operation.
+  const pool = {
+    query: (...args) => (transactions.getStore()?.client || rawPool).query(...args),
+    connect: async () => {
+      const context = transactions.getStore();
+      if (!context) return rawPool.connect();
+      return {
+        query: (text, ...args) => {
+          if (/^(begin|commit|rollback)$/i.test(text.trim())) {
+            if (/^rollback$/i.test(text.trim())) context.rollbackOnly = true;
+            return Promise.resolve({ rows: [], rowCount: 0 });
+          }
+          return context.client.query(text, ...args);
+        },
+        release() {},
+      };
+    },
+  };
   await migrate(pool);
 
-  return {
+  const store = {
     kind: "postgres",
+    async close() { await rawPool.end(); },
+    async transaction(key, callback) {
+      if (transactions.getStore()) return callback(store);
+      const client = await rawPool.connect();
+      const context = { client, rollbackOnly: false };
+      try {
+        await client.query("begin");
+        await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [String(key)]);
+        const result = await transactions.run(context, () => callback(store));
+        await client.query(context.rollbackOnly ? "rollback" : "commit");
+        return result;
+      } catch (error) { await client.query("rollback"); throw error; }
+      finally { client.release(); }
+    },
     async ping() { await pool.query("select 1"); return true; },
     async getUserByEmail(email) { return mapUser((await pool.query("select * from users where email = $1", [email])).rows[0]); },
     async getUserById(id) { return mapUser((await pool.query("select * from users where id = $1", [id])).rows[0]); },
@@ -123,18 +159,19 @@ export async function createPostgresStore(databaseUrl) {
       } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
     },
     async createRelationshipRecord(collection, record) {
+      assertRecordScope(collection, record);
       const table = graphTable(collection);
       const result = await pool.query(`insert into ${table} (id,relationship_id,created_by_user_id,owner_user_id,visibility,status,version,due_at,review_at,expires_at,data,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`, graphValues(record));
       return mapGraphRecord(result.rows[0]);
     },
     async getRelationshipRecordForUser(collection, id, userId) {
       const table = graphTable(collection);
-      const result = await pool.query(`select r.* from ${table} r join relationship_members m on m.relationship_id=r.relationship_id where r.id=$1 and m.user_id=$2`, [id, userId]);
+      const result = await pool.query(`select r.* from ${table} r where r.id=$1 and ${recordScopeSql(collection, "$2")}`, [id, userId]);
       return mapGraphRecord(result.rows[0]);
     },
     async listRelationshipRecordsForUser(collection, userId) {
       const table = graphTable(collection);
-      const result = await pool.query(`select r.* from ${table} r join relationship_members m on m.relationship_id=r.relationship_id where m.user_id=$1 order by r.created_at desc`, [userId]);
+      const result = await pool.query(`select r.* from ${table} r where ${recordScopeSql(collection, "$1")} order by r.created_at desc`, [userId]);
       return result.rows.map(mapGraphRecord);
     },
     async updateRelationshipRecordForUser(collection, id, userId, updater) {
@@ -142,27 +179,31 @@ export async function createPostgresStore(databaseUrl) {
       const client = await pool.connect();
       try {
         await client.query("begin");
-        const result = await client.query(`select r.* from ${table} r join relationship_members m on m.relationship_id=r.relationship_id where r.id=$1 and m.user_id=$2 for update of r`, [id, userId]);
+        const result = await client.query(`select r.* from ${table} r where r.id=$1 and ${recordScopeSql(collection, "$2")} for update of r`, [id, userId]);
         if (!result.rowCount) { await client.query("rollback"); return null; }
         const record = mapGraphRecord(result.rows[0]);
         await updater(record);
+        assertRecordScope(collection, record);
         record.updatedAt = new Date().toISOString();
-        const updated = await client.query(`update ${table} set owner_user_id=$2,visibility=$3,status=$4,version=$5,due_at=$6,review_at=$7,expires_at=$8,data=$9,updated_at=$10 where id=$1 returning *`, [record.id, record.ownerUserId, record.visibility, record.status, record.version, record.dueAt || null, record.reviewAt || null, record.expiresAt || null, record, record.updatedAt]);
+        const updated = await client.query(`update ${table} set owner_user_id=$2,visibility=$3,status=$4,version=$5,due_at=$6,review_at=$7,expires_at=$8,data=$9,updated_at=$10,relationship_id=$11 where id=$1 returning *`, [record.id, record.ownerUserId, record.visibility, record.status, record.version, record.dueAt || null, record.reviewAt || null, record.expiresAt || null, record, record.updatedAt, record.relationshipId]);
         await client.query("commit");
         return mapGraphRecord(updated.rows[0]);
       } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
     },
+    async deleteRelationshipRecordForUser(collection, id, userId) {
+      const table = graphTable(collection);
+      const result = await pool.query(`delete from ${table} r where r.id=$1 and r.owner_user_id=$2 and ${recordScopeSql(collection, "$2")}`, [id, userId]);
+      return result.rowCount > 0;
+    },
+    async listRecordsForJob(collection) {
+      return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);
+    },
     async relationshipSnapshotForUser(userId) {
-      const context = await loadRelationshipContext(pool, userId);
-      if (!context) return null;
-      const entries = await Promise.all(GRAPH_COLLECTIONS.map(async (collection) => {
-        const table = graphTable(collection);
-        const rows = (await pool.query(`select * from ${table} where relationship_id=$1 order by created_at desc`, [context.relationship.id])).rows.map(mapGraphRecord);
-        return [collection, rows];
-      }));
+      const entries = await Promise.all(GRAPH_COLLECTIONS.map(async (collection) => [collection, await store.listRelationshipRecordsForUser(collection, userId)]));
       return Object.fromEntries(entries);
     },
   };
+  return store;
 }
 
 async function loadRelationshipContext(client, userId) {
@@ -205,6 +246,7 @@ async function migrate(pool) {
         created_at timestamptz not null,
         updated_at timestamptz not null
       );
+      ${PERSONAL_COLLECTIONS.has(Object.keys(GRAPH_TABLES).find((key) => GRAPH_TABLES[key] === table)) ? `alter table ${table} alter column relationship_id drop not null;` : ""}
       create index if not exists ${table}_relationship_status_idx on ${table}(relationship_id,status,created_at desc);
       create index if not exists ${table}_owner_idx on ${table}(owner_user_id,created_at desc);
       create index if not exists ${table}_due_idx on ${table}(due_at) where due_at is not null;
@@ -212,6 +254,13 @@ async function migrate(pool) {
       create index if not exists ${table}_expiry_idx on ${table}(expires_at) where expires_at is not null;
     `);
   }
+}
+
+function recordScopeSql(collection, userParameter) {
+  const membership = `exists (select 1 from relationship_members m where m.relationship_id=r.relationship_id and m.user_id=${userParameter})`;
+  return PERSONAL_COLLECTIONS.has(collection)
+    ? `(${membership} or (r.relationship_id is null and r.visibility='private' and r.owner_user_id=${userParameter}))`
+    : membership;
 }
 
 function graphTable(collection) {
