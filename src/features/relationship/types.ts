@@ -1,10 +1,10 @@
 export type GraphRecord = {
-  id: string; relationshipId: string; createdByUserId: string; ownerUserId: string; visibility: string; status: string;
+  id: string; relationshipId: string | null; createdByUserId: string; ownerUserId: string; visibility: string; status: string;
   version: number; createdAt: string; updatedAt: string; title?: string; [key: string]: unknown;
 };
 
 export type RelationshipGraph = {
-  privateAgentThreads: GraphRecord[];
+  privateAgentThreads: GraphRecord[]; memories: GraphRecord[]; checkins: GraphRecord[];
   milestones: GraphRecord[]; reminders: GraphRecord[]; lists: GraphRecord[]; listItems: GraphRecord[]; issues: GraphRecord[];
   perspectives: GraphRecord[]; summaries: GraphRecord[]; proposals: GraphRecord[]; evaluations: GraphRecord[]; agreements: GraphRecord[];
   approvals: GraphRecord[]; commitments: GraphRecord[]; outcomes: GraphRecord[]; outcomeResponses: GraphRecord[]; notifications: GraphRecord[];

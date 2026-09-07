@@ -1,6 +1,6 @@
 # Toward Us：Multi-principal Relationship Agent
 
-更新日期：2026-09-02
+更新日期：2026-09-07
 
 这份文档是 Toward Us 新产品方向、P0 实现、Consent Kernel、Relationship Graph、API、状态机、migration、安全边界与路线图的事实入口。运行时代码与自动化测试优先于文档；代码变化后应同步维护本文。
 
@@ -26,13 +26,15 @@ English positioning:
 | --- | --- | --- |
 | P0 | **implemented** | 红蓝 Relationship Home、私密 Agent 对话与实时语音、显式分享边界、对话生成决定/计划、纪念日、私人/共同提醒、共同清单、私人惊喜与揭晓、Joint Decision、可共享摘要、方案、私密评价、Agreement 双批准、Commitment、Outcome Review、通知中心、审计事件、SSE 刷新 |
 | 原调解产品 | **preserved** | 正式账号、伴侣绑定、两设备/同设备、文字与实时语音、说话人锁定、私人/共同反馈、共同 AI 追问、双确认归档、历史、无账号 demo、二维码/深链 |
-| P1 Memories | **designed but not implemented** | Home 保留真实空状态；没有伪造回忆、memory API 或数据库表 |
-| P1 Check-ins / Companion | **feature flagged off; not implemented** | 不显示伪可用入口；没有关系分数、惩罚或“宠物因冲突受伤”机制 |
+| Memories | **implemented** | 私人记忆、来源与版本、搜索/纠正/归档/删除；逐字预览分享，双方同版本单独授权后供共同 AI 使用，任一方可撤回未来引用 |
+| Check-ins | **implemented** | 私人心情、一句感谢、好时刻；只分享本人预览确认的独立文本副本，不自动暴露心情或交给 AI |
+| 私人入口与隐私 | **implemented** | 未配对即可使用 Private Agent；自助导出、私人删除、退出/销户、保留期限、单次恢复码；没有邮件找回 |
+| 外部提醒 | **implemented; provider configuration and device acceptance required** | 持久 outbox、lease、重试、时区、停用/解绑、Web Push 与 GitHub 定时触发；服务接受不等于设备显示或已读 |
 | P2 Calendar / Safe Share / money protocol | **feature flagged off; designed only** | 没有第三方授权、后台同步、坐标保存或财务自动执行 |
 | P3 intimacy matching | **feature flagged off; designed only** | 没有高敏感问卷或匹配 UI |
 | 原生后台位置 | **future native-only** | Web/PWA 不宣称可靠后台定位；必须在独立安全评审后做原生能力 |
 
-服务端 `/api/relationship/home` 返回 `capabilities`，当前只有 `p0RelationshipAgent=true`，其余标志均为 `false`。
+服务端 `/api/relationship/home` 返回实际能力标志。记忆、轻量记录、共同议题对话、明确分享、未配对私人空间、隐私设置、恢复码和持久提醒已实现；第三方日历、财务协议、亲密匹配及后台定位继续关闭。
 
 ## 3. 修改前架构与本次深化
 
@@ -58,13 +60,13 @@ English positioning:
 
 每个 Graph record 都带有：`relationshipId`、`createdByUserId`、`ownerUserId`、`visibility`、`aiAccessScope`、`approvalPolicy`、`status`、`version`、时间戳、过期/撤回/归档字段和 `provenance`。
 
-读取链固定为：`session user -> relationship_members -> object.relationship_id -> per-user projection`。
+关系对象读取链为 `session user -> active relationship_members -> object.relationship_id -> per-user projection`；允许的个人集合可使用 `relationshipId=null`，此时必须 private 且 owner 与当前身份一致。投递密钥、恢复码校验值和 outbox 永不进入公共 Graph 投影。
 
 前端提交的创建者、owner、relationship id 不被信任。私人对象的存在、数量、标题、预算、备注和内容不会投影给伴侣。SSE 只发送 `{eventType, objectId, version}`；私人事件只写给 owner 的连接。
 
 ### Shared Agent context builder
 
-`buildJointDecisionContext` 只加入当前 shared issue、双方分别确认且 `aiAccessScope=joint` 的 shareable summaries、已生效 agreements、相关 commitments 和安全规则。它不接收 raw perspective、private notes、private evaluation 或 private reminder。自动测试在私人 perspective 中放入 secret token，并断言模型 context 不包含它。
+`buildJointDecisionContext` 只加入当前 shared issue、双方分别确认且 `aiAccessScope=joint` 的 shareable summaries、已生效 agreements、相关 commitments 、双方授权且未撤回/过期的最多 8 条相关记忆和安全规则。它不接收 raw perspective、private notes、private evaluation 或 private reminder。自动测试在私人 perspective 中放入 secret token，并断言模型 context 不包含它。
 
 Private Agent 与 Shared Agent 走不同函数和不同输入路径：`continuePrivateAgentThread` 只处理 owner 的私密 thread；`summarizePerspective` 保留给手动备用流程；`generateDecisionOptions` 只接受服务端 builder 的结果。OpenAI 调用均设置 `store:false`。私密语音复用 Realtime 转录，但 transcript 只提交回 owner-only thread，原始音频不落盘。
 
@@ -188,13 +190,30 @@ npm run test:sites
 
 Render 使用现有单 Web Service + PostgreSQL Blueprint；新表由应用启动 migration 创建，不需要手工运行 SQL。必须在 Render secret store 中存在 `OPENAI_API_KEY` 才能使用真实模型/语音；没有时安全退回本地文字方案且语音不可用。部署后运行 `npm run verify:deploy` 验证 commit、HTTPS/HSTS、PostgreSQL、匿名身份与 fail-closed 边界。
 
-剩余风险：
+发布影响契约：
 
-- PostgreSQL migration 有代码级与部署启动验证，但没有在本地临时 PostgreSQL 容器上跑完整 P0 流程。
-- P0 reminder 只保存和展示，没有后台 scheduler/push delivery；时区用于记录，日期聚合以稳定 date-only noon UTC 计算，真正发通知时要使用 IANA timezone 调度。
-- 通知尚无数据库级 dedupe 唯一索引，因为 P0 没有扫描器。
-- 模型尚未做系统化红队评测、危机人工升级和目标市场法律审核。
-- 前端主 bundle 超过 500 kB 建议阈值；下个性能里程碑应按 route/feature code split。
-- 邮箱验证、忘记密码、MFA、自助导出/删除、保留策略和备份恢复演练仍未完成。
+will change:
+- 正式账号增加个人空间、隐私与恢复入口；未配对账号默认进入个人空间，邀请入口保留。
+- 首页事项与通知可打开对应决定/复盘/计划；“回忆”接入真实记忆与轻量记录；计划可选择本人提醒时间。
+- 私人分享必须预览并明确确认；共同对话产生可编辑草稿，双方批准同一版本；承诺需负责人确认，复盘如实填写且分享/学习默认关闭。
+- Express 路由与两个 Store Adapter 增加个人数据、同意、退出历史和持久投递事务；PostgreSQL 启动执行增量 migration。用户主动操作之前不删除既有业务数据。
 
-最优下一阶段不是马上堆 P1，而是先把 P0 在生产 PostgreSQL 上跑完双人验收，补定时 reminder/notification 的幂等调度，再依据真实使用决定 Memories 或 Check-ins 的优先级。
+will not change:
+- 首页、沟通、决定、计划、回忆五个现有导航继续存在；原调解、demo、二维码、语音、说话人选择、双确认归档与历史继续可用。
+- 保留红蓝米白设计、桌面普通网页、手机全屏、三语和 28 个受保护 runtime 文件；不读取历史真实关系材料。
+- 不购买服务，不启用邮件渠道、第三方日历或位置/财务权限。
+
+提醒配置：Render secret store 需设置 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（产品 HTTPS URL）和 `REMINDER_RUN_SECRET`；GitHub 同名 secret 与 `REMINDER_BASE_URL` variable 为定时任务提供连接。每 5 分钟请求唯一 Bearer 保护端点 `/api/internal/reminders/run`；启动时补偿持久任务，tick 同时执行用户选择的私人保留策略。默认不自动删除，7/30/90/365 天仅清理私人 Agent 对话、私人记忆和轻量记录。Web Push 不缓存 API 或私人页面，外部通知只含模糊提示。无配置时界面明确说明只能保存提醒。
+
+隐私动作需当前密码复核；凭据复核、恢复、登录、销户在事务内锁定同一用户行。恢复码只展示一次、哈希存储、原子消费，使用后撤销旧登录。退出关闭双方的关系访问与 SSE，保留个人只读资料及合法历史导出，旧关系对象不会进入重新配对的共同空间。删私人原文不撤回已经分享的副本；销户匿名化账号并删除本人私人内容/房间原话，共同协议与最小同意审计仍保留。
+
+验证：应用 API 回归、真实 PostgreSQL 生命周期/并发回归（`npm run test:postgres`，CI 使用 PostgreSQL 18；本机17.11）、桌面与手机三语浏览器验收。真实 OpenAI gpt-5.4 的两次合成材料验收已验证授权记忆进入回答、撤回后不再通过旧消息/草稿传入。provider 注入测试只证明应用行为，实际推送设备验收独立记录，不能代替真实送达证据。
+
+剩余限制：
+- 现有 Render Free 服务会休眠，GitHub schedule 属于 best effort；提醒可能延迟。provider 已接受后进程崩溃仍有重复尝试窗口，用稳定 tag/topic 合并，不承诺端到端 exactly-once。
+- 现有 Free PostgreSQL 的期限、备份与恢复尚需产品运营决策和真实演练，当前不是无限期生产保管承诺。
+- 没有邮件验证、邮件找回或 MFA；恢复码丢失且忘记密码时不能伪造恢复能力。
+- 主 bundle 超过 500 kB 建议阈值；真实设备麦克风/通知权限以及大规模用户负载尚未验收。
+- 模型尚未做系统化红队、危机人工升级和目标市场法律审核。
+
+下一步优先跑真实双人连续使用与通知设备验收，观察是否能完成“分享—决定—执行—如实复盘—授权记忆”的完整闭环。避免先扩展会被通用模型吸收的聊天花样。

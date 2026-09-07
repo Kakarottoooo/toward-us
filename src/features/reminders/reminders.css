@@ -1,0 +1,15 @@
+.reminders-feature .reminders-settings { display: grid; gap: 12px; padding: 18px 0; border-block: 1px solid rgba(91, 73, 55, .13); }
+.reminders-feature .reminders-settings p { margin: 0; }
+.reminders-feature .reminders-settings small, .reminders-feature .reminders-time-note { color: #71665a; line-height: 1.6; }
+.reminders-feature .reminders-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-block: 22px; }
+.reminders-feature .reminders-form label { min-width: 0; }
+.reminders-feature .reminders-form input, .reminders-feature .reminders-form select { width: 100%; box-sizing: border-box; min-height: 44px; }
+.reminders-feature .reminders-form > .row-actions, .reminders-feature .reminders-time-note { grid-column: 1 / -1; }
+.reminders-feature .reminders-device { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; }
+.reminders-feature .reminders-device button, .reminders-feature .row-actions button { min-height: 40px; }
+.reminders-feature details summary { cursor: pointer; padding-block: 8px; }
+.reminders-feature .reminders-list article { align-items: flex-start; }
+.reminders-feature .reminders-list article > p { margin: 8px 0; }
+.reminders-feature button:focus-visible, .reminders-feature summary:focus-visible, .reminders-feature select:focus-visible, .reminders-feature input:focus-visible { outline: 2px solid #355e83; outline-offset: 3px; }
+.reminders-feature button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 600px) { .reminders-feature .reminders-form { grid-template-columns: minmax(0, 1fr); } .reminders-feature .reminders-list article { display: grid; gap: 8px; } }

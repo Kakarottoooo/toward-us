@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
+import { buildMemoryContext } from "./memory-domain.mjs";
 
 export const GRAPH_COLLECTIONS = Object.freeze([
   "privateAgentThreads",
   "milestones", "reminders", "lists", "listItems", "issues", "perspectives", "summaries",
   "proposals", "evaluations", "agreements", "approvals", "commitments", "outcomes",
   "outcomeResponses", "notifications", "consentEvents", "productEvents",
+  "memories", "checkins", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings",
 ]);
+
+export const PERSONAL_COLLECTIONS = new Set(["privateAgentThreads", "memories", "checkins", "reminders", "notifications", "consentEvents", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings"]);
+const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences"]);
+
+export function assertRecordScope(collection, record) {
+  if (!record.ownerUserId || !record.createdByUserId) throw new Error("A record requires an owner and a creator.");
+  if (!record.relationshipId && (!PERSONAL_COLLECTIONS.has(collection) || record.visibility !== "private")) throw new Error("Unpaired records must be private and belong to a personal collection.");
+}
 
 const PRIVATE_VISIBILITIES = new Set(["private", "private_surprise"]);
 const JOINT_VISIBILITIES = new Set(["shared", "jointly_confirmed", "revealed"]);
@@ -43,11 +53,11 @@ export function projectRecord(record, userId) {
 export function projectGraph(snapshot, userId) {
   return Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [
     collection,
-    (snapshot[collection] || []).map((record) => projectRecord(record, userId)).filter(Boolean),
+    INTERNAL_COLLECTIONS.has(collection) ? [] : (snapshot[collection] || []).map((record) => projectRecord(record, userId)).filter(Boolean),
   ]));
 }
 
-export function buildJointDecisionContext(snapshot, issueId) {
+export function buildJointDecisionContext(snapshot, issueId, userId) {
   const issue = (snapshot.issues || []).find((candidate) => candidate.id === issueId);
   if (!issue) return null;
   const summaries = (snapshot.summaries || [])
@@ -64,6 +74,7 @@ export function buildJointDecisionContext(snapshot, issueId) {
     confirmedSummaries: summaries,
     activeAgreements: agreements,
     commitments,
+    authorizedMemories: buildMemoryContext(snapshot.memories, { userId, relationshipId: issue.relationshipId, scope: "joint", query: issue.title }).memories,
     safety: { rule: "Do not infer motives, reveal private data, shame either person, or approve on their behalf." },
   };
 }

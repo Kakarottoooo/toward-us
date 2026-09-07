@@ -14,6 +14,8 @@ const dataFile = resolve(process.env.TOWARD_US_DATA_FILE || resolve(root, "data"
 const store = await createStore(dataFile, process.env.DATABASE_URL);
 const mediator = createMediator();
 const app = createApiApp({ store, mediator, production });
+// Catch up persisted jobs after a restart; external ticks wake sleeping hosts.
+void app.locals.runMaintenance().catch(() => console.error("Reminder maintenance will retry on the next tick."));
 
 if (production) {
   const clientRoot = resolve(root, "dist", "client");

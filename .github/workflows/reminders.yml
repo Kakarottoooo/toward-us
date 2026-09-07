@@ -1,0 +1,28 @@
+name: Deliver reminders
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reminder-delivery
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Run bounded reminder delivery
+        env:
+          REMINDER_BASE_URL: ${{ vars.REMINDER_BASE_URL }}
+          REMINDER_RUN_SECRET: ${{ secrets.REMINDER_RUN_SECRET }}
+        run: node scripts/run-reminders.mjs
