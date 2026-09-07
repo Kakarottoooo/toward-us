@@ -406,9 +406,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       const current = await tx.getRelationshipRecordForUser("issues", issue.id, userId);
       if (!current) throw decisionError(404, "not_found");
       if (itemId && (current.discussion || []).some((item) => item.actorUserId === userId && item.itemId === itemId)) return { issue: current, duplicate: true };
-      const context = await jointDiscussionContext(tx, current, userId);
-      context.messages = [...context.messages, userMessage].slice(-24);
       const updated = await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussion = [...(draft.discussion || []), userMessage].slice(-80); draft.discussionLanguage = language; draft.version += 1; });
+      const context = await jointDiscussionContext(tx, updated, userId);
       await audit(tx, updated, userId, "issue.shared_discussion_added");
       return { issue: updated, context, duplicate: false };
     });
@@ -422,7 +421,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       // A newer request sees all saved messages and owns the next AI draft. Older model results are discarded.
       if (current.version !== saved.issue.version) return current;
       const fresh = await jointDiscussionContext(tx, current, userId);
-      if (JSON.stringify(fresh.confirmedSummaries) !== JSON.stringify(context.confirmedSummaries) || JSON.stringify(fresh.agreement) !== JSON.stringify(context.agreement)) {
+      if (JSON.stringify(fresh.confirmedSummaries) !== JSON.stringify(context.confirmedSummaries) || JSON.stringify(fresh.authorizedMemories) !== JSON.stringify(context.authorizedMemories) || JSON.stringify(fresh.agreement) !== JSON.stringify(context.agreement)) {
         return tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussion = [...draft.discussion, { id: randomUUID(), role: "assistant", source: "local", text: DECISION_ERRORS.context_changed[language === "en" ? 1 : language === "es" ? 2 : 0], createdAt: new Date().toISOString() }]; draft.version += 1; });
       }
       const draft = { ...result.draft, id: randomUUID(), agreementId: context.agreement?.id || null, agreementVersion: context.agreement?.version || null, source: result.source, createdAt: new Date().toISOString(), confirmedAt: null, sourceRefs: [...context.confirmedSummaries, ...context.authorizedMemories].map((summary) => ({ id: summary.id, version: summary.version })) };

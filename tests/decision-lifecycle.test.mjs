@@ -6,6 +6,8 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { createDecisionAgent } from "../server/decision-agent.mjs";
+import express from "express";
+import { createRelationshipRouter } from "../server/relationship-router.mjs";
 
 let server, base, directory, store;
 let counter = 0;
@@ -153,6 +155,27 @@ test("an approval racing a revision never activates the revised version", async 
   const record = (await call("/relationship/home", a)).graph.agreements.find((item) => item.id === agreement.id);
   if (record.version > agreement.version) assert.equal(record.status, "awaiting_approvals");
   else assert.equal(record.status, "active");
+});
+
+test("withdrawing shared memory during model generation discards the derived reply and draft", async (t) => {
+  const { a, b, issue } = await agreementFixture();
+  const memory = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: a.user.id, visibility: "jointly_confirmed", aiAccessScope: "joint", text: "REVOKED_MEMORY", memberUserIds: [a.user.id, b.user.id], approvals: [a, b].map(actor => ({ userId: actor.user.id, version: 1 })) });
+  await store.createRelationshipRecord("memories", memory);
+  const app = express(); app.use(express.json()); app.use((req, res, next) => { req.auth = { user: a.user }; next(); });
+  app.use(createRelationshipRouter({ store, mediator, decisionAgent: { async discuss(context) {
+    assert.equal(context.authorizedMemories[0].text, memory.text);
+    await call(`/memories/${memory.id}/withdraw`, b, { expectedVersion: 1 });
+    return { source: "openai", reply: memory.text, draft: { title: memory.text, summary: memory.text, terms: [memory.text] } };
+  } } }));
+  const isolated = app.listen(0, "127.0.0.1");
+  t.after(() => new Promise(resolve => isolated.close(resolve)));
+  await new Promise(resolve => isolated.once("listening", resolve));
+  const response = await fetch(`http://127.0.0.1:${isolated.address().port}/issues/${issue.id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "Can we adjust our weekend plans?", language: "en" }) });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(JSON.stringify(result).includes(memory.text), false);
+  assert.equal(result.issue.discussionDraft, undefined);
+  assert.equal(result.issue.discussion.at(-1).source, "local");
 });
 
 test("simultaneous option generation creates one set and repeated evaluations do not duplicate it", async () => {
