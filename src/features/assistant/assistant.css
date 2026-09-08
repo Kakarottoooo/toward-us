@@ -1,0 +1,37 @@
+.voice-assistant { margin: 0 0 24px; color: #39342f; border: 1px solid #d2c9b9; border-radius: 16px; background: #fffdf7; overflow: hidden; }
+.assistant-launch { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px 24px; text-align: left; background: transparent; border: 0; color: inherit; cursor: pointer; }
+.assistant-launch > span { flex: 1; min-width: 0; }
+.assistant-launch strong { display: block; font-size: 18px; line-height: 1.5; font-weight: 600; }
+.assistant-launch small { display: flex; align-items: center; gap: 5px; margin-top: 5px; color: #625b53; font-size: 14px; }
+.voice-assistant.is-open { padding: 22px; }
+.assistant-heading, .assistant-heading > div { display: flex; align-items: center; gap: 10px; }
+.assistant-heading { justify-content: space-between; }
+.assistant-heading h2 { font-size: 20px; line-height: 1.5; margin: 0; }
+.voice-assistant button { font-family: inherit; }
+.assistant-heading button, .assistant-controls button, .assistant-result-card button, .assistant-retry button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 13px; background: transparent; color: inherit; border: 1px solid #c4bbaa; border-radius: 8px; font-size: 14px; line-height: 1.5; cursor: pointer; }
+.assistant-heading button { border-color: transparent; }
+.assistant-boundary, .assistant-listening, .assistant-example, .assistant-notice, .assistant-retry p { font-size: 14px; line-height: 1.7; color: #625b53; margin: 12px 0; }
+.assistant-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.assistant-controls .assistant-mic { background: #264ca0; border-color: #264ca0; color: white; font-size: 16px; font-weight: 600; }
+.assistant-controls .assistant-mic.listening { background: #a13c31; border-color: #a13c31; }
+.assistant-controls .assistant-fresh { margin-left: auto; }
+.assistant-conversation { max-height: 440px; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; padding-right: 4px; overflow-wrap: anywhere; }
+.assistant-message { margin: 18px 0; }
+.assistant-speaker { font-size: 14px; font-weight: 600; color: #625b53; }
+.assistant-message > p { margin: 6px 0 12px; white-space: pre-wrap; line-height: 1.8; font-size: 16px; }
+.assistant-message-user { padding-left: 15px; border-left: 2px solid #b6493e; }
+.assistant-result-card { padding: 16px; border: 1px solid #d2c9b9; border-radius: 10px; margin: 10px 0; background: #f5f3ec; }
+.assistant-result-card > div { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 14px; color: #625b53; }
+.assistant-result-card strong { font-size: 17px; line-height: 1.6; }
+.assistant-result-card p { white-space: pre-wrap; font-size: 15px; line-height: 1.7; margin: 8px 0; }
+.assistant-result-card button { margin-top: 8px; background: #fffdf7; }
+.assistant-partial { font-size: 16px; line-height: 1.7; color: #625b53; }
+.assistant-notice { color: #963c32; }
+.assistant-composer { display: flex; align-items: flex-end; gap: 12px; border: 1px solid #c4bbaa; border-radius: 10px; padding: 12px; margin-top: 14px; }
+.assistant-composer textarea { flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; resize: vertical; background: transparent; font: inherit; font-size: 16px; line-height: 1.6; color: inherit; }
+.assistant-composer button { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border: 0; border-radius: 8px; color: white; background: #264ca0; cursor: pointer; }
+.voice-assistant button:disabled { opacity: .5; cursor: not-allowed; }
+.voice-assistant button:hover:not(:disabled) { filter: brightness(.95); }
+.voice-assistant button:focus-visible, .assistant-composer:focus-within { outline: 2px solid #264ca0; outline-offset: 3px; }
+@media (max-width: 600px) { .assistant-launch { padding: 17px 15px; gap: 11px; } .voice-assistant.is-open { padding: 16px; } .assistant-heading h2 { font-size: 18px; } .assistant-controls { gap: 8px; } .assistant-controls .assistant-fresh { margin-left: 0; } .assistant-conversation { max-height: 380px; } .assistant-result-card { padding: 13px; } }
+@media (prefers-reduced-motion: reduce) { .assistant-conversation { scroll-behavior: auto; } }

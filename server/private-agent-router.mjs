@@ -12,7 +12,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
   router.use("/private-agent", (req, res, next) => req.auth ? next() : res.status(401).json({ error: text(req, "请先登录。", "Please sign in.", "Inicia sesión.") }));
   const owned = async (id, userId, tx = store) => {
     const thread = await tx.getRelationshipRecordForUser("privateAgentThreads", id, userId);
-    return thread?.ownerUserId === userId && thread.visibility === "private" && !thread.archivedAt ? thread : null;
+    return thread?.ownerUserId === userId && thread.visibility === "private" && thread.intentType !== "assistant" && !thread.archivedAt ? thread : null;
   };
   const audit = async (tx, record, userId, eventType) => tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: record.relationshipId, userId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: record.id, eventType, sourceVersion: record.version }));
   const activePair = async (req, tx = store) => {
@@ -22,7 +22,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
   };
   router.get("/private-agent/threads", async (req, res) => {
     const records = await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id);
-    res.json({ threads: records.filter((item) => item.ownerUserId === req.auth.user.id && !item.archivedAt).map((item) => projectRecord(item, req.auth.user.id)) });
+    res.json({ threads: records.filter((item) => item.ownerUserId === req.auth.user.id && item.intentType !== "assistant" && !item.archivedAt).map((item) => projectRecord(item, req.auth.user.id)) });
   });
   router.post("/private-agent/threads", async (req, res) => {
     const context = await store.getRelationshipContext(req.auth.user.id);
@@ -85,6 +85,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
     const preview = previewFor(thread, req.body); res.json({ preview, digest: digest(preview) });
   });
   const share = (intentType) => async (req, res) => {
+    if (!await owned(req.params.id, req.auth.user.id)) throw fail(404, "Private conversation unavailable.");
     const context = await activePair(req); const userId = req.auth.user.id;
     const result = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
       await activePair(req, tx);

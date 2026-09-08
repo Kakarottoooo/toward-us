@@ -13,6 +13,7 @@ export function CheckinPanel({ language, userId, relationshipId = null, onChange
   const keyboard = useKeyboard();
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const load = async () => { const result = await relationshipApi<{ checkins: MemoryRecord[] }>(`/api/checkins?language=${language}`); setRecords(result.checkins); };
+  useEffect(() => { const reload = () => { void load().catch(() => {}); }; window.addEventListener("toward-us:assistant-changed", reload); return () => window.removeEventListener("toward-us:assistant-changed", reload); }, [language, userId, relationshipId]);
   useEffect(() => {
     let active = true; setLoading(true); setRecords([]); setSharing(""); setNotice("");
     relationshipApi<{ checkins: MemoryRecord[] }>(`/api/checkins?language=${language}`).then((result) => { if (active) setRecords(result.checkins); }).catch((error) => { if (active) setNotice(error.message); }).finally(() => { if (active) setLoading(false); });

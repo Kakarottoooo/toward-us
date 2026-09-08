@@ -18,6 +18,13 @@ export function PrivateAgentWorkspace({ language, userId, intentType, threads, i
   const [preview, setPreview] = useState<{ title: string; summary: string; date: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   useEffect(() => {
+    if (!thread?.id) return;
+    let active = true;
+    const reload = () => { void relationshipApi<{ thread: PrivateThread }>(`/api/private-agent/threads/${thread.id}`).then(result => { if (active) setThread(result.thread); }).catch(() => {}); };
+    window.addEventListener("toward-us:assistant-changed", reload);
+    return () => { active = false; window.removeEventListener("toward-us:assistant-changed", reload); };
+  }, [thread?.id]);
+  useEffect(() => {
     if (issueId) {
       const matching = available.find((item) => item.issueId === issueId || item.sharedObjectId === issueId) || null;
       if (thread?.id !== matching?.id) setThread(matching);

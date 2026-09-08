@@ -73,7 +73,7 @@ async function fixture(t, provider = async () => ({ statusCode: 201 })) {
     await request("/partner/accept", { actor: b, method: "POST", body: { code: result.pairing.invitation.code } });
     return result.pairing.id;
   };
-  return { store, request, register, pair, reminderService, sent, setClock: (at) => { clock = new Date(at); } };
+  return { store, request, register, pair, reminderService, mediator, sent, setClock: (at) => { clock = new Date(at); } };
 }
 
 pgTest("PostgreSQL keeps unpaired records private and rolls back/serializes lifecycle transactions", async (t) => {
@@ -202,4 +202,29 @@ pgTest("PostgreSQL rejects an invitation whose relationship ended after the requ
   await store.leaveRelationship(a.user.id);
   assert.equal(await store.acceptInvitation(created.pairing.invitation.code, b.user.id, startedAt), null);
   assert.equal(await store.getRelationshipContext(b.user.id), null);
+});
+
+pgTest("PostgreSQL commits an assistant turn once and rolls back the whole turn when a later action is unauthorized", async (t) => {
+  const f = await fixture(t);
+  const a = await f.register("voice-owner"), b = await f.register("voice-other");
+  const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null };
+  const action = (operation, kind, overrides = {}) => ({ operation, kind, targetId: null, expectedVersion: null, fields, query: null, queryPeriod: "all", occurrence: null, ...overrides });
+  f.mediator.planAssistantTurn = async () => ({ reply: "", actions: [action("create", "reminder", { fields: { ...fields, title: "Synthetic voice reminder", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "weekly" } })] });
+  const { session } = await f.request("/assistant/sessions", { actor: a, method: "POST", body: { language: "en", timezone: "UTC" }, status: 201 });
+  const send = (body, status = 200) => f.request(`/assistant/sessions/${session.id}/messages`, { actor: a, method: "POST", body, status });
+  const results = await Promise.all(Array.from({ length: 3 }, () => send({ text: "Create the synthetic reminder", itemId: "same-spoken-turn" })));
+  assert.equal(new Set(results.map(result => result.session.messages.at(-1).cards[0].id)).size, 1);
+  const { reminders } = await f.request("/reminders", { actor: a });
+  assert.equal(reminders.length, 1);
+  await f.request(`/assistant/sessions/${session.id}`, { actor: b, status: 404 });
+  const other = await f.request("/memories", { actor: b, method: "POST", body: { text: "OTHER_OWNER_ONLY" }, status: 201 });
+  f.mediator.planAssistantTurn = async () => ({ reply: "", actions: [
+    action("update", "reminder", { targetId: reminders[0].id, expectedVersion: reminders[0].version, fields: { ...fields, title: "MUST_ROLL_BACK" } }),
+    action("update", "memory", { targetId: other.memory.id, expectedVersion: other.memory.version, fields: { ...fields, text: "NOT_AUTHORIZED" } }),
+  ] });
+  await send({ text: "A two-step synthetic request", itemId: "rollback-turn" }, [403, 404]);
+  const current = (await f.request("/reminders", { actor: a })).reminders[0];
+  assert.equal(current.title, reminders[0].title);
+  assert.equal(current.version, reminders[0].version);
+  assert.equal((await f.request(`/assistant/sessions/${session.id}`, { actor: a })).session.messages.length, 2);
 });

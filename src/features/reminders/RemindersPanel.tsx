@@ -7,7 +7,7 @@ import "./reminders.css";
 export type ReminderTarget = { kind: "issue" | "milestone" | "outcome" | "checkin" | "reminders" | "plans" | "checkins"; id?: string };
 type Settings = { enabled: boolean; configured: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
 type Delivery = { id: string; status: string; attempts: number; acceptedAt?: string; lastErrorCode?: string };
-type Reminder = { id: string; title?: string; dueAt?: string; frequency?: string; timezone?: string; status: string; target?: ReminderTarget; deliveries: Delivery[] };
+type Reminder = { id: string; title?: string; dueAt?: string; frequency?: string; timezone?: string; status: string; target?: ReminderTarget; deliveries: Delivery[]; occurrenceOriginalDueAt?: string | null; localTime?: string };
 class ReminderError extends Error { constructor(public code: string) { super(code); } }
 function safeTimeZone(value: string) { try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); return value; } catch { return "UTC"; } }
 async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -30,6 +30,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
   const [notice, setNotice] = useState("");
   const text = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const load = async () => { const [nextSettings, result] = await Promise.all([api<Settings>("/reminder-settings"), api<{ reminders: Reminder[] }>("/reminders")]); setSettings(nextSettings); setReminders(result.reminders); };
+  useEffect(() => { const reload = () => { void load().catch(() => {}); }; window.addEventListener("toward-us:assistant-changed", reload); return () => window.removeEventListener("toward-us:assistant-changed", reload); }, [language]);
   useEffect(() => { void load().catch(() => setNotice(localized(language, "暂时无法读取提醒，请稍后重试。", "Could not load reminders. Try again shortly.", "No se pudieron cargar los recordatorios. Inténtalo de nuevo."))); }, [language]);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("reminder");
@@ -105,7 +106,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
       <small className="reminders-time-note">{text("每周提醒保留所选当地时间。夏令时跳过的时间会顺延，重复的时间取第一次。", "Weekly reminders keep the chosen local time. Clock-change gaps move forward; repeated times use the first occurrence.", "Los recordatorios semanales mantienen la hora local. Los huecos del cambio horario se adelantan; las horas repetidas usan la primera aparición.")}</small>
     </form>
     <div className="relationship-rows reminders-list">{reminders.length ? reminders.map((reminder) => <article key={reminder.id} id={`reminder-${reminder.id}`}>
-      <div><strong>{reminder.title || text("计划提醒", "Plan reminder", "Recordatorio de plan")}</strong><span>{reminder.dueAt ? new Date(reminder.dueAt).toLocaleString(languageTag(language), { timeZone: safeTimeZone(reminder.timezone || timezone) }) : text("尚未选择时间", "Time not chosen", "Hora sin elegir")} · {reminder.timezone || timezone} · {reminder.frequency === "weekly" ? text("每周", "Weekly", "Semanal") : text("一次", "Once", "Una vez")}</span></div>
+      <div><strong>{reminder.title || text("计划提醒", "Plan reminder", "Recordatorio de plan")}</strong><span>{reminder.dueAt ? new Date(reminder.dueAt).toLocaleString(languageTag(language), { timeZone: safeTimeZone(reminder.timezone || timezone) }) : text("尚未选择时间", "Time not chosen", "Hora sin elegir")} · {reminder.timezone || timezone} · {reminder.occurrenceOriginalDueAt ? text("仅下次改期，之后恢复原每周安排", "Next occurrence moved; original weekly schedule resumes", "Solo cambia la próxima vez; después vuelve el horario semanal original") : reminder.frequency === "weekly" ? text("每周", "Weekly", "Semanal") : text("一次", "Once", "Una vez")}{reminder.occurrenceOriginalDueAt && ` · ${reminder.localTime}`}</span></div>
       <p>{reminder.status === "paused" ? text("已暂停", "Paused", "En pausa") : reminder.status === "cancelled" ? text("来源不可用，已取消", "Cancelled: source unavailable", "Cancelado: origen no disponible") : reminder.deliveries[0] ? statusText(reminder.deliveries[0].status) : text("已保存，待发送", "Saved, waiting to send", "Guardado, pendiente de envío")}</p>
       <div className="row-actions"><button type="button" disabled={busy || reminder.status === "cancelled"} onClick={() => edit(reminder)}>{text("修改时间", "Change time", "Cambiar hora")}</button><button type="button" disabled={busy || reminder.status === "cancelled"} onClick={() => void perform(() => api(`/reminders/${reminder.id}`, "PATCH", { enabled: reminder.status !== "active" }))}>{reminder.status === "active" ? text("暂停", "Pause", "Pausar") : text("开启", "Enable", "Activar")}</button>
         {reminder.deliveries.some((delivery) => ["failed", "retry"].includes(delivery.status)) && <button type="button" disabled={busy || !settings?.enabled} onClick={() => void perform(() => api(`/reminders/${reminder.id}/retry`, "POST", {}))}>{text("重试失败投递", "Retry failed delivery", "Reintentar envío fallido")}</button>}

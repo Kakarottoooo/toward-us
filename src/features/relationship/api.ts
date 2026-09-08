@@ -5,7 +5,7 @@ export async function relationshipApi<T>(path: string, options: RequestInit = {}
     headers: { ...(options.body ? { "content-type": "application/json" } : {}), ...options.headers },
   });
   const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+  if (!response.ok) throw Object.assign(new Error(payload.error || `Request failed (${response.status})`), { status: response.status });
   return payload as T;
 }
 

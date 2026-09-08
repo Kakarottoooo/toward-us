@@ -8,10 +8,18 @@ import { RemindersPanel } from "../reminders/RemindersPanel";
 import { relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
 import "./personal.css";
+import { VoiceAssistant, type AssistantCard } from "../assistant/VoiceAssistant";
 
 export function PersonalHome({ user, relationshipId, language, onLanguage, onPair, onShared, onPrivacy, onLogout }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; onLanguage: (language: Language) => void; onPair: () => void; onShared: () => void; onPrivacy: () => void; onLogout: () => void }) {
   const [view, setView] = useState(() => new URLSearchParams(location.search).get("view") === "reminders" ? "reminders" : ["moments", "checkins"].includes(new URLSearchParams(location.search).get("view") || "") ? "memories" : "agent");
   const [threads, setThreads] = useState<GraphRecord[]>([]); const [error, setError] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState("");
+  const openAssistantCard = (card: AssistantCard) => {
+    if (card.kind === "plan") { setSelectedPlan(card.id); setView("plans"); }
+    else if (card.kind === "reminder") setView("reminders");
+    else if (["memory", "checkin"].includes(card.kind)) setView("memories");
+    else if (relationshipId) { history.replaceState(null, "", card.kind === "milestone" ? `/?view=plans&milestone=${encodeURIComponent(card.id)}` : "/?view=decide"); onShared(); }
+  };
   const refresh = useCallback(async () => { try { const data = await relationshipApi<{ threads: GraphRecord[] }>("/api/private-agent/threads"); setThreads(data.threads); setError(""); } catch (caught) { setError((caught as Error).message); } }, []);
   useEffect(() => { void refresh(); const focus = () => void refresh(); window.addEventListener("focus", focus); return () => window.removeEventListener("focus", focus); }, [refresh]);
   return <div className="paper-screen relationship-shell personal-shell" data-testid="personal-screen">
@@ -25,6 +33,8 @@ export function PersonalHome({ user, relationshipId, language, onLanguage, onPai
     </header>
     <main className="relationship-main"><div className="personal-welcome"><div><p>{localized(language, "先照顾自己的想法，再走向彼此", "Room for your thoughts, before sharing", "Espacio para pensar antes de compartir")}</p><h1>{user.name}</h1></div><button className="secondary-action" onClick={relationshipId ? onShared : onPair}>{relationshipId ? localized(language, "进入共同空间", "Open shared space", "Abrir espacio compartido") : localized(language, "邀请或加入另一半", "Invite or join your partner", "Invitar o unirme a mi pareja")}</button></div>
       {error && <p role="alert">{error}</p>}
+      <VoiceAssistant key={`${user.id}:${language}`} userId={user.id} language={language} onChanged={refresh} onOpen={openAssistantCard} />
+      {view === "plans" && <PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...threads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
       {view === "agent" && <PrivateAgentWorkspace language={language} userId={user.id} intentType="decision" threads={threads} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
       {view === "memories" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={relationshipId} /><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} /></div>}
       {view === "reminders" && <RemindersPanel language={language} />}
