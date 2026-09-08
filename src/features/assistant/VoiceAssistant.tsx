@@ -6,7 +6,7 @@ import { useRealtimeTranscription } from "../../useRealtimeTranscription";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./assistant.css";
 
-export type AssistantCard = { id: string; kind: "reminder" | "checkin" | "memory" | "plan" | "agreement" | "commitment" | "milestone"; title: string; text?: string; status: string; version: number; localDateTime?: string; timezone?: string; frequency?: string };
+export type AssistantCard = { id: string; kind: "reminder" | "checkin" | "memory" | "plan" | "agreement" | "commitment" | "milestone"; title: string; text?: string; status: string; version: number; localDateTime?: string; timezone?: string; frequency?: string; date?: string; nextOccurrenceOnly?: boolean; weeklyTime?: string };
 type Message = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: AssistantCard[] };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: Message[] };
 type Response = { session: Session };
@@ -96,6 +96,11 @@ export function VoiceAssistant({ userId, language, onChanged, onOpen }: { userId
         }
         return result;
       } catch (error) {
+        if ([400, 403, 404, 409, 422, 429].includes((error as Error & { status?: number }).status || 0)) {
+          failedRef.current = null;
+          if (active.current) { setFailed(null); setDraft(turn.text); setNotice((error as Error).message); }
+          throw error;
+        }
         failedRef.current = turn;
         if (active.current) { setFailed(turn); setNotice((error as Error).message); }
         throw error;
@@ -164,7 +169,9 @@ export function VoiceAssistant({ userId, language, onChanged, onOpen }: { userId
           <span className="assistant-speaker">{message.role === "user" ? t("你", "You", "Tú") : "AI"}</span><p>{message.text}</p>
           {message.cards?.map(card => <article className="assistant-result-card" key={`${card.kind}:${card.id}`}>
             <div><span>{kinds[card.kind]}</span><span>{statusLabel(card.status)}</span></div><strong>{card.title}</strong>{card.text && <p>{card.text}</p>}
-            {card.localDateTime && <p>{card.localDateTime.replace("T", " ")} · {card.timezone || session.timezone}{card.frequency === "weekly" ? t(" · 每周", " · Weekly", " · Semanal") : ""}</p>}
+            {card.date && <p>{card.date}</p>}
+            {card.localDateTime && <p>{card.localDateTime.replace("T", " ")} · {card.timezone || session.timezone}{card.frequency === "weekly" && !card.nextOccurrenceOnly ? t(" · 每周", " · Weekly", " · Semanal") : ""}</p>}
+            {card.nextOccurrenceOnly && <p>{t("仅下次使用上方时间；之后恢复原来的每周安排：", "The time above is for the next occurrence only; then the original weekly schedule resumes at ", "La hora anterior es solo para la próxima vez; después se retoma el horario semanal original a las ")}{card.weeklyTime}</p>}
             {card.status !== "unavailable" && <button onClick={() => openCard(card)}>{t("打开详情", "Open details", "Abrir detalles")}<ArrowRight size={17} /></button>}
           </article>)}
         </article>)}

@@ -108,7 +108,9 @@ test("changing only this weekly occurrence preserves the original weekday and ti
     return { reply: "", actions: [context.messages.at(-1).text === "Rename it weekly chat" ? action("reminder", "update", { targetId: current.id, expectedVersion: current.version, fields: fields({ title: "Weekly chat" }) }) : current ? action("reminder", "update", { targetId: current.id, expectedVersion: current.version, occurrence: "once", fields: fields({ localDateTime: "2026-09-12T21:00" }) }) : action("reminder", "create", { fields: fields({ title: "Reflection", localDateTime: "2026-09-11T20:00", frequency: "weekly" }) })] };
   });
   await f.turn("Every Friday at eight"); const changed = await f.turn("Only this time, Saturday at nine");
-  assert.equal(changed.status, 200); assert.match(changed.body.session.messages.at(-1).text, /only this occurrence/i);
+  assert.equal(changed.status, 200); assert.match(changed.body.session.messages.at(-1).text, /only the next occurrence/i);
+  assert.equal(changed.body.session.messages.at(-1).cards[0].nextOccurrenceOnly, true);
+  assert.equal(changed.body.session.messages.at(-1).cards[0].weeklyTime, "20:00");
   const renamed = await f.turn("Rename it weekly chat"); assert.equal(renamed.status, 200); assert.equal(renamed.body.session.messages.at(-1).cards[0].title, "Weekly chat");
   const delivery = createReminderService({ store: f.store, enabled: true, now: () => new Date("2026-09-12T22:00Z"), sendPush: async () => ({ statusCode: 201 }) });
   await delivery.updateSettings(f.ids[0], { enabled: true, timezone: "UTC", language: "en" });

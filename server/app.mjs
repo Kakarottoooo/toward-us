@@ -26,6 +26,7 @@ import { createReminderRouter } from "./reminder-router.mjs";
 import { createReminderService } from "./reminder-service.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
+import { createAssistantRouter } from "./assistant-router.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
@@ -655,6 +656,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     relationshipRouter.closeUserConnections?.(userIds);
   };
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
+  app.use("/api", createAssistantRouter({ store, mediator, reminderService: reminders, emit }));
   app.use("/api", createPrivacyRouter({ store, production, closeConnections }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));

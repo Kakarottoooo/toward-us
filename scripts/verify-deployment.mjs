@@ -17,6 +17,8 @@ assert(anonymousBody.user === null, "anonymous request unexpectedly received an 
 
 const isolated = await fetch(`${baseUrl}/api/rooms/ABC234`);
 assert(isolated.status === 401, `protected room route did not fail closed (${isolated.status})`);
+const assistant = await fetch(`${baseUrl}/api/assistant/sessions`, { method: "POST", headers: { "content-type": "application/json", origin: baseUrl }, body: JSON.stringify({ language: "en", timezone: "UTC" }) });
+assert(assistant.status === 401, `private voice assistant did not fail closed (${assistant.status})`);
 
 for (const route of ["/api/private-agent/threads", "/api/memories", "/api/checkins", "/api/privacy", "/api/reminders"]) { const response = await fetch(`${baseUrl}${route}`); assert(response.status === 401, `${route} did not fail closed (${response.status})`); }
 for (const route of ["/", "/demo", "/toward-us-sw.js"]) { const response = await fetch(`${baseUrl}${route}`); assert(response.status === 200, `${route} is unavailable (${response.status})`); }

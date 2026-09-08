@@ -209,7 +209,7 @@ pgTest("PostgreSQL commits an assistant turn once and rolls back the whole turn 
   const a = await f.register("voice-owner"), b = await f.register("voice-other");
   const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null };
   const action = (operation, kind, overrides = {}) => ({ operation, kind, targetId: null, expectedVersion: null, fields, query: null, queryPeriod: "all", occurrence: null, ...overrides });
-  f.mediator.planAssistantTurn = async () => ({ reply: "", actions: [action("create", "reminder", { fields: { ...fields, title: "Synthetic voice reminder", localDateTime: "2030-01-11T20:00", timezone: "UTC", frequency: "weekly" } })] });
+  f.mediator.planAssistantTurn = async () => ({ reply: "", actions: [action("create", "reminder", { fields: { ...fields, title: "Synthetic voice reminder", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "weekly" } })] });
   const { session } = await f.request("/assistant/sessions", { actor: a, method: "POST", body: { language: "en", timezone: "UTC" }, status: 201 });
   const send = (body, status = 200) => f.request(`/assistant/sessions/${session.id}/messages`, { actor: a, method: "POST", body, status });
   const results = await Promise.all(Array.from({ length: 3 }, () => send({ text: "Create the synthetic reminder", itemId: "same-spoken-turn" })));
