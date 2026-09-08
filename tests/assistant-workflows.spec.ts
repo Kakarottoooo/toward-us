@@ -65,3 +65,28 @@ test("private assistant keeps navigation and supports queued speech, interruptio
   await expect(page.getByTestId("assistant-panel")).toContainText("privado");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("shared home keeps the assistant clear of the hero on desktop and mobile", async ({ page, context, browser }, testInfo) => {
+  const suffix = Date.now();
+  await context.request.post("/api/auth/register", { data: { name: "Alex", email: `voice-layout-a-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
+  const partner = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+  try {
+    await partner.request.post("/api/auth/register", { data: { name: "Sam", email: `voice-layout-b-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
+    const invitation = await (await context.request.post("/api/partner/invitations", { data: {} })).json();
+    expect((await partner.request.post("/api/partner/accept", { data: { code: invitation.pairing.invitation.code } })).ok()).toBe(true);
+    await page.goto("/");
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await expect(page.getByTestId("assistant-open")).toBeVisible();
+      for (const expanded of [false, true]) {
+        if (expanded) await page.getByTestId("assistant-open").click();
+        const panel = await page.getByTestId("assistant-panel").boundingBox();
+        const hero = await page.locator(".relationship-hero").boundingBox();
+        expect(panel).not.toBeNull(); expect(hero).not.toBeNull();
+        expect(hero!.y).toBeGreaterThanOrEqual(panel!.y + panel!.height);
+        if (expanded) await page.getByTestId("assistant-collapse").click();
+      }
+      await expect(page.getByRole("navigation", { name: "共同空间导航" }).getByRole("button")).toHaveCount(5);
+    }
+  } finally { await partner.close(); }
+});
