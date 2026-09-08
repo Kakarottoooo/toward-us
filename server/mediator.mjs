@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from "openai";
 import { localDecisionOptions } from "./relationship-domain.mjs";
+import { assistantInstructions, assistantTurnSchema } from "./assistant-agent.mjs";
 
 const analysisSchema = {
   type: "object",
@@ -59,6 +60,15 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
   return {
     aiReady: Boolean(client),
     model,
+    async planAssistantTurn(context, language = "zh") {
+      if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
+      const response = await client.responses.create({
+        model, store: false, max_output_tokens: 1400,
+        text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema: assistantTurnSchema } },
+        input: [{ role: "developer", content: assistantInstructions(language) }, { role: "user", content: JSON.stringify(context) }],
+      }, { timeout: 30_000, maxRetries: 0 });
+      return JSON.parse(response.output_text);
+    },
     async analyze(room) {
       if (!client) return buildFallbackAnalysis(room, localText(room.language, "未配置模型服务，已使用本地复盘框架。", "Model service is not configured; the local reflection framework was used.", "El servicio del modelo no está configurado; se utilizó el marco de reflexión local."), model);
 

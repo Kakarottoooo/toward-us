@@ -120,17 +120,32 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     async updateReminder(userId, id, input) {
       return store.transaction(LOCK, async (db) => {
         const reminder = await getOwnedReminder(db, id, userId);
+        if (input.expectedVersion !== undefined && input.expectedVersion !== reminder.version) throw fail("Reminder changed. Refresh and retry.", 409, "version_conflict");
         const patch = {};
+        if (input.title !== undefined) {
+          const title = typeof input.title === "string" ? input.title.trim().slice(0, 120) : "";
+          if (!title) throw fail("Give this reminder a name.");
+          patch.title = title;
+        }
         if (input.enabled !== undefined) {
           if (typeof input.enabled !== "boolean") throw fail("Invalid reminder setting.");
           patch.status = input.enabled ? "active" : "paused";
         }
-        if (input.localDateTime !== undefined) Object.assign(patch, reminderInput({ ...reminder, ...input }, now()));
+        if (input.localDateTime !== undefined) {
+          const values = reminderInput({ ...reminder, ...input }, now());
+          if (input.occurrence === "once") {
+            if (reminder.frequency !== "weekly" || values.frequency !== "weekly" || values.timezone !== reminder.timezone || values.title !== reminder.title) throw fail("A single occurrence change can only move the next weekly reminder's date and time.");
+            const originalDueAt = reminder.occurrenceOriginalDueAt || reminder.dueAt;
+            const nextRegular = nextWeeklyOccurrence(originalDueAt, reminder.timezone, now(), reminder.localTime);
+            if (new Date(values.dueAt) >= new Date(nextRegular)) throw fail("Move this occurrence to a time before the next regular reminder.");
+            Object.assign(patch, { dueAt: values.dueAt, occurrenceOriginalDueAt: originalDueAt });
+          } else Object.assign(patch, values, { occurrenceOriginalDueAt: null });
+        }
         if (!Object.keys(patch).length) throw fail("No reminder change supplied.");
-        patch.scheduleVersion = (reminder.scheduleVersion || 0) + 1;
-        patch.lastEnqueuedDueAt = null;
+        const scheduleChanged = input.enabled !== undefined || input.localDateTime !== undefined;
+        if (scheduleChanged) { patch.scheduleVersion = (reminder.scheduleVersion || 0) + 1; patch.lastEnqueuedDueAt = null; }
         const updated = await update(db, "reminders", reminder, patch);
-        await cancelJobs(db, userId, (job) => job.reminderId === id);
+        if (scheduleChanged) await cancelJobs(db, userId, (job) => job.reminderId === id);
         return updated;
       });
     },
@@ -175,7 +190,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
             const job = privateRecord(reminder.ownerUserId, { status: "pending", reminderId: reminder.id, subscriptionId: device.id, sourceRelationshipId: reminder.sourceRelationshipId || reminder.relationshipId, scheduleVersion: reminder.scheduleVersion, dueAt: reminder.dueAt, nextAttemptAt: at, dedupeKey, attempts: 0, leaseUntil: null });
             await db.createRelationshipRecord("deliveryJobs", job); jobs.push(job); keys.add(dedupeKey);
           }
-          await update(db, "reminders", reminder, { lastEnqueuedDueAt: reminder.dueAt, ...(reminder.frequency === "weekly" ? { dueAt: nextWeeklyOccurrence(reminder.dueAt, reminder.timezone, current, reminder.localTime) } : {}) });
+          await update(db, "reminders", reminder, { lastEnqueuedDueAt: reminder.dueAt, ...(reminder.frequency === "weekly" ? { dueAt: nextWeeklyOccurrence(reminder.occurrenceOriginalDueAt || reminder.dueAt, reminder.timezone, current, reminder.localTime), occurrenceOriginalDueAt: null } : {}) });
         }
         const candidates = jobs.filter((job) => (["pending", "retry"].includes(job.status) && new Date(job.nextAttemptAt) <= current) || (job.status === "processing" && new Date(job.leaseUntil) <= current)).sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt));
         const selected = [];
