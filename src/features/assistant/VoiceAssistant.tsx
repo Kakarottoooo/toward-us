@@ -34,6 +34,14 @@ export function VoiceAssistant({ userId, language, onChanged, onOpen }: { userId
   const messagesEnd = useRef<HTMLDivElement>(null);
   const keyboard = useKeyboard();
   const storageKey = `toward-us:assistant:${userId}:${language}`;
+  const errorText = (error: Error & { status?: number }) => {
+    if (error.message === "Choose a future time within two years.") return t("请选择未来两年内的提醒时间。", "Choose a future reminder time within two years.", "Elige una hora futura dentro de los próximos dos años.");
+    if (error.status === 400) return t("没有执行这项操作。请检查日期、时间或修改范围后重新发送。", "Nothing was changed. Check the date, time or edit scope and send again.", "No se cambió nada. Revisa la fecha, la hora o el alcance y vuelve a enviar.");
+    if (error.status === 403 || error.status === 404) return t("这条记录已不可用，或你没有访问权限。", "This record is unavailable or you do not have access.", "Este registro no está disponible o no tienes acceso.");
+    if (error.status === 409) return t("记录或对话已更新，请核对后重新发送。", "The record or conversation changed. Check it and send again.", "El registro o la conversación cambió. Revísalo y vuelve a enviar.");
+    if (error.status === 429) return t("已达到本次使用上限，请开始新对话或稍后重试。", "A usage limit was reached. Start a new conversation or try later.", "Se alcanzó un límite. Inicia una conversación nueva o inténtalo más tarde.");
+    return error.message;
+  };
   const setCurrent = (current: Session) => { sessionRef.current = current; if (active.current) setSession(current); };
   const silence = () => { window.speechSynthesis?.cancel(); if (active.current) setSpeaking(false); };
   useEffect(() => { active.current = true; return () => { active.current = false; window.speechSynthesis?.cancel(); }; }, []);
@@ -98,7 +106,7 @@ export function VoiceAssistant({ userId, language, onChanged, onOpen }: { userId
       } catch (error) {
         if ([400, 403, 404, 409, 422, 429].includes((error as Error & { status?: number }).status || 0)) {
           failedRef.current = null;
-          if (active.current) { setFailed(null); setDraft(turn.text); setNotice((error as Error).message); }
+          if (active.current) { setFailed(null); setDraft(turn.text); setNotice(errorText(error as Error)); }
           throw error;
         }
         failedRef.current = turn;
