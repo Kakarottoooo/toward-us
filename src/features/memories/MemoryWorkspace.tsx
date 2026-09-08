@@ -15,6 +15,7 @@ export function MemoryWorkspace({ language, userId, relationshipId = null, onCha
   const keyboard = useKeyboard();
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const load = async () => { const result = await relationshipApi<{ memories: MemoryRecord[] }>(`/api/memories?language=${language}`); setMemories(result.memories); };
+  useEffect(() => { const reload = () => { void load().catch(() => {}); }; window.addEventListener("toward-us:assistant-changed", reload); return () => window.removeEventListener("toward-us:assistant-changed", reload); }, [language, userId, relationshipId]);
   useEffect(() => {
     let active = true; setLoading(true); setMemories([]); setSources([]); setSharing(""); setEditing(""); setNotice("");
     Promise.all([relationshipApi<{ memories: MemoryRecord[] }>(`/api/memories?language=${language}`), relationshipApi<{ sources: MemorySource[] }>(`/api/memories/sources?language=${language}`)]).then(([records, references]) => { if (active) { setMemories(records.memories); setSources(references.sources); } }).catch((error) => { if (active) setNotice(error.message); }).finally(() => { if (active) setLoading(false); });

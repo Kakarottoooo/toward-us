@@ -7,11 +7,15 @@ export function useRealtimeTranscription<T>({
   speakerId,
   onCommitted,
   onError,
+  onTranscript,
+  onSpeechStarted,
 }: {
   endpoint: string;
   speakerId: string;
   onCommitted: (payload: T) => void;
   onError: (message: string) => void;
+  onTranscript?: (text: string, itemId: string) => Promise<T>;
+  onSpeechStarted?: () => void;
 }) {
   const [listening, setListening] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -23,10 +27,15 @@ export function useRealtimeTranscription<T>({
   const connectionTimerRef = useRef<number | null>(null);
   const itemSpeakersRef = useRef(new Map<string, string>());
   const itemTextRef = useRef(new Map<string, string>());
+  const callbacksRef = useRef({ onCommitted, onError, onTranscript, onSpeechStarted });
+  const endpointRef = useRef(endpoint);
+  const generationRef = useRef(0);
+  useEffect(() => { callbacksRef.current = { onCommitted, onError, onTranscript, onSpeechStarted }; }, [onCommitted, onError, onTranscript, onSpeechStarted]);
 
   useEffect(() => { speakerRef.current = speakerId; }, [speakerId]);
 
   const stop = () => {
+    generationRef.current += 1;
     if (connectionTimerRef.current !== null) window.clearTimeout(connectionTimerRef.current);
     connectionTimerRef.current = null;
     channelRef.current?.close();
@@ -52,7 +61,12 @@ export function useRealtimeTranscription<T>({
     setPartial((current) => current?.itemId === itemId ? null : current);
     if (!text) return;
     try {
-      const response = await fetch(endpoint.replace(/\/realtime$/, "/transcripts"), {
+      if (callbacksRef.current.onTranscript) {
+        const payload = await callbacksRef.current.onTranscript(text, itemId);
+        callbacksRef.current.onCommitted(payload);
+        return;
+      }
+      const response = await fetch(endpointRef.current.replace(/\/realtime$/, "/transcripts"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -60,9 +74,9 @@ export function useRealtimeTranscription<T>({
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "实时转录保存失败。");
-      onCommitted(payload as T);
+      callbacksRef.current.onCommitted(payload as T);
     } catch (error) {
-      onError((error as Error).message);
+      callbacksRef.current.onError((error as Error).message);
     }
   };
 
@@ -71,6 +85,7 @@ export function useRealtimeTranscription<T>({
       const data = JSON.parse(event.data);
       const itemId = String(data.item_id || "");
       if (data.type === "input_audio_buffer.speech_started" && itemId) {
+        callbacksRef.current.onSpeechStarted?.();
         itemSpeakersRef.current.set(itemId, speakerRef.current);
         itemTextRef.current.set(itemId, "");
         setPartial({ itemId, speakerId: speakerRef.current, text: "" });
@@ -89,8 +104,11 @@ export function useRealtimeTranscription<T>({
     }
   };
 
-  const start = async () => {
+  const start = async (endpointOverride = endpoint) => {
     if (connecting || listening) return;
+    if (!endpointOverride) return;
+    endpointRef.current = endpointOverride;
+    const generation = ++generationRef.current;
     if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
       onError("当前浏览器不支持实时语音，请继续使用文字。");
       return;
@@ -99,7 +117,7 @@ export function useRealtimeTranscription<T>({
     try {
       let permissionTimedOut = false;
       const microphone = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then((stream) => {
-        if (permissionTimedOut) { stream.getTracks().forEach((track) => track.stop()); throw new Error("麦克风授权已超时，请重新点击并允许访问。"); }
+        if (permissionTimedOut || generation !== generationRef.current) { stream.getTracks().forEach((track) => track.stop()); throw new Error("麦克风授权已超时，请重新点击并允许访问。"); }
         return stream;
       });
       const stream = await Promise.race<MediaStream>([
@@ -120,8 +138,9 @@ export function useRealtimeTranscription<T>({
       channelRef.current = channel;
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      const response = await fetch(endpoint, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/sdp" }, body: offer.sdp || "" });
+      const response = await fetch(endpointOverride, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/sdp" }, body: offer.sdp || "" });
       const answer = await response.text();
+      if (generation !== generationRef.current) return;
       if (!response.ok) {
         let message = "实时语音暂时不可用。";
         try { message = JSON.parse(answer).error || message; } catch { /* keep generic copy */ }
@@ -132,6 +151,7 @@ export function useRealtimeTranscription<T>({
         if (channel.readyState !== "open") { stop(); onError("实时语音连接超时，请重试；文字输入仍可继续使用。"); }
       }, 12_000);
     } catch (error) {
+      if (generation !== generationRef.current) return;
       stop();
       onError((error as Error).message || "没有获得麦克风权限，仍可使用文字。");
     }

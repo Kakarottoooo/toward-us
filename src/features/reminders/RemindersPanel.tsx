@@ -30,6 +30,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
   const [notice, setNotice] = useState("");
   const text = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const load = async () => { const [nextSettings, result] = await Promise.all([api<Settings>("/reminder-settings"), api<{ reminders: Reminder[] }>("/reminders")]); setSettings(nextSettings); setReminders(result.reminders); };
+  useEffect(() => { const reload = () => { void load().catch(() => {}); }; window.addEventListener("toward-us:assistant-changed", reload); return () => window.removeEventListener("toward-us:assistant-changed", reload); }, [language]);
   useEffect(() => { void load().catch(() => setNotice(localized(language, "暂时无法读取提醒，请稍后重试。", "Could not load reminders. Try again shortly.", "No se pudieron cargar los recordatorios. Inténtalo de nuevo."))); }, [language]);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("reminder");
