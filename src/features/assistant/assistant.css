@@ -1,4 +1,5 @@
 .voice-assistant { margin: 0 0 24px; color: #39342f; border: 1px solid #d2c9b9; border-radius: 16px; background: #fffdf7; overflow: hidden; }
+.voice-assistant + .relationship-home .relationship-hero { margin-top: 0; }
 .assistant-launch { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px 24px; text-align: left; background: transparent; border: 0; color: inherit; cursor: pointer; }
 .assistant-launch > span { flex: 1; min-width: 0; }
 .assistant-launch strong { display: block; font-size: 18px; line-height: 1.5; font-weight: 600; }
