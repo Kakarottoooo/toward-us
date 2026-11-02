@@ -32,6 +32,7 @@ import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
 import { createSpaceRouter } from "./space-router.mjs";
+import { createPhotoRouter } from "./photo-store.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 
@@ -694,6 +695,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit }));
   app.use("/api", createSpaceRouter({ store, emit }));
+  app.use("/api", createPhotoRouter({ store }));
   app.use("/api", relationshipRouter);
 
   function broadcastRoom(code) {

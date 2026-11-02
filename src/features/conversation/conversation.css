@@ -113,3 +113,18 @@
 .conversation-message a { color: var(--jian-blue); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .conversation-segments button { position: relative; }
 .tab-dot { width: 8px; height: 8px; margin-left: 2px; border-radius: 50%; background: var(--jian-red); }
+.conversation-photo { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: #5f5952; cursor: pointer; }
+.conversation-photo:disabled { opacity: .4; }
+.composer-photos { display: flex; gap: 8px; margin: 0 0 8px; overflow-x: auto; }
+.composer-photos figure { position: relative; flex: 0 0 auto; width: 64px; height: 64px; margin: 0; }
+.composer-photos img { width: 100%; height: 100%; border-radius: 12px; object-fit: cover; }
+.composer-photos figure.uploading img { opacity: .5; }
+.composer-photos figure.failed img { outline: 2px solid #c98a82; }
+.composer-photos button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 2px solid var(--jian-paper); border-radius: 50%; background: var(--jian-ink); color: #fff; cursor: pointer; }
+.message-photos { display: grid; gap: 4px; margin: 2px 0 6px; overflow: hidden; border-radius: 16px; }
+.message-photos.count-1 { grid-template-columns: minmax(0, 260px); }
+.message-photos.count-2 { grid-template-columns: repeat(2, minmax(0, 130px)); }
+.message-photos.count-3 { grid-template-columns: repeat(3, minmax(0, 90px)); }
+.message-photos a { display: block; }
+.message-photos img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: #ebe4d8; }
+.message-photos.count-1 img { aspect-ratio: auto; max-height: 320px; }

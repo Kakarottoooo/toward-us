@@ -3,11 +3,12 @@ import express from "express";
 import { canViewRecord, createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
 import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
+import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
-const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date])).digest("hex");
+const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date, share.photoId || null])).digest("hex");
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
@@ -34,9 +35,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
-      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}),
+      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
-        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
+        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
@@ -96,11 +97,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   const appendTurn = async (userId, sessionId, body, { channel = "app" } = {}) => {
     const session = await owned(store, sessionId, userId);
     const text = clean(body?.text, 2000); const itemId = clean(body?.itemId, 120);
-    if (!text || !itemId) throw fail(400, "Text and a unique itemId are required.");
+    const photoIds = Array.isArray(body?.photoIds) ? [...new Set(body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
+    if ((!text && !photoIds.length) || !itemId) throw fail(400, "Text and a unique itemId are required.");
+    for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId); if (photo.ownerUserId !== userId || photo.visibility !== "private") throw fail(400, "Send photos from this conversation."); }
     if (session.messages.some((message) => message.itemId === itemId)) return { session, duplicate: true };
     if (session.messages.length >= 200) throw fail(409, say(session.language, "这段对话已满，请开始新对话。", "Start a new conversation to continue.", "Inicia una nueva conversación para continuar."));
     const records = await available(store, userId);
-    const userMessage = { id: randomUUID(), role: "user", text, itemId, createdAt: new Date().toISOString() };
+    const userMessage = { id: randomUUID(), role: "user", text, itemId, ...(photoIds.length ? { photoIds } : {}), createdAt: new Date().toISOString() };
     const context = {
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
@@ -108,7 +111,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}) })),
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
-      webSearch: Boolean(mediator.webSearch),
+      webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     let plan;
@@ -173,13 +176,15 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
             if (!space) throw fail(400, say(session.language, "要放进哪个空间？", "Which space should this go in?", "¿En qué espacio lo guardo?"));
             if (space.visibility !== "private") {
               // Nothing said here reaches a shared space until the member confirms this exact card.
-              const share = { cardId: randomUUID(), spaceId: space.id, spaceTitle: space.title, title: clean(values.title, 160), text: clean(values.text, 2000), date: values.date && /^\d{4}-\d{2}-\d{2}$/.test(values.date) ? values.date : null, createdAt: new Date().toISOString(), sharedAt: null };
-              if (!share.title && !share.text) throw fail(400, "Say what to add.");
+              const share = { cardId: randomUUID(), spaceId: space.id, spaceTitle: space.title, title: clean(values.title, 160), text: clean(values.text, 2000), date: values.date && /^\d{4}-\d{2}-\d{2}$/.test(values.date) ? values.date : null, photoId: values.photoId ? (await visiblePhoto(tx, values.photoId, userId)).id : null, createdAt: new Date().toISOString(), sharedAt: null };
+              if (!share.title && !share.text && !share.photoId) throw fail(400, "Say what to add.");
               share.digest = shareDigest(share); pendingShares.push(share);
               cards.push({ id: share.cardId, kind: "space_share", version: 1 });
               replies.push(say(session.language, `确认后才会放进共同的“${space.title}”。`, `It goes into the shared "${space.title}" only after you confirm.`, `Se añade al espacio compartido «${space.title}» solo cuando lo confirmes.`)); continue;
             }
-            record = await addSpaceItem(tx, { userId, space, title: values.title || "", text: values.text || "", date: values.date, done: values.done === true, source: "assistant" });
+            const photo = values.photoId ? await visiblePhoto(tx, values.photoId, userId) : null;
+            if (photo && (photo.ownerUserId !== userId || photo.visibility !== "private")) throw fail(400, "That photo cannot go here.");
+            record = await addSpaceItem(tx, { userId, space, title: values.title || "", text: values.text || "", date: values.date, done: values.done === true, photoId: photo?.id || null, source: "assistant" });
           } else {
             const item = await tx.getRelationshipRecordForUser("spaceItems", clean(action.targetId, 80), userId);
             if (!item || !canViewRecord(item, userId)) throw fail(404, "This item is no longer available.");
@@ -288,7 +293,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (share.sharedAt) return { session: latest, item: null };
       const space = await visibleSpace(tx, share.spaceId, userId);
       if (space.visibility !== "shared" || space.relationshipId !== initial.relationship.id) throw fail(409, unpaired(session.language));
-      const item = await addSpaceItem(tx, { userId, space, title: share.title, text: share.text, date: share.date, source: "member_confirmed" });
+      // A private photo becomes a separate shared copy only now, when its owner confirmed this exact card.
+      const photo = share.photoId ? await sharePhotoCopy(tx, { photo: await visiblePhoto(tx, share.photoId, userId), userId, relationshipId: initial.relationship.id }) : null;
+      const item = await addSpaceItem(tx, { userId, space, title: share.title, text: share.text, date: share.date, photoId: photo?.id || null, source: "member_confirmed" });
       await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: item.id, objectType: "space_item", eventType: "space_item.shared", sourceVersion: latest.version }));
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
       return { session: saved, item };

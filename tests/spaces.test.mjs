@@ -9,10 +9,11 @@ import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createSpaceRouter } from "../server/space-router.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
+import { createPhotoRouter } from "../server/photo-store.mjs";
 
-const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, ...patch });
+const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, ...patch });
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
-const together = (patch = {}) => ({ kind: "space", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: "once", remindDaysBefore: null, ...patch });
+const together = (patch = {}) => ({ kind: "space", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: "once", remindDaysBefore: null, photoId: null, ...patch });
 
 async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }) } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
@@ -28,6 +29,7 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   app.use("/api", createTogetherRouter({ store, mediator }));
   app.use("/api", createSpaceRouter({ store }));
+  app.use("/api", createPhotoRouter({ store }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
   t.after(async () => { await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
@@ -36,7 +38,9 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
-  return { ids, request, session, turn: (text) => request(`/assistant/sessions/${session.id}/messages`, "POST", { text, itemId: randomUUID() }) };
+  const upload = async (scope, userId = ids[0]) => (await fetch(`http://127.0.0.1:${server.address().port}/api/photos?scope=${scope}`, { method: "POST", headers: { "x-user": userId, "content-type": "image/jpeg" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]) })).json();
+  const photo = async (id, userId = ids[0]) => (await fetch(`http://127.0.0.1:${server.address().port}/api/photos/${id}`, { headers: { "x-user": userId } })).status;
+  return { ids, request, session, upload, photo, turn: (text) => request(`/assistant/sessions/${session.id}/messages`, "POST", { text, itemId: randomUUID() }) };
 }
 
 test("a private space and its items stay with their owner", async (t) => {
@@ -94,4 +98,37 @@ test("asking privately puts the same question in each partner's own chat and now
   assert.deepEqual(theirs.messages.map((message) => message.text), ["Where would you like to spend New Year, and why?"]);
   assert.ok(!JSON.stringify(theirs).includes("PRIVATE_A"));
   assert.ok(!JSON.stringify((await f.request("/together", "GET", null, f.ids[1])).body).includes("PRIVATE_A"));
+});
+
+test("a private photo stays private until its owner confirms putting it in a shared album", async (t) => {
+  let album = null;
+  const f = await fixture(t, {
+    shared: () => ({ reply: "Album ready.", draftAgreement: null, actions: [together({ title: "Trip album", layout: "gallery" })] }),
+    planner: (context) => ({ reply: "", actions: [action("space_item", "create", { fields: fields({ title: "Sunset", spaceId: album, photoId: context.attachedPhotos[0] }) })] }),
+  });
+  const mine = (await f.upload("private")).photo;
+  assert.equal(await f.photo(mine.id), 200);
+  assert.equal(await f.photo(mine.id, f.ids[1]), 404);
+  await f.request("/together/messages", "POST", { text: "Pinky, start a trip album", itemId: randomUUID(), language: "en" });
+  album = (await f.request("/spaces")).body.spaces[0].id;
+  const turn = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Put this in our trip album", itemId: randomUUID(), photoIds: [mine.id] });
+  assert.equal(turn.status, 200, JSON.stringify(turn.body));
+  assert.deepEqual(turn.body.session.messages.at(-2).photoIds, [mine.id]);
+  const card = turn.body.session.messages.at(-1).cards[0];
+  assert.equal(card.kind, "space_share");
+  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces[0].items, []);
+  await f.request(`/assistant/sessions/${f.session.id}/space-confirm`, "POST", { cardId: card.id, digest: card.digest });
+  const [item] = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces[0].items;
+  assert.notEqual(item.photoId, mine.id);
+  assert.equal(await f.photo(item.photoId, f.ids[1]), 200);
+  assert.equal(await f.photo(mine.id, f.ids[1]), 404);
+});
+
+test("only a shared photo of this couple can be sent to Us", async (t) => {
+  const f = await fixture(t);
+  const mine = (await f.upload("private")).photo, ours = (await f.upload("shared")).photo;
+  assert.equal((await f.request("/together/messages", "POST", { text: "look", itemId: randomUUID(), photoIds: [mine.id], language: "en" })).status, 400);
+  const sent = await f.request("/together/messages", "POST", { text: "", itemId: randomUUID(), photoIds: [ours.id], language: "en" });
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  assert.equal(await f.photo(ours.id, f.ids[1]), 200);
 });

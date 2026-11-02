@@ -3,6 +3,7 @@ import { approveAgreement, clean, decisionError, rejectAgreement, requestAgreeme
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
+import { visiblePhoto } from "./photo-store.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
@@ -35,10 +36,12 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
 
   router.post("/together/messages", async (req, res) => {
     const userId = req.auth.user.id, text = clean(req.body?.text, 2000), itemId = clean(req.body?.itemId, 120);
-    if (!text) throw decisionError(400, "message_required");
+    const photoIds = Array.isArray(req.body?.photoIds) ? [...new Set(req.body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
+    if (!text && !photoIds.length) throw decisionError(400, "message_required");
     const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const relationshipId = initial.relationship.id;
-    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
+    for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId).catch(() => null); if (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId) throw decisionError(400, "message_required"); }
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, photoIds, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
     if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });

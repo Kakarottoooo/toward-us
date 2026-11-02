@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, At, CalendarBlank, ChatCircleDots, CheckCircle, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, At, CalendarBlank, ChatCircleDots, CheckCircle, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -10,10 +10,11 @@ import "./conversation.css";
 type Channel = "me" | "us";
 type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string };
 type SpaceSummary = { id: string; title: string; layout: string; visibility: string };
-type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[] };
+type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[]; photoIds?: string[] };
+type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -38,9 +39,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [pending, setPending] = useState<Record<Channel, number>>({ me: 0, us: 0 });
   const [agentWorking, setAgentWorking] = useState(0);
   const [unreadMe, setUnreadMe] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [queued, setQueued] = useState<Array<{ text: string; itemId: string }>>([]);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<{ text: string; itemId: string } | null>(null);
+  const [failed, setFailed] = useState<{ text: string; itemId: string; photoIds?: string[] } | null>(null);
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -108,7 +111,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // Turns run strictly in order per channel, typed and spoken alike (one queue per channel): the server rejects a turn that
   // races the previous one, so a second utterance waits for the first answer instead of failing with a version conflict.
   const queues = useRef<Record<Channel, Promise<unknown>>>({ me: Promise.resolve(), us: Promise.resolve() });
-  const failedRef = useRef<{ text: string; itemId: string } | null>(null);
+  const failedRef = useRef<{ text: string; itemId: string; photoIds?: string[] } | null>(null);
   const keep = (text: string, target: Channel) => setDraft((value) => value ? `${value}
 ${text}` : text, target);
   const enqueue = <T,>(target: Channel, run: () => Promise<T>): Promise<T> => {
@@ -119,27 +122,27 @@ ${text}` : text, target);
     return next;
   };
   // Failures resolve to null with their real error shown, so a failed turn never stops live voice.
-  const sendPrivate = (text: string, itemId: string, spoken = false) => {
+  const sendPrivate = (text: string, itemId: string, spoken = false, photoIds: string[] = []) => {
     setNotice(""); setQueued((items) => [...items.filter((item) => item.itemId !== itemId), { text, itemId }]);
     return enqueue("me", async () => {
       try {
         if (failedRef.current && failedRef.current.itemId !== itemId) { keep(text, "me"); setNotice(t("上一句还没确认送达，请先重试它。", "The previous message was not confirmed. Retry it first.", "El mensaje anterior no se confirmó. Reinténtalo primero.")); return null; }
         const active = await ensureSession();
-        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${active!.id}/${spoken ? "transcripts" : "messages"}`, jsonBody({ text, itemId }));
+        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${active!.id}/${spoken ? "transcripts" : "messages"}`, jsonBody({ text, itemId, ...(photoIds.length ? { photoIds } : {}) }));
         current(result.session); failedRef.current = null; setFailed(null); setRevising(false);
         window.dispatchEvent(new Event("toward-us:assistant-changed"));
         if (spoken) say(result.session.messages.filter((message) => message.role === "assistant").at(-1)?.text || "");
         return result;
       } catch (error) {
         const status = (error as ApiError).status;
-        if (!status || status >= 500 && status !== 503) { failedRef.current = { text, itemId }; setFailed(failedRef.current); } else keep(text, "me");
+        if (!status || status >= 500 && status !== 503) { failedRef.current = { text, itemId, photoIds }; setFailed(failedRef.current); } else keep(text, "me");
         setNotice(errorText(error as ApiError)); return null;
       } finally { setQueued((items) => items.filter((item) => item.itemId !== itemId)); }
     });
   };
   // Sending the same text again after a failure reuses its itemId, so a retry can never post the message twice.
   const failedSharedRef = useRef<{ text: string; body: string; itemId: string } | null>(null);
-  const sendShared = (text: string) => {
+  const sendShared = (text: string, photoIds: string[] = []) => {
     const retry = failedSharedRef.current?.text === text ? failedSharedRef.current : null;
     const body = retry ? retry.body : askAgent && !AGENT_CALL.test(text) ? `@Agent ${text}` : text, itemId = retry ? retry.itemId : crypto.randomUUID();
     setNotice(""); setAskAgent(false);
@@ -148,15 +151,34 @@ ${text}` : text, target);
       // Show the member's words at once; the Agent's reply follows when it is ready.
       const shown = calling ? setTimeout(() => void loadTogether(), 600) : null;
       if (calling) setAgentWorking((count) => count + 1);
-      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language })); failedSharedRef.current = null; await loadTogether(); }
+      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language, ...(photoIds.length ? { photoIds } : {}) })); failedSharedRef.current = null; await loadTogether(); }
       catch (error) { failedSharedRef.current = { text, body, itemId }; keep(text, "us"); setNotice(errorText(error as ApiError)); }
       finally { if (shown) clearTimeout(shown); if (calling) setAgentWorking((count) => count - 1); }
     });
   };
+  const ready = attachments.filter((item) => item.id).map((item) => item.id!);
+  const uploading = attachments.some((item) => !item.id && !item.failed);
   const send = () => {
-    const text = draft.trim(); if (!text) return;
-    setDraft("");
-    if (channel === "me") void sendPrivate(text, crypto.randomUUID()); else void sendShared(text);
+    const text = draft.trim(); if ((!text && !ready.length) || uploading) return;
+    setDraft(""); setAttachments([]);
+    if (channel === "me") void sendPrivate(text, crypto.randomUUID(), false, ready); else void sendShared(text, ready);
+  };
+  // Photos are shrunk on the phone, then uploaded: private in Just me, shared in Us (sending there is the share).
+  const pickPhotos = async (files: FileList | null) => {
+    const picked = [...(files || [])].filter((file) => file.type.startsWith("image/")).slice(0, 6 - attachments.length);
+    if (fileRef.current) fileRef.current.value = "";
+    const scope = channel === "us" ? "shared" : "private";
+    for (const file of picked) {
+      const key = crypto.randomUUID(), preview = URL.createObjectURL(file);
+      setAttachments((items) => [...items, { key, preview, id: null }]);
+      try {
+        const blob = await shrink(file);
+        const response = await fetch(`/api/photos?scope=${scope}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "image/jpeg" }, body: blob });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || t("照片没传上去。", "The photo did not upload.", "La foto no se subió."));
+        setAttachments((items) => items.map((item) => item.key === key ? { ...item, id: payload.photo.id } : item));
+      } catch (error) { setAttachments((items) => items.map((item) => item.key === key ? { ...item, failed: true } : item)); setNotice((error as Error).message); }
+    }
   };
 
   const channelRef = useRef(channel); channelRef.current = channel;
@@ -178,7 +200,7 @@ ${text}` : text, target);
     setNotice("");
     try { const active = await ensureSession(); await voice.start(`/api/assistant/sessions/${active!.id}/realtime`); } catch (error) { setNotice(errorText(error as ApiError)); }
   };
-  const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); if (next === "me") setUnreadMe(false); setChannel(next); };
+  const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); setAttachments([]); if (next === "me") setUnreadMe(false); setChannel(next); };
   // The drawer is modal navigation: dismiss the keyboard and voice before it covers the conversation.
   const openDrawer = () => { keyboard.hide(); voice.stop(); setDrawer(true); };
   const open = (url: string) => { keyboard.hide(); voice.stop(); onOpen(url); };
@@ -259,7 +281,7 @@ ${text}` : text, target);
       return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}</article>;
     }
     const links = message.role === "agent" ? message.refs.filter((ref) => ref.type === "space" || ref.type === "milestone") : [];
-    return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}<p>{message.role === "agent" ? <Linked text={text} /> : text}</p>
+    return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{text && <p>{message.role === "agent" ? <Linked text={text} /> : text}</p>}
       {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
     </article>;
   };
@@ -286,7 +308,7 @@ ${text}` : text, target);
       </div>
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Agent</span>}<p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p></article>{groupCards(message.cards || []).map(privateCard)}</div>)}</> :
+      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Agent</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards(message.cards || []).map(privateCard)}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
           {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Agent 起草的约定", "Agreement drafted by the Agent", "Acuerdo redactado por el Agent")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol><small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
@@ -298,14 +320,17 @@ ${text}` : text, target);
     </main></MobileScroll></div>
     {!(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
-      {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId)}>{t("重试", "Retry", "Reintentar")}</button></div>}
+      {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {voice.listening && <p className="conversation-listening">{channel === "us" ? t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.") : t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}
+      {!!attachments.length && <div className="composer-photos">{attachments.map((item) => <figure key={item.key} className={item.failed ? "failed" : item.id ? "" : "uploading"}><img src={item.preview} alt="" draggable={false} /><button type="button" onClick={() => setAttachments((items) => items.filter((entry) => entry.key !== item.key))} aria-label={t("移除照片", "Remove photo", "Quitar foto")}><X size={14} weight="bold" /></button></figure>)}</div>}
       {readOnly ? <p className="conversation-notice">{t("你们的共同空间已结束，这里只能查看。", "Your shared space has ended; this conversation is read-only.", "Su espacio compartido terminó; esta conversación es de solo lectura.")}</p> :
         <div className="conversation-input">
           {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Agent 来帮忙", "Ask the Agent to help", "Pedir ayuda al Agent")}><At size={20} weight="bold" /></button>}
+          <button type="button" className="conversation-photo" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} disabled={attachments.length >= 6} aria-label={t("发照片", "Send a photo", "Enviar una foto")} data-testid="conversation-photo"><ImageSquare size={22} /></button>
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
           <KeyboardTextarea data-testid="conversation-input" aria-label={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
-          <button type="button" className="conversation-send" onClick={send} disabled={!draft.trim()} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
+          <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
         </div>}
     </footer>}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onLogout={() => { setDrawer(false); onLogout(); }} />}
@@ -357,6 +382,23 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
       <footer className="drawer-group">{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}{row({ key: "logout", icon: <SignOut size={22} />, label: t("退出登录", "Sign out", "Cerrar sesión"), onClick: onLogout })}</footer>
     </nav>
   </div>;
+}
+
+/** Photos in a message: one large, or a tidy grid; each opens full size. */
+function Photos({ ids }: { ids: string[] }) {
+  return <div className={`message-photos count-${Math.min(ids.length, 3)}`}>{ids.map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
+}
+
+/** Shrinks a picked photo to at most 1600px on its long side as JPEG, so uploads stay small on mobile data. */
+async function shrink(file: File): Promise<Blob> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => { const element = new Image(); element.onload = () => resolve(element); element.onerror = () => reject(new Error("This photo could not be read.")); element.src = url; });
+    const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas"); canvas.width = Math.round(image.naturalWidth * scale); canvas.height = Math.round(image.naturalHeight * scale);
+    canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("This photo could not be read.")), "image/jpeg", 0.82));
+  } finally { URL.revokeObjectURL(url); }
 }
 
 /** Plain text with its web addresses turned into links that open outside the app; nothing else is interpreted. */

@@ -14,12 +14,12 @@ export const assistantTurnSchema = {
         queryPeriod: { type: "string", enum: ["all", "upcoming", "this_week"] },
         occurrence: { type: ["string", "null"], enum: ["series", "once", null] },
         fields: { type: "object", additionalProperties: false,
-          required: ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done"],
+          required: ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId"],
           properties: { title: nullableString, text: nullableString, localDateTime: nullableString, timezone: nullableString, date: nullableString,
             frequency: { type: ["string", "null"], enum: ["once", "weekly", null] },
             mood: { type: ["string", "null"], enum: ["low", "mixed", "okay", "good", null] },
             layout: { type: ["string", "null"], enum: ["list", "checklist", "timeline", "gallery", "notes", null] },
-            spaceId: nullableString, done: { type: ["boolean", "null"] },
+            spaceId: nullableString, done: { type: ["boolean", "null"] }, photoId: nullableString,
           },
         },
       },
@@ -41,6 +41,7 @@ Supported operations:
 - Refer to the partner by name or as TA (Chinese) / your partner; never guess anyone's gender.
 - Hard-to-say messages for the partner (kind partner_message, operation create only; fields.text is the exact wording the partner would read, written in ${outputLanguage}): when the user wants to tell their partner something difficult, first help them sort it out privately (actions:[] with at most one concise question), then draft a version the partner can hear, in the user's own voice. Do not guess the user's motives and do not judge the partner. Drafting shares nothing: the user must confirm separately, and only the drafted text, never the user's own private words, reaches the partner. To revise, create a new partner_message from partnerDraft in the context plus the user's changes. This is not a reminder, record or agreement, and it is the only supported way to say something to the partner from here.
 - Spaces (kind space) hold anything the user wants to keep together with you: a packing or to-do checklist, gift ideas, a wish list, a reading list, a gratitude journal, notes about a topic, photos of a trip. There is no fixed list of spaces; create one when the user wants to collect related things, with a short title and the layout that fits: checklist for to-dos, list for ideas, timeline for dated events or a journal, gallery for photos, notes for longer text. Before creating, check context.spaces for one that already fits and add to it instead. Every thing the user lists becomes its own space_item in the same turn (up to 8 actions per turn); the space text is only an optional one-line description, never the items. Items (kind space_item) need fields.spaceId from context.spaces; when you create the space in this same turn, leave spaceId null and items go into the new space. Items have a short title, optional text, optional date YYYY-MM-DD and done (checklists). update/archive need targetId (a space or item id from context.spaces) and leave unchanged fields null. A space with shared:true belongs to both partners: adding to it from here prepares a card the user must confirm before anything is shared; say so.
+- Photos: context.attachedPhotos lists photo ids the user sent with the last message. You cannot see them, only the words that came with them. When the user wants to keep them (or clearly shares a moment to remember), add one space_item per photo with fields.photoId, usually in a gallery space (reuse a fitting one or create one), titled from their words; ask briefly if it is unclear where they belong.
 - Web search (kind web_search, operation query, query = what to look up): when the user needs real-world, current information such as restaurants, activities, places, events, opening hours, prices, gift or date ideas. You will be called again with the findings in context.lookups; then answer with specific names and the source links as plain URLs, and add options to a space if the user wants to keep them. When context.lookups is present it holds the findings of searches you asked for; nothing has been sent yet and this reply is the first the user sees, so answer directly and do not search again. If context.webSearch is false, answer from general knowledge and say you cannot look things up right now.
 - Query own reminders, private plan drafts, check-ins and memories, and authorized shared milestones (calendar plans), agreements and commitments. Use one query per kind and at most 3 queries. For upcoming tasks use reminders, plans and commitments; shared calendar requests use milestone. query is a concise literal content search phrase (or null for all), never a temporal phrase like 'this week'. queryPeriod is all normally, upcoming for future scheduled items, this_week for unfinished scheduled items within the local Monday-Sunday week; it filters reminder/plan/milestone/commitment dates on the server. fields.date can filter a query to one exact local calendar date. You receive metadata only; records are shown directly to the user and must not be summarized or invented. For a request spanning more than 3 categories, ask which category first. No shared mutations or approvals are supported.
 Target selection: records contain ID/kind/version/status only. recentCards preserve displayed order. For 'this/it' use the unique latest relevant card; for 'the second' use the displayed order. If multiple plausible records remain, query the kind and ask the user to identify one, then use its ID and latest records version. Never invent an ID, version, or hidden record content. A requested edit changes only fields explicitly supplied by the user; preserve all other fields by leaving them null. Do not turn an ambiguous 'yes/okay' into a new mutation.
@@ -60,17 +61,18 @@ export function validateAssistantTurn(plan) {
     && (action.expectedVersion === null || Number.isSafeInteger(action.expectedVersion) && action.expectedVersion > 0)
     && (action.query === null || typeof action.query === "string" && action.query.length <= 120)
     && ["series", "once", null].includes(action.occurrence)
-    && exact(action.fields, ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done"])
+    && exact(action.fields, ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId"])
     && ["title", "text", "localDateTime", "timezone", "date"].every((key) => action.fields[key] === null || typeof action.fields[key] === "string" && action.fields[key].length <= ({ title: 160, text: 2000, localDateTime: 16, timezone: 64, date: 10 }[key]))
     && ["once", "weekly", null].includes(action.fields.frequency)
     && ["low", "mixed", "okay", "good", null].includes(action.fields.mood)
     && ["list", "checklist", "timeline", "gallery", "notes", null].includes(action.fields.layout)
     && (action.fields.spaceId === null || typeof action.fields.spaceId === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(action.fields.spaceId))
-    && [true, false, null].includes(action.fields.done));
+    && [true, false, null].includes(action.fields.done)
+    && (action.fields.photoId === null || typeof action.fields.photoId === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(action.fields.photoId)));
 }
 
 /** Older planners and fixtures omit the space fields; treat them as unset. */
 export function normalizeAssistantTurn(plan) {
   if (!plan || !Array.isArray(plan.actions)) return plan;
-  return { ...plan, actions: plan.actions.map((action) => action?.fields && typeof action.fields === "object" ? { ...action, fields: { layout: null, spaceId: null, done: null, ...action.fields } } : action) };
+  return { ...plan, actions: plan.actions.map((action) => action?.fields && typeof action.fields === "object" ? { ...action, fields: { layout: null, spaceId: null, done: null, photoId: null, ...action.fields } } : action) };
 }

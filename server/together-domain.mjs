@@ -28,7 +28,7 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
   // One pending agreement per couple, whatever path created it (together, full decision flow).
   const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
-    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt }) => ({ id, role, actorUserId, kind, text, replyTo, createdAt })),
+    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds }) => ({ id, role, actorUserId, kind, text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}) })),
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
     openCommitments: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && OPEN_COMMITMENTS.has(item.status) && !item.archivedAt).map(({ id, agreementId, description, ownerType, status, dueAt }) => ({ id, agreementId, description, ownerType, status, dueAt })),
     pendingAgreement: pending ? agreement(pending) : null,
@@ -57,9 +57,9 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [] }) {
   const body = clean(text, 4000);
-  if (!body) throw decisionError(400, "message_required");
+  if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
   const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
   const key = clean(handle, 200) || null;
@@ -69,6 +69,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     id: randomUUID(), role: actorUserId ? "member" : "agent", actorUserId: actorUserId || null, source, kind, text: body,
     refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : null, createdAt: new Date().toISOString(),
     ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
+    ...(photoIds.length ? { photoIds: photoIds.slice(0, 6) } : {}),
   };
   const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message].slice(-MESSAGE_LIMIT);
@@ -81,14 +82,14 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, photoIds = [], source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
     return action(tx);
   });
-  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo }));
+  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds }));
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
   const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;
@@ -171,7 +172,9 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
     if (action.operation === "create") {
       const space = action.spaceId ? await visibleSpace(tx, action.spaceId, userId) : created;
       if (!space || space.visibility !== "shared" || space.relationshipId !== relationshipId) throw decisionError(404, "not_found");
-      record = await addSpaceItem(tx, { userId, space, title: action.title || "", text: action.text || "", date: action.date, done: action.done === true, source: "agent" });
+      const photo = action.photoId ? await tx.getRelationshipRecordForUser("photos", action.photoId, userId) : null;
+      if (action.photoId && (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId || photo.archivedAt)) throw decisionError(404, "not_found");
+      record = await addSpaceItem(tx, { userId, space, title: action.title || "", text: action.text || "", date: action.date, done: action.done === true, photoId: photo?.id || null, source: "agent" });
       if (!refs.some((ref) => ref.type === "space" && ref.id === space.id)) refs.push({ type: "space", id: space.id, version: space.version, title: space.title });
       continue;
     }
