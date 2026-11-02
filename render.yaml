@@ -21,6 +21,16 @@ services:
         value: gpt-5.4
       - key: OPENAI_API_KEY
         sync: false
+      # With a key, text and image work runs on Claude; OpenAI stays for live calls and voice.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        sync: false
+      # Password-reset email; without a key, reset links cannot be sent in production.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: TOWARD_US_BASE_URL
         sync: false
       - key: SENDBLUE_API_KEY
