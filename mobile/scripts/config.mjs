@@ -2,8 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 // The shell loads the hosted web app so the existing HttpOnly session cookie keeps working unchanged.
-// TOWARD_US_APP_URL is read at sync time; the default must be confirmed as the real production domain.
-const DEFAULT_URL = 'https://toward-us.onrender.com';
+// TOWARD_US_APP_URL is read at sync time; the default (render.yaml service name) must be confirmed as the real domain.
+const DEFAULT_URL = 'https://toward-us-private-beta.onrender.com';
 const raw = (process.env.TOWARD_US_APP_URL || DEFAULT_URL).trim();
 let url;
 try { url = new URL(raw); } catch { console.error('TOWARD_US_APP_URL is not a valid URL: ' + raw); process.exit(2); }

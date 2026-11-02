@@ -3,8 +3,10 @@
 这是一个很薄的原生外壳：App 打开后直接加载网站（`server.url`），界面、登录、语音都是现有网页，没有重写。这样现有的 `HttpOnly` Cookie 登录不用改；网站更新后 App 里立即生效，不需要重新装包。公开上架前再评估要不要把前端打进安装包。
 
 - App ID：`us.toward.app`，名字：`Toward Us`。Bundle ID 正式占用前要在开发者账号里确认可用。
-- 权限：只有麦克风（iOS `NSMicrophoneUsageDescription` 中英西三语；Android `RECORD_AUDIO`，外加系统不弹窗的 `MODIFY_AUDIO_SETTINGS`，Capacitor 的网页录音必须两者都有）。推送以后再加。
-- 加载哪个网址在**打包时**决定：环境变量 `TOWARD_US_APP_URL`，不设时默认 `https://toward-us.onrender.com`（占位，**正式域名确认后要改 `scripts/config.mjs` 里的默认值**）。换网址就要重新打包、重新安装。
+- 权限：只有麦克风。推送以后再加。
+  - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
+  - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
+- 加载哪个网址在**打包时**决定：环境变量 `TOWARD_US_APP_URL`，不设时默认 `https://toward-us-private-beta.onrender.com`（取自 `render.yaml` 的服务名，**实际域名还要确认**；不对就改 `scripts/config.mjs` 里的 `DEFAULT_URL`）。换网址就要重新打包、重新安装。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
 - 图标和启动图还是 Capacitor 默认的，等定稿图标再换。
 
@@ -45,20 +47,44 @@ npm run check:android
 
 ## 连本机开发服务器试用（dogfooding）
 
-1. 根目录启动服务器：`npm run dev:full`（监听 `0.0.0.0:5173`）。
-2. 电脑运行 `ipconfig`，找到和手机同一个 Wi-Fi 的 IPv4 地址，比如 `192.168.1.23`。手机浏览器先打开 `http://192.168.1.23:5173` 确认能访问；打不开通常是 Windows 防火墙没放行 Node 的「专用网络」。
-3. 用这个地址重新打包并安装：
+### 先启动本机服务器（开发模式）
+
+在仓库根目录：
 
 ```powershell
-cd mobile
-$env:TOWARD_US_APP_URL = "http://192.168.1.23:5173"
-npm run check:android
-& "E:\CodexData\toolchains\android\platform-tools\adb.exe" install -r android\app\build\outputs\apk\debug\app-debug.apk
+$env:OPENAI_API_KEY = "<你的 key>"   # 语音转文字需要；服务器不读 .env 文件，只认当前终端的环境变量
+npm run dev:full
 ```
 
-4. 用完记得 `Remove-Item Env:TOWARD_US_APP_URL` 再打包，否则下一个包还指着你的电脑。
+- 端口是 `5173`（`PORT` 可改），监听 `0.0.0.0`，开发模式下页面由 Vite 中间件提供，不用先 `npm run build`。
+- **必须用开发模式**：不要用 `npm start`，也不要设 `NODE_ENV=production`。生产模式下服务器会把所有非 HTTPS 请求重定向到 `https://`，登录 Cookie 也会带 `Secure`，在 `http://` 下登录不了。开发模式下 Cookie 不带 `Secure`，`http://localhost` 和局域网 IP 都能登录，不需要额外环境变量。
+- 本地数据写在 `data/toward-us.local.json`（或 `TOWARD_US_DATA_FILE` 指定的位置）。
 
-**限制：`http://` 局域网地址下语音输入用不了。** 手机网页只在 HTTPS（安全环境）下才给麦克风，这是浏览器规则，不是 App 的问题。登录、文字对话可以在局域网验；语音要用 HTTPS 地址验（线上域名，或者把本机服务通过 HTTPS 隧道暴露出来再把 `TOWARD_US_APP_URL` 设成那个 `https://` 地址）。
+### 推荐：USB + adb reverse（语音能用）
+
+手机用 USB 连电脑（已打开 USB 调试）。`adb reverse` 让手机上的 `localhost:5173` 直接转到电脑的 `5173`。`localhost` 在浏览器规则里算安全环境，**麦克风可以用**；也不经过 Wi-Fi，不用管 Windows 防火墙。
+
+```powershell
+$adb = "E:\CodexData\toolchains\android\platform-tools\adb.exe"
+& $adb devices
+& $adb reverse tcp:5173 tcp:5173
+
+cd mobile
+$env:JAVA_HOME = "E:\CodexData\toolchains\jdk-21"
+$env:ANDROID_HOME = "E:\CodexData\toolchains\android"
+$env:TOWARD_US_APP_URL = "http://localhost:5173"
+npm run check:android
+& $adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+Remove-Item Env:TOWARD_US_APP_URL   # 用完清掉，否则下一个包还指着本机
+```
+
+- 这个包只指向 `http://localhost:5173`，打包一次后反复用即可，不用每次重打。
+- 拔掉数据线、手机重启或 adb 重启后，`adb reverse` 会失效，要重新执行 `& $adb reverse tcp:5173 tcp:5173`（可用 `& $adb reverse --list` 查看）。没转发时 App 会白屏或报无法连接。
+- 手机必须连着电脑、电脑上的 `npm run dev:full` 必须在跑。
+
+### 备选：同一 Wi-Fi 的局域网 IP（语音不能用）
+
+不插线也能试，但 **`http://<电脑 IP>` 不是安全环境，手机网页拿不到麦克风，只能验登录和文字**。做法：电脑上 `ipconfig` 找到和手机同一 Wi-Fi 的 IPv4（比如 `192.168.1.23`），先用手机浏览器打开 `http://192.168.1.23:5173` 确认能访问（打不开通常是 Windows 防火墙没给 Node 放行「专用网络」），再把上面命令里的 `TOWARD_US_APP_URL` 换成 `http://192.168.1.23:5173` 打包安装，不需要 `adb reverse`。
 
 ## 真机验收清单
 
