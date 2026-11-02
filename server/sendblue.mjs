@@ -21,7 +21,7 @@ export function createSendblue({ env = process.env, fetchImpl = (...args) => glo
       headers: { "sb-api-key-id": env.SENDBLUE_API_KEY, "sb-api-secret-key": env.SENDBLUE_API_SECRET, Accept: "application/json", "User-Agent": "TowardUs/1.0", ...(body ? { "Content-Type": "application/json" } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    if (!response.ok) throw Object.assign(new Error(`sendblue_http_${response.status}`), { code: `sendblue_http_${response.status}` });
+    if (!response.ok) throw Object.assign(new Error(`sendblue_http_${response.status}`), { code: `sendblue_http_${response.status}`, statusCode: response.status }); // statusCode: callers treat 4xx (except 408/429) as permanent
     return response.json().catch(() => ({}));
   }
   async function dryRun(entry) {

@@ -50,7 +50,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   let emitTogether = () => {};
   // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
   let imessage = null;
-  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: (phone, text) => sendblue.send(phone, text) });
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null });
 
   const runDue = reminders.runDue.bind(reminders);
   reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); return result; };

@@ -257,7 +257,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     },
     async runDue({ limit = 25 } = {}) {
       await announceDue();
-      if (!pushOn && typeof sendIMessage !== "function") return { configured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0 };
+      if (!pushOn && typeof sendIMessage !== "function") return { configured: false, imessageConfigured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0 };
       const batchSize = Math.max(1, Math.min(50, Number.isInteger(limit) ? limit : 25));
       const claims = await store.transaction(LOCK, async (db) => {
         const current = now(); const at = iso(current);
@@ -296,7 +296,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         }
         return selected;
       });
-      const result = { configured: true, claimed: claims.length, accepted: 0, failed: 0, cancelled: 0 };
+      // `configured` keeps meaning browser push (scripts/run-reminders.mjs relies on it); the iMessage sender is reported separately.
+      const result = { configured: pushOn, imessageConfigured: typeof sendIMessage === "function", claimed: claims.length, accepted: 0, failed: 0, cancelled: 0 };
       // Small parallel groups keep every provider timeout inside its persisted lease.
       for (let offset = 0; offset < claims.length; offset += 5) {
         await Promise.all(claims.slice(offset, offset + 5).map(async (job) => {
@@ -312,8 +313,9 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
             }
             await finish(job, { status: "accepted", acceptedAt: iso(now()), lastErrorCode: null }); result.accepted += 1;
           } catch (error) {
-            const expired = [404, 410].includes(error.statusCode);
-            const terminal = expired || [400, 401, 403].includes(error.statusCode) || job.attempts >= MAX_ATTEMPTS;
+            const expired = !authorization.phone && [404, 410].includes(error.statusCode);
+            const permanent = authorization.phone ? error.statusCode >= 400 && error.statusCode < 500 && ![408, 429].includes(error.statusCode) : [400, 401, 403].includes(error.statusCode);
+            const terminal = expired || permanent || job.attempts >= MAX_ATTEMPTS;
             const lastErrorCode = expired ? "subscription_expired" : error.statusCode === 429 ? "provider_rate_limited" : "provider_unavailable";
             await finish(job, { status: terminal ? "failed" : "retry", lastErrorCode, nextAttemptAt: iso(now().getTime() + Math.min(3600_000, 60_000 * 2 ** job.attempts)) }, expired);
             result.failed += 1;
