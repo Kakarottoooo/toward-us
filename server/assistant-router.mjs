@@ -40,17 +40,21 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       }) } : {}),
     })) };
   };
-  router.post("/assistant/sessions", async (req, res) => {
-    const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
-    const timezone = clean(req.body?.timezone, 64) || "UTC";
+  // `channel` marks a session owned by a channel adapter (iMessage keeps one running session per member and language).
+  const createSession = async (userId, { language, timezone, channel = null }) => {
     try { new Intl.DateTimeFormat("en", { timeZone: timezone }); } catch { throw fail(400, "Invalid IANA time zone."); }
-    const session = privateRecord(req.auth.user.id, { intentType: "assistant", language, timezone, messages: [], aiAccessScope: "private" });
+    const session = privateRecord(userId, { intentType: "assistant", language, timezone, messages: [], aiAccessScope: "private", ...(channel ? { channel } : {}) });
     await store.transaction("reminder-delivery", async (tx) => {
-      await liveUser(tx, req.auth.user.id, true);
-      const sessions = (await tx.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && !record.archivedAt);
+      await liveUser(tx, userId, true);
+      const sessions = (await tx.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && !record.archivedAt);
       if (sessions.length >= 50) throw fail(409, say(language, "已达到助手对话上限，请在隐私设置中管理私人记录。", "Assistant conversation limit reached. Manage private records in Privacy.", "Se alcanzó el límite de conversaciones. Gestiona tus registros privados en Privacidad."));
       await tx.createRelationshipRecord("privateAgentThreads", session);
     });
+    return session;
+  };
+  router.post("/assistant/sessions", async (req, res) => {
+    const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    const session = await createSession(req.auth.user.id, { language, timezone: clean(req.body?.timezone, 64) || "UTC" });
     res.status(201).json({ session: await output(session) });
   });
   router.get("/assistant/sessions/:id", async (req, res) => res.json({ session: await output(await owned(store, req.params.id, req.auth.user.id)) }));
@@ -78,12 +82,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     ...(kind === "reminder" ? { localDateTime: localTime(record.dueAt, record.timezone), timezone: record.timezone, frequency: record.frequency, nextOccurrenceOnly: Boolean(record.occurrenceOriginalDueAt), weeklyTime: record.localTime } : {}),
     ...(kind === "plan" ? { date: record.draft?.date } : {}),
   });
-  const append = async (req, res) => {
-    const userId = req.auth.user.id;
-    const session = await owned(store, req.params.id, userId);
-    const text = clean(req.body?.text, 2000); const itemId = clean(req.body?.itemId, 120);
+  // One private turn, shared by the App routes and the iMessage adapter. Returns the raw session and whether `itemId` was already handled.
+  const appendTurn = async (userId, sessionId, body, { channel = "app" } = {}) => {
+    const session = await owned(store, sessionId, userId);
+    const text = clean(body?.text, 2000); const itemId = clean(body?.itemId, 120);
     if (!text || !itemId) throw fail(400, "Text and a unique itemId are required.");
-    if (session.messages.some((message) => message.itemId === itemId)) return res.json({ session: await output(session) });
+    if (session.messages.some((message) => message.itemId === itemId)) return { session, duplicate: true };
     if (session.messages.length >= 200) throw fail(409, say(session.language, "这段对话已满，请开始新对话。", "Start a new conversation to continue.", "Inicia una nueva conversación para continuar."));
     const records = await available(store, userId);
     const userMessage = { id: randomUUID(), role: "user", text, itemId, createdAt: new Date().toISOString() };
@@ -98,11 +102,11 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     try { plan = await mediator.planAssistantTurn(context, session.language); }
     catch { throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
-    const changes = []; let partnerMessage = null;
+    const changes = []; let partnerMessage = null; let raced = false;
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
-      if (latest.messages.some((message) => message.itemId === itemId)) return latest;
+      if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
       if (latest.version !== session.version) throw fail(409, say(session.language, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const currentRecords = await available(tx, userId);
       const cards = []; const replies = [];
@@ -188,14 +192,15 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       return saved;
     });
     for (const { kind, record } of changes) emit(record, `${kind === "plan" ? "private_agent_thread" : kind}.updated`, userId);
-    void recordUsage(store, { userId, action: "private_message" });
-    res.json({ session: await output(updated) });
+    void recordUsage(store, { userId, action: "private_message", channel });
+    return { session: updated, duplicate: raced };
   };
+  const append = async (req, res) => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body)).session) });
   // Only an explicit confirm of the current card's digest moves the polished text (never the member's raw words) into the shared conversation.
-  router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
-    const userId = req.auth.user.id; const session = await owned(store, req.params.id, userId);
-    if (req.body?.confirm !== true) throw fail(400, say(session.language, "请明确确认要分享这段话。", "Confirm explicitly that you want to share this message.", "Confirma explícitamente que quieres compartir este mensaje."));
-    const cardId = clean(req.body?.cardId, 80); const digest = clean(req.body?.digest, 64);
+  const confirmShare = async (userId, sessionId, body, { channel = "app" } = {}) => {
+    const session = await owned(store, sessionId, userId);
+    if (body?.confirm !== true) throw fail(400, say(session.language, "请明确确认要分享这段话。", "Confirm explicitly that you want to share this message.", "Confirma explícitamente que quieres compartir este mensaje."));
+    const cardId = clean(body?.cardId, 80); const digest = clean(body?.digest, 64);
     const initial = await store.getRelationshipContext(userId);
     if (!activePair(initial)) throw fail(409, unpaired(session.language));
     const result = await store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
@@ -212,7 +217,11 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.partnerMessage = { ...record.partnerMessage, sharedAt: new Date().toISOString(), messageId: sent.message.id }; record.version += 1; });
       return { ...sent, session: saved };
     });
-    if (!result.duplicate) { emit(result.conversation, "together.updated"); void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "partner_message_shared" }); }
+    if (!result.duplicate) { emit(result.conversation, "together.updated"); void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "partner_message_shared", channel }); }
+    return result;
+  };
+  router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
+    const result = await confirmShare(req.auth.user.id, req.params.id, req.body);
     res.json({ session: await output(result.session), message: { id: result.message.id, text: result.message.text, createdAt: result.message.createdAt }, duplicate: result.duplicate });
   });
   router.post("/assistant/sessions/:id/messages", append);
@@ -222,5 +231,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (typeof req.body !== "string" || !req.body.includes("v=0")) throw fail(400, "Invalid audio connection.");
     res.type("application/sdp").send(await mediator.createRealtimeSession({ sdp: req.body, language: session.language, safetyIdentifier: createHash("sha256").update(req.auth.user.id).digest("hex") }));
   });
+  // Channel adapters (iMessage) call the same domain code as the HTTP routes above.
+  router.assistant = { createSession, appendTurn, confirmShare, output };
   return router;
 }
