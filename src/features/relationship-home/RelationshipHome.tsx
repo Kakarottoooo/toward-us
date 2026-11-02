@@ -12,6 +12,7 @@ import type { RelationshipHomePayload } from "../relationship/types";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { CheckinPanel } from "../checkins/CheckinPanel";
 import { RemindersPanel, type ReminderTarget } from "../reminders/RemindersPanel";
+import { UpcomingPage } from "../upcoming/UpcomingPage";
 import "../private-agent/personal.css";
 import { PageHeader } from "../conversation/ConversationHome";
 import { AgreementsPage } from "../agreements/AgreementsPage";
@@ -51,7 +52,7 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
   return <div className="paper-screen relationship-shell" data-testid="dashboard-screen"><PageHeader language={language} title={titles[view]} onBack={back} />
     <main className="relationship-main">
       {view === "agreements" && <AgreementsPage language={language} userId={user.id} payload={payload} onChanged={refresh} onReview={(id) => openItem({ type: "outcome_review", id })} />}
-      {view === "upcoming" && <div className="feature-stack"><div className="home-columns page-sections"><HomeSection title={localized(language, "我们俩的", "Ours", "Nuestro")} empty={localized(language, "纪念日和约定的期限会出现在这里。", "Shared dates and agreement deadlines appear here.", "Las fechas compartidas y los plazos de los acuerdos aparecerán aquí.")} items={payload.home.upcoming.map((item) => ({ id: item.id, onClick: openRow(item), title: item.title, meta: new Date(item.at).toLocaleDateString(languageTag(language)) }))} /></div><RemindersPanel language={language} onChanged={refresh} compose={false} /></div>}
+      {view === "upcoming" && <UpcomingPage language={language} milestones={payload.graph.milestones} commitments={payload.graph.commitments} onOpenMilestone={() => go("lists")} onOpenCommitment={(id) => openItem({ type: "commitment", id })} onAsk={(text) => onAsk(text, "us")} onChanged={refresh} />}
       {view === "talk" && <TalkView language={language} rooms={rooms} code={code} setCode={setCode} busy={busy} notice={notice} onSetup={onSetup} onJoin={onJoin} onHistory={onHistory} />}
       {view === "decide" && <DecisionWorkspace language={language} userId={user.id} graph={payload.graph} members={payload.relationship.members} initialIssueId={selection.issueId} initialOutcomeId={selection.outcomeId} initialPrompt={null} onChanged={refresh} />}
       {view === "decide" && <div className="lifecycle-tools"><button onClick={() => selectReminder(selection.outcomeId ? { kind: "outcome", id: selection.outcomeId } : selection.issueId ? { kind: "issue", id: selection.issueId } : { kind: "reminders" })}>{localized(language, "设置我的跟进提醒", "Set my follow-up reminder", "Configurar mi recordatorio de seguimiento")}</button></div>}

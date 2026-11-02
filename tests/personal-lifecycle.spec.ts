@@ -19,7 +19,7 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   expect((await context.request.post("/api/reminders", { data: { title: "给自己一分钟", localDateTime: `${new Date(Date.now() + 86400000).toISOString().slice(0, 10)}T19:00`, timezone: "UTC", frequency: "once", target: { kind: "reminders" } } })).ok()).toBe(true);
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-upcoming").click();
   await expect(page.locator(".reminders-form")).toHaveCount(0);
-  await expect(page.getByText("给自己一分钟", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("upcoming-year").getByText("给自己一分钟", { exact: true }).first()).toBeVisible();
   await page.getByTestId("back-to-conversation").click();
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();
   await expect(page.getByTestId("settings-screen")).toBeVisible();
