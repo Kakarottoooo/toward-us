@@ -158,7 +158,7 @@ export async function createFileStore(filePath) {
     async deletePrivateData(userId) {
       let deleted = 0;
       for (const collection of GRAPH_COLLECTIONS) {
-        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs"].includes(collection)) continue;
+        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices"].includes(collection)) continue;
         for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) { delete state().relationshipGraph[collection][id]; deleted += 1; }
       }
       for (const room of Object.values(state().rooms)) if (room.analysis?.private) delete room.analysis.private[userId];
@@ -166,7 +166,7 @@ export async function createFileStore(filePath) {
     },
     async deleteAccount(userId) {
       await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
-      for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
+      for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
       const phone = implementation.getPhoneForUser(userId);
       for (const [hash, link] of Object.entries(state().phoneLinks)) if (link.phone === phone) delete state().phoneLinks[hash];
       await store.unbindPhone(userId);

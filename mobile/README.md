@@ -3,7 +3,7 @@
 这是一个很薄的原生外壳：App 打开后直接加载网站（`server.url`），界面、登录、语音都是现有网页，没有重写。这样现有的 `HttpOnly` Cookie 登录不用改；网站更新后 App 里立即生效，不需要重新装包。公开上架前再评估要不要把前端打进安装包。
 
 - App ID：`us.toward.app`，名字：`Toward Us`。Bundle ID 正式占用前要在开发者账号里确认可用。
-- 权限：只有麦克风。推送以后再加。
+- 权限：麦克风和通知（`@capacitor/push-notifications`，经 Firebase Cloud Messaging）。通知权限只在登录后、或在「我的提醒」点「开启此手机通知」时问，而且只有服务器配了 `FCM_SERVICE_ACCOUNT_JSON` 才会问。安卓打包前把 Firebase 的 `google-services.json` 放进 `android/app/`（不进仓库；没有它也能编译，只是推送不可用）。iPhone 还缺 Firebase Messaging SDK（AppDelegate 里把 APNs token 换成 FCM token），要等 Apple 团队和 Mac。
   - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
   - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
 - 加载哪个网址在**打包时**决定：环境变量 `TOWARD_US_APP_URL`，不设时默认 `https://toward-us-private-beta.onrender.com`（取自 `render.yaml` 的服务名，**实际域名还要确认**；不对就改 `scripts/config.mjs` 里的 `DEFAULT_URL`）。换网址就要重新打包、重新安装。

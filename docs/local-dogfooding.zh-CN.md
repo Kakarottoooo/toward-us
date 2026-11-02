@@ -94,11 +94,17 @@ curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Cont
 - `TOWARD_US_BASE_URL`：绑定链接用的公网地址。
 - `SENDBLUE_GROUPS_ENABLED=true`：套餐支持群聊后才开，"我们俩"才会镜像成情侣 iMessage 群。
 
-推送：现在只有**浏览器推送**，要同时设 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`https://...` 或 `mailto:...`）；缺任何一个就不推，也不报错。原生手机推送（`FCM_SERVICE_ACCOUNT_JSON`）计划中，原生推送完成后再配，现在设了也没有作用。
+推送有两种，都是缺配置就不推、也不报错：
+
+- **浏览器推送**：要同时设 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`https://...` 或 `mailto:...`）。
+- **App 推送**（安卓 / iPhone，经 Firebase Cloud Messaging）：代码已经接好，设 `FCM_SERVICE_ACCOUNT_JSON`（Firebase 项目的服务账号 JSON 全文）就会真发。但它要先有 Firebase 项目；iPhone 还要把 Apple 的 APNs 密钥传到 Firebase、并在 iOS 工程里接入 Firebase Messaging SDK 把 APNs token 换成 FCM token（等 Apple 团队开通后在 Mac 上做；在那之前 iPhone 拿到的原始 APNs token 会被网页端拒收，不会注册），安卓打包时要把 Firebase 下载的 `google-services.json` 放进 `mobile/android/app/`（已在 .gitignore 里，不进仓库）。**在这之前 App 推送是关的**：服务器启动时会打印 `Native push: off`，`reminders/run` 返回 `"nativeConfigured":false`，App 也不会弹通知权限。
+  - 开了以后：个人提醒按 iMessage → App 推送 → 浏览器推送 三个渠道都发；App 推送的文案和浏览器推送一样模糊，不带提醒名称，点开进对话首页。
+  - "我们俩"里一方发了消息、而你们没有 iMessage 群时，另一方的手机会收到一条"TA 在'我们俩'里说了话"，同一个人 10 分钟内最多一条，点开直接进"我们俩"。
+  - App 里登录后会问一次通知权限；"我的提醒"里也有"开启此手机通知"按钮。退出登录会注销这台手机。
 
 ## 7. 现在做不到的
 
 - **iPhone App**：要等 Apple 公司开发者团队开通，Windows 上也编不了 iOS（见 `mobile/README.md` 的 iPhone 一节）。伴侣如果用 iPhone，现在只能用手机浏览器或等 iMessage 打通。
 - **线上环境**：不部署、不上 Render、不发 TestFlight。所有数据只在你电脑上的那个 JSON 文件里。
-- **真 iMessage / 原生手机推送**：要等 Sendblue 账号，原生推送还要等 Firebase 账号和对应功能完成，在那之前只能用上面的模拟。
+- **真 iMessage / App 推送**：真 iMessage 要等 Sendblue 账号；App 推送功能已完成，但要等 Firebase 项目（iPhone 还要 Apple 团队的 APNs 密钥），在那之前只能用上面的模拟。
 - **定时自动提醒**：本机没有调度器，到点要手动戳 `reminders/run`。

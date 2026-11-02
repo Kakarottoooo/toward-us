@@ -2,10 +2,11 @@ import { Bell, BellSlash, Plus } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
+import { enableNativePush, nativePushPlugin } from "./nativePush";
 import "./reminders.css";
 
 export type ReminderTarget = { kind: "issue" | "milestone" | "outcome" | "checkin" | "reminders" | "plans" | "checkins"; id?: string };
-type Settings = { enabled: boolean; configured: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
+type Settings = { enabled: boolean; configured: boolean; nativeConfigured?: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
 type Delivery = { id: string; status: string; attempts: number; acceptedAt?: string; lastErrorCode?: string };
 type Reminder = { id: string; title?: string; dueAt?: string; frequency?: string; timezone?: string; status: string; target?: ReminderTarget; deliveries: Delivery[]; occurrenceOriginalDueAt?: string | null; localTime?: string };
 class ReminderError extends Error { constructor(public code: string) { super(code); } }
@@ -66,6 +67,15 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
       setNotice(text("此浏览器已连接。你可以选择提醒时间。", "This browser is connected. Choose when to be reminded.", "Este navegador está conectado. Elige cuándo recibir el recordatorio."));
     } catch (error) { setNotice(errorText(error)); } finally { setBusy(false); }
   };
+  // Inside the App the phone's own notifications replace browser push.
+  const nativeApp = Boolean(nativePushPlugin());
+  const pushReady = nativeApp ? settings?.nativeConfigured : settings?.configured;
+  const connectPhone = async () => {
+    setBusy(true); setNotice("");
+    const result = await enableNativePush({ force: true });
+    setBusy(false);
+    setNotice(result === "registered" ? text("此手机的通知已开启。", "Notifications are on for this phone.", "Las notificaciones están activadas en este teléfono.") : result === "denied" ? text("未获得通知权限。提醒仍会保存；你可以在手机设置中允许通知。", "Notification permission was not granted. Reminders remain saved; you can allow notifications in the phone's settings.", "No se concedió permiso. Tus recordatorios siguen guardados; puedes permitir notificaciones en los ajustes del teléfono.") : errorText(new ReminderError(result === "off" ? "push_not_configured" : "reminder_unavailable")));
+  };
   const save = () => perform(async () => {
     const body = { title, localDateTime, timezone, frequency, target: initialTarget || { kind: targetKind } };
     await api(editing ? `/reminders/${editing.id}` : "/reminders", editing ? "PATCH" : "POST", body);
@@ -87,11 +97,11 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     <header><div><Bell size={23} /><h2 id="reminders-title">{text("我的提醒", "My reminders", "Mis recordatorios")}</h2></div><p>{text("给计划、复盘或一句关心留个时间。提醒名称只对你可见，锁屏通知不会显示内容。", "Make time for a plan, a review or a caring moment. Reminder names stay private and never appear on the lock screen.", "Haz espacio para un plan, una revisión o un gesto de cariño. Los nombres son privados y no aparecen en la pantalla bloqueada.")}</p></header>
     <div className="reminders-settings">
       <p>{settings ? settings.enabled && settings.devices.length ? text("浏览器通知已开启", "Browser notifications are on", "Notificaciones del navegador activadas") : text("浏览器通知未连接或已关闭", "Browser notifications are disconnected or off", "Notificaciones desconectadas o desactivadas") : text("正在读取提醒…", "Loading reminders…", "Cargando recordatorios…")}</p>
-      <div className="row-actions"><button type="button" onClick={() => void connect()} disabled={busy || !settings?.configured}>{text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>
+      <div className="row-actions"><button type="button" onClick={() => void (nativeApp ? connectPhone() : connect())} disabled={busy || !pushReady}>{nativeApp ? text("开启此手机通知", "Turn on phone notifications", "Activar notificaciones del teléfono") : text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>
         {settings?.enabled && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: false, timezone, language }))}><BellSlash size={16} />{text("关闭所有提醒通知", "Turn off all reminder notifications", "Desactivar todas las notificaciones")}</button>}
         {settings && !settings.enabled && settings.devices.length > 0 && settings.configured && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: true, timezone, language }))}>{text("重新开启通知", "Turn notifications back on", "Reactivar notificaciones")}</button>}
       </div>
-      {settings && !settings.configured && <p>{text("推送服务尚未配置，你可以先保存提醒。", "Push is not configured yet. You can save reminders now.", "Las notificaciones aún no están configuradas. Puedes guardar recordatorios.")}</p>}
+      {settings && !pushReady && <p>{text("推送服务尚未配置，你可以先保存提醒。", "Push is not configured yet. You can save reminders now.", "Las notificaciones aún no están configuradas. Puedes guardar recordatorios.")}</p>}
       <small>{text("提醒会尽力在所选时间后发送，后台调度和设备离线可能造成延迟。服务接受投递不代表设备已显示或本人已读。已开始投递的通知无法撤回。", "Reminders are sent on a best-effort basis after the chosen time. Scheduling or offline devices may cause delays. Provider acceptance does not confirm display or reading. Notifications already in flight cannot be recalled.", "Los recordatorios se envían cuando es posible después de la hora elegida. La programación o los dispositivos sin conexión pueden causar retrasos. La aceptación no confirma que se hayan mostrado o leído. Los envíos en curso no se pueden retirar.")}</small>
       {settings && settings.devices.length > 0 && <details><summary>{text("管理已连接浏览器", "Manage connected browsers", "Gestionar navegadores conectados")}</summary>{settings.devices.map((device, index) => <div className="reminders-device" key={device.id}><span>{text("浏览器", "Browser", "Navegador")} {index + 1} · {new Date(device.createdAt).toLocaleDateString(languageTag(language))}</span><button type="button" disabled={busy} onClick={() => void perform(async () => { await api(`/push-subscriptions/${device.id}`, "DELETE"); if (localStorage.getItem("toward-us-push-device") === device.id) { const registration = await navigator.serviceWorker?.getRegistration("/"); await (await registration?.pushManager.getSubscription())?.unsubscribe(); localStorage.removeItem("toward-us-push-device"); } })}>{text("断开", "Disconnect", "Desconectar")}</button></div>)}</details>}
     </div>

@@ -147,7 +147,7 @@ test("reminder HTTP routes enforce owner identity and independent scheduler bear
   assert.equal((await fetch(`${base}/internal/reminders/run`, { method: "POST", headers: { authorization: "Bearer wrong" } })).status, 401);
   const response = await fetch(`${base}/internal/reminders/run`, { method: "POST", headers: { authorization: `Bearer ${f.service.internalSecret}` } });
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(await response.json()).sort(), ["accepted", "cancelled", "claimed", "configured", "failed", "imessageConfigured"]);
+  assert.deepEqual(Object.keys(await response.json()).sort(), ["accepted", "cancelled", "claimed", "configured", "failed", "imessageConfigured", "nativeConfigured"]);
   const invalid = await fetch(`${base}/push-subscriptions`, { method: "POST", headers: { "content-type": "application/json", "x-test-user": f.userId }, body: JSON.stringify(subscription("https://127.0.0.1/private")) });
   assert.equal(invalid.status, 400);
   assert.equal((await invalid.json()).code, "invalid_subscription");

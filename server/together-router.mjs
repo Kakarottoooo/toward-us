@@ -6,7 +6,7 @@ import { recordUsage } from "./usage.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
-export function createTogetherRouter({ store, mediator, emit = () => {} }) {
+export function createTogetherRouter({ store, mediator, emit = () => {}, onMemberMessage = () => {} }) {
   const router = express.Router();
   router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
   const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
@@ -39,7 +39,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const relationshipId = initial.relationship.id;
     const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated") });
-    if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
+    if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); void Promise.resolve().then(() => onMemberMessage(userId)).catch(() => console.error("together native push failed")); }
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });
 

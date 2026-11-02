@@ -26,7 +26,7 @@ export function ConversationHome({ user, pairing, language, onLanguage, onAllFea
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
-  const [channel, setChannel] = useState<Channel>(() => { try { return localStorage.getItem(channelKey) === "us" ? "us" : "me"; } catch { return "me"; } });
+  const [channel, setChannel] = useState<Channel>(() => { try { return new URLSearchParams(location.search).get("channel") === "us" || localStorage.getItem(channelKey) === "us" ? "us" : "me"; } catch { return "me"; } });
   const [session, setSession] = useState<Session | null>(null);
   const [together, setTogether] = useState<Together | null>(null);
   const [approved, setApproved] = useState<string[]>([]);

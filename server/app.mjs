@@ -27,6 +27,7 @@ import { createReminderRouter } from "./reminder-router.mjs";
 import { createUsageRouter, recordUsage } from "./usage.mjs";
 import { createReminderService } from "./reminder-service.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
+import { createNativePush } from "./native-push.mjs";
 import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
@@ -50,7 +51,8 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   let emitTogether = () => {};
   // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
   let imessage = null;
-  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null });
+  const nativePush = reminderService ? null : createNativePush();
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null, sendNative: nativePush?.configured ? nativePush.send : null });
 
   const runDue = reminders.runDue.bind(reminders);
   reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); return result; };
@@ -685,7 +687,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPrivacyRouter({ store, production, closeConnections }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
-  app.use("/api", createTogetherRouter({ store, mediator, emit }));
+  app.use("/api", createTogetherRouter({ store, mediator, emit, onMemberMessage: (userId) => reminders.notifyTogether?.(userId) }));
   app.use("/api", relationshipRouter);
 
   function broadcastRoom(code) {

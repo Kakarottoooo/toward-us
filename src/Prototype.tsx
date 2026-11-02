@@ -11,6 +11,7 @@ import { PrivacySettings } from "./features/privacy/PrivacySettings";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { BackToConversation, ConversationHome } from "./features/conversation/ConversationHome";
+import { disableNativePush, enableNativePush, listenNativePushTaps } from "./features/reminders/nativePush";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
@@ -153,6 +154,7 @@ function AccountPrototype() {
       if (state.user) setScreen(landing(state.pairing));
     }).catch(() => {});
     api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
+    listenNativePushTaps();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
@@ -171,12 +173,14 @@ function AccountPrototype() {
     const next = new URLSearchParams(location.search).get("next");
     if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
     setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(landing(state.pairing));
+    // Signing in is the user action that may ask, once, for App notification permission (a no-op in a browser).
+    void enableNativePush();
   };
   const refreshPairing = async () => {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
     setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("conversation");
   };
-  const logout = async () => { keyboard.hide(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setRoom(null); setScreen("home"); };
+  const logout = async () => { keyboard.hide(); await disableNativePush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setRoom(null); setScreen("home"); };
   const loadActiveRooms = async () => { const result = await api<{ rooms: RoomSummary[] }>("/api/rooms"); setActiveRooms(result.rooms); };
   const openRoom = async (code: string, join = false) => {
     setBusy(true); setNotice("");

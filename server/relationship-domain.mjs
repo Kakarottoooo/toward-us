@@ -7,11 +7,11 @@ export const GRAPH_COLLECTIONS = Object.freeze([
   "proposals", "evaluations", "agreements", "approvals", "commitments", "outcomes",
   "outcomeResponses", "notifications", "consentEvents", "productEvents",
   "memories", "checkins", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings",
-  "togetherConversations",
+  "togetherConversations", "nativePushDevices",
 ]);
 
-export const PERSONAL_COLLECTIONS = new Set(["privateAgentThreads", "memories", "checkins", "reminders", "notifications", "consentEvents", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings", "productEvents"]);
-const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents"]);
+export const PERSONAL_COLLECTIONS = new Set(["privateAgentThreads", "memories", "checkins", "reminders", "notifications", "consentEvents", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings", "productEvents", "nativePushDevices"]);
+const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices"]);
 
 export function assertRecordScope(collection, record) {
   if (!record.ownerUserId || !record.createdByUserId) throw new Error("A record requires an owner and a creator.");

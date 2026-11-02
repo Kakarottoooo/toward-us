@@ -10,7 +10,7 @@ const GRAPH_TABLES = Object.freeze({
   issues: "relationship_issues", perspectives: "issue_perspectives", summaries: "shareable_summaries", proposals: "decision_proposals",
   evaluations: "proposal_evaluations", agreements: "agreements", approvals: "agreement_approvals", commitments: "commitments",
   outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
-  consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations",
+  consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations", nativePushDevices: "native_push_devices",
 });
 
 export async function createPostgresStore(databaseUrl) {
@@ -129,7 +129,7 @@ export async function createPostgresStore(databaseUrl) {
       return store.transaction(`user:${userId}`, async () => {
         let deleted = 0;
         for (const collection of GRAPH_COLLECTIONS) {
-          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs"].includes(collection)) continue;
+          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
         }
         await pool.query("update rooms set payload=jsonb_set(payload,'{analysis,private}',(payload#>'{analysis,private}') - $1) where payload#>'{analysis,private}' ? $1", [userId]);
@@ -142,7 +142,7 @@ export async function createPostgresStore(databaseUrl) {
         await store.getUserForUpdate(userId);
         await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
         await pool.query("delete from phone_links where phone=(select phone from user_phones where user_id=$1)", [userId]); await store.unbindPhone(userId);
-        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
+        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
         const snapshot = await store.getPrivacySnapshot(userId);
         for (const room of snapshot.rooms) {
           const participantIds = new Set((room.participants || []).filter((person) => person.userId === userId).map((person) => person.id));

@@ -6,7 +6,7 @@ import { createRelationshipRecord, projectRecord } from "./relationship-domain.m
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
 const local = (req, zh, en, es) => (req.body?.language || req.query.language || "zh") === "zh" ? zh : (req.body?.language || req.query.language) === "es" ? es : en;
-const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents"]);
+const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices"]);
 
 export function createPrivacyRouter({ store, production = false, closeConnections = () => {} }) {
   const router = express.Router(); const attempts = new Map();
