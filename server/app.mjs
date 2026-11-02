@@ -24,6 +24,7 @@ import { createMemoryRouter } from "./memory-router.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createPhoneRouter } from "./phone-identity.mjs";
 import { createReminderRouter } from "./reminder-router.mjs";
+import { createUsageRouter, recordUsage } from "./usage.mjs";
 import { createReminderService } from "./reminder-service.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
@@ -488,6 +489,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
       createdAt: now, updatedAt: now,
     };
     await store.createRoom(room);
+    await recordUsage(store, { userId: req.auth.user.id, relationshipId: pairing.relationship.id, action: "mediation_started" });
     res.status(201).json({ room: publicRoom(room, req.auth.user.id) });
   });
 
@@ -654,6 +656,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   });
 
   app.use(createPhoneRouter({ store, internalSecret: () => reminders.internalSecret }));
+  app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
   const relationshipRouter = createRelationshipRouter({ store, mediator });
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);
   emitTogether = emit;

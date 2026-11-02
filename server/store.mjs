@@ -290,6 +290,7 @@ export async function createFileStore(filePath) {
       if (!accessibleRecord(collection, record, userId) || record.ownerUserId !== userId) return false;
       delete state().relationshipGraph[collection][id]; await persist(); return true;
     },
+    async listRelationshipsForJob() { return Object.values(state().relationships).map((relationship) => ({ ...relationship })); },
     async listRecordsForJob(collection) { assertCollection(collection); return Object.values(state().relationshipGraph[collection]).map((record) => structuredClone(record)); },
     async relationshipSnapshotForUser(userId) {
       const relationshipId = state().memberships[userId]?.relationshipId;

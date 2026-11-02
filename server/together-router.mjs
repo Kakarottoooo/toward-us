@@ -2,6 +2,7 @@ import express from "express";
 import { approveAgreement, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
+import { recordUsage } from "./usage.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, draftAgreementFromTogether, ensureTogetherConversation, shouldAgentSpeak } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
@@ -43,6 +44,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     });
     if (saved.duplicate) return res.json({ conversation: projectRecord(saved.conversation, userId), message: saved.message, reply: null });
     emit(saved.conversation, "together.updated");
+    await recordUsage(store, { userId, relationshipId: saved.relationshipId, action: "together_message" });
     if (!shouldAgentSpeak(saved.message, { agentLastMessageId: saved.agentLastMessageId })) return res.status(201).json({ conversation: projectRecord(saved.conversation, userId), message: saved.message, reply: null });
     const context = buildTogetherContext(await store.relationshipSnapshotForUser(userId), saved.relationshipId, { userId, query: text });
     const turn = await mediator.continueTogether(context, language(req));
@@ -64,20 +66,22 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
       return { agreement, conversation };
     });
     emit(result.agreement, "agreement.updated"); emit(result.conversation, "together.updated");
+    await recordUsage(store, { userId, relationshipId: result.agreement.relationshipId, action: "agreement_drafted" });
     res.status(201).json({ agreement: result.agreement, conversation: projectRecord(result.conversation, userId) });
   });
 
   // `announce` decides which outcomes the Agent posts as a card: the agreement becoming active, or a change request (new version).
-  const decide = (action, event, announce = () => false) => async (req, res) => {
+  const decide = (action, event, announce = () => false, usage = null) => async (req, res) => {
     const userId = req.auth.user.id;
     const { conversation, ...result } = await transaction(req, async (tx, context) => {
       const done = await action(tx, { agreementId: req.params.id, version: req.body?.version, userId, reason: req.body?.reason, context });
       return announce(done.agreement) ? { ...done, conversation: (await announceAgreement(tx, { agreement: done.agreement, userId, language: hint(req) })).conversation } : done;
     });
     emit(result.agreement, event); if (conversation) emit(conversation, "together.updated");
+    if (usage) await recordUsage(store, { userId, relationshipId: result.agreement.relationshipId, action: usage });
     res.json(result);
   };
-  router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active"));
+  router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active", "agreement_approved"));
   router.post("/together/agreements/:id/reject", decide(rejectAgreement, "agreement.rejected"));
   router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested", () => true));
 

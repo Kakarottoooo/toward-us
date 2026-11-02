@@ -280,6 +280,7 @@ export async function createPostgresStore(databaseUrl) {
       const result = await pool.query(`delete from ${table} r where r.id=$1 and r.owner_user_id=$2 and ${recordScopeSql(collection, "$2")}`, [id, userId]);
       return result.rowCount > 0;
     },
+    async listRelationshipsForJob() { return (await pool.query("select * from relationships")).rows.map(mapRelationship); },
     async listRecordsForJob(collection) {
       return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);
     },

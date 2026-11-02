@@ -4,10 +4,9 @@ import express from "express";
 export function createReminderRouter({ service }) {
   const router = express.Router();
   router.post("/internal/reminders/run", async (req, res, next) => {
-    const secret = service.internalSecret;
-    if (!secret || secret.length < 32) return res.status(503).json({ error: "Reminder scheduler is not configured." });
-    const provided = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
-    if (!timingSafeEqual(digest(provided), digest(`Bearer ${secret}`))) return res.status(401).json({ error: "Unauthorized." });
+    const status = internalBearerStatus(req, service.internalSecret);
+    if (status === 503) return res.status(503).json({ error: "Reminder scheduler is not configured." });
+    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
     try { res.json(await service.runDue()); } catch (error) { next(error); }
   });
   router.use((req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "Please sign in.", code: "unauthenticated" }));
@@ -27,6 +26,13 @@ export function createReminderRouter({ service }) {
   router.patch("/reminders/:id", handle(async (req) => ({ reminder: await service.updateReminder(req.auth.user.id, req.params.id, req.body) })));
   router.post("/reminders/:id/retry", handle((req) => service.retryReminder(req.auth.user.id, req.params.id)));
   return router;
+}
+
+// Shared by the internal Bearer endpoints: 503 when the secret is missing/short (<32), 401 on mismatch, 200 on match.
+export function internalBearerStatus(req, secret) {
+  if (!secret || secret.length < 32) return 503;
+  const provided = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+  return timingSafeEqual(digest(provided), digest(`Bearer ${secret}`)) ? 200 : 401;
 }
 
 function digest(value) { return createHash("sha256").update(value).digest(); }

@@ -3,6 +3,7 @@ import express from "express";
 import { createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
 import { validateAssistantTurn } from "./assistant-agent.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
+import { recordUsage } from "./usage.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments" };
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
@@ -187,6 +188,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       return saved;
     });
     for (const { kind, record } of changes) emit(record, `${kind === "plan" ? "private_agent_thread" : kind}.updated`, userId);
+    await recordUsage(store, { userId, action: "private_message" });
     res.json({ session: await output(updated) });
   };
   // Only an explicit confirm of the current card's digest moves the polished text (never the member's raw words) into the shared conversation.
@@ -208,7 +210,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.partnerMessage = { ...record.partnerMessage, sharedAt: new Date().toISOString(), messageId: sent.message.id }; record.version += 1; });
       return { ...sent, session: saved };
     });
-    if (!result.duplicate) emit(result.conversation, "together.updated");
+    if (!result.duplicate) { emit(result.conversation, "together.updated"); await recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "partner_message_shared" }); }
     res.json({ session: await output(result.session), message: { id: result.message.id, text: result.message.text, createdAt: result.message.createdAt }, duplicate: result.duplicate });
   });
   router.post("/assistant/sessions/:id/messages", append);

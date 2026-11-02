@@ -6,6 +6,7 @@ import {
   agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
 } from "./agreement-actions.mjs";
 import { announceAgreement } from "./together-domain.mjs";
+import { recordUsage } from "./usage.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
@@ -44,7 +45,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const date = cleanDate(req.body?.date); if (!date) return res.status(400).json({ error: "请提供有效日期。" });
     const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type, title: clean(req.body?.title, 120), date, timezone: clean(req.body?.timezone, 64) || "UTC", recurringRule: req.body?.recurringRule === "yearly" ? "yearly" : "once", jointlyConfirmed: false, notes: clean(req.body?.notes, 1200) });
     if (!record.title) return res.status(400).json({ error: "请输入纪念日名称。" });
-    await store.createRelationshipRecord("milestones", record); await audit(store, record, req.auth.user.id, "milestone.created"); emit(record, "milestone.updated");
+    await store.createRelationshipRecord("milestones", record); await audit(store, record, req.auth.user.id, "milestone.created"); emit(record, "milestone.updated"); await recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "milestone_created" });
     res.status(201).json({ milestone: projectRecord(record, req.auth.user.id) });
   });
   router.patch("/milestones/:id", updateOwnedShared("milestones", ["title", "date", "timezone", "recurringRule", "notes"]));
@@ -71,7 +72,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const visibility = req.body?.visibility === "private_surprise" ? "private_surprise" : req.body?.visibility === "private" ? "private" : "shared";
     const record = createRelationshipRecord({ relationshipId: list.relationshipId, userId: req.auth.user.id, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", approvalPolicy: "owner", status: "active", listId: list.id, title: clean(req.body?.title, 160), description: clean(req.body?.description, 1200), link: safeUrl(req.body?.link), category: clean(req.body?.category, 64), desiredDate: cleanDate(req.body?.desiredDate), estimatedCostRange: clean(req.body?.estimatedCostRange, 80), completedAt: null, revealedAt: null });
     if (!record.title) return res.status(400).json({ error: "请输入清单项目。" });
-    await store.createRelationshipRecord("listItems", record); await audit(store, record, req.auth.user.id, "list_item.created");
+    await store.createRelationshipRecord("listItems", record); await audit(store, record, req.auth.user.id, "list_item.created"); await recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "list_item_added" });
     if (visibility === "shared") { await notifyMembers(await store.getRelationshipContext(req.auth.user.id), req.auth.user.id, "shared_item_added", "Toward Us 有一项共同清单更新。", `/lists/${list.id}`); emit(record, "list_item.updated"); }
     else emit(record, "list_item.updated", req.auth.user.id);
     res.status(201).json({ item: projectRecord(record, req.auth.user.id) });
@@ -96,7 +97,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const context = await activeRelationship(store, req, res); if (!context) return;
     const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "collecting_perspectives", title: clean(req.body?.title, 160), category: ISSUE_CATEGORIES.has(req.body?.category) ? req.body.category : "custom", sharedContext: clean(req.body?.sharedContext, 1200) });
     if (!record.title) return res.status(400).json({ error: "请输入需要共同决定的事情。" });
-    await store.createRelationshipRecord("issues", record); await audit(store, record, req.auth.user.id, "issue.created"); emit(record, "issue.updated"); res.status(201).json({ issue: record });
+    await store.createRelationshipRecord("issues", record); await audit(store, record, req.auth.user.id, "issue.created"); emit(record, "issue.updated"); await recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "issue_started" }); res.status(201).json({ issue: record });
   });
   router.post("/issues/:id/perspectives", async (req, res) => {
     const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" });
@@ -163,7 +164,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.status = "agreement_pending"; draft.version += 1; });
     await audit(tx, record, userId, "agreement.created");
     return { status: 201, record, event: "agreement.updated", body: { agreement: record }, conversation: await announce(tx, record, userId, req) };
-  }));
+  }, "agreement_drafted"));
   router.patch("/agreements/:id", decisionTransaction(async (tx, req) => {
     const current = await tx.getRelationshipRecordForUser("agreements", req.params.id, req.auth.user.id);
     if (!current) throw decisionError(404, "not_found");
@@ -178,7 +179,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.post("/agreements/:id/approve", decisionTransaction(async (tx, req, context) => {
     const { agreement, approvedCount, requiredCount } = await approveAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, context });
     return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount }, conversation: agreement.status === "active" ? await announce(tx, agreement, req.auth.user.id, req) : null };
-  }));
+  }, "agreement_approved"));
   router.post("/agreements/:id/reject", decisionTransaction(async (tx, req) => {
     const { agreement } = await rejectAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
     return { record: agreement, event: "agreement.rejected", body: { item: agreement } };
@@ -223,7 +224,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const updated = await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussionDraft = { ...draft.discussionDraft, confirmedAt: new Date().toISOString(), confirmedByUserId: userId, agreementId: agreement.id }; draft.status = "agreement_pending"; draft.version += 1; });
     await audit(tx, agreement, userId, "agreement.discussion_draft_confirmed");
     return { record: updated, event: "issue.updated", body: { issue: updated, agreement }, conversation: await announce(tx, agreement, userId, req, issue.discussionLanguage) };
-  }));
+  }, "agreement_drafted"));
 
   router.post("/commitments", decisionTransaction(async (tx, req, context) => {
     const userId = req.auth.user.id;
@@ -288,7 +289,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const outcome = commitment.status === "completed" ? await ensureOutcome(tx, commitment, userId) : null;
     await audit(tx, commitment, userId, "commitment.completed");
     return { record: commitment, event: "commitment.updated", body: { commitment, outcome } };
-  }));
+  }, "commitment_completed"));
   router.post("/commitments/:id/review", decisionTransaction(async (tx, req) => {
     const commitment = await tx.getRelationshipRecordForUser("commitments", req.params.id, req.auth.user.id);
     if (!commitment) throw decisionError(404, "not_found");
@@ -321,7 +322,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     await tx.createRelationshipRecord("outcomeResponses", response); await audit(tx, response, userId, "outcome.response_submitted");
     const updated = await tx.updateRelationshipRecordForUser("outcomes", outcome.id, userId, (draft) => { draft.responseCount = snapshot.outcomeResponses.filter((item) => item.outcomeId === outcome.id && !item.archivedAt && !item.withdrawnAt).length + 1; if (values.allowLearnedPattern) draft.learningCandidates = [...(draft.learningCandidates || []), { ownerUserId: userId, text: values.learnedPatternCandidate }]; draft.version += 1; });
     return { status: 201, record: updated, event: "outcome.updated", body: { response: projectRecord(response, userId) } };
-  }));
+  }, "review_submitted"));
   router.post("/outcome-reviews/:id/finalize", decisionTransaction(async (tx, req, context) => {
     const userId = req.auth.user.id;
     const outcome = await tx.getRelationshipRecordForUser("outcomes", req.params.id, userId);
@@ -359,7 +360,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.post("/notifications/:id/read", notificationMutation("readAt"));
   router.post("/notifications/:id/dismiss", notificationMutation("dismissedAt"));
 
-  function decisionTransaction(action) {
+  function decisionTransaction(action, usage = null) {
     return async (req, res) => {
       const initial = await activeRelationship(store, req, res); if (!initial) return;
       const result = await store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
@@ -369,6 +370,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       });
       if (result.record) emit(result.record, result.event);
       if (result.conversation) emit(result.conversation, "together.updated");
+      if (usage && result.record) await recordUsage(store, { userId: req.auth.user.id, relationshipId: initial.relationship.id, action: usage });
       res.status(result.status || 200).json(result.body);
     };
   }
