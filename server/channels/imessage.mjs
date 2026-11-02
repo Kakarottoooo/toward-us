@@ -118,6 +118,9 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     const lines = [], partner = [];
     for (const card of message.cards || []) {
       if (card.kind === "partner_message") { if (card.status === "draft") partner.push(card.text, TEXT[language].hint); continue; }
+      // Hand-offs become plain links; a shared-space card can only be confirmed in the App.
+      if (card.kind === "link" && card.url) { lines.push(`· ${card.title}${colon}${card.url.startsWith("/") ? `${process.env.TOWARD_US_BASE_URL || ""}${card.url}` : card.url}`); continue; }
+      if (card.kind === "space_share") { if (card.status === "draft") lines.push(`· ${card.title}${colon}${{ zh: "在 Pinky App 里确认后放进去", en: "confirm in the Pinky app to add it", es: "confírmalo en la app de Pinky para añadirlo" }[language] || ""}`); continue; }
       if (card.status === "unavailable" || message.text.includes(card.title)) continue;
       const text = card.text && card.text !== card.title ? `${colon}${card.text.slice(0, 200)}` : "";
       lines.push(`· ${[card.title, card.localDateTime?.replace("T", " ")].filter(Boolean).join(" ")}${text}`);
@@ -241,7 +244,9 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
         const author = item.role === "member" ? context.members.find((member) => member.userId === item.actorUserId) : null;
         if (item.role === "member" && !author) continue;
         const authorLanguage = author ? await memberLanguage(store, author.userId) : null;
-        const text = !author ? item.text : item.source === "relay" ? `${TEXT[authorLanguage].relay(author.user.name)}${item.text}` : `${author.user.name}${authorLanguage === "zh" ? "：" : ": "}${item.text}`;
+        // The Agent's hand-off buttons travel as plain links; photos stay in the App.
+        const links = !author ? (item.refs || []).filter((ref) => ref.type === "link" && ref.url).map((ref) => `· ${ref.title}: ${ref.url.startsWith("/") ? `${process.env.TOWARD_US_BASE_URL || ""}${ref.url}` : ref.url}`) : [];
+        const text = !author ? [item.text, ...links].filter(Boolean).join("\n") : item.source === "relay" ? `${TEXT[authorLanguage].relay(author.user.name)}${item.text}` : `${author.user.name}${authorLanguage === "zh" ? "：" : ": "}${item.text}`;
         await groupSend(context.relationship.imessageGroupId, text);
       }
     }).catch((error) => console.error("imessage_mirror_failed", error?.code || error?.name || "error"));
