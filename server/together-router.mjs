@@ -4,6 +4,7 @@ import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
+import { celebrationOn, composeStory } from "./story.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, recallOnThisDay } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
@@ -33,6 +34,10 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
       try { today = new Date().toLocaleDateString("en-CA", { timeZone: timezone }); } catch { today = new Date().toISOString().slice(0, 10); }
       const recalled = await recallOnThisDay(store, { relationshipId, userId, today }).catch(() => null);
       if (recalled) emit(recalled, "together.updated", null, userId);
+      // On a day worth celebrating, the first one to open Us starts the recap card; it arrives a little later.
+      const since = (await store.listRelationshipRecordsForUser("milestones", userId)).find((item) => item.relationshipId === relationshipId && item.type === "relationship_started" && !item.archivedAt)?.date;
+      const occasion = celebrationOn(since, today), lang = language(req);
+      if (occasion) void composeStory({ store, mediator, relationshipId, userId, language: lang, key: occasion.key, occasion: occasion.kind === "anniversary" ? (lang === "en" ? `${occasion.years}-year anniversary` : lang === "es" ? `${occasion.years}.º aniversario` : `${occasion.years} 周年`) : (lang === "en" ? `day ${occasion.day} together` : lang === "es" ? `el día ${occasion.day} juntos` : `在一起第 ${occasion.day} 天`), emit: (conversation) => emit(conversation, "together.updated", null, userId) });
     }
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);

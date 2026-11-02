@@ -5,11 +5,12 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { handoffUrl } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
+import { composeStory } from "./story.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call"]);
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 const MESSAGE_LIMIT = 200;
@@ -61,7 +62,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -77,6 +78,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     ...(recordedByUserId && recordedByUserId !== actorUserId ? { recordedByUserId } : {}),
     // A finished voice call keeps its captions on the message; both partners were part of it.
     ...(kind === "call" && call ? { call } : {}),
+    ...(kind === "story" && story ? { story } : {}),
   };
   const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message].slice(-MESSAGE_LIMIT);
@@ -124,7 +126,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     const mediation = await mediator.mediateTogether(named, members, language);
     if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
   }
-  turn = { ...turn, actions: turn.actions.filter((action) => action.kind !== "mediate") };
+  // A recap card is made after the reply, in the background (it takes a little while), and posted here when ready.
+  const recaps = turn.actions.filter((action) => action.kind === "recap");
+  turn = { ...turn, actions: turn.actions.filter((action) => !["mediate", "recap"].includes(action.kind)) };
   const reply = (outcome) => transaction(async (tx) => {
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
@@ -146,6 +150,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     replied = await reply({ reply: failed[language] || failed.zh, i18n: failed, actions: [], draftAgreement: null, source: "local" });
   }
   if (!replied.duplicate) emit(replied.conversation);
+  if (!replied.duplicate && recaps.length) void composeStory({ store, mediator, relationshipId, userId: actorUserId, language, occasion: recaps[0].title || "", key: `asked-${message.id}`, emit });
   for (const session of asked) notifyPrivate(session);
   return { conversation: replied.conversation, message, reply: replied.message, duplicate: saved.duplicate };
 }

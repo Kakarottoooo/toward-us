@@ -16,7 +16,7 @@ const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, 
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
 const together = (patch = {}) => ({ kind: "space", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: "once", remindDaysBefore: null, photoId: null, ...patch });
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), mediate = null } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), mediate = null, structured = null } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "spaces-"));
   const store = await createFileStore(join(directory, "store.json"));
@@ -25,7 +25,7 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
-  const mediator = { planAssistantTurn: async (...args) => planner(...args), continueTogether: async (...args) => shared(...args), ...(mediate ? { mediateTogether: async (...args) => mediate(...args) } : {}), createRealtimeSession: async () => "v=0\r\n" };
+  const mediator = { planAssistantTurn: async (...args) => planner(...args), continueTogether: async (...args) => shared(...args), ...(mediate ? { mediateTogether: async (...args) => mediate(...args) } : {}), ...(structured ? { structured: async (...args) => structured(...args) } : {}), createRealtimeSession: async () => "v=0\r\n" };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   app.use("/api", createTogetherRouter({ store, mediator }));
@@ -184,4 +184,37 @@ test("on the day, Pinky recalls the couple's shared moments from earlier years i
   assert.equal(first.length, 1);
   assert.equal(first[0].i18n.en, "1 year ago today: First trip to the sea");
   assert.equal((await open(f.ids[0])).length, 1, "posted once a day, whoever opens Us first");
+});
+
+test("recap cards: made on a day worth celebrating or on request, from shared moments only, once per occasion", async (t) => {
+  const { celebrationOn, storyMaterial } = await import("../server/story.mjs");
+  assert.deepEqual(celebrationOn("2025-05-20", "2025-08-27"), { key: "day-100", kind: "day", day: 100 });
+  assert.deepEqual(celebrationOn("2025-05-20", "2026-05-20"), { key: "anniversary-1", kind: "anniversary", years: 1, day: 366 });
+  assert.equal(celebrationOn("2025-05-20", "2025-08-28"), null);
+  const today = new Date().toISOString().slice(0, 10), since = new Date(Date.parse(`${today}T00:00:00Z`) - 99 * 86_400_000).toISOString().slice(0, 10);
+  let album = null, step = "since", seen = null;
+  const f = await fixture(t, {
+    shared: () => step === "since" ? { reply: "Noted.", draftAgreement: null, actions: [together({ kind: "milestone", title: "Together", date: since, recurringRule: "yearly", text: "together_since" })] }
+      : step === "moment" ? { reply: "Kept.", draftAgreement: null, actions: [together({ kind: "space_item", spaceId: album, title: "Picnic", date: since, photoId: null })] }
+      : { reply: "I'll make one now.", draftAgreement: null, actions: [together({ kind: "recap", title: "just because" })] },
+    structured: ({ input }) => { seen = JSON.parse(input); return { title: "100 days", subtitle: "So far", coverPhotoId: "not-a-shared-photo", stats: [{ label: "Days", value: "100" }], chapters: [{ heading: "A picnic", text: "You had a picnic.", date: since, photoId: "not-a-shared-photo" }], closing: "More to come." }; },
+  });
+  album = (await f.request("/spaces")).body.spaces.find((space) => space.system === "moments" && space.visibility === "shared").id;
+  const say = (text) => f.request("/together/messages", "POST", { text, itemId: randomUUID(), language: "en" });
+  await say("Pinky, we got together 99 days ago"); step = "moment"; await say("Pinky, keep our picnic");
+  const privateAlbum = (await f.request("/spaces")).body.spaces.find((space) => space.system === "moments" && space.visibility === "private");
+  const stories = async (userId = f.ids[0]) => (await f.request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation.messages.filter((message) => message.kind === "story");
+  await stories(f.ids[1]);
+  for (let i = 0; i < 50 && !(await stories()).length; i += 1) await new Promise((r) => setTimeout(r, 40));
+  const [story] = await stories();
+  assert.equal(story.story.title, "100 days");
+  assert.equal(story.story.coverPhotoId, null, "a photo id outside the shared album is dropped");
+  assert.equal(story.story.chapters[0].photoId, null);
+  assert.deepEqual(seen.moments.map((moment) => moment.title), ["Picnic"]);
+  assert.ok(privateAlbum && !JSON.stringify(seen).includes(privateAlbum.id));
+  await stories(f.ids[1]); await new Promise((r) => setTimeout(r, 200));
+  assert.equal((await stories()).length, 1, "one card per occasion, whoever opens Us");
+  step = "recap"; await say("Pinky, make us a recap");
+  for (let i = 0; i < 50 && (await stories()).length < 2; i += 1) await new Promise((r) => setTimeout(r, 40));
+  assert.equal((await stories()).length, 2, "asking for one makes another");
 });
