@@ -14,6 +14,8 @@ let announced = false;
 
 export function createNativePush({ serviceAccountJson = process.env.FCM_SERVICE_ACCOUNT_JSON || "", apiBase = process.env.NODE_ENV === "production" ? "" : process.env.FCM_API_BASE || "", fetchImpl = (...args) => globalThis.fetch(...args), log = console } = {}) {
   const account = parseAccount(serviceAccountJson);
+  // The override only ever points at a local stub: a signed assertion and device tokens must not go to any other host.
+  if (apiBase && !loopback(apiBase)) { log.log("Native push: FCM_API_BASE ignored (only localhost, 127.0.0.1 or ::1 are allowed)"); apiBase = ""; }
   if (!announced) { announced = true; log.log(account ? `Native push: FCM ready (project ${account.project_id})` : serviceAccountJson ? "Native push: off (FCM_SERVICE_ACCOUNT_JSON is not a usable service account)" : "Native push: off (FCM_SERVICE_ACCOUNT_JSON is not set)"); }
   if (!account) return { configured: false, async send() { throw Object.assign(new Error("Native push is not configured."), { code: "push_not_configured" }); } };
   const base = apiBase.replace(/\/+$/, "");
@@ -61,4 +63,5 @@ function parseAccount(raw) {
     return account?.type === "service_account" && PROJECT.test(account.project_id || "") && /^[^\s@]+@[^\s@]+$/.test(account.client_email || "") && String(account.private_key || "").includes("PRIVATE KEY") ? account : null;
   } catch { return null; }
 }
+function loopback(value) { try { return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(value).hostname); } catch { return false; } }
 function b64(value) { return Buffer.from(JSON.stringify(value)).toString("base64url"); }

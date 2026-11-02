@@ -11,7 +11,7 @@ import { PrivacySettings } from "./features/privacy/PrivacySettings";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { BackToConversation, ConversationHome } from "./features/conversation/ConversationHome";
-import { disableNativePush, enableNativePush, listenNativePushTaps } from "./features/reminders/nativePush";
+import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
@@ -151,7 +151,7 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) setScreen(landing(state.pairing));
+      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); }
     }).catch(() => {});
     api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
     listenNativePushTaps();

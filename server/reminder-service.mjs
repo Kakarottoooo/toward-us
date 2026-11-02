@@ -13,8 +13,9 @@ const iso = (value) => new Date(value).toISOString();
 const fail = (message, statusCode = 400, code = "invalid_reminder") => Object.assign(new Error(message), { statusCode, code });
 const NATIVE_TOKEN = /^[A-Za-z0-9_:-]{16,4096}$/;
 const TOGETHER_NOTIFY_MS = 10 * 60_000;
-// Channels that are not browser push: they ignore the browser-notification preference and its retry button.
+// Channels the browser retry button never re-targets (it can only move a job to another browser).
 const OWN_CHANNELS = new Set(["imessage", "native"]);
+const RAW_APNS = /^[0-9a-f]{64}$/i;
 
 export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null }) {
   const pushOn = enabled && typeof sendPush === "function";
@@ -30,7 +31,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   };
   const settings = async (userId) => {
     const preference = await preferences(store, userId);
-    return { enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
+    return { enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
   };
   const getOwnedReminder = async (db, id, userId) => {
     const reminder = await db.getRelationshipRecordForUser("reminders", id, userId);
@@ -63,9 +64,9 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const phone = reminder && reminder.scheduleVersion === job.scheduleVersion && await authorizeReminder(db, reminder) ? await db.getPhoneForUser(job.ownerUserId) : null;
       return phone ? { reminder, phone, language: await memberLanguage(db, job.ownerUserId) } : null;
     }
-    // App push: the registered phone is itself the opt-in (unregistering it is the opt-out), so no browser preference applies.
+    // App push: registering the phone is the opt-in; "turn off all reminder notifications" (an explicit disabled preference) is the opt-out.
     if (job.channel === "native") {
-      if (!nativeOn) return null;
+      if (!nativeOn || (await preferences(db, job.ownerUserId))?.enabled === false) return null;
       const reminder = await db.getRelationshipRecordForUser("reminders", job.reminderId, job.ownerUserId);
       if (!reminder || reminder.scheduleVersion !== job.scheduleVersion || !await authorizeReminder(db, reminder)) return null;
       const device = await db.getRelationshipRecordForUser("nativePushDevices", job.deviceId, job.ownerUserId);
@@ -162,14 +163,14 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     getSettings: settings,
     async updateSettings(userId, input) {
       if (typeof input?.enabled !== "boolean") throw fail("Choose whether reminders are enabled.");
-      if (input.enabled && !enabled) throw fail("Browser push has not been configured.", 503, "push_not_configured");
+      if (input.enabled && !enabled && !nativeOn) throw fail("Browser push has not been configured.", 503, "push_not_configured");
       const timezone = input.timezone || "UTC"; dateFormatter(timezone);
       await store.transaction(LOCK, async (db) => {
         const existing = await preferences(db, userId);
         const values = { enabled: input.enabled, timezone, language: ["zh", "en", "es"].includes(input.language) ? input.language : "zh", status: "active" };
         if (existing) await update(db, "deliveryPreferences", existing, values);
         else await db.createRelationshipRecord("deliveryPreferences", privateRecord(userId, values));
-        if (!input.enabled) await cancelJobs(db, userId, (job) => !OWN_CHANNELS.has(job.channel));
+        if (!input.enabled) await cancelJobs(db, userId, (job) => job.channel !== "imessage");
       });
       return settings(userId);
     },
@@ -202,7 +203,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     async registerNativeDevice(userId, input) {
       if (!nativeOn) throw fail("Phone notifications have not been configured.", 503, "push_not_configured");
       const token = typeof input?.token === "string" ? input.token : "";
-      if (!NATIVE_TOKEN.test(token) || !["ios", "android"].includes(input?.platform)) throw fail("Invalid phone notification token.", 400, "invalid_device");
+      // A raw APNs device token (64 hex) cannot be addressed through FCM: iOS must hand over Firebase's token.
+      if (!NATIVE_TOKEN.test(token) || !["ios", "android"].includes(input?.platform) || (input.platform === "ios" && RAW_APNS.test(token))) throw fail("Invalid phone notification token.", 400, "invalid_device");
       return store.transaction(LOCK, async (db) => {
         // One token, one account: a phone that switched accounts must stop receiving the previous account's reminders.
         const holders = (await db.listRecordsForJob("nativePushDevices")).filter((item) => active(item) && item.token === token);
@@ -337,7 +339,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           if (!await authorizeReminder(db, reminder)) { await update(db, "reminders", reminder, { status: "cancelled" }); continue; }
           const devices = pushOn && preference?.enabled ? (await owned(db, "pushSubscriptions", reminder.ownerUserId)).filter(active) : [];
           const phone = typeof sendIMessage === "function" ? await db.getPhoneForUser(reminder.ownerUserId) : null;
-          const phones = nativeOn ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter((item) => active(item) && item.token) : [];
+          const phones = nativeOn && preference?.enabled !== false ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter((item) => active(item) && item.token) : [];
           if (!devices.length && !phone && !phones.length) continue;
           // One job per channel and occurrence; the channel suffix keeps a failure or retry on one from touching the other.
           const occurrence = `${reminder.id}:${reminder.scheduleVersion || 0}:${reminder.dueAt}`;
@@ -391,7 +393,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
             await finish(job, { status: "accepted", acceptedAt: iso(now()), lastErrorCode: null }); result.accepted += 1;
           } catch (error) {
             const expired = authorization.native ? error.expired === true : !authorization.phone && [404, 410].includes(error.statusCode);
-            const permanent = authorization.phone || authorization.native ? error.statusCode >= 400 && error.statusCode < 500 && ![408, 429].includes(error.statusCode) : [400, 401, 403].includes(error.statusCode);
+            // FCM 401 means our cached access token went stale (native-push clears it): retry with a fresh one.
+            const permanent = authorization.phone || authorization.native ? error.statusCode >= 400 && error.statusCode < 500 && ![408, 429, ...(authorization.native ? [401] : [])].includes(error.statusCode) : [400, 401, 403].includes(error.statusCode);
             const terminal = expired || permanent || job.attempts >= MAX_ATTEMPTS;
             const lastErrorCode = expired ? "subscription_expired" : error.statusCode === 429 ? "provider_rate_limited" : "provider_unavailable";
             await finish(job, { status: terminal ? "failed" : "retry", lastErrorCode, nextAttemptAt: iso(now().getTime() + Math.min(3600_000, 60_000 * 2 ** job.attempts)) }, expired);

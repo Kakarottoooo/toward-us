@@ -2,11 +2,11 @@ import { Bell, BellSlash, Plus } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
-import { enableNativePush, nativePushPlugin } from "./nativePush";
+import { enableNativePush, nativePushPlugin, nativePushRegistered } from "./nativePush";
 import "./reminders.css";
 
 export type ReminderTarget = { kind: "issue" | "milestone" | "outcome" | "checkin" | "reminders" | "plans" | "checkins"; id?: string };
-type Settings = { enabled: boolean; configured: boolean; nativeConfigured?: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
+type Settings = { enabled: boolean; configured: boolean; nativeConfigured?: boolean; nativeEnabled?: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
 type Delivery = { id: string; status: string; attempts: number; acceptedAt?: string; lastErrorCode?: string };
 type Reminder = { id: string; title?: string; dueAt?: string; frequency?: string; timezone?: string; status: string; target?: ReminderTarget; deliveries: Delivery[]; occurrenceOriginalDueAt?: string | null; localTime?: string };
 class ReminderError extends Error { constructor(public code: string) { super(code); } }
@@ -70,9 +70,14 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
   // Inside the App the phone's own notifications replace browser push.
   const nativeApp = Boolean(nativePushPlugin());
   const pushReady = nativeApp ? settings?.nativeConfigured : settings?.configured;
+  // "On" means what this device will actually receive: this phone's App push in the App, this browser's push elsewhere.
+  const notificationsOn = nativeApp ? Boolean(settings?.nativeEnabled && nativePushRegistered()) : Boolean(settings?.enabled && settings.devices.length);
   const connectPhone = async () => {
     setBusy(true); setNotice("");
     const result = await enableNativePush({ force: true });
+    // Connecting this phone also lifts an earlier "turn off all reminder notifications".
+    if (result === "registered") await api("/reminder-settings", "PATCH", { enabled: true, timezone, language }).catch(() => {});
+    await load().catch(() => {});
     setBusy(false);
     setNotice(result === "registered" ? text("此手机的通知已开启。", "Notifications are on for this phone.", "Las notificaciones están activadas en este teléfono.") : result === "denied" ? text("未获得通知权限。提醒仍会保存；你可以在手机设置中允许通知。", "Notification permission was not granted. Reminders remain saved; you can allow notifications in the phone's settings.", "No se concedió permiso. Tus recordatorios siguen guardados; puedes permitir notificaciones en los ajustes del teléfono.") : errorText(new ReminderError(result === "off" ? "push_not_configured" : "reminder_unavailable")));
   };
@@ -96,9 +101,9 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
   return <section className="relationship-feature reminders-feature" aria-labelledby="reminders-title">
     <header><div><Bell size={23} /><h2 id="reminders-title">{text("我的提醒", "My reminders", "Mis recordatorios")}</h2></div><p>{text("给计划、复盘或一句关心留个时间。提醒名称只对你可见，锁屏通知不会显示内容。", "Make time for a plan, a review or a caring moment. Reminder names stay private and never appear on the lock screen.", "Haz espacio para un plan, una revisión o un gesto de cariño. Los nombres son privados y no aparecen en la pantalla bloqueada.")}</p></header>
     <div className="reminders-settings">
-      <p>{settings ? settings.enabled && settings.devices.length ? text("浏览器通知已开启", "Browser notifications are on", "Notificaciones del navegador activadas") : text("浏览器通知未连接或已关闭", "Browser notifications are disconnected or off", "Notificaciones desconectadas o desactivadas") : text("正在读取提醒…", "Loading reminders…", "Cargando recordatorios…")}</p>
+      <p>{settings ? nativeApp ? notificationsOn ? text("此手机的通知已开启", "Notifications are on for this phone", "Notificaciones activadas en este teléfono") : text("此手机的通知未开启或已关闭", "Notifications for this phone are not on", "Las notificaciones de este teléfono no están activadas") : notificationsOn ? text("浏览器通知已开启", "Browser notifications are on", "Notificaciones del navegador activadas") : text("浏览器通知未连接或已关闭", "Browser notifications are disconnected or off", "Notificaciones desconectadas o desactivadas") : text("正在读取提醒…", "Loading reminders…", "Cargando recordatorios…")}</p>
       <div className="row-actions"><button type="button" onClick={() => void (nativeApp ? connectPhone() : connect())} disabled={busy || !pushReady}>{nativeApp ? text("开启此手机通知", "Turn on phone notifications", "Activar notificaciones del teléfono") : text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>
-        {settings?.enabled && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: false, timezone, language }))}><BellSlash size={16} />{text("关闭所有提醒通知", "Turn off all reminder notifications", "Desactivar todas las notificaciones")}</button>}
+        {(settings?.enabled || (nativeApp && notificationsOn)) && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: false, timezone, language }))}><BellSlash size={16} />{text("关闭所有提醒通知（手机和浏览器）", "Turn off all reminder notifications (phone and browser)", "Desactivar todas las notificaciones (teléfono y navegador)")}</button>}
         {settings && !settings.enabled && settings.devices.length > 0 && settings.configured && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: true, timezone, language }))}>{text("重新开启通知", "Turn notifications back on", "Reactivar notificaciones")}</button>}
       </div>
       {settings && !pushReady && <p>{text("推送服务尚未配置，你可以先保存提醒。", "Push is not configured yet. You can save reminders now.", "Las notificaciones aún no están configuradas. Puedes guardar recordatorios.")}</p>}
