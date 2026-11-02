@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
-import { PrivacySettings } from "./features/privacy/PrivacySettings";
+import { SettingsPage } from "./features/privacy/SettingsPage";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
@@ -210,7 +210,7 @@ function AccountPrototype() {
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
   if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
-  if (screen === "privacy" && user) return <div className="paper-screen relationship-shell"><PageHeader language={language} title={localized(language, "设置", "Settings", "Ajustes")} onBack={backToConversation} /><main className="relationship-main"><section className="settings-language"><h2>{localized(language, "界面语言", "Language", "Idioma")}</h2><LanguageSwitch language={language} onLanguage={selectLanguage} /></section><PrivacySettings language={language} onChanged={async () => {}} onLeft={reloadIdentity} onDeleted={reloadIdentity} /></main></div>;
+  if (screen === "privacy" && user) return <SettingsPage user={user} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} />;
   if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
   if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;

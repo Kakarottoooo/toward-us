@@ -22,7 +22,7 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   await expect(page.getByText("给自己一分钟", { exact: true })).toBeVisible();
   await page.getByTestId("back-to-conversation").click();
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();
-  await expect(page.locator(".privacy-workspace")).toBeVisible();
+  await expect(page.getByTestId("settings-screen")).toBeVisible();
   await page.getByRole("button", { name: "ES", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Ajustes" })).toBeVisible();

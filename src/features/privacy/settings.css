@@ -1,0 +1,69 @@
+/* Settings in the grouped-list style of mature phone apps: inset cards of rows on the ivory surface. */
+.settings-main { padding-top: 4px !important; }
+.settings-body { display: grid; gap: 22px; max-width: 560px; margin: 0 auto; padding-bottom: 24px; }
+
+.settings-profile { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 18px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.settings-avatar { flex: 0 0 auto; display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; background: linear-gradient(140deg, #ffd9cf, #f6b3a5); color: #7d2a1f; font-size: 24px; font-weight: 700; }
+.settings-profile > div { min-width: 0; display: grid; gap: 2px; }
+.settings-profile strong { color: var(--jian-ink); font-size: 20px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.settings-profile span { color: #7a736b; font-size: 14px; overflow-wrap: anywhere; }
+.settings-profile em { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; color: #8a837a; font-size: 13px; font-style: normal; font-weight: 600; }
+.settings-profile em.connected { color: #c2412f; }
+
+.settings-group { display: grid; gap: 7px; }
+.settings-group > h2 { margin: 0 0 0 16px; color: #7a736b; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+.settings-card { overflow: hidden; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.settings-note { margin: 0 16px; color: #8a837a; font-size: 13px; line-height: 1.5; }
+
+.settings-row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 16px; border: 0; background: transparent; color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; }
+div.settings-row { cursor: default; }
+.settings-row + .settings-row::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; height: 1px; background: rgba(37,37,37,.09); }
+.settings-text-row + .settings-text-row::before, .settings-action::before { left: 16px !important; }
+button.settings-row:active { background: rgba(37,37,37,.05); }
+button.settings-row:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: -2px; }
+.settings-icon { flex: 0 0 auto; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: #fff; }
+.settings-icon.tone-blue { background: #3b6fe0; }
+.settings-icon.tone-green { background: #2f9a68; }
+.settings-icon.tone-gray { background: #8c8780; }
+.settings-icon.tone-red { background: #e2533f; }
+.settings-icon.tone-pink { background: #e46a9a; }
+.settings-label { flex: 1; min-width: 0; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+.settings-label.danger { color: #c2412f; }
+.settings-value { flex: 0 1 auto; max-width: 48%; color: #8a837a; font-size: 15px; text-align: right; overflow-wrap: anywhere; }
+.settings-chevron { flex: 0 0 auto; color: #b9b2a8; }
+.settings-check { flex: 0 0 auto; color: var(--jian-blue); }
+
+.settings-segmented { display: inline-flex; padding: 2px; border-radius: 9px; background: rgba(37,37,37,.08); }
+.settings-segmented button { min-width: 44px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #5f5952; font-size: 14px; font-weight: 600; cursor: pointer; }
+.settings-segmented button.active { background: #fffdf8; color: var(--jian-ink); box-shadow: 0 1px 3px rgba(37,37,37,.14); }
+
+.settings-text-row { flex-direction: column; align-items: flex-start; gap: 3px; padding: 13px 16px; cursor: default; }
+.settings-text-row strong { font-size: 16px; font-weight: 600; }
+.settings-text-row p { margin: 0; color: #5f5952; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.settings-text-row small { color: #8a837a; font-size: 13px; }
+.settings-link { padding: 4px 0; border: 0; background: none; color: var(--jian-blue); font-size: 15px; font-weight: 600; cursor: pointer; }
+.settings-action { justify-content: center; color: var(--jian-blue); font-size: 16px; font-weight: 600; }
+.settings-empty { margin: 24px 16px; color: #7a736b; font-size: 15px; line-height: 1.6; }
+.settings-footer { margin: 0; color: #a39c92; font-size: 12px; text-align: center; }
+.settings-notice { margin: 0 16px; color: #2f6b4f; font-size: 14px; }
+
+.settings-code { display: grid; gap: 10px; padding: 16px; border-radius: 16px; background: #fff4d9; }
+.settings-code strong { color: #6b4b10; font-size: 15px; }
+.settings-code code { padding: 12px; border-radius: 10px; background: #fffdf8; color: var(--jian-ink); font-size: 17px; letter-spacing: .04em; overflow-wrap: anywhere; user-select: all; }
+.settings-code p { margin: 0; color: #6b4b10; }
+.settings-code > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-code button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--jian-blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+.settings-code button.quiet { background: rgba(37,37,37,.06); color: var(--jian-ink); }
+
+.settings-sheet { display: grid; gap: 14px; padding: 4px 0 8px; }
+.settings-sheet p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.6; }
+.settings-sheet blockquote { margin: 0; padding-left: 12px; border-left: 2px solid rgba(37,37,37,.18); color: #3d3934; font-size: 15px; line-height: 1.5; }
+.settings-sheet label { display: grid; gap: 6px; color: #5f5952; font-size: 14px; font-weight: 600; }
+.settings-sheet input:not([type="checkbox"]) { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid rgba(37,37,37,.18); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); font: inherit; font-size: 16px; }
+.settings-sheet .settings-confirm { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--jian-ink); font-size: 15px; }
+.settings-confirm input { width: 20px; height: 20px; margin: 0; accent-color: var(--jian-blue); }
+.settings-error { color: #903e38 !important; }
+.settings-sheet button { min-height: 50px; border: 0; border-radius: 14px; background: var(--jian-blue); color: #fff; font-size: 16px; font-weight: 650; cursor: pointer; }
+.settings-sheet button.danger { background: #d4402d; }
+.settings-sheet button.quiet { background: transparent; color: #5f5952; font-weight: 600; }
+.settings-sheet button:disabled { opacity: .45; cursor: not-allowed; }
