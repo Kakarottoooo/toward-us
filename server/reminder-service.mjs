@@ -71,7 +71,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
           const context = await tx.getRelationshipContext(userId);
           if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) return null;
-          return build(tx, await memberLanguage(tx, userId));
+          return build(tx, await memberLanguage(tx, userId), context);
         });
         if (result && !result.duplicate) onAnnounce(result.conversation, "together.updated");
       } catch (error) { console.error("together announcement failed", error?.code || "error"); /* One broken record must not stop the other announcements or push delivery. */ }
@@ -98,6 +98,19 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         });
         await tx.updateRelationshipRecordForUser("outcomes", outcome.id, userId, (draft) => { draft.announcedAt = iso(current); draft.version += 1; });
         return result;
+      });
+    }
+    // Active shared commitments that reached their due time (completed, renegotiating or awaiting-confirmation ones are skipped;
+    // so is anything overdue by more than the 7-day window, like joint reminders).
+    for (const commitment of (await store.listRecordsForJob("commitments")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "active" && !item.archivedAt && !item.withdrawnAt && item.dueAt && new Date(item.dueAt) <= current && current.getTime() - new Date(item.dueAt).getTime() <= ANNOUNCE_WINDOW_MS).slice(0, 100)) {
+      const userId = commitment.createdByUserId;
+      await post(commitment.relationshipId, userId, (tx, language, context) => {
+        const owner = context.members.find((member) => commitment.ownerType === `member_${String(member.role).toLowerCase()}`);
+        const who = owner?.user?.name || say(language, "你们俩", "both of you", "ambos"), due = iso(commitment.dueAt).slice(0, 16).replace("T", " ") + " UTC";
+        return announceInTogether(tx, {
+          relationshipId: commitment.relationshipId, userId, kind: "reminder", handle: `commitment:${commitment.id}:due`, refs: [{ type: "commitment", id: commitment.id, version: commitment.version }],
+          text: say(language, `承诺到期：${who}要做的「${commitment.description}」，到期时间 ${due}。`, `Commitment due: ${who} agreed to "${commitment.description}", due ${due}.`, `Compromiso vencido: ${who} acordó "${commitment.description}", vence el ${due}.`),
+        });
       });
     }
   };
