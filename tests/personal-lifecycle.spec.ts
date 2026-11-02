@@ -7,6 +7,12 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   expect((await context.request.post("/api/checkins", { data: { text: "今天走了一小段路，舒服些了。", kind: "checkin", mood: null, language: "zh" } })).ok()).toBe(true);
   expect((await context.request.post("/api/memories", { data: { text: "先休息十分钟，再开始谈事情。", allowPrivateAI: false, source: { type: "member" }, language: "zh" } })).ok()).toBe(true);
   await page.goto("/");
+  // A first visit opens a short tour; it ends with the last card and does not come back.
+  await expect(page.getByTestId("onboarding")).toBeVisible();
+  for (let step = 0; step < 3; step += 1) await page.getByTestId("onboarding-next").click();
+  await expect(page.getByTestId("onboarding")).toHaveCount(0);
+  await page.reload(); await page.getByTestId("conversation-screen").waitFor();
+  await expect(page.getByTestId("onboarding")).toHaveCount(0);
   await page.getByTestId("open-drawer").click();
   await expect(page.getByTestId("drawer-invite")).toBeVisible();
   await page.getByTestId("drawer-moments").click();

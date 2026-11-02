@@ -19,6 +19,7 @@ export function createReminderRouter({ service }) {
   };
   router.get("/reminder-settings", handle((req) => service.getSettings(req.auth.user.id)));
   router.patch("/reminder-settings", handle((req) => service.updateSettings(req.auth.user.id, req.body)));
+  router.patch("/reminder-settings/notify", handle((req) => service.updateNotify(req.auth.user.id, req.body)));
   router.post("/push-subscriptions", handle((req) => service.subscribe(req.auth.user.id, req.body), 201));
   router.delete("/push-subscriptions/:id", handle((req) => service.unsubscribe(req.auth.user.id, req.params.id)));
   // App (Capacitor) phones: the FCM token is the device. DELETE on sign-out stops this phone receiving this account's pushes.

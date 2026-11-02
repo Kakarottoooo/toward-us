@@ -4,6 +4,8 @@ test("two people can report a worse attempt, keep one review private and approve
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const a = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
   const b = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
+  // The first-run tour is covered in personal-lifecycle; here both people have seen it.
+  for (const context of [a, b]) await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
   for (const [context, name] of [[a, "Alice"], [b, "Bob"]] as const) {
     expect((await context.request.post("/api/auth/register", { data: { name, email: `${name}-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
   }

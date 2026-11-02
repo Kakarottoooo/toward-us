@@ -1,16 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Brain, CaretRight, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Translate, Trash, UserMinus } from "@phosphor-icons/react";
+import { Bell, Brain, CaretRight, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Translate, Trash, UserMinus } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { PageHeader } from "../conversation/ConversationHome";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
+import { NotificationSettings } from "./NotificationSettings";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./settings.css";
 
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery";
+type Page = "main" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery";
 type SettingsProps = { user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
@@ -74,7 +75,7 @@ export function SettingsPage({ user, relationshipId, partnerName, language, onLa
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación") };
+  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación") };
 
   const main = <>
     <section className="settings-profile">
@@ -85,6 +86,7 @@ export function SettingsPage({ user, relationshipId, partnerName, language, onLa
       <Row icon={<Translate size={18} weight="bold" />} label={t("语言", "Language", "Idioma")}>
         <span className="settings-segmented" role="group" aria-label={t("选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{LANGUAGES.map((item) => <button key={item} type="button" className={language === item ? "active" : ""} aria-pressed={language === item} onClick={() => onLanguage(item)}>{item.toUpperCase()}</button>)}</span>
       </Row>
+      <Row icon={<Bell size={18} weight="bold" />} tone="red" label={titles.notifications} onClick={() => open("notifications")} testId="settings-notifications" />
     </Group>
     <Group title={t("隐私", "Privacy", "Privacidad")} note={t("退出关系或管理自己的数据，都不需要对方批准。", "Leaving a relationship or managing your own data never needs your partner's approval.", "Salir de una relación o gestionar tus datos nunca requiere la aprobación de tu pareja.")}>
       <Row icon={<Brain size={18} weight="bold" />} tone="pink" label={titles.memory} onClick={() => open("memory")} testId="settings-memory" />
@@ -117,6 +119,7 @@ export function SettingsPage({ user, relationshipId, partnerName, language, onLa
     [t("删除账号后", "After deleting your account", "Después de borrar la cuenta"), t("你在“我们俩”里说过的话会留给对方。", "What you wrote in Us stays for your partner.", "Lo que escribiste en Nosotros queda para tu pareja.")],
   ];
   const sub: Record<Exclude<Page, "main">, ReactNode> = {
+    notifications: <NotificationSettings language={language} />,
     memory: <><p className="settings-intro">{t("这些是 Pinky 为了更懂你们而记下的偏好和经验，比如“吵架时先安静十分钟”。你说“记住……”时它会记下；这里可以查看、修改、删除，以及决定 AI 能不能用。", "These are preferences and lessons Pinky keeps to understand you better, like “take ten quiet minutes before talking”. It keeps one when you say “remember…”; here you can review, edit or delete them and decide whether AI may use them.", "Son preferencias y aprendizajes que Pinky guarda para entenderlos mejor, como «diez minutos de calma antes de hablar». Guarda uno cuando dices «recuerda…»; aquí puedes revisarlos, editarlos o borrarlos y decidir si la IA puede usarlos.")}</p><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /></>,
     processors: <Group>{processors.map(([title, text]) => <div key={title} className="settings-row settings-text-row"><strong>{title}</strong><p>{text}</p></div>)}</Group>,
     retention: <Group note={t("按最后一次更新的时间计算，只包括私人对话、私人记忆和日常记录。", "Counted from the last change; covers only private conversations, private memories and check-ins.", "Se cuenta desde el último cambio; solo incluye conversaciones privadas, recuerdos privados y registros diarios.")}>

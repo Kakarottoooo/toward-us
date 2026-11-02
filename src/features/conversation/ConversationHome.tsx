@@ -11,6 +11,7 @@ import { importAction, importPastedChat, isChatFile, listImports, looksLikePaste
 import { CallPanel, CallRecord } from "../call/CallPanel";
 import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
+import { OnboardingTour, tourSeen } from "./OnboardingTour";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -61,6 +62,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [drawer, setDrawer] = useState(false);
   const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const [openStory, setOpenStory] = useState<Story | null>(null);
+  const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
   const sessionRef = useRef<Session | null>(null);
@@ -410,6 +412,7 @@ ${text}` : text, target);
           <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
         </div>}
     </footer>}
+    {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onDone={() => setTouring(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onLogout={() => { setDrawer(false); onLogout(); }} />}
   </div>;

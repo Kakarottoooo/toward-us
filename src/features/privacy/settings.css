@@ -68,3 +68,12 @@ button.settings-row:focus-visible { outline: 2px solid var(--jian-blue); outline
 .settings-sheet button.quiet { background: transparent; color: #5f5952; font-weight: 600; }
 .settings-sheet button:disabled { opacity: .45; cursor: not-allowed; }
 .settings-intro { margin: 0 4px; color: #5f5952; font-size: 15px; line-height: 1.6; }
+.settings-switch-row { cursor: pointer; }
+.settings-switch-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.settings-switch-text small { color: #8a837a; font-size: 13px; line-height: 1.35; }
+.settings-switch { flex: 0 0 auto; appearance: none; width: 50px; height: 30px; margin: 0; border-radius: 15px; background: rgba(37,37,37,.18); position: relative; cursor: pointer; transition: background .2s; }
+.settings-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+.settings-switch:checked { background: #34a26b; }
+.settings-switch:checked::after { transform: translateX(20px); }
+.settings-switch:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .settings-switch, .settings-switch::after { transition: none; } }

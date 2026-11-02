@@ -4,6 +4,8 @@ test("private Agent conversations become joint work only after explicit sharing"
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const a = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
   const b = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
+  // The first-run tour is covered in personal-lifecycle; here both people have seen it.
+  for (const context of [a, b]) await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
   await register(a.request, { name: "小彼", email: `relationship-a-${suffix}@example.com` });
   await register(b.request, { name: "阿蓝", email: `relationship-b-${suffix}@example.com` });
   const invitation = await postJson(a.request, "/api/partner/invitations", {});

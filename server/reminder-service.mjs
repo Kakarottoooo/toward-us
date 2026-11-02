@@ -26,6 +26,10 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   const update = (db, collection, item, patch) => db.updateRelationshipRecordForUser(collection, item.id, item.ownerUserId, (record) => { Object.assign(record, patch); record.version += 1; });
   const privateRecord = (userId, data) => createRelationshipRecord({ userId, relationshipId: null, visibility: "private", aiAccessScope: "none", ...data });
   const preferences = async (db, userId) => (await owned(db, "deliveryPreferences", userId))[0];
+  // What a member wants to be told about: messages in Us, Pinky's surprises, reminders and due dates, and a quiet night.
+  const NOTIFY_DEFAULTS = { messages: true, pinky: true, reminders: true, quiet: false };
+  const notifyOf = (preference) => ({ ...NOTIFY_DEFAULTS, ...(preference?.notify || {}) });
+  const quietNow = (preference) => { if (!notifyOf(preference).quiet) return false; let hour = 12; try { hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: preference?.timezone || "UTC" }).format(now())); } catch { hour = now().getUTCHours(); } return hour >= 22 || hour < 8; };
   const cancelJobs = async (db, userId, predicate = () => true) => {
     for (const job of await owned(db, "deliveryJobs", userId)) {
       if (["pending", "retry", "processing"].includes(job.status) && predicate(job)) await update(db, "deliveryJobs", job, { ...(job.status === "processing" ? {} : { status: "cancelled", leaseUntil: null }), cancelRequestedAt: iso(now()) });
@@ -34,7 +38,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   const settings = async (userId) => {
     const preference = await preferences(store, userId);
     const imessage = typeof sendIMessage === "function" && Boolean(await store.getPhoneForUser(userId));
-    return { enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, imessage, imessageEnabled: imessage && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
+    return { notify: notifyOf(preference), enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, imessage, imessageEnabled: imessage && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
   };
   const getOwnedReminder = async (db, id, userId) => {
     const reminder = await db.getRelationshipRecordForUser("reminders", id, userId);
@@ -60,6 +64,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     return true;
   };
   const authorizedDelivery = async (db, job) => {
+    // Reminders switched off in Settings are not delivered (the reminders themselves stay).
+    if (notifyOf(await preferences(db, job.ownerUserId)).reminders === false) return null;
     // iMessage is the owner's own 1:1 line: it needs a still-bound number, not browser push; "turn off all reminder notifications" stops it too.
     if (job.channel === "imessage") {
       if (typeof sendIMessage !== "function" || (await preferences(db, job.ownerUserId))?.enabled === false) return null;
@@ -164,6 +170,17 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   return {
     internalSecret,
     getSettings: settings,
+    async updateNotify(userId, input) {
+      const notify = Object.fromEntries(Object.keys(NOTIFY_DEFAULTS).filter((key) => typeof input?.[key] === "boolean").map((key) => [key, input[key]]));
+      if (!Object.keys(notify).length) throw fail("Choose what to be notified about.");
+      const timezone = typeof input.timezone === "string" && input.timezone ? input.timezone : null; if (timezone) dateFormatter(timezone);
+      await store.transaction(LOCK, async (db) => {
+        const existing = await preferences(db, userId);
+        if (existing) await update(db, "deliveryPreferences", existing, { notify: { ...notifyOf(existing), ...notify }, ...(timezone ? { timezone } : {}) });
+        else await db.createRelationshipRecord("deliveryPreferences", privateRecord(userId, { enabled: true, timezone: timezone || "UTC", language: "zh", status: "active", notify: { ...NOTIFY_DEFAULTS, ...notify } }));
+      });
+      return settings(userId);
+    },
     async updateSettings(userId, input) {
       if (typeof input?.enabled !== "boolean") throw fail("Choose whether reminders are enabled.");
       if (input.enabled && !enabled && !nativeOn && typeof sendIMessage !== "function") throw fail("Browser push has not been configured.", 503, "push_not_configured");
@@ -245,9 +262,12 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       if (context?.relationship.id !== conversation.relationshipId || context.relationship.status !== "active" || context.members.length !== 2 || (groupsEnabled() && context.relationship.imessageGroupId)) return { sent: 0 };
       const authorOf = (item) => item.role === "member" ? item.actorUserId : conversation.messages.find((other) => other.id === item.replyTo)?.actorUserId || actorUserId;
       let sent = 0;
+      // Each member hears only the kinds they keep on, and nothing but reminders during their quiet night.
+      const kindOf = (item) => item.role === "member" ? "messages" : item.kind === "story" || String(item.handle || "").startsWith("onthisday:") ? "pinky" : ["reminder", "review"].includes(item.kind) ? "reminders" : "messages";
       for (const member of context.members) {
-        const mine = fresh.filter((item) => authorOf(item) !== member.userId);
-        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"));
+        const preference = await preferences(store, member.userId), notify = notifyOf(preference), quiet = quietNow(preference);
+        const mine = fresh.filter((item) => authorOf(item) !== member.userId).filter((item) => notify[kindOf(item)] !== false && (!quiet || kindOf(item) === "reminders"));
+        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"), mine.every((item) => kindOf(item) === "pinky"));
       }
       return { sent };
     },
@@ -403,7 +423,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   };
 
   // One member's phones, at most once per 10 minutes; respects "turn off all reminder notifications"; best effort, never retried.
-  async function nudge(userId, partnerWrote) {
+  async function nudge(userId, partnerWrote, surprise = false) {
     const devices = await store.transaction(LOCK, async (db) => {
       if ((await preferences(db, userId))?.enabled === false) return [];
       const current = now(), mine = (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token);
@@ -414,7 +434,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       return mine;
     });
     const language = devices.length ? await memberLanguage(store, userId) : "zh";
-    const body = partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
+    const body = surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
     for (const device of devices) {
       try { await sendNative(device.token, { title: "Pinky", body, url: "/?channel=us" }); sent += 1; }

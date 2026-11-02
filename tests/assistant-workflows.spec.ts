@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+// The first-run tour is covered in personal-lifecycle; these tests start after it.
+test.beforeEach(async ({ context }) => { await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1")); });
+
 // Transport fixtures exercise the UI and microphone lifecycle. Semantic execution
 // and persistence are covered separately through the real application API.
 test("the private conversation supports queued speech, interruption and text retry", async ({ page, context }) => {
@@ -72,6 +75,7 @@ test("every drawer page fits a phone and leads back to the conversation", async 
   const suffix = Date.now();
   await context.request.post("/api/auth/register", { data: { name: "Alex", email: `drawer-a-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
   const partner = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+  await partner.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
   try {
     await partner.request.post("/api/auth/register", { data: { name: "Sam", email: `drawer-b-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
     const invitation = await (await context.request.post("/api/partner/invitations", { data: {} })).json();
