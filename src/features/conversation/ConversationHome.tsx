@@ -36,6 +36,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [askAgent, setAskAgent] = useState(false);
   const [revising, setRevising] = useState(false);
   const [pending, setPending] = useState<Record<Channel, number>>({ me: 0, us: 0 });
+  const [agentWorking, setAgentWorking] = useState(0);
   const [queued, setQueued] = useState<Array<{ text: string; itemId: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<{ text: string; itemId: string } | null>(null);
@@ -136,9 +137,14 @@ ${text}` : text, target);
     const retry = failedSharedRef.current?.text === text ? failedSharedRef.current : null;
     const body = retry ? retry.body : askAgent && !AGENT_CALL.test(text) ? `@Agent ${text}` : text, itemId = retry ? retry.itemId : crypto.randomUUID();
     setNotice(""); setAskAgent(false);
+    const calling = AGENT_CALL.test(body);
     return enqueue("us", async () => {
+      // Show the member's words at once; the Agent's reply follows when it is ready.
+      const shown = calling ? setTimeout(() => void loadTogether(), 600) : null;
+      if (calling) setAgentWorking((count) => count + 1);
       try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language })); failedSharedRef.current = null; await loadTogether(); }
       catch (error) { failedSharedRef.current = { text, body, itemId }; keep(text, "us"); setNotice(errorText(error as ApiError)); }
+      finally { if (shown) clearTimeout(shown); if (calling) setAgentWorking((count) => count - 1); }
     });
   };
   const send = () => {
@@ -247,7 +253,7 @@ ${text}` : text, target);
       return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}</article>;
     }
     const links = message.role === "agent" ? message.refs.filter((ref) => ref.type === "space" || ref.type === "milestone") : [];
-    return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}<p>{text}</p>
+    return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}<p>{message.role === "agent" ? <Linked text={text} /> : text}</p>
       {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
     </article>;
   };
@@ -274,13 +280,14 @@ ${text}` : text, target);
       </div>
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Agent</span>}<p>{message.text}</p></article>{groupCards(message.cards || []).map(privateCard)}</div>)}</> :
+      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Agent</span>}<p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p></article>{groupCards(message.cards || []).map(privateCard)}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
           {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Agent 起草的约定", "Agreement drafted by the Agent", "Acuerdo redactado por el Agent")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol><small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {pending.me > 0 && channel === "me" && <p className="conversation-status" role="status">{t("正在想…", "Thinking…", "Pensando…")}</p>}
+      {agentWorking > 0 && channel === "us" && <p className="conversation-status" role="status">{t("Pinky 正在想…", "Pinky is thinking…", "Pinky está pensando…")}</p>}
       <div ref={endRef} />
     </main></MobileScroll></div>
     {!(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
@@ -344,6 +351,12 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
       <footer className="drawer-group">{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}{row({ key: "logout", icon: <SignOut size={22} />, label: t("退出登录", "Sign out", "Cerrar sesión"), onClick: onLogout })}</footer>
     </nav>
   </div>;
+}
+
+/** Plain text with its web addresses turned into links that open outside the app; nothing else is interpreted. */
+function Linked({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s<>()（）「」"'，。]+)/g);
+  return <>{parts.map((part, index) => index % 2 ? <a key={index} href={part} target="_blank" rel="noopener noreferrer">{part.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").slice(0, 48)}{part.replace(/^https?:\/\/(www\.)?/, "").length > 48 ? "…" : ""}</a> : part)}</>;
 }
 
 /** The live agreement drawn from its own fields: a distinct title, numbered terms, open points, then the status. */

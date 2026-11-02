@@ -101,6 +101,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}) })),
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
+      webSearch: Boolean(mediator.webSearch),
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     let plan;
@@ -108,6 +109,15 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     catch { throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
     plan = normalizeAssistantTurn(plan);
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
+    // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
+    const searches = plan.actions.filter((action) => action.kind === "web_search").slice(0, 2);
+    if (searches.length && mediator.lookup) {
+      const lookups = await Promise.all(searches.map(async (action) => ({ query: action.query, findings: await mediator.lookup(action.query, session.language).catch(() => "No results: the search failed.") })));
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, session.language)); }
+      catch { throw fail(503, say(session.language, "助手暂时不可用，没有执行任何操作。请稍后重试。", "The assistant is unavailable. Nothing was changed. Try again soon.", "El asistente no está disponible. No se cambió nada. Inténtalo pronto.")); }
+      if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
+    }
+    plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "web_search") };
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);

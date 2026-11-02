@@ -110,3 +110,4 @@
 .card-when { display: block; margin-top: 4px; color: #6f6860; font-size: 14px; }
 .space-card header { display: flex; align-items: center; gap: 6px; }
 .space-card ul { margin: 8px 0 0; padding-left: 20px; color: #3f3a35; font-size: 15px; line-height: 1.55; }
+.conversation-message a { color: var(--jian-blue); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }

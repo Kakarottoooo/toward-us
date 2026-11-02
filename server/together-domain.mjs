@@ -96,7 +96,14 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (!saved.duplicate) emit(saved.conversation);
   if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   const context = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
-  const turn = await mediator.continueTogether(context, language);
+  let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
+  // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
+  const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text).slice(0, 2);
+  if (searches.length && mediator.lookup) {
+    const lookups = await Promise.all(searches.map(async (action) => ({ query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") })));
+    turn = await mediator.continueTogether({ ...context, webSearch: true, lookups }, language);
+  }
+  turn = { ...turn, actions: (turn.actions || []).filter((action) => action.kind !== "web_search") };
   const reply = (outcome) => transaction(async (tx) => {
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
