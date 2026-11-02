@@ -137,7 +137,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         });
         return { ...JSON.parse(response.output_text), source: "openai" };
       } catch (error) {
-        console.error("Private relationship agent unavailable; using local fallback.");
+        console.error("Private relationship agent unavailable; using local fallback:", error?.message || error);
         return { ...fallback, source: "local" };
       }
     },
@@ -195,7 +195,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         // Free-form model replies stay in one language; only the fixed fallback copy carries every language.
         return { reply: reply || fallback.reply, i18n: reply ? null : fallback.i18n, draftAgreement: !context.pendingAgreement && draft?.title && draft.summary && draft.terms.length ? draft : null, source: "openai" };
       } catch (error) {
-        console.error("Together agent unavailable; using local fallback.");
+        console.error("Together agent unavailable; using local fallback:", error?.message || error);
         return { ...fallback, source: "local" };
       }
     },
