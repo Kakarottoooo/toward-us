@@ -215,6 +215,13 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.status(204).end();
   });
 
+  // The interface language the member last chose, so copy the Agent posts on their behalf matches what they read.
+  app.post("/api/me/language", requireAuth, async (req, res) => {
+    if (!LANGUAGES.has(req.body?.language)) return res.status(400).json({ error: "language_required" });
+    await store.updateUserLanguage(req.auth.user.id, req.body.language);
+    res.json({ language: req.body.language });
+  });
+
   app.post("/api/demo/rooms", async (req, res) => {
     await store.deleteExpiredDemoRooms(new Date().toISOString());
     if (isDemoCreateLimited(req.ip)) return res.status(429).json({ error: "这台设备创建临时房间过于频繁，请稍后再试。" });

@@ -3,7 +3,7 @@ import { approveAgreement, clean, decisionError, rejectAgreement, requestAgreeme
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
-import { announceAgreement, appendTogetherMessage, buildTogetherContext, draftAgreementFromTogether, ensureTogetherConversation, shouldAgentSpeak } from "./together-domain.mjs";
+import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {} }) {
@@ -36,26 +36,11 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
   router.post("/together/messages", async (req, res) => {
     const userId = req.auth.user.id, text = clean(req.body?.text, 2000), itemId = clean(req.body?.itemId, 120);
     if (!text) throw decisionError(400, "message_required");
-    // Save the member's turn before calling the model so a slow or failed reply never loses what they said.
-    const saved = await transaction(req, async (tx, _context, relationshipId) => {
-      const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
-      const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: userId, source: "app", kind: "text", text, handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null });
-      return { ...result, relationshipId, agentLastMessageId: conversation.agentLastMessageId };
-    });
-    if (saved.duplicate) return res.json({ conversation: projectRecord(saved.conversation, userId), message: saved.message, reply: null });
-    emit(saved.conversation, "together.updated");
-    void recordUsage(store, { userId, relationshipId: saved.relationshipId, action: "together_message" });
-    if (!shouldAgentSpeak(saved.message, { agentLastMessageId: saved.agentLastMessageId })) return res.status(201).json({ conversation: projectRecord(saved.conversation, userId), message: saved.message, reply: null });
-    const context = buildTogetherContext(await store.relationshipSnapshotForUser(userId), saved.relationshipId, { userId, query: text });
-    const turn = await mediator.continueTogether(context, language(req));
-    const replied = await transaction(req, async (tx, _context, relationshipId) => {
-      const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: turn.reply, i18n: turn.i18n || null, refs: context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version })), replyTo: saved.message.id });
-      if (!turn.draftAgreement) return result;
-      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, userId, (draft) => { draft.draftAgreement = { ...turn.draftAgreement, messageId: result.message.id, source: turn.source, createdAt: new Date().toISOString() }; draft.version += 1; });
-      return { ...result, conversation };
-    });
-    emit(replied.conversation, "together.updated");
-    res.status(201).json({ conversation: projectRecord(replied.conversation, userId), message: saved.message, reply: replied.message });
+    const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const relationshipId = initial.relationship.id;
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated") });
+    if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
+    res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });
 
   router.post("/together/agreements/draft", async (req, res) => {

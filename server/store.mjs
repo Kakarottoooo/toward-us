@@ -104,6 +104,7 @@ export async function createFileStore(filePath) {
     },
     async deleteUserSessions(userId) { for (const [id, session] of Object.entries(state().sessions)) if (session.userId === userId) delete state().sessions[id]; await persist(); },
     async updateUserPassword(userId, passwordHash) { if (!state().users[userId]) return false; state().users[userId].passwordHash = passwordHash; await persist(); return true; },
+    async updateUserLanguage(userId, language) { if (!state().users[userId]) return false; state().users[userId].language = language; await persist(); return true; },
     async leaveRelationship(userId) {
       const context = relationshipContext(userId); if (!context) return null;
       const id = context.relationship.id;

@@ -21,6 +21,20 @@ services:
         value: gpt-5.4
       - key: OPENAI_API_KEY
         sync: false
+      - key: TOWARD_US_BASE_URL
+        sync: false
+      - key: SENDBLUE_API_KEY
+        sync: false
+      - key: SENDBLUE_API_SECRET
+        sync: false
+      - key: SENDBLUE_FROM_NUMBER
+        sync: false
+      - key: SENDBLUE_WEBHOOK_SECRET
+        sync: false
+      - key: SENDBLUE_GROUPS_ENABLED
+        sync: false
+      - key: FCM_SERVICE_ACCOUNT_JSON
+        sync: false
 
 databases:
   - name: toward-us-private-beta-db

@@ -126,12 +126,15 @@ ${text}` : text, target);
       } finally { setQueued((items) => items.filter((item) => item.itemId !== itemId)); }
     });
   };
+  // Sending the same text again after a failure reuses its itemId, so a retry can never post the message twice.
+  const failedSharedRef = useRef<{ text: string; body: string; itemId: string } | null>(null);
   const sendShared = (text: string) => {
-    const body = askAgent && !AGENT_CALL.test(text) ? `@Agent ${text}` : text;
+    const retry = failedSharedRef.current?.text === text ? failedSharedRef.current : null;
+    const body = retry ? retry.body : askAgent && !AGENT_CALL.test(text) ? `@Agent ${text}` : text, itemId = retry ? retry.itemId : crypto.randomUUID();
     setNotice(""); setAskAgent(false);
     return enqueue("us", async () => {
-      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId: crypto.randomUUID(), language })); await loadTogether(); }
-      catch (error) { keep(text, "us"); setNotice(errorText(error as ApiError)); }
+      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language })); failedSharedRef.current = null; await loadTogether(); }
+      catch (error) { failedSharedRef.current = { text, body, itemId }; keep(text, "us"); setNotice(errorText(error as ApiError)); }
     });
   };
   const send = () => {

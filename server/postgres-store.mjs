@@ -66,6 +66,7 @@ export async function createPostgresStore(databaseUrl) {
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
     async deleteUserSessions(userId) { await pool.query("delete from sessions where user_id=$1", [userId]); },
     async updateUserPassword(userId, passwordHash) { return (await pool.query("update users set password_hash=$2 where id=$1", [userId, passwordHash])).rowCount > 0; },
+    async updateUserLanguage(userId, language) { return (await pool.query("update users set language=$2 where id=$1", [userId, language])).rowCount > 0; },
     async leaveRelationship(userId) {
       const initial = await store.getRelationshipContext(userId); if (!initial) return null;
       return store.transaction(`relationship:${initial.relationship.id}`, async () => {
@@ -326,6 +327,7 @@ async function migrate(pool) {
   `);
   await pool.query(`
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
+    alter table users add column if not exists language text;
     create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
@@ -378,7 +380,7 @@ function mapGraphRecord(row) {
 }
 
 const iso = (value) => value ? new Date(value).toISOString() : null;
-const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, createdAt: iso(row.created_at) } : null;
+const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, language: row.language || null, createdAt: iso(row.created_at) } : null;
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;

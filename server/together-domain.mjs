@@ -69,8 +69,39 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     if (message.role === "agent") draft.agentLastMessageId = message.id;
     draft.version += 1;
   });
-  if (message.role === "member") await audit(tx, updated, userId, "together.message_added");
   return { conversation: updated, message, duplicate: false };
+}
+
+/** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
+ * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
+ * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, source = "app", handle = null, replyTo = null, language = "zh", emit = () => {} }) {
+  // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
+  const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    const context = await tx.getRelationshipContext(actorUserId);
+    if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
+    return action(tx);
+  });
+  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo }));
+  const { message } = saved, messages = saved.conversation.messages;
+  // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
+  const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;
+  const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
+  if (!saved.duplicate) emit(saved.conversation);
+  if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  const context = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
+  const turn = await mediator.continueTogether(context, language);
+  const replied = await transaction(async (tx) => {
+    // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
+    const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
+    const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
+    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: turn.reply, i18n: turn.i18n || null, refs: context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version })), replyTo: message.id });
+    if (!turn.draftAgreement) return result;
+    const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...turn.draftAgreement, messageId: result.message.id, source: turn.source, createdAt: new Date().toISOString() }; draft.version += 1; });
+    return { ...result, conversation };
+  });
+  if (!replied.duplicate) emit(replied.conversation);
+  return { conversation: replied.conversation, message, reply: replied.message, duplicate: saved.duplicate };
 }
 
 /** The agent speaks in the shared conversation on its own only for real business: an agreement card, a due joint reminder,
@@ -81,9 +112,12 @@ export async function announceInTogether(tx, { relationshipId, userId, kind, ref
   return appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source, kind, text, i18n, handle, refs });
 }
 
-/** Language for agent-initiated copy: the triggering member's explicit choice, else their saved reminder-language preference, else zh. */
+/** Language for agent-initiated copy: the triggering member's explicit choice, else their saved interface language, else their
+ * saved reminder-language preference, else zh. */
 export async function memberLanguage(tx, userId, hint = null) {
   if (LANGUAGES.has(hint)) return hint;
+  const user = await tx.getUserById(userId);
+  if (LANGUAGES.has(user?.language)) return user.language;
   const preference = (await tx.listRelationshipRecordsForUser("deliveryPreferences", userId)).find((item) => item.ownerUserId === userId && !item.archivedAt);
   return LANGUAGES.has(preference?.language) ? preference.language : "zh";
 }

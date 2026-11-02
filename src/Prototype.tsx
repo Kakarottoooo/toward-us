@@ -154,6 +154,8 @@ function AccountPrototype() {
     }).catch(() => {});
     api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
   }, []);
+  // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
+  useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
   useEffect(() => { if (screen === "dashboard" && user) loadActiveRooms(); }, [screen, user]);
   useEffect(() => {
     if (!room || screen !== "room") return;
