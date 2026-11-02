@@ -26,7 +26,7 @@
     --mobile-safe-area-height: 0px;
     --keyboard-height: 0px !important;
   }
-  .mobile-home-composition .home-wordmark strong { font-size: 10px; letter-spacing: .28em; margin-right: -.28em; }
+  .mobile-home-composition .home-wordmark strong { font-size: 15px; letter-spacing: .34em; margin-right: -.34em; }
   .device-screen input,
   .device-screen textarea { font-size: 16px !important; }
   .room-header button,
