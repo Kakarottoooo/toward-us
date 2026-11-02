@@ -35,6 +35,7 @@ import { createSpaceRouter } from "./space-router.mjs";
 import { createPhotoRouter } from "./photo-store.mjs";
 import { createHandoffRouter } from "./handoff.mjs";
 import { createChatImportRouter } from "./chat-import.mjs";
+import { createVoiceCallRouter } from "./voice-call.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 
@@ -695,6 +696,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
   const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter });
   app.use("/api", assistantRouter);
+  app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit }));
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit });
   app.use(imessage.router);
   app.use("/api", createPrivacyRouter({ store, production, closeConnections }));

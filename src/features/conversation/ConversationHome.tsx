@@ -8,16 +8,18 @@ import { jsonBody, relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
 import { ImportCard } from "../imports/ImportCard";
 import { importAction, importPastedChat, isChatFile, listImports, looksLikePastedChat, uploadChatFile } from "../imports/imports";
+import { CallPanel, CallRecord } from "../call/CallPanel";
 import "./conversation.css";
 
 type Channel = "me" | "us";
 type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string };
 type SpaceSummary = { id: string; title: string; layout: string; visibility: string };
-type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[]; photoIds?: string[] };
+type CallTranscript = { minutes: number; rows: Array<{ role: string; text: string }> };
+type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript };
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call"; call?: CallTranscript; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -55,6 +57,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
@@ -167,6 +170,11 @@ ${text}` : text, target);
   const ready = attachments.filter((item) => item.id).map((item) => item.id!);
   const uploading = attachments.some((item) => !item.id && !item.failed);
   // The import posts its own note into this conversation; reload it so the card shows up right away.
+  const startCall = async () => {
+    keyboard.hide(); voice.stop(); setNotice("");
+    if (channel === "us") { setCall({ channel: "us", sessionId: null }); return; }
+    try { const active = await ensureSession(); setCall({ channel: "me", sessionId: active?.id || null }); } catch (error) { setNotice((error as Error).message); }
+  };
   const reloadSession = async () => { const active = sessionRef.current; if (!active) return; try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}`)).session); } catch { /* The next event or poll refreshes it. */ } };
   const importChat = async (run: (session: string | null) => Promise<unknown>) => {
     setNotice(""); setPending((count) => ({ ...count, me: count.me + 1 }));
@@ -310,6 +318,7 @@ ${text}` : text, target);
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准 v${version}`, `Approve v${version}`, `Aprobar v${version}`)}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>)}
       </article>;
     }
+    if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {
       const outcome = message.refs.find((item) => item.type === "outcome");
       return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}</article>;
@@ -348,6 +357,8 @@ ${text}` : text, target);
   return <div className="paper-screen conversation-home" data-testid="conversation-screen">
     <header className="conversation-header">
       <div className="conversation-topline">
+        {/* A live voice call with Pinky in this channel: privately in Just me, for everyone in the room in Us. */}
+        <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
         <button className="conversation-menu" onClick={openDrawer} aria-label={t("打开菜单", "Open menu", "Abrir menú")} aria-expanded={drawer} data-testid="open-drawer"><List size={24} /></button>
       </div>
       <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
@@ -356,7 +367,7 @@ ${text}` : text, target);
       </div>
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
+      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
           {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Pinky 起草的约定", "Agreement drafted by Pinky", "Acuerdo redactado por Pinky")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol><small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
@@ -366,7 +377,8 @@ ${text}` : text, target);
       {agentWorking > 0 && channel === "us" && <p className="conversation-status" role="status">{t("Pinky 正在想…", "Pinky is thinking…", "Pinky está pensando…")}</p>}
       <div ref={endRef} />
     </main></MobileScroll></div>
-    {!(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
+    {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
+    {!call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
       {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {voice.listening && channel === "me" && <p className="conversation-listening">{t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}

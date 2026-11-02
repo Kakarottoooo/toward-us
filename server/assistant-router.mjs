@@ -37,7 +37,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
-      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.call ? { call: message.call } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
@@ -112,7 +112,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const context = {
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
-      messages: [...session.messages.map(({ role, text }) => ({ role, text: role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
+      // A voice call appears as its captions, so the user can refer back to what was said on the call.
+      messages: [...session.messages.map(({ role, text, call }) => ({ role, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
       records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}) })),
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
@@ -336,12 +337,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   });
   // Background work (a finished chat import) reports into the member's App conversation: the one it started from if it
   // still exists, else their latest, else a new one.
-  async function postNote(userId, { sessionId = null, language = "zh", text, card = null }) {
+  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, call = null }) {
     let session = sessionId ? await owned(store, sessionId, userId).catch(() => null) : null;
     if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!session) session = await createSession(userId, { language, timezone: "UTC" });
     const saved = await store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(card ? { cards: [card] } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
+      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(card ? { cards: [card] } : {}), ...(call ? { call } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
     }));
     // Private sessions carry no relationship id; route the event through the member's couple so their open app refreshes.
     const context = await store.getRelationshipContext(userId);
@@ -349,6 +350,6 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     return saved;
   }
   // Channel adapters (iMessage) call the same domain code as the HTTP routes above.
-  router.assistant = { createSession, appendTurn, confirmShare, output, postNote };
+  router.assistant = { createSession, appendTurn, confirmShare, output, postNote, session: (userId, id) => owned(store, id, userId) };
   return router;
 }

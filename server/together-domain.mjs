@@ -9,7 +9,7 @@ import { importContext, searchImport } from "./chat-import.mjs";
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review"]);
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 const MESSAGE_LIMIT = 200;
@@ -30,7 +30,7 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
   // One pending agreement per couple, whatever path created it (together, full decision flow).
   const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
-    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds }) => ({ id, role, actorUserId, kind, text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}) })),
+    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}) })),
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
     openCommitments: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && OPEN_COMMITMENTS.has(item.status) && !item.archivedAt).map(({ id, agreementId, description, ownerType, status, dueAt }) => ({ id, agreementId, description, ownerType, status, dueAt })),
     pendingAgreement: pending ? agreement(pending) : null,
@@ -61,7 +61,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -75,6 +75,8 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
     ...(photoIds.length ? { photoIds: photoIds.slice(0, 6) } : {}),
     ...(recordedByUserId && recordedByUserId !== actorUserId ? { recordedByUserId } : {}),
+    // A finished voice call keeps its captions on the message; both partners were part of it.
+    ...(kind === "call" && call ? { call } : {}),
   };
   const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message].slice(-MESSAGE_LIMIT);
