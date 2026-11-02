@@ -211,7 +211,8 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
     const item = await tx.getRelationshipRecordForUser("spaceItems", action.targetId || "", userId);
     if (!item || item.visibility !== "shared" || item.relationshipId !== relationshipId) throw decisionError(404, "not_found");
     record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: item.id }) : await updateSpaceItem(tx, { userId, id: item.id, fields: { title: action.title ?? undefined, text: action.text ?? undefined, date: action.date ?? undefined, done: action.done ?? undefined } });
-    if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: record.version, title: "" });
+    const space = await tx.getRelationshipRecordForUser("spaces", item.spaceId, userId);
+    if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: space?.version || 1, title: space?.title || "" });
   }
   return refs.slice(0, 6);
 }
