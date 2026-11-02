@@ -14,6 +14,7 @@ import { CheckinPanel } from "../checkins/CheckinPanel";
 import { RemindersPanel, type ReminderTarget } from "../reminders/RemindersPanel";
 import "../private-agent/personal.css";
 import { PageHeader } from "../conversation/ConversationHome";
+import { AgreementsPage } from "../agreements/AgreementsPage";
 
 type View = "agreements" | "upcoming" | "talk" | "decide" | "plans" | "moments" | "lists" | "reminders";
 const VIEWS: View[] = ["agreements", "upcoming", "talk", "decide", "plans", "moments", "lists", "reminders"];
@@ -49,7 +50,7 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
   const openRow = (item: { type: string; id: string }) => () => openItem(item);
   return <div className="paper-screen relationship-shell" data-testid="dashboard-screen"><PageHeader language={language} title={titles[view]} onBack={back} />
     <main className="relationship-main">
-      {view === "agreements" && <div className="home-columns page-sections"><HomeSection title={localized(language, "等你处理", "Waiting on you", "Te esperan")} empty={localized(language, "目前没有等你处理的事。", "Nothing is waiting on you right now.", "No hay nada pendiente para ti.")} items={payload.home.pending.map((item) => ({ id: item.id, onClick: openRow(item), title: item.type === "outcome_review" ? localized(language, "结果复盘已到期", "Outcome review is due", "La revisión del resultado está pendiente") : item.title, meta: relationshipLabel(language, item.type) }))} /><HomeSection title={localized(language, "正在进行", "In motion", "En marcha")} empty={localized(language, "两人都批准的约定和承诺会出现在这里。在“我们俩”里叫 Pinky 帮你们定下来。", "Agreements you both approve appear here. Ask Pinky in Us to help you settle something.", "Los acuerdos que ambos aprueben aparecerán aquí. Pídeselo a Pinky en Nosotros.")} items={payload.home.plans.map((item) => ({ id: item.id, onClick: openRow(item), title: item.title, meta: relationshipLabel(language, item.status) }))} /></div>}
+      {view === "agreements" && <AgreementsPage language={language} userId={user.id} payload={payload} onChanged={refresh} onReview={(id) => openItem({ type: "outcome_review", id })} />}
       {view === "upcoming" && <div className="feature-stack"><div className="home-columns page-sections"><HomeSection title={localized(language, "我们俩的", "Ours", "Nuestro")} empty={localized(language, "纪念日和约定的期限会出现在这里。", "Shared dates and agreement deadlines appear here.", "Las fechas compartidas y los plazos de los acuerdos aparecerán aquí.")} items={payload.home.upcoming.map((item) => ({ id: item.id, onClick: openRow(item), title: item.title, meta: new Date(item.at).toLocaleDateString(languageTag(language)) }))} /></div><RemindersPanel language={language} onChanged={refresh} compose={false} /></div>}
       {view === "talk" && <TalkView language={language} rooms={rooms} code={code} setCode={setCode} busy={busy} notice={notice} onSetup={onSetup} onJoin={onJoin} onHistory={onHistory} />}
       {view === "decide" && <DecisionWorkspace language={language} userId={user.id} graph={payload.graph} members={payload.relationship.members} initialIssueId={selection.issueId} initialOutcomeId={selection.outcomeId} initialPrompt={null} onChanged={refresh} />}
@@ -67,4 +68,3 @@ function TalkView({ language, rooms, code, setCode, busy, notice, onSetup, onJoi
 }
 
 function HomeSection({ title, empty, items }: { title: string; empty: string; items: Array<{ id: string; title: string; meta: string; onClick: () => void }> }) { return <section className="home-section"><h2>{title}</h2>{items.length ? items.map((item) => <article key={`${item.id}:${item.meta}`}><button onClick={item.onClick}><strong>{item.title}</strong><span>{item.meta}</span></button></article>) : <p>{empty}</p>}</section>; }
-function relationshipLabel(language: Language, value: string) { const labels: Record<string, [string, string, string]> = { perspective: ["提交我的观点", "My perspective", "Mi perspectiva"], approval: ["等待我的批准", "My approval", "Mi aprobación"], outcome_review: ["结果复盘", "Outcome review", "Revisión del resultado"], active: ["进行中", "Active", "Activo"], renegotiation_requested: ["请求重新协商", "Renegotiation requested", "Renegociación solicitada"] }; const label = labels[value]; return label ? localized(language, ...label) : value; }
