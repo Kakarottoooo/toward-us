@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { addSpaceItem, archiveSpaceRecord, createSpace, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
@@ -32,6 +33,11 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
     openCommitments: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && OPEN_COMMITMENTS.has(item.status) && !item.archivedAt).map(({ id, agreementId, description, ownerType, status, dueAt }) => ({ id, agreementId, description, ownerType, status, dueAt })),
     pendingAgreement: pending ? agreement(pending) : null,
     authorizedMemories: userId ? buildMemoryContext(snapshot.memories || [], { userId, relationshipId, scope: "joint", query }).memories : [],
+    spaces: (snapshot.spaces || []).filter((space) => space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt).slice(0, 30).map((space) => ({
+      id: space.id, title: space.title, layout: space.layout,
+      items: (snapshot.spaceItems || []).filter((item) => item.spaceId === space.id && item.visibility === "shared" && !item.archivedAt).slice(-15).map((item) => ({ id: item.id, title: item.title || String(item.text || "").slice(0, 80), date: item.date, done: item.done })),
+    })),
+    sharedDates: (snapshot.milestones || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt).slice(0, 30).map(({ id, title, date, recurringRule }) => ({ id, title, date, recurringRule })),
     safety: { rule: "Use only this shared context. Never quote or imply either person's private conversations, judge who is right, or approve on anyone's behalf." },
   };
 }
@@ -91,15 +97,24 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   const context = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
   const turn = await mediator.continueTogether(context, language);
-  const replied = await transaction(async (tx) => {
+  const reply = (outcome) => transaction(async (tx) => {
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
-    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: turn.reply, i18n: turn.i18n || null, refs: context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version })), replyTo: message.id });
-    if (!turn.draftAgreement) return result;
-    const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...turn.draftAgreement, messageId: result.message.id, source: turn.source, createdAt: new Date().toISOString() }; draft.version += 1; });
+    const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [] });
+    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: outcome.reply, i18n: outcome.i18n || null, refs: [...made, ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
+    if (!outcome.draftAgreement) return result;
+    const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });
     return { ...result, conversation };
   });
+  // Actions and reply land together or not at all; if an action cannot be applied, say so instead of claiming it.
+  let replied;
+  try { replied = await reply(turn); }
+  catch (error) {
+    if (!turn.actions?.length) throw error;
+    const failed = { zh: "抱歉，这件事我没能办成，什么都没有改动。可以换个说法再试一次。", en: "Sorry, I couldn't do that, and nothing was changed. Try saying it another way.", es: "Lo siento, no pude hacerlo y no se cambió nada. Prueba a decirlo de otra forma." };
+    replied = await reply({ reply: failed[language] || failed.zh, i18n: failed, actions: [], draftAgreement: null, source: "local" });
+  }
   if (!replied.duplicate) emit(replied.conversation);
   return { conversation: replied.conversation, message, reply: replied.message, duplicate: saved.duplicate };
 }
@@ -107,6 +122,42 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
 /** The agent speaks in the shared conversation on its own only for real business: an agreement card, a due joint reminder,
  * a due outcome review. Messages are role "agent"; a deterministic `handle` makes every retry or repeated tick a no-op.
  * `text` must only contain shared content. */
+/** What the shared Agent may change for both partners, applied in the same transaction as its reply. Returns refs the
+ * conversation shows as links. Only shared spaces and dates of this couple; nothing private, nothing needing two approvals. */
+async function applyTogetherActions(tx, { relationshipId, userId, actions }) {
+  const refs = []; let created = null;
+  for (const action of actions) {
+    if (action.kind === "milestone") {
+      if (action.operation !== "create") continue;
+      if (!action.title || !action.date) throw decisionError(400, "message_required");
+      const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title: action.title.slice(0, 120), date: action.date, timezone: "UTC", recurringRule: action.recurringRule, jointlyConfirmed: false, notes: action.text || "", provenanceSource: "agent" });
+      await tx.createRelationshipRecord("milestones", record); refs.push({ type: "milestone", id: record.id, version: record.version, title: record.title });
+      // A shared reminder on the date makes the Agent post it in this conversation when due (reminder-service announces it).
+      if (action.remindDaysBefore !== null && action.remindDaysBefore !== undefined) await tx.createRelationshipRecord("reminders", createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "owner", status: "active", milestoneId: record.id, minutesBefore: action.remindDaysBefore * 1440, channel: "in_app", provenanceSource: "agent" }));
+      continue;
+    }
+    if (action.kind === "space") {
+      const record = action.operation === "create" ? created = await createSpace(tx, { userId, relationshipId, shared: true, title: action.title, layout: action.layout, description: action.text || "", source: "agent" })
+        : action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaces", id: action.targetId }) : await updateSpace(tx, { userId, id: action.targetId, fields: { title: action.title ?? undefined, layout: action.layout ?? undefined, description: action.text ?? undefined } });
+      if (record.visibility !== "shared" || record.relationshipId !== relationshipId) throw decisionError(404, "not_found");
+      refs.push({ type: "space", id: record.id, version: record.version, title: record.title }); continue;
+    }
+    let record;
+    if (action.operation === "create") {
+      const space = action.spaceId ? await visibleSpace(tx, action.spaceId, userId) : created;
+      if (!space || space.visibility !== "shared" || space.relationshipId !== relationshipId) throw decisionError(404, "not_found");
+      record = await addSpaceItem(tx, { userId, space, title: action.title || "", text: action.text || "", date: action.date, done: action.done === true, source: "agent" });
+      if (!refs.some((ref) => ref.type === "space" && ref.id === space.id)) refs.push({ type: "space", id: space.id, version: space.version, title: space.title });
+      continue;
+    }
+    const item = await tx.getRelationshipRecordForUser("spaceItems", action.targetId || "", userId);
+    if (!item || item.visibility !== "shared" || item.relationshipId !== relationshipId) throw decisionError(404, "not_found");
+    record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: item.id }) : await updateSpaceItem(tx, { userId, id: item.id, fields: { title: action.title ?? undefined, text: action.text ?? undefined, date: action.date ?? undefined, done: action.done ?? undefined } });
+    if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: record.version, title: "" });
+  }
+  return refs.slice(0, 4);
+}
+
 export async function announceInTogether(tx, { relationshipId, userId, kind, refs = [], text, i18n = null, handle = null, source = "app" }) {
   if (!["agreement_card", "reminder", "review"].includes(kind)) throw decisionError(400, "message_required");
   return appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source, kind, text, i18n, handle, refs });

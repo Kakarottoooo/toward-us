@@ -11,6 +11,7 @@ const GRAPH_TABLES = Object.freeze({
   evaluations: "proposal_evaluations", agreements: "agreements", approvals: "agreement_approvals", commitments: "commitments",
   outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
   consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations", nativePushDevices: "native_push_devices",
+  spaces: "relationship_spaces", spaceItems: "relationship_space_items",
 });
 
 export async function createPostgresStore(databaseUrl) {

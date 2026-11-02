@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import express from "express";
-import { createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
-import { validateAssistantTurn } from "./assistant-agent.mjs";
+import { canViewRecord, createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
+import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent.mjs";
+import { addSpaceItem, archiveSpaceRecord, createSpace, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 
-const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments" };
+const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
+const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date])).digest("hex");
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
@@ -34,6 +36,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
+        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
@@ -76,9 +79,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     return records.sort((a, b) => b.record.updatedAt.localeCompare(a.record.updatedAt));
   }
   const card = (kind, record, language) => ({
-    id: record.id, kind, title: record.title || record.draft?.title || record.description || say(language, kind === "memory" ? "私人记忆" : "日常记录", kind === "memory" ? "Private memory" : "Daily check-in", kind === "memory" ? "Recuerdo privado" : "Registro diario"),
-    text: record.text || record.draft?.shareableSummary || record.summary || null, status: record.status, version: record.version,
-    url: kind === "reminder" ? `/?view=reminders&reminder=${encodeURIComponent(record.id)}` : ["agreement", "commitment"].includes(kind) ? `/?view=decide&issue=${encodeURIComponent(record.issueId || "")}` : kind === "milestone" ? `/?view=plans&milestone=${encodeURIComponent(record.id)}` : kind === "plan" ? `/?view=plans&thread=${encodeURIComponent(record.id)}` : `/?view=${kind === "memory" ? "memories" : "checkins"}`,
+    id: record.id, kind, title: record.title || record.draft?.title || (kind === "space" ? "" : record.description) || say(language, kind === "memory" ? "私人记忆" : "日常记录", kind === "memory" ? "Private memory" : "Daily check-in", kind === "memory" ? "Recuerdo privado" : "Registro diario"),
+    text: record.text || record.draft?.shareableSummary || record.summary || (kind === "space" ? record.description : null) || null, status: record.status, version: record.version,
+    url: kind === "space" ? `/?view=space&space=${encodeURIComponent(record.id)}` : kind === "space_item" ? `/?view=space&space=${encodeURIComponent(record.spaceId)}` : kind === "reminder" ? `/?view=reminders&reminder=${encodeURIComponent(record.id)}` : ["agreement", "commitment"].includes(kind) ? `/?view=decide&issue=${encodeURIComponent(record.issueId || "")}` : kind === "milestone" ? `/?view=plans&milestone=${encodeURIComponent(record.id)}` : kind === "plan" ? `/?view=plans&thread=${encodeURIComponent(record.id)}` : `/?view=${kind === "memory" ? "memories" : "checkins"}`,
     ...(kind === "reminder" ? { localDateTime: localTime(record.dueAt, record.timezone), timezone: record.timezone, frequency: record.frequency, nextOccurrenceOnly: Boolean(record.occurrenceOriginalDueAt), weeklyTime: record.localTime } : {}),
     ...(kind === "plan" ? { date: record.draft?.date } : {}),
   });
@@ -93,23 +96,26 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const userMessage = { id: randomUUID(), role: "user", text, itemId, createdAt: new Date().toISOString() };
     const context = {
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
-      messages: [...session.messages.filter((m) => m.role === "user" || m.plannerQuestion).map(({ role, text }) => ({ role, text })), userMessage].slice(-30),
+      // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
+      messages: [...session.messages.map(({ role, text }) => ({ role, text: role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
       records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}) })),
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
+      spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     let plan;
     try { plan = await mediator.planAssistantTurn(context, session.language); }
     catch { throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
+    plan = normalizeAssistantTurn(plan);
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
-    const changes = []; let partnerMessage = null; let raced = false;
+    const changes = []; let partnerMessage = null; let raced = false; const pendingShares = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
       if (latest.version !== session.version) throw fail(409, say(session.language, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const currentRecords = await available(tx, userId);
-      const cards = []; const replies = [];
+      const cards = []; const replies = []; let createdSpace = null;
       for (const action of plan.actions) {
         if (action.kind === "partner_message") {
           // A draft only: it stays on this private session until the member confirms the exact digest via share-confirm.
@@ -136,6 +142,37 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
           replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, `Found ${results.length} records you can view.`, `Se encontraron ${results.length} registros que puedes ver.`)); continue;
         }
         if (["agreement", "commitment", "milestone"].includes(action.kind)) throw fail(502, "Shared records require their existing confirmation flow. Nothing was changed.");
+        if (action.kind === "space" || action.kind === "space_item") {
+          const values = action.fields; const sharedOnly = say(session.language, "共同空间里的东西请在“我们俩”里改。", "Change things in a shared space from Us.", "Cambia lo del espacio compartido desde Nosotros.");
+          let record;
+          if (action.kind === "space") {
+            if (action.operation === "create") record = createdSpace = await createSpace(tx, { userId, title: values.title, layout: values.layout, description: values.text || "", source: "assistant" });
+            else {
+              const space = await visibleSpace(tx, action.targetId, userId); if (space.visibility !== "private") throw fail(403, sharedOnly);
+              record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaces", id: space.id }) : await updateSpace(tx, { userId, id: space.id, fields: { title: values.title ?? undefined, layout: values.layout ?? undefined, description: values.text ?? undefined } });
+            }
+          } else if (action.operation === "create") {
+            const space = values.spaceId ? await visibleSpace(tx, values.spaceId, userId) : createdSpace;
+            if (!space) throw fail(400, say(session.language, "要放进哪个空间？", "Which space should this go in?", "¿En qué espacio lo guardo?"));
+            if (space.visibility !== "private") {
+              // Nothing said here reaches a shared space until the member confirms this exact card.
+              const share = { cardId: randomUUID(), spaceId: space.id, spaceTitle: space.title, title: clean(values.title, 160), text: clean(values.text, 2000), date: values.date && /^\d{4}-\d{2}-\d{2}$/.test(values.date) ? values.date : null, createdAt: new Date().toISOString(), sharedAt: null };
+              if (!share.title && !share.text) throw fail(400, "Say what to add.");
+              share.digest = shareDigest(share); pendingShares.push(share);
+              cards.push({ id: share.cardId, kind: "space_share", version: 1 });
+              replies.push(say(session.language, `确认后才会放进共同的“${space.title}”。`, `It goes into the shared "${space.title}" only after you confirm.`, `Se añade al espacio compartido «${space.title}» solo cuando lo confirmes.`)); continue;
+            }
+            record = await addSpaceItem(tx, { userId, space, title: values.title || "", text: values.text || "", date: values.date, done: values.done === true, source: "assistant" });
+          } else {
+            const item = await tx.getRelationshipRecordForUser("spaceItems", clean(action.targetId, 80), userId);
+            if (!item || !canViewRecord(item, userId)) throw fail(404, "This item is no longer available.");
+            if (item.visibility !== "private") throw fail(403, sharedOnly);
+            record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: item.id }) : await updateSpaceItem(tx, { userId, id: item.id, fields: { title: values.title ?? undefined, text: values.text ?? undefined, date: values.date ?? undefined, done: values.done ?? undefined } });
+          }
+          cards.push(card(action.kind, record, session.language)); changes.push({ kind: action.kind, record });
+          replies.push(action.operation === "archive" ? say(session.language, "已移走。", "Removed.", "Quitado.") : action.kind === "space" ? say(session.language, `已建好“${record.title}”，只有你能看到。`, `Created "${record.title}", visible only to you.`, `Creé «${record.title}», solo visible para ti.`) : say(session.language, "已放进去。", "Added.", "Añadido."));
+          continue;
+        }
         const values = action.fields || {};
         const collection = collections[action.kind];
         const current = action.operation === "create" ? null : currentRecords.find(({ kind, record }) => kind === action.kind && record.id === action.targetId)?.record;
@@ -186,8 +223,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
           replies.push(action.operation === "archive" ? say(session.language, "已暂停这条个人提醒。", "This personal reminder is paused.", "Este recordatorio personal está pausado.") : record.occurrenceOriginalDueAt ? say(session.language, `已保存个人提醒：${record.title}。仅下次为 ${at}，后续仍按原来的每周安排。`, `Saved personal reminder: ${record.title}. Only the next occurrence is ${at}; later reminders keep the original weekly schedule.`, `Recordatorio personal guardado: ${record.title}. Solo la próxima vez será ${at}; las siguientes mantienen el horario semanal original.`) : say(session.language, `已保存个人提醒：${record.title}，${at}${record.frequency === "weekly" ? "，每周重复" : ""}。`, `Saved personal reminder: ${record.title}, ${at}${record.frequency === "weekly" ? ", every week" : ""}.`, `Recordatorio personal guardado: ${record.title}, ${at}${record.frequency === "weekly" ? ", cada semana" : ""}.`));
         } else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "已保存私人记录，未授权 AI 在其他对话中使用。", "Saved privately, without permission for AI use in other conversations.", "Se guardó en privado, sin autorizar el uso de la IA en otras conversaciones."));
       }
-      const reply = replies.join("\n") || clean(plan.reply, 1200) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; draft.version += 1; });
+      // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
+      const reply = clean(plan.reply, 1200) || replies.join("\n") || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
@@ -220,6 +258,27 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (!result.duplicate) { emit(result.conversation, "together.updated"); void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "partner_message_shared", channel }); }
     return result;
   };
+  // A prepared item enters a shared space only when its owner confirms the exact card they saw.
+  router.post("/assistant/sessions/:id/space-confirm", async (req, res) => {
+    const userId = req.auth.user.id; const session = await owned(store, req.params.id, userId);
+    const cardId = clean(req.body?.cardId, 80); const digest = clean(req.body?.digest, 64);
+    const initial = await store.getRelationshipContext(userId);
+    if (!activePair(initial)) throw fail(409, unpaired(session.language));
+    const result = await store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
+      await liveUser(tx, userId, true);
+      const latest = await owned(tx, session.id, userId); const share = (latest.pendingShares || []).find((item) => item.cardId === cardId);
+      if (!share || share.digest !== digest || shareDigest(share) !== digest) throw fail(409, say(session.language, "内容已经变了，请确认最新的版本。", "This changed. Review and confirm the latest version.", "Esto cambió. Revisa y confirma la última versión."));
+      if (share.sharedAt) return { session: latest, item: null };
+      const space = await visibleSpace(tx, share.spaceId, userId);
+      if (space.visibility !== "shared" || space.relationshipId !== initial.relationship.id) throw fail(409, unpaired(session.language));
+      const item = await addSpaceItem(tx, { userId, space, title: share.title, text: share.text, date: share.date, source: "member_confirmed" });
+      await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: item.id, objectType: "space_item", eventType: "space_item.shared", sourceVersion: latest.version }));
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
+      return { session: saved, item };
+    });
+    if (result.item) emit(result.item, "space.updated");
+    res.json({ session: await output(result.session) });
+  });
   router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
     const result = await confirmShare(req.auth.user.id, req.params.id, req.body);
     res.json({ session: await output(result.session), message: { id: result.message.id, text: result.message.text, createdAt: result.message.createdAt }, duplicate: result.duplicate });

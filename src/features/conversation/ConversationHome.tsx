@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, At, CalendarBlank, ChatCircleDots, CheckCircle, Copy, GearSix, HandHeart, Handshake, LinkSimple, List, ListChecks, LockKey, Microphone, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, At, CalendarBlank, ChatCircleDots, CheckCircle, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -8,10 +8,11 @@ import type { GraphRecord } from "../relationship/types";
 import "./conversation.css";
 
 type Channel = "me" | "us";
-type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string };
+type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string };
+type SpaceSummary = { id: string; title: string; layout: string; visibility: string };
 type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[] };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
-type Ref = { type: string; id: string; version?: number };
+type Ref = { type: string; id: string; version?: number; title?: string };
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
@@ -30,7 +31,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [session, setSession] = useState<Session | null>(null);
   const [together, setTogether] = useState<Together | null>(null);
   const [approved, setApproved] = useState<string[]>([]);
-  const [drafts, setDrafts] = useState<Record<Channel, string>>({ me: "", us: "" });
+  // A page can hand a starting sentence back ("Add to …: "); it lands in that channel's box once, then leaves the URL.
+  const [drafts, setDrafts] = useState<Record<Channel, string>>(() => { const params = new URLSearchParams(location.search); const say = (params.get("say") || "").slice(0, 300); return { me: params.get("channel") !== "us" ? say : "", us: params.get("channel") === "us" ? say : "" }; });
   const [askAgent, setAskAgent] = useState(false);
   const [revising, setRevising] = useState(false);
   const [pending, setPending] = useState<Record<Channel, number>>({ me: 0, us: 0 });
@@ -88,6 +90,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     return () => events.close();
   }, [paired, loadTogether]);
   useEffect(() => { setNotice(""); }, [language]);
+  useEffect(() => { if (new URLSearchParams(location.search).has("say")) { window.history.replaceState(null, "", location.pathname); composerRef.current?.querySelector("textarea")?.focus(); } }, []);
   useEffect(() => { try { localStorage.setItem(channelKey, channel); } catch { /* Channel memory is a convenience. */ } }, [channel, channelKey]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [channel, session?.version, together?.conversation.messages.length, pending.me, queued.length]);
 
@@ -173,6 +176,11 @@ ${text}` : text, target);
     try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${session.id}/share-confirm`, jsonBody({ cardId: card.id, digest: card.digest, confirm: true })); current(result.session); void loadTogether(); }
     catch (error) { setNotice(errorText(error as ApiError)); } finally { setBusy(false); }
   };
+  const confirmSpace = async (card: Card) => {
+    if (!session) return; setBusy(true); setNotice("");
+    try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${session.id}/space-confirm`, jsonBody({ cardId: card.id, digest: card.digest })); current(result.session); }
+    catch (error) { setNotice(errorText(error as ApiError)); } finally { setBusy(false); }
+  };
   const revise = () => { setRevising(true); composerRef.current?.querySelector("textarea")?.focus(); };
   const decide = async (id: string, version: number, action: "approve" | "request-change") => {
     setBusy(true); setNotice("");
@@ -204,8 +212,22 @@ ${text}` : text, target);
         <button disabled={busy} onClick={revise}>{t("再改改", "Edit", "Editar")}</button></div></> :
         <small className="card-state">{card.status === "shared" ? <><CheckCircle size={16} weight="fill" />{t("已发到“我们俩”", "Sent to Us", "Enviado a Nosotros")}</> : t("已有更新的版本", "A newer version replaced this", "Una versión más nueva la reemplazó")}</small>}
     </article>;
-    return <article key={`${card.kind}:${card.id}`} className="conversation-card"><header>{card.title}</header>{card.text && <p>{card.text}</p>}{card.status !== "unavailable" && card.url && <div className="card-actions"><button onClick={() => open(card.url!)}>{t("打开详情", "Open details", "Abrir detalles")}<ArrowRight size={16} /></button></div>}</article>;
+    if (card.kind === "space_share") return <article key={card.id} className={`conversation-card partner-card is-${card.status}`} data-testid="space-share-card">
+      <header><UsersThree size={16} />{t(`放进共同的“${card.title}”`, `Add to shared "${card.title}"`, `Añadir a «${card.title}» compartido`)}</header><p>{card.text}</p>
+      {card.status === "draft" ? <><small>{t("确认后你们俩都能看到。", "Once you confirm, both of you can see it.", "Cuando lo confirmes, los dos podrán verlo.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void confirmSpace(card)}><CheckCircle size={18} weight="fill" />{t("确认放进去", "Confirm", "Confirmar")}</button></div></> :
+        card.status === "shared" ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t("已放进共同空间", "Added to the shared space", "Añadido al espacio compartido")}</small> : null}
+    </article>;
+    if (card.kind === "space_group") return <article key={card.id} className="conversation-card space-card"><header><ListBullets size={16} />{card.title || t("已放进空间", "Added to a space", "Añadido a un espacio")}</header>{card.text && <ul>{card.text.split("\n").map((line, index) => <li key={index}>{line}</li>)}</ul>}<div className="card-actions"><button onClick={() => open(card.url!)}>{t("打开", "Open", "Abrir")}<ArrowRight size={16} /></button></div></article>;
+    return <article key={`${card.kind}:${card.id}`} className="conversation-card"><header>{card.title}</header>{card.text && <p>{card.text}</p>}{card.localDateTime && <small className="card-when">{card.localDateTime.replace("T", " ")}</small>}{card.status !== "unavailable" && card.url && <div className="card-actions"><button onClick={() => open(card.url!)}>{t("打开详情", "Open details", "Abrir detalles")}<ArrowRight size={16} /></button></div>}</article>;
   };
+  // Several changes to one space in a turn read as one card: the space, what went in, one way to open it.
+  const groupCards = (cards: Card[]) => cards.reduce<Card[]>((list, card) => {
+    if (!["space", "space_item"].includes(card.kind) || !card.url || card.status === "unavailable") return [...list, card];
+    const index = list.findIndex((entry) => entry.kind === "space_group" && entry.url === card.url);
+    const entry = index >= 0 ? list[index] : { id: card.url, kind: "space_group", title: "", text: "", status: "active", version: 1, url: card.url };
+    const next = card.kind === "space" ? { ...entry, title: card.title } : { ...entry, text: [entry.text, card.title].filter(Boolean).join("\n") };
+    return index >= 0 ? list.map((item, position) => position === index ? next : item) : [...list, next];
+  }, []);
   const sharedMessage = (message: SharedMessage) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
     const author = message.role === "agent" ? "Agent" : mine ? "" : partnerName;
@@ -224,7 +246,10 @@ ${text}` : text, target);
       const outcome = message.refs.find((item) => item.type === "outcome");
       return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}</article>;
     }
-    return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}<p>{text}</p></article>;
+    const links = message.role === "agent" ? message.refs.filter((ref) => ref.type === "space" || ref.type === "milestone") : [];
+    return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}<p>{text}</p>
+      {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
+    </article>;
   };
 
   const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。难开口的话，我帮你整理成 TA 听得进去的版本，你确认后才会发出。", "Only you can see this. Tell me what is hard to say: I will shape a version your partner can hear, and nothing is sent until you confirm.", "Solo tú puedes ver esto. Cuéntame lo que te cuesta decir: prepararé una versión que tu pareja pueda escuchar y no se enviará nada hasta que lo confirmes.")}</p>
@@ -249,7 +274,7 @@ ${text}` : text, target);
       </div>
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Agent</span>}<p>{message.text}</p></article>{message.cards?.map(privateCard)}</div>)}</> :
+      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Agent</span>}<p>{message.text}</p></article>{groupCards(message.cards || []).map(privateCard)}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
           {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Agent 起草的约定", "Agreement drafted by the Agent", "Acuerdo redactado por el Agent")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol><small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
@@ -284,12 +309,14 @@ type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number;
 function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite, onPrivacy, onLogout }: { user: { id: string; name: string }; paired: boolean; language: Language; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onLogout: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [home, setHome] = useState<{ pending: number; lists: boolean } | null>(null);
+  const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const start = useRef<number | null>(null);
   useEffect(() => {
     if (!paired) return;
     relationshipApi<{ home: { pending: unknown[] }; graph: { lists: unknown[]; milestones: unknown[] } }>("/api/relationship/home")
       .then((result) => setHome({ pending: result.home.pending.length, lists: result.graph.lists.length + result.graph.milestones.length > 0 })).catch(() => {});
   }, [paired]);
+  useEffect(() => { relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => setSpaces(result.spaces)).catch(() => {}); }, []);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [onClose]);
   const fixed: DrawerItem[] = paired ? [
     { key: "agreements", icon: <Handshake size={22} />, label: t("约定", "Agreements", "Acuerdos"), badge: home?.pending, onClick: () => onOpen("/?view=agreements") },
@@ -298,18 +325,22 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
     { key: "invite", icon: <UserPlus size={22} />, label: t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja"), onClick: onInvite },
     { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=reminders") },
   ];
-  const spaces: DrawerItem[] = [
+  const fixedSpaces: DrawerItem[] = [
     { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") },
     ...(paired && home?.lists ? [{ key: "lists", icon: <ListChecks size={22} />, label: t("日期与清单", "Dates & lists", "Fechas y listas"), onClick: () => onOpen("/?view=lists") }] : []),
     ...(paired ? [{ key: "talk", icon: <UsersThree size={22} />, label: t("调解与复盘", "Mediation & reviews", "Mediación y revisiones"), onClick: () => onOpen("/?view=talk") }] : []),
   ];
+  const layoutIcon: Record<string, ReactNode> = { checklist: <ListChecks size={22} />, timeline: <ClockCounterClockwise size={22} />, gallery: <Images size={22} />, notes: <NotePencil size={22} />, list: <ListBullets size={22} /> };
+  const spaceRow = (space: SpaceSummary): DrawerItem => ({ key: `space-${space.id}`, icon: layoutIcon[space.layout] || layoutIcon.list, label: space.title, onClick: () => onOpen(`/?view=space&space=${encodeURIComponent(space.id)}`) });
+  const ours = spaces.filter((space) => space.visibility === "shared").map(spaceRow), mine = spaces.filter((space) => space.visibility === "private").map(spaceRow);
   const row = (item: DrawerItem) => <button key={item.key} className="drawer-row" onClick={item.onClick} data-testid={`drawer-${item.key}`}>{item.icon}<span>{item.label}</span>{!!item.badge && <em aria-label={t(`${item.badge} 件待处理`, `${item.badge} waiting`, `${item.badge} pendientes`)}>{item.badge}</em>}</button>;
   return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
     <button className="conversation-drawer-scrim" aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} onClick={onClose} />
     <nav className="conversation-drawer" aria-label={t("菜单", "Menu", "Menú")} onPointerDown={(event) => { start.current = event.clientX; }} onPointerUp={(event) => { if (start.current !== null && event.clientX - start.current < -60) onClose(); start.current = null; }}>
       <header><div><strong>PINKY</strong><span>{user.name}</span></div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
       <div className="drawer-group">{fixed.map(row)}</div>
-      <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{spaces.map(row)}</div>
+      <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{(paired ? ours : mine).map(row)}{fixedSpaces.map(row)}</div>
+      {paired && !!mine.length && <div className="drawer-group"><h2>{t("只有我的", "Just mine", "Solo mío")}</h2>{mine.map(row)}</div>}
       <footer className="drawer-group">{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}{row({ key: "logout", icon: <SignOut size={22} />, label: t("退出登录", "Sign out", "Cerrar sesión"), onClick: onLogout })}</footer>
     </nav>
   </div>;
