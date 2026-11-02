@@ -15,7 +15,7 @@ npm run dev:full
 - 看到 `Toward Us is running on http://127.0.0.1:5173` 即可。端口默认 `5173`，用 `PORT` 改。
 - 启动日志里 `AI mediation: ready` 表示 key 生效；写 `local fallback` 说明没拿到 `OPENAI_API_KEY`，AI 只有占位回复。
 - **必须是开发模式**（`npm run dev:full`），不要用 `npm start` 或设 `NODE_ENV=production`，否则 Cookie 带 `Secure`，`http://` 下登录不了。
-- **每次启动服务器都必须设 `TOWARD_US_DATA_FILE`**：新开的终端里不会保留，不设就会写进仓库里真正的 `data	oward-us.local.json`。
+- **每次启动服务器都必须设 `TOWARD_US_DATA_FILE`**：新开的终端里不会保留，不设就会写进仓库里真正的 `data\toward-us.local.json`。
 - 改了环境变量要重启；停掉用 Ctrl+C。想要日志文件：`npm run dev:full 2>&1 | tee ./dev.log`。
 
 ## 2. 两个账号，配对
@@ -71,7 +71,7 @@ curl.exe -s "http://localhost:5173/api/internal/usage?weeks=4" -H "Authorization
 
 ```powershell
 $env:OPENAI_API_KEY = "<你的 key>"
-$env:TOWARD_US_DATA_FILE = "$HOME	oward-us-dogfood.json"   # 必设，同第 1 节同一个路径，否则会落到仓库的 data 里
+$env:TOWARD_US_DATA_FILE = "$HOME\toward-us-dogfood.json"   # 必设，同第 1 节同一个路径，否则会落到仓库的 data 里
 $env:REMINDER_RUN_SECRET = "<第 1 节的那个值>"
 $env:SENDBLUE_WEBHOOK_SECRET = "<任意非空字符串>"
 $env:SENDBLUE_DRYRUN_FILE = "$HOME\sendblue-dryrun.jsonl"   # "本来要发的消息"会逐行追加到这里
