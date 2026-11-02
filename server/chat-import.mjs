@@ -290,7 +290,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
 
   // Before /imports/:id, so the script's name is not read as an import id. Public: it holds no data, only the reader.
   router.get("/imports/mac-helper.sh", async (_req, res) => {
-    res.type("text/x-shellscript").send(await readFile(new URL("./pinky-imessage-helper.sh", import.meta.url), "utf8"));
+    // A Windows checkout may have turned its line endings into CRLF, which bash on the Mac cannot run.
+    res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-helper.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
   });
   router.get("/imports", async (req, res) => {
     const records = (await store.listRelationshipRecordsForUser(COLLECTION, req.auth.user.id)).filter((record) => canViewRecord(record, req.auth.user.id));
