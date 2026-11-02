@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, At, ChatCircleDots, CheckCircle, Copy, LinkSimple, LockKey, Microphone, PaperPlaneRight, SquaresFour, StopCircle, UsersThree } from "@phosphor-icons/react";
-import { languageTag, languages, localized, type Language } from "../../i18n";
+import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -22,7 +22,7 @@ const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",
  * the couple's together conversation). Every rule lives on the server; this screen only renders and forwards explicit taps. */
-export function ConversationHome({ user, pairing, language, onLanguage, onAllFeatures, onOpen, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onLanguage: (language: Language) => void; onAllFeatures: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, onAllFeatures, onOpen, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onAllFeatures: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -239,7 +239,6 @@ ${text}` : text, target);
   return <div className="paper-screen conversation-home" data-testid="conversation-screen">
     <header className="conversation-header">
       <div className="conversation-topline">
-        <div className="conversation-languages" role="group" aria-label={t("选择界面语言", "Choose display language", "Elegir idioma")}>{languages.map((item) => <button key={item} className={item === language ? "active" : ""} aria-pressed={item === language} onClick={() => onLanguage(item)}>{item.toUpperCase()}</button>)}</div>
         <button className="conversation-all" onClick={allFeatures} data-testid="all-features"><SquaresFour size={20} />{t("全部功能", "All features", "Todas las funciones")}</button>
       </div>
       <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>

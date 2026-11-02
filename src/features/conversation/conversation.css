@@ -1,10 +1,7 @@
 /* Conversation-first home: one continuous ivory surface, header and composer float on it without hard dividers. */
 .conversation-home { position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--jian-paper); color: var(--jian-ink); }
 .conversation-header { flex: 0 0 auto; width: min(100%, 760px); margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 16px 6px; }
-.conversation-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
-.conversation-languages { display: flex; gap: 2px; }
-.conversation-languages button { min-width: 36px; min-height: 44px; border: 0; background: transparent; color: #514c46; font-size: 15px; font-weight: 600; cursor: pointer; }
-.conversation-languages button.active { color: var(--jian-red); text-decoration: underline; text-underline-offset: 5px; }
+.conversation-topline { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 44px; }
 .conversation-all { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 14px; border: 1px solid rgba(37,37,37,.22); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
 .conversation-all:hover { background: #fff; }
 .conversation-segments { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 10px; padding: 4px; border-radius: 14px; background: rgba(37,37,37,.06); }
