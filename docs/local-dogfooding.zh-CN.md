@@ -79,13 +79,46 @@ $env:TOWARD_US_BASE_URL = "http://localhost:5173"          # 绑定链接里的�
 npm run dev:full
 ```
 
-另开一个终端模拟某个号码发来一条 iMessage：
+另开一个终端模拟某个号码发来一条 iMessage。Windows PowerShell 5.1 会把 `curl.exe -d '{...}'` 里的双引号吃掉（服务器回 400），中文也可能被转成系统代码页，所以先把 JSON 写进 UTF-8 文件，再用 `--data-binary` 原样发送：
 
 ```powershell
-curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Content-Type: application/json" -H "sb-signing-secret: <SENDBLUE_WEBHOOK_SECRET>" -d '{"message_handle":"t1","from_number":"+15551230001","service":"iMessage","content":"你好"}'
+$secret = "<SENDBLUE_WEBHOOK_SECRET>"
+Set-Content -Path "$HOME\msg.json" -Encoding utf8 -Value '{"message_handle":"t1","from_number":"+15551230001","service":"iMessage","content":"你好"}'
+curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Content-Type: application/json" -H "sb-signing-secret: $secret" --data-binary "@$HOME\msg.json"
 ```
 
-`message_handle` 每次要换一个新值（重复的会被当成已处理）。`SENDBLUE_DRYRUN_FILE` 里会出现一行，内容是三语欢迎语加绑定链接（`/m/xxxx`）。在已登录的浏览器里打开它，确认绑定这个号码；之后再用同一个号码发消息，回复同样写进这个文件。
+返回 `{"ok":true}` 就是收到了（真正的处理在返回之后继续，等一两秒再看文件）。`message_handle` 每次要换一个新值（重复的会被当成已处理）。`SENDBLUE_DRYRUN_FILE` 里会出现一行，内容是三语欢迎语加绑定链接（`/m/xxxx`）。在已登录的浏览器里打开它，确认绑定这个号码；之后再用同一个号码发消息（改 `content`、换 `message_handle`，重新执行上面两行），回复同样写进这个文件。
+
+- **提醒在模拟模式下显示"已接受"**：绑了号码的人，到点的个人提醒会生成一条 iMessage 投递，"我的提醒"里显示"推送服务已接受"，`reminders/run` 也算进 `accepted`——但其实什么都没发出电脑，只是在 `SENDBLUE_DRYRUN_FILE` 里多了一行 `提醒：「提醒名称」`。
+- **关掉提醒**："我的提醒"里的"关闭所有提醒通知（手机、浏览器和 iMessage）"会同时停掉 iMessage 提醒：之后不再生成 iMessage 投递，已排队的也会取消。
+
+**模拟情侣 iMessage 群**（不需要 Sendblue 账号）：在上面那组环境变量的基础上再加两行，重启服务器：
+
+```powershell
+$env:SENDBLUE_GROUPS_ENABLED = "true"
+$env:SENDBLUE_DRYRUN_PERSIST_GROUPS = "1"   # 只用于本机测试数据：把模拟群号存进数据文件，群消息才认得这个群
+npm run dev:full
+```
+
+1. A 和 B 已配对，各自用自己的号码完成上面的绑定：A 用 `+15551230001`（上面的 `t1`），B 用另一个号码：
+
+   ```powershell
+   Set-Content -Path "$HOME\msg.json" -Encoding utf8 -Value '{"message_handle":"t2","from_number":"+15551230002","service":"iMessage","content":"你好"}'
+   curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Content-Type: application/json" -H "sb-signing-secret: $secret" --data-binary "@$HOME\msg.json"
+   ```
+
+   B 在自己的浏览器里打开文件里新出现的 `/m/xxxx` 链接确认。两个号码都绑好后，文件里会多一行 `"kind":"group"`，就是群里的开场白，带着模拟群号 `dryrun-group-...`。
+
+2. 取出群号，以 A 的身份往群里发一句：
+
+   ```powershell
+   $groupId = (Get-Content "$HOME\sendblue-dryrun.jsonl" -Encoding utf8 | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.kind -eq "group" } | Select-Object -Last 1).groupId
+   $groupId
+   Set-Content -Path "$HOME\msg.json" -Encoding utf8 -Value ('{"message_handle":"g1","from_number":"+15551230001","service":"iMessage","group_id":"' + $groupId + '","content":"今晚一起做饭吧"}')
+   curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Content-Type: application/json" -H "sb-signing-secret: $secret" --data-binary "@$HOME\msg.json"
+   ```
+
+   这句话会出现在两人的"我们俩"里。在 App 里发的话、Agent 的回复和约定卡片会作为 `"kind":"group"` 行写进文件（模拟发到群里）。群里写 `@彼此` 会叫醒 Agent，它贴出约定后，任何一方回复 `同意`（每次换 `message_handle`）就是批准。
 
 以后真接 Sendblue 时需要（都是环境变量，缺任何一个就保持上面的"只写文件"模式）：
 
@@ -98,8 +131,8 @@ curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Cont
 
 - **浏览器推送**：要同时设 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`https://...` 或 `mailto:...`）。
 - **App 推送**（安卓 / iPhone，经 Firebase Cloud Messaging）：代码已经接好，设 `FCM_SERVICE_ACCOUNT_JSON`（Firebase 项目的服务账号 JSON 全文）就会真发。但它要先有 Firebase 项目；iPhone 还要把 Apple 的 APNs 密钥传到 Firebase、并在 iOS 工程里接入 Firebase Messaging SDK 把 APNs token 换成 FCM token（等 Apple 团队开通后在 Mac 上做；在那之前 iPhone 拿到的原始 APNs token 会被网页端拒收，不会注册），安卓打包时要把 Firebase 下载的 `google-services.json` 放进 `mobile/android/app/`（已在 .gitignore 里，不进仓库）。**在这之前 App 推送是关的**：服务器启动时会打印 `Native push: off`，`reminders/run` 返回 `"nativeConfigured":false`，App 也不会弹通知权限。
-  - 开了以后：个人提醒按 iMessage → App 推送 → 浏览器推送 三个渠道都发；App 推送的文案和浏览器推送一样模糊，不带提醒名称，点开进对话首页。
-  - "我们俩"里一方发了消息、而你们没有 iMessage 群时，另一方的手机会收到一条"TA 在'我们俩'里说了话"，同一个人 10 分钟内最多一条，点开直接进"我们俩"。
+  - 开了以后：个人提醒按 iMessage → App 推送 → 浏览器推送 三个渠道都发；App 推送的文案和浏览器推送一样模糊，不带提醒名称，点开进对话首页（只有发到你自己 iMessage 的那条带提醒名称）。"关闭所有提醒通知"三个渠道一起关。
+  - "我们俩"里有新消息、而你们没有正在用的 iMessage 群时（没开 `SENDBLUE_GROUPS_ENABLED` 也算没有），手机会收到一条模糊提示：对方发言或从私聊确认转达的话是"TA 在'我们俩'里说了话"，Agent 贴出的约定卡片、到期和复盘通知是"'我们俩'里有新消息"。写这条消息（或点出这张卡片）的人自己不会收到；关闭了提醒通知的人也不会收到；同一个人 10 分钟内最多一条，点开直接进"我们俩"。
   - App 里登录后会问一次通知权限；"我的提醒"里也有"开启此手机通知"按钮。退出登录会注销这台手机。
 
 ## 7. 现在做不到的

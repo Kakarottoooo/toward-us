@@ -4,6 +4,7 @@ import { createPhoneLink, normalizePhone } from "../phone-identity.mjs";
 import { approveAgreement } from "../agreement-actions.mjs";
 import { announceAgreement, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, memberLanguage } from "../together-domain.mjs";
 import { sendblue as defaultSendblue } from "../sendblue.mjs";
+import { recordUsage } from "../usage.mjs";
 
 // The private iMessage entry point: a thin adapter over the member's own private assistant. Every rule (records, drafts,
 // share-confirm, usage) runs in assistant-router's domain functions; this file only maps a phone to a member and text to text.
@@ -176,6 +177,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     const relationshipId = context.relationship.id, language = await memberLanguage(store, userId);
     try {
       const turn = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated") });
+      if (!turn.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message", channel: "imessage" });
       // The group has no "send for approval" button: a draft the member just asked for is posted as the card both approve.
       if (turn.reply && turn.conversation.draftAgreement?.messageId === turn.reply.id) {
         const posted = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
@@ -184,7 +186,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
           const agreement = await draftAgreementFromTogether(tx, { relationshipId, userId, source: "imessage", language });
           return { agreement, conversation: (await ensureTogetherConversation(tx, { relationshipId, userId })).conversation };
         });
-        if (posted) { emit(posted.agreement, "agreement.updated"); emit(posted.conversation, "together.updated"); }
+        if (posted) { emit(posted.agreement, "agreement.updated"); emit(posted.conversation, "together.updated", null, userId); void recordUsage(store, { userId, relationshipId, action: "agreement_drafted", channel: "imessage" }); }
         return "drafted";
       }
       if (!APPROVE_WORDS.has(plainWord(text))) return "together";
@@ -205,7 +207,8 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
       });
       if (!result) return "together";
       if (result.stale) { await deliverGroup(relationshipId, context.relationship.imessageGroupId, TEXT[language].stale(result.stale)); return "stale"; }
-      emit(result.agreement, "agreement.updated"); if (result.conversation) emit(result.conversation, "together.updated");
+      emit(result.agreement, "agreement.updated"); if (result.conversation) emit(result.conversation, "together.updated", null, userId);
+      void recordUsage(store, { userId, relationshipId, action: "agreement_approved", channel: "imessage" });
       return "approved";
     } catch (error) {
       // An ended relationship or a raced version stays silent: the group simply sees nothing happen.

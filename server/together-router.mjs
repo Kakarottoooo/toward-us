@@ -6,7 +6,7 @@ import { recordUsage } from "./usage.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
-export function createTogetherRouter({ store, mediator, emit = () => {}, onMemberMessage = () => {} }) {
+export function createTogetherRouter({ store, mediator, emit = () => {} }) {
   const router = express.Router();
   router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
   const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
@@ -39,7 +39,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, onMembe
     const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const relationshipId = initial.relationship.id;
     const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated") });
-    if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); void Promise.resolve().then(() => onMemberMessage(userId)).catch(() => console.error("together native push failed")); }
+    if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });
 
@@ -50,7 +50,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, onMembe
       const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
       return { agreement, conversation };
     });
-    emit(result.agreement, "agreement.updated"); emit(result.conversation, "together.updated");
+    emit(result.agreement, "agreement.updated"); emit(result.conversation, "together.updated", null, userId);
     void recordUsage(store, { userId, relationshipId: result.agreement.relationshipId, action: "agreement_drafted" });
     res.status(201).json({ agreement: result.agreement, conversation: projectRecord(result.conversation, userId) });
   });
@@ -62,7 +62,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, onMembe
       const done = await action(tx, { agreementId: req.params.id, version: req.body?.version, userId, reason: req.body?.reason, context });
       return announce(done.agreement) ? { ...done, conversation: (await announceAgreement(tx, { agreement: done.agreement, userId, language: hint(req) })).conversation } : done;
     });
-    emit(result.agreement, event); if (conversation) emit(conversation, "together.updated");
+    emit(result.agreement, event); if (conversation) emit(conversation, "together.updated", null, userId);
     if (usage) void recordUsage(store, { userId, relationshipId: result.agreement.relationshipId, action: usage });
     res.json(result);
   };

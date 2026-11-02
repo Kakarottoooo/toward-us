@@ -17,9 +17,11 @@ const TOGETHER_NOTIFY_MS = 10 * 60_000;
 const OWN_CHANNELS = new Set(["imessage", "native"]);
 const RAW_APNS = /^[0-9a-f]{64}$/i;
 
-export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null }) {
+export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null, groupsEnabled = () => false }) {
   const pushOn = enabled && typeof sendPush === "function";
   const nativeOn = typeof sendNative === "function";
+  // Like the iMessage mirror: what this process already nudged about per conversation, so nothing older than it goes out.
+  const togetherCursors = new Map(), startedAt = new Date().toISOString();
   const owned = async (db, collection, userId) => (await db.listRelationshipRecordsForUser(collection, userId)).filter((item) => item.ownerUserId === userId && !item.archivedAt);
   const update = (db, collection, item, patch) => db.updateRelationshipRecordForUser(collection, item.id, item.ownerUserId, (record) => { Object.assign(record, patch); record.version += 1; });
   const privateRecord = (userId, data) => createRelationshipRecord({ userId, relationshipId: null, visibility: "private", aiAccessScope: "none", ...data });
@@ -31,7 +33,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   };
   const settings = async (userId) => {
     const preference = await preferences(store, userId);
-    return { enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
+    const imessage = typeof sendIMessage === "function" && Boolean(await store.getPhoneForUser(userId));
+    return { enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, imessage, imessageEnabled: imessage && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
   };
   const getOwnedReminder = async (db, id, userId) => {
     const reminder = await db.getRelationshipRecordForUser("reminders", id, userId);
@@ -57,9 +60,9 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     return true;
   };
   const authorizedDelivery = async (db, job) => {
-    // iMessage is the owner's own 1:1 line: it needs a still-bound number but neither browser push nor its preference.
+    // iMessage is the owner's own 1:1 line: it needs a still-bound number, not browser push; "turn off all reminder notifications" stops it too.
     if (job.channel === "imessage") {
-      if (typeof sendIMessage !== "function") return null;
+      if (typeof sendIMessage !== "function" || (await preferences(db, job.ownerUserId))?.enabled === false) return null;
       const reminder = await db.getRelationshipRecordForUser("reminders", job.reminderId, job.ownerUserId);
       const phone = reminder && reminder.scheduleVersion === job.scheduleVersion && await authorizeReminder(db, reminder) ? await db.getPhoneForUser(job.ownerUserId) : null;
       return phone ? { reminder, phone, language: await memberLanguage(db, job.ownerUserId) } : null;
@@ -163,14 +166,14 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     getSettings: settings,
     async updateSettings(userId, input) {
       if (typeof input?.enabled !== "boolean") throw fail("Choose whether reminders are enabled.");
-      if (input.enabled && !enabled && !nativeOn) throw fail("Browser push has not been configured.", 503, "push_not_configured");
+      if (input.enabled && !enabled && !nativeOn && typeof sendIMessage !== "function") throw fail("Browser push has not been configured.", 503, "push_not_configured");
       const timezone = input.timezone || "UTC"; dateFormatter(timezone);
       await store.transaction(LOCK, async (db) => {
         const existing = await preferences(db, userId);
         const values = { enabled: input.enabled, timezone, language: ["zh", "en", "es"].includes(input.language) ? input.language : "zh", status: "active" };
         if (existing) await update(db, "deliveryPreferences", existing, values);
         else await db.createRelationshipRecord("deliveryPreferences", privateRecord(userId, values));
-        if (!input.enabled) await cancelJobs(db, userId, (job) => job.channel !== "imessage");
+        if (!input.enabled) await cancelJobs(db, userId);
       });
       return settings(userId);
     },
@@ -228,30 +231,23 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         return { removed: devices.length };
       });
     },
-    // A member wrote in "我们俩": tell the partner's phones, vaguely, when the couple has no iMessage group to carry it.
-    // At most one per partner per 10 minutes; best effort, never retried, never blocks the message itself.
-    async notifyTogether(actorUserId) {
-      if (!nativeOn) return { sent: 0 };
-      const context = await store.getRelationshipContext(actorUserId);
-      const partner = context?.relationship.status === "active" && context.members.length === 2 && !context.relationship.imessageGroupId ? context.members.find((member) => member.userId !== actorUserId) : null;
-      if (!partner) return { sent: 0 };
-      const devices = await store.transaction(LOCK, async (db) => {
-        const current = now(), mine = (await owned(db, "nativePushDevices", partner.userId)).filter((item) => active(item) && item.token);
-        const last = mine.map((item) => item.togetherNotifiedAt || "").sort().at(-1);
-        if (!mine.length || (last && current.getTime() - new Date(last).getTime() < TOGETHER_NOTIFY_MS)) return [];
-        // Bookkeeping stamp, no version bump: it must not conflict with a concurrent re-registration.
-        for (const device of mine) await db.updateRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId, (draft) => { draft.togetherNotifiedAt = iso(current); });
-        return mine;
-      });
-      const language = devices.length ? await memberLanguage(store, partner.userId) : "zh";
-      const message = { title: "Toward Us", body: say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros."), url: "/?channel=us" };
+    // Every published "我们俩" change (member messages, relays, Agent replies, cards, due/review announcements) passes here.
+    // New messages since the last call nudge the members who did not write them, vaguely, when the couple has no live iMessage
+    // group to carry them. `actorUserId` is the member who triggered an Agent card, so they are not nudged about their own action.
+    async notifyTogether(conversation, actorUserId = null) {
+      if (!nativeOn || !conversation?.relationshipId || !Array.isArray(conversation.messages)) return { sent: 0 };
+      const cursor = togetherCursors.get(conversation.id) || { since: startedAt, ids: new Set() };
+      const fresh = conversation.messages.filter((item) => item.createdAt > cursor.since || (item.createdAt === cursor.since && !cursor.ids.has(item.id)));
+      if (!fresh.length) return { sent: 0 };
+      const since = fresh.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, cursor.since);
+      togetherCursors.set(conversation.id, { since, ids: new Set([...(since === cursor.since ? cursor.ids : []), ...fresh.filter((item) => item.createdAt === since).map((item) => item.id)]) });
+      const context = await store.getRelationshipContext(conversation.createdByUserId);
+      if (context?.relationship.id !== conversation.relationshipId || context.relationship.status !== "active" || context.members.length !== 2 || (groupsEnabled() && context.relationship.imessageGroupId)) return { sent: 0 };
+      const authorOf = (item) => item.role === "member" ? item.actorUserId : conversation.messages.find((other) => other.id === item.replyTo)?.actorUserId || actorUserId;
       let sent = 0;
-      for (const device of devices) {
-        try { await sendNative(device.token, message); sent += 1; }
-        catch (error) {
-          console.error("together native push failed", error?.code || "error");
-          if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });
-        }
+      for (const member of context.members) {
+        const mine = fresh.filter((item) => authorOf(item) !== member.userId);
+        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"));
       }
       return { sent };
     },
@@ -338,7 +334,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           const preference = await preferences(db, reminder.ownerUserId);
           if (!await authorizeReminder(db, reminder)) { await update(db, "reminders", reminder, { status: "cancelled" }); continue; }
           const devices = pushOn && preference?.enabled ? (await owned(db, "pushSubscriptions", reminder.ownerUserId)).filter(active) : [];
-          const phone = typeof sendIMessage === "function" ? await db.getPhoneForUser(reminder.ownerUserId) : null;
+          const phone = typeof sendIMessage === "function" && preference?.enabled !== false ? await db.getPhoneForUser(reminder.ownerUserId) : null;
           const phones = nativeOn && preference?.enabled !== false ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter((item) => active(item) && item.token) : [];
           if (!devices.length && !phone && !phones.length) continue;
           // One job per channel and occurrence; the channel suffix keeps a failure or retry on one from touching the other.
@@ -405,6 +401,30 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       return result;
     },
   };
+
+  // One member's phones, at most once per 10 minutes; respects "turn off all reminder notifications"; best effort, never retried.
+  async function nudge(userId, partnerWrote) {
+    const devices = await store.transaction(LOCK, async (db) => {
+      if ((await preferences(db, userId))?.enabled === false) return [];
+      const current = now(), mine = (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token);
+      const last = mine.map((item) => item.togetherNotifiedAt || "").sort().at(-1);
+      if (!mine.length || (last && current.getTime() - new Date(last).getTime() < TOGETHER_NOTIFY_MS)) return [];
+      // Bookkeeping stamp, no version bump: it must not conflict with a concurrent re-registration.
+      for (const device of mine) await db.updateRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId, (draft) => { draft.togetherNotifiedAt = iso(current); });
+      return mine;
+    });
+    const language = devices.length ? await memberLanguage(store, userId) : "zh";
+    const body = partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
+    let sent = 0;
+    for (const device of devices) {
+      try { await sendNative(device.token, { title: "Toward Us", body, url: "/?channel=us" }); sent += 1; }
+      catch (error) {
+        console.error("together native push failed", error?.code || "error");
+        if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });
+      }
+    }
+    return sent;
+  }
 
   async function revokeNative(db, device) {
     await update(db, "nativePushDevices", device, { status: "revoked", token: null });
