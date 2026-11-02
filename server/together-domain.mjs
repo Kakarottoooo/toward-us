@@ -7,7 +7,7 @@ import { handoffUrl } from "./handoff.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
-const SOURCES = new Set(["app", "imessage", "relay"]);
+const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
 const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
@@ -58,7 +58,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [] }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -71,6 +71,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : null, createdAt: new Date().toISOString(),
     ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
     ...(photoIds.length ? { photoIds: photoIds.slice(0, 6) } : {}),
+    ...(recordedByUserId && recordedByUserId !== actorUserId ? { recordedByUserId } : {}),
   };
   const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message].slice(-MESSAGE_LIMIT);
@@ -83,14 +84,14 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
     return action(tx);
   });
-  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds }));
+  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId }));
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
   const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;

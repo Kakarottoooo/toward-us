@@ -149,3 +149,13 @@ test("mediation posts one shared reflection and each person's feedback only to t
   assert.ok(theirs.includes("FOR_B_ONLY") && !theirs.includes("FOR_A_ONLY"));
   assert.ok(!JSON.stringify((await f.request("/together")).body).includes("FOR_"));
 });
+
+test("on one shared phone a sentence can be attributed to the partner, marked as recorded on this phone", async (t) => {
+  const f = await fixture(t);
+  const sent = await f.request("/together/messages", "POST", { text: "I felt left out", itemId: randomUUID(), speaker: "partner", language: "en" });
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  const line = (await f.request("/together", "GET", null, f.ids[1])).body.conversation.messages.find((message) => message.text === "I felt left out");
+  assert.deepEqual([line.actorUserId, line.recordedByUserId, line.source], [f.ids[1], f.ids[0], "voice"]);
+  const own = await f.request("/together/messages", "POST", { text: "Me too", itemId: randomUUID(), language: "en" });
+  assert.equal(own.body.message.recordedByUserId, undefined);
+});

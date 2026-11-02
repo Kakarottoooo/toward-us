@@ -15,7 +15,7 @@ type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; cr
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -41,6 +41,10 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [agentWorking, setAgentWorking] = useState(0);
   const [unreadMe, setUnreadMe] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // Talking together in Us: each finished sentence goes straight to Us, from whoever is picked as speaking on this phone.
+  const [talkTogether, setTalkTogether] = useState(false);
+  const [speaker, setSpeaker] = useState<"me" | "partner">("me");
+  const talking = useRef({ on: false, speaker: "me" as "me" | "partner" }); talking.current = { on: talkTogether, speaker };
   const fileRef = useRef<HTMLInputElement>(null);
   const [queued, setQueued] = useState<Array<{ text: string; itemId: string }>>([]);
   const [busy, setBusy] = useState(false);
@@ -143,7 +147,7 @@ ${text}` : text, target);
   };
   // Sending the same text again after a failure reuses its itemId, so a retry can never post the message twice.
   const failedSharedRef = useRef<{ text: string; body: string; itemId: string } | null>(null);
-  const sendShared = (text: string, photoIds: string[] = []) => {
+  const sendShared = (text: string, photoIds: string[] = [], spokenBy: "me" | "partner" = "me") => {
     const retry = failedSharedRef.current?.text === text ? failedSharedRef.current : null;
     const body = retry ? retry.body : askAgent && !AGENT_CALL.test(text) ? `@Pinky ${text}` : text, itemId = retry ? retry.itemId : crypto.randomUUID();
     setNotice(""); setAskAgent(false);
@@ -152,7 +156,7 @@ ${text}` : text, target);
       // Show the member's words at once; the Agent's reply follows when it is ready.
       const shown = calling ? setTimeout(() => void loadTogether(), 600) : null;
       if (calling) setAgentWorking((count) => count + 1);
-      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...(photoIds.length ? { photoIds } : {}) })); failedSharedRef.current = null; await loadTogether(); }
+      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...(photoIds.length ? { photoIds } : {}), ...(spokenBy === "partner" ? { speaker: "partner" } : {}) })); failedSharedRef.current = null; await loadTogether(); }
       catch (error) { failedSharedRef.current = { text, body, itemId }; keep(text, "us"); setNotice(errorText(error as ApiError)); }
       finally { if (shown) clearTimeout(shown); if (calling) setAgentWorking((count) => count - 1); }
     });
@@ -186,7 +190,7 @@ ${text}` : text, target);
   const heard = async (text: string, itemId: string) => {
     if (STOP_VOICE.test(text.trim())) { voice.stop(); return null; }
     // In "Us" speech only fills the box: nothing reaches the partner until the member taps send.
-    if (channelRef.current === "us") { setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
+    if (channelRef.current === "us") { if (talking.current.on) void sendShared(text, [], talking.current.speaker); else setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
     return sendPrivate(text, itemId, true);
   };
   const voiceUnavailable = (message: string) => setNotice(t(message, "Voice is unavailable right now. You can still type.", "La voz no está disponible ahora. Puedes seguir escribiendo."));
@@ -274,7 +278,8 @@ ${text}` : text, target);
   }, []);
   const sharedMessage = (message: SharedMessage) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
-    const author = message.role === "agent" ? "Pinky" : mine ? "" : partnerName;
+    const recorder = message.recordedByUserId ? (message.recordedByUserId === user.id ? user.name : partnerName) : "";
+    const author = message.role === "agent" ? "Pinky" : recorder ? `${message.actorUserId === user.id ? user.name : partnerName}${t(`（在 ${recorder} 的手机上说）`, ` (spoken on ${recorder}'s phone)`, ` (dicho en el teléfono de ${recorder})`)}` : mine ? "" : partnerName;
     // System copy is stored in every language; free-form model replies and member text are shown as written.
     const text = message.i18n?.[language] ?? message.text;
     if (message.kind === "agreement_card") {
@@ -335,7 +340,12 @@ ${text}` : text, target);
     {!(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
       {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
-      {voice.listening && <p className="conversation-listening">{channel === "us" ? t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.") : t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}
+      {voice.listening && channel === "me" && <p className="conversation-listening">{t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}
+      {voice.listening && channel === "us" && <div className="together-voice" data-testid="together-voice">
+        <label className="together-switch"><input type="checkbox" checked={talkTogether} onChange={(event) => setTalkTogether(event.target.checked)} /><span>{t("一起说：每句直接发到“我们俩”", "Talk together: each sentence goes straight to Us", "Hablar juntos: cada frase va directo a Nosotros")}</span></label>
+        {talkTogether ? <div className="together-speakers" role="group" aria-label={t("谁在说", "Who is speaking", "Quién habla")}><span>{t("谁在说", "Speaking", "Habla")}</span>{(["me", "partner"] as const).map((who) => <button key={who} type="button" className={speaker === who ? "active" : ""} aria-pressed={speaker === who} onClick={() => setSpeaker(who)}>{who === "me" ? user.name : partnerName}</button>)}</div>
+          : <p>{t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.")}</p>}
+      </div>}
       {!!attachments.length && <div className="composer-photos">{attachments.map((item) => <figure key={item.key} className={item.failed ? "failed" : item.id ? "" : "uploading"}><img src={item.preview} alt="" draggable={false} /><button type="button" onClick={() => setAttachments((items) => items.filter((entry) => entry.key !== item.key))} aria-label={t("移除照片", "Remove photo", "Quitar foto")}><X size={14} weight="bold" /></button></figure>)}</div>}
       {readOnly ? <p className="conversation-notice">{t("你们的共同空间已结束，这里只能查看。", "Your shared space has ended; this conversation is read-only.", "Su espacio compartido terminó; esta conversación es de solo lectura.")}</p> :
         <div className="conversation-input">

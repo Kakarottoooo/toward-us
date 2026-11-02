@@ -132,3 +132,11 @@
 .handoff { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 999px; background: var(--jian-blue); color: #fff; font-size: 15px; font-weight: 600; text-decoration: none; }
 .handoff span { overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
 .handoff:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
+.together-voice { display: grid; gap: 8px; margin: 0 0 8px; padding: 10px 12px; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-ink); font-size: 14px; }
+.together-voice p { margin: 0; color: #4a4540; }
+.together-switch { display: flex; align-items: center; gap: 8px; min-height: 32px; font-weight: 600; }
+.together-switch input { width: 20px; height: 20px; accent-color: var(--jian-blue); }
+.together-speakers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.together-speakers span { color: #5f5952; }
+.together-speakers button { min-height: 40px; padding: 0 14px; border: 1px solid rgba(7,61,185,.3); border-radius: 999px; background: #fffdf8; color: var(--jian-blue); font-size: 15px; font-weight: 600; cursor: pointer; }
+.together-speakers button.active { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }

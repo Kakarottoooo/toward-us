@@ -42,7 +42,10 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     const relationshipId = initial.relationship.id;
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId).catch(() => null); if (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId) throw decisionError(400, "message_required"); }
     const timezone = clean(req.body?.timezone, 64) || "UTC";
-    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, photoIds, timezone, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
+    // Shared-device voice: both partners sit at one phone and pick who is speaking; the line is theirs, recorded on this phone.
+    const partner = req.body?.speaker === "partner" ? initial.members.find((member) => member.userId !== userId) : null;
+    if (req.body?.speaker === "partner" && !partner) throw decisionError(409, "pairing_required");
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
     if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });
