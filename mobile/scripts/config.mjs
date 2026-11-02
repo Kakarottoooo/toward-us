@@ -12,7 +12,7 @@ if (url.protocol !== 'https:' && url.protocol !== 'http:') { console.error('TOWA
 const cleartext = url.protocol === 'http:';
 const config = {
   appId: 'us.toward.app',
-  appName: 'Toward Us',
+  appName: 'Pinky',
   webDir: 'www',
   loggingBehavior: 'none',
   backgroundColor: '#f4efe6',
@@ -24,5 +24,5 @@ await writeFile(new URL('../capacitor.config.json', import.meta.url), JSON.strin
 // cap sync requires webDir to exist; the remote server.url replaces it at runtime.
 const www = new URL('../www/', import.meta.url);
 await mkdir(www, { recursive: true });
-await writeFile(new URL('index.html', www), '<!doctype html><meta charset="utf-8"><title>Toward Us</title><p>Loading ' + url.origin + '</p>\n');
+await writeFile(new URL('index.html', www), '<!doctype html><meta charset="utf-8"><title>Pinky</title><p>Loading ' + url.origin + '</p>\n');
 console.log('capacitor.config.json -> server.url ' + url.origin + (cleartext ? ' (cleartext allowed for http dogfooding)' : '') + ' at ' + fileURLToPath(new URL('../capacitor.config.json', import.meta.url)));
