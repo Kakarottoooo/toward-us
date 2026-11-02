@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, At, ChatCircleDots, CheckCircle, Copy, LinkSimple, LockKey, Microphone, PaperPlaneRight, SquaresFour, StopCircle, UsersThree } from "@phosphor-icons/react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, At, CalendarBlank, ChatCircleDots, CheckCircle, Copy, GearSix, HandHeart, Handshake, LinkSimple, List, ListChecks, LockKey, Microphone, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -22,7 +22,7 @@ const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",
  * the couple's together conversation). Every rule lives on the server; this screen only renders and forwards explicit taps. */
-export function ConversationHome({ user, pairing, language, onAllFeatures, onOpen, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onAllFeatures: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onLogout, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: () => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -39,6 +39,7 @@ export function ConversationHome({ user, pairing, language, onAllFeatures, onOpe
   const [failed, setFailed] = useState<{ text: string; itemId: string } | null>(null);
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
+  const [drawer, setDrawer] = useState(false);
   const sessionRef = useRef<Session | null>(null);
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
@@ -94,7 +95,7 @@ export function ConversationHome({ user, pairing, language, onAllFeatures, onOpe
     if (!("speechSynthesis" in window) || !text) return;
     window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = languageTag(language); window.speechSynthesis.speak(utterance);
   };
-  // Turns run strictly in order per channel, typed and spoken alike (VoiceAssistant's queue): the server rejects a turn that
+  // Turns run strictly in order per channel, typed and spoken alike (one queue per channel): the server rejects a turn that
   // races the previous one, so a second utterance waits for the first answer instead of failing with a version conflict.
   const queues = useRef<Record<Channel, Promise<unknown>>>({ me: Promise.resolve(), us: Promise.resolve() });
   const failedRef = useRef<{ text: string; itemId: string } | null>(null);
@@ -163,7 +164,8 @@ ${text}` : text, target);
     try { const active = await ensureSession(); await voice.start(`/api/assistant/sessions/${active!.id}/realtime`); } catch (error) { setNotice(errorText(error as ApiError)); }
   };
   const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); setChannel(next); };
-  const allFeatures = () => { keyboard.hide(); voice.stop(); onAllFeatures(); };
+  // The drawer is modal navigation: dismiss the keyboard and voice before it covers the conversation.
+  const openDrawer = () => { keyboard.hide(); voice.stop(); setDrawer(true); };
   const open = (url: string) => { keyboard.hide(); voice.stop(); onOpen(url); };
 
   const share = async (card: Card) => {
@@ -239,7 +241,7 @@ ${text}` : text, target);
   return <div className="paper-screen conversation-home" data-testid="conversation-screen">
     <header className="conversation-header">
       <div className="conversation-topline">
-        <button className="conversation-all" onClick={allFeatures} data-testid="all-features"><SquaresFour size={20} />{t("全部功能", "All features", "Todas las funciones")}</button>
+        <button className="conversation-menu" onClick={openDrawer} aria-label={t("打开菜单", "Open menu", "Abrir menú")} aria-expanded={drawer} data-testid="open-drawer"><List size={24} /></button>
       </div>
       <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
         <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={18} />{t("只有我", "Just me", "Solo yo")}</button>
@@ -268,12 +270,49 @@ ${text}` : text, target);
           <button type="button" className="conversation-send" onClick={send} disabled={!draft.trim()} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
         </div>}
     </footer>}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onLogout={() => { setDrawer(false); onLogout(); }} />}
   </div>;
 }
 
-/** A quiet way back from the full UI to the conversation, overlaid so the full UI's own pages stay untouched. */
-export function BackToConversation({ language, onBack }: { language: Language; onBack: () => void }) {
-  return <button className="back-to-conversation" onClick={onBack} data-testid="back-to-conversation"><ChatCircleDots size={20} weight="fill" />{localized(language, "回到对话", "Back to chat", "Volver al chat")}</button>;
+/** The top of every page opened from the drawer: the way back to the conversation and the page title, nothing else. */
+export function PageHeader({ language, title, onBack }: { language: Language; title: string; onBack: () => void }) {
+  return <header className="page-header"><button className="page-back" onClick={onBack} data-testid="back-to-conversation"><ArrowLeft size={20} />{localized(language, "对话", "Chat", "Chat")}</button><h1>{title}</h1></header>;
+}
+
+type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number; onClick: () => void };
+/** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
+function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite, onPrivacy, onLogout }: { user: { id: string; name: string }; paired: boolean; language: Language; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onLogout: () => void }) {
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const [home, setHome] = useState<{ pending: number; lists: boolean } | null>(null);
+  const start = useRef<number | null>(null);
+  useEffect(() => {
+    if (!paired) return;
+    relationshipApi<{ home: { pending: unknown[] }; graph: { lists: unknown[]; milestones: unknown[] } }>("/api/relationship/home")
+      .then((result) => setHome({ pending: result.home.pending.length, lists: result.graph.lists.length + result.graph.milestones.length > 0 })).catch(() => {});
+  }, [paired]);
+  useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [onClose]);
+  const fixed: DrawerItem[] = paired ? [
+    { key: "agreements", icon: <Handshake size={22} />, label: t("约定", "Agreements", "Acuerdos"), badge: home?.pending, onClick: () => onOpen("/?view=agreements") },
+    { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=upcoming") },
+  ] : [
+    { key: "invite", icon: <UserPlus size={22} />, label: t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja"), onClick: onInvite },
+    { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=reminders") },
+  ];
+  const spaces: DrawerItem[] = [
+    { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") },
+    ...(paired && home?.lists ? [{ key: "lists", icon: <ListChecks size={22} />, label: t("日期与清单", "Dates & lists", "Fechas y listas"), onClick: () => onOpen("/?view=lists") }] : []),
+    ...(paired ? [{ key: "talk", icon: <UsersThree size={22} />, label: t("调解与复盘", "Mediation & reviews", "Mediación y revisiones"), onClick: () => onOpen("/?view=talk") }] : []),
+  ];
+  const row = (item: DrawerItem) => <button key={item.key} className="drawer-row" onClick={item.onClick} data-testid={`drawer-${item.key}`}>{item.icon}<span>{item.label}</span>{!!item.badge && <em aria-label={t(`${item.badge} 件待处理`, `${item.badge} waiting`, `${item.badge} pendientes`)}>{item.badge}</em>}</button>;
+  return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
+    <button className="conversation-drawer-scrim" aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} onClick={onClose} />
+    <nav className="conversation-drawer" aria-label={t("菜单", "Menu", "Menú")} onPointerDown={(event) => { start.current = event.clientX; }} onPointerUp={(event) => { if (start.current !== null && event.clientX - start.current < -60) onClose(); start.current = null; }}>
+      <header><div><strong>PINKY</strong><span>{user.name}</span></div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
+      <div className="drawer-group">{fixed.map(row)}</div>
+      <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{spaces.map(row)}</div>
+      <footer className="drawer-group">{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}{row({ key: "logout", icon: <SignOut size={22} />, label: t("退出登录", "Sign out", "Cerrar sesión"), onClick: onLogout })}</footer>
+    </nav>
+  </div>;
 }
 
 /** The live agreement drawn from its own fields: a distinct title, numbered terms, open points, then the status. */

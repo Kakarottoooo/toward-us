@@ -10,21 +10,18 @@ test("private Agent conversations become joint work only after explicit sharing"
   await postJson(b.request, "/api/partner/accept", { code: invitation.pairing.invitation.code });
 
   const pageA = await a.newPage(); const pageB = await b.newPage(); await pageA.goto("/"); await pageB.goto("/");
-  await pageA.getByRole("button", { name: "全部功能" }).click(); await pageB.getByRole("button", { name: "全部功能" }).click();
+  await pageA.getByTestId("open-drawer").click(); await pageA.getByTestId("drawer-agreements").click(); await pageB.getByTestId("open-drawer").click(); await pageB.getByTestId("drawer-agreements").click();
   await expect(pageA.getByTestId("dashboard-screen")).toBeVisible(); await expect(pageB.getByTestId("dashboard-screen")).toBeVisible();
-  await expect(pageA.getByText("属于两个人，也尊重每个人的内心空间", { exact: true })).toBeVisible();
-  await pageA.getByRole("button", { name: "EN", exact: true }).click(); await expect(pageA.getByText("For both of you, with room to think alone", { exact: true })).toBeVisible(); await expect(pageA.getByText("彼此", { exact: true })).toHaveCount(0);
-  await pageA.getByRole("button", { name: "ES", exact: true }).click(); await expect(pageA.getByText("Para ambos, con espacio para pensar a solas", { exact: true })).toBeVisible(); await pageA.getByRole("button", { name: "ZH", exact: true }).click();
   await pageA.screenshot({ path: testInfo.outputPath("relationship-home-desktop.png"), fullPage: true }); await pageB.screenshot({ path: testInfo.outputPath("relationship-home-mobile.png"), fullPage: true });
 
-  await pageA.getByRole("button", { name: "计划", exact: true }).click(); await sendToPrivateAgent(pageA, "我想记住我们认识的日子，日期是 2025-06-18");
+  await pageA.goto("/?view=plans"); await sendToPrivateAgent(pageA, "我想记住我们认识的日子，日期是 2025-06-18");
   await expect(pageA.getByText("AI 整理出的计划", { exact: true })).toBeVisible(); await pageA.getByRole("button", { name: "加入我们的共同计划" }).click();
   expect((await getJson(b.request, "/api/relationship/home")).graph.milestones).toHaveLength(0);
   await confirmPreview(pageA, "我们认识的日子", "记住我们的相识日。");
   await expect(pageA.getByText("计划已加入共同空间。", { exact: true })).toBeVisible();
   expect((await getJson(b.request, "/api/relationship/home")).graph.milestones).toHaveLength(1);
 
-  await pageA.getByRole("button", { name: "决定", exact: true }).click(); await sendToPrivateAgent(pageA, "PRIVATE_TOPIC_A：我在想今年春节去哪里，我希望家人被尊重，也可以轮流安排。"); await expect(pageA.getByText("AI 整理出的可分享观点", { exact: true })).toBeVisible(); await pageA.locator(".private-agent-workspace").screenshot({ path: testInfo.outputPath("decision-agent-desktop.png") });
+  await pageA.goto("/?view=decide"); await sendToPrivateAgent(pageA, "PRIVATE_TOPIC_A：我在想今年春节去哪里，我希望家人被尊重，也可以轮流安排。"); await expect(pageA.getByText("AI 整理出的可分享观点", { exact: true })).toBeVisible(); await pageA.locator(".private-agent-workspace").screenshot({ path: testInfo.outputPath("decision-agent-desktop.png") });
   const beforeShare = await getJson(b.request, "/api/relationship/home"); expect(beforeShare.graph.issues).toHaveLength(0); expect(beforeShare.graph.privateAgentThreads).toHaveLength(0); expect(JSON.stringify(beforeShare)).not.toContain("PRIVATE_TOPIC_A");
   await pageA.getByRole("button", { name: "分享给另一半，问问 TA 的意见" }).click();
   expect((await getJson(b.request, "/api/relationship/home")).graph.issues).toHaveLength(0);
@@ -32,7 +29,7 @@ test("private Agent conversations become joint work only after explicit sharing"
   await expect(pageA.getByText("你已主动分享；现在等待对方独立思考。", { exact: true })).toBeVisible(); await expect.poll(async () => (await getJson(b.request, "/api/relationship/home")).graph.issues.length).toBe(1);
   expect(JSON.stringify(await getJson(b.request, "/api/relationship/home"))).not.toContain("PRIVATE_TOPIC_A");
 
-  await pageB.getByRole("button", { name: "决定", exact: true }).click(); await expect(pageB.getByRole("option").filter({ hasText: "春节去哪里" })).toBeAttached(); await sendToPrivateAgent(pageB, "B_PRIVATE_THOUGHT：我希望轮流安排两边家庭，也担心路上太累。"); await pageB.locator(".private-agent-workspace").screenshot({ path: testInfo.outputPath("decision-agent-mobile.png") });
+  await pageB.goto("/?view=decide"); await expect(pageB.getByRole("option").filter({ hasText: "春节去哪里" })).toBeAttached(); await sendToPrivateAgent(pageB, "B_PRIVATE_THOUGHT：我希望轮流安排两边家庭，也担心路上太累。"); await pageB.locator(".private-agent-workspace").screenshot({ path: testInfo.outputPath("decision-agent-mobile.png") });
   expect(JSON.stringify(await getJson(a.request, "/api/relationship/home"))).not.toContain("B_PRIVATE_THOUGHT"); await pageB.getByRole("button", { name: "分享给另一半，问问 TA 的意见" }).click();
   await confirmPreview(pageB, "春节去哪里", "我希望两边家庭轮流安排，也需要减少路途疲劳。");
   expect(JSON.stringify(await getJson(a.request, "/api/relationship/home"))).not.toContain("B_PRIVATE_THOUGHT");

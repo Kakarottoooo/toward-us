@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Transport fixtures exercise the UI and microphone lifecycle. Semantic execution
 // and persistence are covered separately through the real application API.
-test("private assistant keeps navigation and supports queued speech, interruption and text retry", async ({ page, context }) => {
+test("the private conversation supports queued speech, interruption and text retry", async ({ page, context }) => {
   await context.request.post("/api/auth/register", { data: { name: "Voice tester", email: `voice-ui-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
   const messages: Array<Record<string, unknown>> = [];
   const received: string[] = [];
@@ -36,10 +36,8 @@ test("private assistant keeps navigation and supports queued speech, interruptio
     return route.fulfill({ json: { session: session() } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "全部功能" }).click();
-  await page.getByTestId("assistant-open").click();
-  await page.getByTestId("assistant-microphone").click();
-  await expect(page.getByTestId("assistant-microphone")).toContainText("结束语音");
+  await page.getByRole("button", { name: "开始语音" }).click();
+  await expect(page.getByRole("button", { name: "结束语音" })).toBeVisible();
   await page.evaluate(() => {
     const state = (window as unknown as { voiceTest: { events: (event: { data: string }) => void } }).voiceTest;
     for (const [item_id, transcript] of [["speech-one", "周五提醒我散步"], ["speech-two", "改到九点"]]) {
@@ -47,48 +45,46 @@ test("private assistant keeps navigation and supports queued speech, interruptio
       state.events({ data: JSON.stringify({ type: "conversation.item.input_audio_transcription.completed", item_id, transcript }) });
     }
   });
-  await expect(page.locator(".assistant-message-user")).toHaveCount(2);
+  await expect(page.locator(".conversation-message.from-me")).toHaveCount(2);
   expect(received).toEqual(["speech-one", "speech-two"]);
-  await expect(page.locator(".assistant-result-card").last()).toContainText("周末散步");
-  await page.getByTestId("assistant-microphone").click();
-  await page.getByTestId("assistant-input").fill("重试这句话");
-  await page.getByTestId("assistant-send").click();
-  await expect(page.getByTestId("assistant-retry")).toBeVisible();
-  await page.getByTestId("assistant-retry").click();
-  await expect(page.locator(".assistant-message-user")).toHaveCount(3);
+  await expect(page.locator(".conversation-card").last()).toContainText("周末散步");
+  await page.getByRole("button", { name: "结束语音" }).click();
+  await page.getByTestId("conversation-input").fill("重试这句话");
+  await page.getByTestId("conversation-send").click();
+  await expect(page.locator(".conversation-retry")).toBeVisible();
+  await page.locator(".conversation-retry button").click();
+  await expect(page.locator(".conversation-message.from-me")).toHaveCount(3);
   expect(received.at(-1)).toBe(received.at(-2));
-  await page.getByTestId("assistant-collapse").click();
-  await expect(page.getByRole("button", { name: "记忆与日常", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => (window as unknown as { voiceTest: { stopped: number } }).voiceTest.stopped)).toBeGreaterThan(0);
+  // Opening the drawer stops listening; the drawer only lists places to look.
+  await page.getByRole("button", { name: "开始语音" }).click();
+  await page.getByTestId("open-drawer").click();
+  await expect(page.getByTestId("drawer-moments")).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { voiceTest: { stopped: number } }).voiceTest.stopped)).toBeGreaterThan(1);
+  await page.getByTestId("drawer-settings").click();
   await page.getByRole("button", { name: "ES", exact: true }).click();
+  await page.getByTestId("back-to-conversation").click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByTestId("assistant-open").click();
-  await expect(page.getByTestId("assistant-panel")).toContainText("privado");
+  await expect(page.getByTestId("conversation-input")).toHaveAttribute("placeholder", "Cuéntame…");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("shared home keeps the assistant clear of the hero on desktop and mobile", async ({ page, context, browser }, testInfo) => {
+test("every drawer page fits a phone and leads back to the conversation", async ({ page, context, browser }, testInfo) => {
   const suffix = Date.now();
-  await context.request.post("/api/auth/register", { data: { name: "Alex", email: `voice-layout-a-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { name: "Alex", email: `drawer-a-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
   const partner = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
   try {
-    await partner.request.post("/api/auth/register", { data: { name: "Sam", email: `voice-layout-b-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
+    await partner.request.post("/api/auth/register", { data: { name: "Sam", email: `drawer-b-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
     const invitation = await (await context.request.post("/api/partner/invitations", { data: {} })).json();
     expect((await partner.request.post("/api/partner/accept", { data: { code: invitation.pairing.invitation.code } })).ok()).toBe(true);
-    await page.goto("/");
-    await page.getByRole("button", { name: "全部功能" }).click();
-    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
-      await page.setViewportSize(viewport);
-      await expect(page.getByTestId("assistant-open")).toBeVisible();
-      for (const expanded of [false, true]) {
-        if (expanded) await page.getByTestId("assistant-open").click();
-        const panel = await page.getByTestId("assistant-panel").boundingBox();
-        const hero = await page.locator(".relationship-hero").boundingBox();
-        expect(panel).not.toBeNull(); expect(hero).not.toBeNull();
-        expect(hero!.y).toBeGreaterThanOrEqual(panel!.y + panel!.height);
-        if (expanded) await page.getByTestId("assistant-collapse").click();
-      }
-      await expect(page.getByRole("navigation", { name: "共同空间导航" }).getByRole("button")).toHaveCount(5);
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const key of ["agreements", "upcoming", "moments", "talk", "settings"]) {
+      await page.goto("/");
+      await page.getByTestId("open-drawer").click();
+      await page.getByTestId(`drawer-${key}`).click();
+      await expect(page.getByTestId("back-to-conversation")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.getByTestId("back-to-conversation").click();
+      await expect(page.getByTestId("conversation-screen")).toBeVisible();
     }
   } finally { await partner.close(); }
 });
