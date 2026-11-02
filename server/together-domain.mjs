@@ -7,7 +7,7 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay"]);
 const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review"]);
-const AGENT_CALL = /彼此|toward|@agent/i;
+const AGENT_CALL = /彼此|toward\s*us|@toward|@agent/i;
 const MESSAGE_LIMIT = 200;
 const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotiation_requested"]);
 const togetherId = (relationshipId) => `together:${relationshipId}`;
@@ -23,7 +23,8 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
   const conversation = (snapshot.togetherConversations || []).find((item) => item.id === togetherId(relationshipId) && item.relationshipId === relationshipId) || null;
   const agreements = (snapshot.agreements || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt && !item.withdrawnAt);
   const agreement = ({ id, title, summary, terms, unresolvedPoints, status, version }) => ({ id, title, summary, terms, unresolvedPoints: unresolvedPoints || [], status, version });
-  const pending = conversation ? agreements.filter((item) => item.status === "awaiting_approvals" && item.sourceTogetherId === conversation.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] : null;
+  // One pending agreement per couple, whatever path created it (together, full decision flow).
+  const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
     messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt }) => ({ id, role, actorUserId, kind, text, replyTo, createdAt })),
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
@@ -69,8 +70,9 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
  * version. `values` lets a member edit the Agent's draft before sending it for approval. */
 export async function draftAgreementFromTogether(tx, { relationshipId, userId, values = null, source = "app" }) {
   const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
-  const own = (await tx.listRelationshipRecordsForUser("agreements", userId)).filter((item) => item.relationshipId === relationshipId && item.sourceTogetherId === conversation.id && !item.archivedAt && !item.withdrawnAt);
-  if (own.some((item) => item.status === "awaiting_approvals")) throw decisionError(409, "one_pending_agreement");
+  const agreements = (await tx.listRelationshipRecordsForUser("agreements", userId)).filter((item) => item.relationshipId === relationshipId && !item.archivedAt && !item.withdrawnAt);
+  if (agreements.some((item) => item.status === "awaiting_approvals")) throw decisionError(409, "one_pending_agreement");
+  const own = agreements.filter((item) => item.sourceTogetherId === conversation.id);
   if (!values && !conversation.draftAgreement) throw decisionError(409, "together_draft_required");
   const fields = agreementValues(values || conversation.draftAgreement);
   // A change request moves the agreement back to "draft"; revising it keeps one history and bumps the version both must approve.
