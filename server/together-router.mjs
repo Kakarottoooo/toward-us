@@ -41,7 +41,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const relationshipId = initial.relationship.id;
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId).catch(() => null); if (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId) throw decisionError(400, "message_required"); }
-    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, photoIds, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
+    const timezone = clean(req.body?.timezone, 64) || "UTC";
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, photoIds, timezone, source: "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
     if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });

@@ -128,3 +128,7 @@
 .message-photos a { display: block; }
 .message-photos img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: #ebe4d8; }
 .message-photos.count-1 img { aspect-ratio: auto; max-height: 320px; }
+.message-handoffs { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
+.handoff { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 999px; background: var(--jian-blue); color: #fff; font-size: 15px; font-weight: 600; text-decoration: none; }
+.handoff span { overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
+.handoff:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }

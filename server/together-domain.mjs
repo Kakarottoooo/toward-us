@@ -3,6 +3,7 @@ import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegot
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
+import { handoffUrl } from "./handoff.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
@@ -82,7 +83,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, photoIds = [], source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
@@ -109,7 +110,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
-    const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked });
+    const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked, timezone });
     const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: outcome.reply, i18n: outcome.i18n || null, refs: [...made, ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
     if (!outcome.draftAgreement) return result;
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });
@@ -135,9 +136,14 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
  * `text` must only contain shared content. */
 /** What the shared Agent may change for both partners, applied in the same transaction as its reply. Returns refs the
  * conversation shows as links. Only shared spaces and dates of this couple; nothing private, nothing needing two approvals. */
-async function applyTogetherActions(tx, { relationshipId, userId, actions, asked = [] }) {
+async function applyTogetherActions(tx, { relationshipId, userId, actions, asked = [], timezone = "UTC" }) {
   const refs = []; let created = null;
   for (const action of actions) {
+    if (action.kind === "link") {
+      const url = handoffUrl({ url: action.localDateTime ? null : action.text, localDateTime: action.localDateTime, title: action.title || "", location: action.localDateTime ? action.text || "" : "", timezone });
+      if (url && action.title) refs.push({ type: "link", id: randomUUID(), title: action.title.slice(0, 60), url });
+      continue;
+    }
     if (action.kind === "ask_privately") {
       // The question comes from the shared conversation only; each answer stays in its owner's private chat.
       const question = clean(action.text, 600); if (!question || asked.length) continue;
@@ -183,7 +189,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
     record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: item.id }) : await updateSpaceItem(tx, { userId, id: item.id, fields: { title: action.title ?? undefined, text: action.text ?? undefined, date: action.date ?? undefined, done: action.done ?? undefined } });
     if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: record.version, title: "" });
   }
-  return refs.slice(0, 4);
+  return refs.slice(0, 6);
 }
 
 /** The member's current App conversation with their own Pinky (never an iMessage-owned one); created if they have none. */

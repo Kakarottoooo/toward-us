@@ -4,6 +4,7 @@ import { canViewRecord, createRelationshipRecord, projectRecord, nextOccurrence 
 import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
+import { handoffUrl } from "./handoff.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 
@@ -37,6 +38,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
+        if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
@@ -144,7 +146,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
           cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest });
           replies.push(say(session.language, "已为你起草好想对 TA 说的话。你确认之前不会分享，也不会分享你的原话。", "I drafted what you would like your partner to hear. Nothing is shared, and your own words never are, until you confirm.", "Redacté lo que quieres que tu pareja escuche. No se comparte nada, ni tus palabras originales, hasta que lo confirmes.")); continue;
         }
-        if (!Object.hasOwn(collections, action.kind) || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
+        if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
         if (action.operation === "query") {
           const query = clean(action.query, 120).toLocaleLowerCase();
           const today = context.localDateTime.slice(0, 10);
@@ -162,6 +164,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
           replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, `Found ${results.length} records you can view.`, `Se encontraron ${results.length} registros que puedes ver.`)); continue;
         }
         if (["agreement", "commitment", "milestone"].includes(action.kind)) throw fail(502, "Shared records require their existing confirmation flow. Nothing was changed.");
+        if (action.kind === "link") {
+          const values = action.fields; const calendar = Boolean(values.localDateTime);
+          const url = handoffUrl({ url: calendar ? null : values.text, localDateTime: values.localDateTime, title: clean(values.title, 120), location: calendar ? clean(values.text, 200) : "", timezone: session.timezone });
+          if (url) cards.push({ id: randomUUID(), kind: "link", version: 1, title: clean(values.title, 60), url });
+          continue;
+        }
         if (action.kind === "space" || action.kind === "space_item") {
           const values = action.fields; const sharedOnly = say(session.language, "共同空间里的东西请在“我们俩”里改。", "Change things in a shared space from Us.", "Cambia lo del espacio compartido desde Nosotros.");
           let record;
@@ -247,7 +255,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       }
       // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
       const reply = clean(plan.reply, 1200) || replies.join("\n") || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : kind === "link" ? { title, url } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
