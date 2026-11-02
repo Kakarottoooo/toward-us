@@ -1,0 +1,125 @@
+/* One look for form fields and buttons across every feature. Loaded last so it wins over the per-feature styles. */
+
+:is(
+  .auth-content .editorial-field input,
+  .relationship-form input:not([type="checkbox"]):not([type="radio"]),
+  .relationship-form select,
+  .issue-picker select,
+  .perspective-form textarea,
+  .join-relationship-room input,
+  .reminders-feature .reminders-form input,
+  .reminders-feature .reminders-form select,
+  .decision-workspace input:not([type="checkbox"]):not([type="radio"]),
+  .decision-workspace select,
+  .decision-workspace textarea:not(.private-agent-composer *),
+  .memory-workspace input:not([type="checkbox"]),
+  .memory-workspace select,
+  .memory-workspace textarea,
+  .privacy-workspace input:not([type="checkbox"]),
+  .privacy-workspace select,
+  .privacy-workspace textarea,
+  .agent-share-preview input,
+  .agent-share-preview textarea
+) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(37, 37, 37, .18);
+  border-radius: 12px;
+  outline: 0;
+  background-color: #fffdf8;
+  color: var(--jian-ink);
+  /* 16px keeps iOS from zooming the page when a field gets focus. */
+  font: 400 16px/1.4 var(--jian-sans);
+  letter-spacing: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+:is(.perspective-form, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) textarea { min-height: 104px; line-height: 1.5; resize: vertical; }
+
+:is(.relationship-form, .issue-picker, .reminders-feature .reminders-form, .decision-workspace, .memory-workspace, .privacy-workspace) select {
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%237a756e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 14px;
+}
+
+:is(.relationship-form, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace) input::-webkit-date-and-time-value { text-align: left; }
+
+:is(.auth-content .editorial-field, .relationship-form, .perspective-form, .join-relationship-room, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) :is(input, textarea)::placeholder { color: #a39c92; opacity: 1; }
+
+:is(.auth-content .editorial-field, .relationship-form, .issue-picker, .perspective-form, .join-relationship-room, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) :is(input, select, textarea:not(.private-agent-composer *)):focus {
+  border-color: var(--jian-blue);
+  box-shadow: 0 0 0 3px rgba(7, 61, 185, .13);
+}
+
+/* Field labels: readable, not tiny grey caps. */
+:is(.auth-content .editorial-field > span, .auth-content .editorial-field > label, .relationship-form label, .issue-picker, .perspective-form label, .reminders-feature .reminders-form label, .decision-workspace label, .memory-workspace label, .privacy-workspace label) {
+  color: #4a4540;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* Buttons: brand blue for the main action, a hairline outline for the rest, clear grey when disabled. */
+:is(.memory-workspace, .privacy-workspace) button:not(.memory-quiet):not(.privacy-quiet),
+.reminders-feature .row-actions button[type="submit"],
+.agent-share-preview button:last-child,
+.join-relationship-room button {
+  min-height: 48px;
+  padding: 11px 18px;
+  border: 1px solid var(--jian-blue);
+  border-radius: 12px;
+  background: var(--jian-blue);
+  color: #fff;
+  font: 600 15px/1.3 var(--jian-sans);
+  letter-spacing: 0;
+}
+
+.primary-action, .secondary-action {
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: .02em;
+}
+
+.lifecycle-tools button,
+.reminders-feature :is(.row-actions, .reminders-device) button:not([type="submit"]),
+.agent-share-preview button:not(:last-child),
+.agent-private-actions button,
+:is(.memory-workspace, .privacy-workspace) button:is(.memory-quiet, .privacy-quiet) {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid rgba(37, 37, 37, .2);
+  border-radius: 12px;
+  background: #fffdf8;
+  color: var(--jian-ink);
+  font: 600 14px/1.3 var(--jian-sans);
+}
+
+.privacy-danger > .privacy-actions > button { border-color: #c98a82; background: transparent; color: #903e38; }
+
+/* Mirrors the selectors above so the disabled look always wins. */
+:is(.memory-workspace, .privacy-workspace) button:not(.memory-quiet):not(.privacy-quiet):disabled,
+:is(.memory-workspace, .privacy-workspace) button:is(.memory-quiet, .privacy-quiet):disabled,
+.reminders-feature .row-actions button[type="submit"]:disabled,
+.reminders-feature :is(.row-actions, .reminders-device) button:not([type="submit"]):disabled,
+.agent-share-preview button:disabled,
+.agent-private-actions button:disabled,
+.lifecycle-tools button:disabled,
+.join-relationship-room button:disabled,
+.primary-action:disabled, .secondary-action:disabled {
+  border-color: transparent;
+  background: #e6e0d6;
+  color: #9a9389;
+  opacity: 1;
+}
+
+/* Chat-style composers keep their borderless field; their buttons and the red-blue action match the rounded controls. */
+.private-agent-composer button { border-radius: 12px; }
+.private-agent-composer textarea { resize: none; }
+.relationship-primary { border-radius: 12px; }

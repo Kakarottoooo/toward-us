@@ -16,6 +16,7 @@ import { brandLabel, initialLanguage, languageTag, languages, localized, pageTit
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./relationship.css";
+import "./controls.css";
 
 type Screen = "home" | "conversation" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
