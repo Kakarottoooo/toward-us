@@ -117,7 +117,12 @@ export async function createFileStore(filePath) {
       }
       await persist(); return { relationshipId: id, memberIds: members.map((member) => member.userId) };
     },
-    async createPhoneLink(link) { state().phoneLinks[link.codeHash] = { ...link, usedAt: null }; await persist(); },
+    async createPhoneLink(link) {
+      // Links hold the raw number, so expired ones are purged as new ones are minted.
+      for (const [hash, old] of Object.entries(state().phoneLinks)) if (old.expiresAt <= link.createdAt) delete state().phoneLinks[hash];
+      state().phoneLinks[link.codeHash] = { ...link }; await persist();
+    },
+    getPhoneLink(codeHash, now) { const link = state().phoneLinks[codeHash]; return link && link.expiresAt > now ? link.phone : null; },
     async bindPhone(userId, phone) {
       if (state().phones[phone] && state().phones[phone].userId !== userId) throw phoneTakenError();
       for (const [other, record] of Object.entries(state().phones)) if (record.userId === userId && other !== phone) delete state().phones[other];
@@ -126,8 +131,8 @@ export async function createFileStore(filePath) {
     },
     async consumePhoneLink(codeHash, userId, now) {
       const link = state().phoneLinks[codeHash];
-      if (!link || link.usedAt || link.expiresAt <= now) return null;
-      await store.bindPhone(userId, link.phone); link.usedAt = now; await persist(); return link.phone;
+      if (!link || link.expiresAt <= now) return null;
+      await store.bindPhone(userId, link.phone); delete state().phoneLinks[codeHash]; await persist(); return link.phone;
     },
     async unbindPhone(userId) { for (const [phone, record] of Object.entries(state().phones)) if (record.userId === userId) delete state().phones[phone]; await persist(); },
     getUserIdByPhone(phone) { return state().phones[phone]?.userId || null; },
@@ -154,6 +159,8 @@ export async function createFileStore(filePath) {
     async deleteAccount(userId) {
       await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
       for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
+      const phone = implementation.getPhoneForUser(userId);
+      for (const [hash, link] of Object.entries(state().phoneLinks)) if (link.phone === phone) delete state().phoneLinks[hash];
       await store.unbindPhone(userId);
       const user = state().users[userId]; if (!user) return false;
       delete state().userByEmail[user.email]; user.email = `${userId}@deleted.invalid`; user.name = "Deleted user"; user.passwordHash = "deleted";

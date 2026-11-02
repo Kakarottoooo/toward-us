@@ -162,7 +162,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
 
   app.use(express.json({ limit: "256kb" }));
   app.use((req, res, next) => {
-    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !req.path.startsWith("/api/")) return next();
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !(req.path.startsWith("/api/") || req.path.startsWith("/m/"))) return next();
     // This single server-to-server endpoint has its own constant-time Bearer gate.
     if (req.method === "POST" && (req.path === "/api/internal/reminders/run" || req.path === "/api/internal/phone-links")) return next();
     return sameOriginRequest(req) ? next() : res.status(403).json({ error: "请求来源未通过安全检查。" });

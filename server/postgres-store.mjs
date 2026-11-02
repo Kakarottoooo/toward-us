@@ -82,7 +82,12 @@ export async function createPostgresStore(databaseUrl) {
         return { relationshipId: id, memberIds: context.members.map((member) => member.userId) };
       });
     },
-    async createPhoneLink(link) { await pool.query("insert into phone_links (code_hash,phone,created_at,expires_at) values ($1,$2,$3,$4)", [link.codeHash, link.phone, link.createdAt, link.expiresAt]); },
+    async createPhoneLink(link) {
+      // Links hold the raw number, so expired ones are purged as new ones are minted.
+      await pool.query("delete from phone_links where expires_at <= $1", [link.createdAt]);
+      await pool.query("insert into phone_links (code_hash,phone,created_at,expires_at) values ($1,$2,$3,$4)", [link.codeHash, link.phone, link.createdAt, link.expiresAt]);
+    },
+    async getPhoneLink(codeHash, now) { return (await pool.query("select phone from phone_links where code_hash=$1 and expires_at > $2", [codeHash, now])).rows[0]?.phone || null; },
     async bindPhone(userId, phone) {
       return store.transaction(`user:${userId}`, async () => {
         const ownedByOther = async () => { const owner = (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id; return Boolean(owner) && owner !== userId; };
@@ -96,9 +101,9 @@ export async function createPostgresStore(databaseUrl) {
     async consumePhoneLink(codeHash, userId, now) {
       return store.transaction(`user:${userId}`, async () => {
         const link = (await pool.query("select * from phone_links where code_hash=$1 for update", [codeHash])).rows[0];
-        if (!link || link.used_at || new Date(link.expires_at).toISOString() <= now) return null;
+        if (!link || new Date(link.expires_at).toISOString() <= now) return null;
         await store.bindPhone(userId, link.phone);
-        await pool.query("update phone_links set used_at=$2 where code_hash=$1", [codeHash, now]);
+        await pool.query("delete from phone_links where code_hash=$1", [codeHash]);
         return link.phone;
       });
     },
@@ -127,7 +132,8 @@ export async function createPostgresStore(databaseUrl) {
       const context = await store.getRelationshipContext(userId);
       return store.transaction(context ? `relationship:${context.relationship.id}` : `user:${userId}`, async () => {
         await store.getUserForUpdate(userId);
-        await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId); await store.unbindPhone(userId);
+        await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
+        await pool.query("delete from phone_links where phone=(select phone from user_phones where user_id=$1)", [userId]); await store.unbindPhone(userId);
         for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
         const snapshot = await store.getPrivacySnapshot(userId);
         for (const room of snapshot.rooms) {
@@ -318,7 +324,7 @@ async function migrate(pool) {
   `);
   await pool.query(`
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
-    create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null, used_at timestamptz);
+    create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
     await pool.query(`
