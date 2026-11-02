@@ -11,7 +11,7 @@ const TIMEOUT_MS = 180_000;
 const textOf = (content) => typeof content === "string" ? content
   : Array.isArray(content) ? content.map((part) => part?.text || "").join("\n") : String(content ?? "");
 
-export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "sonnet", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
+export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "haiku", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
   // An empty working folder keeps project CLAUDE.md files and settings out of the call.
   const cwd = join(tmpdir(), "pinky-claude-cli");
   mkdirSync(cwd, { recursive: true });
