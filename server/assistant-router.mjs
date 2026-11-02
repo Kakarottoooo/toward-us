@@ -8,6 +8,7 @@ import { handoffUrl } from "./handoff.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
+import { askAboutPromise, openPromises } from "./promise-checks.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
 const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date, share.photoId || null])).digest("hex");
@@ -71,9 +72,19 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
     const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!latest) throw fail(404, "No conversation yet.");
-    res.json({ session: await output(latest) });
+    res.json({ session: await output((await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
   });
-  router.get("/assistant/sessions/:id", async (req, res) => res.json({ session: await output(await owned(store, req.params.id, req.auth.user.id)) }));
+  router.get("/assistant/sessions/:id", async (req, res) => {
+    const session = await owned(store, req.params.id, req.auth.user.id);
+    res.json({ session: await output((req.query.opened === "1" && await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null)) || session) });
+  });
+  // Each promise's own latest answer, for the Agreements page; private to this member.
+  router.get("/assistant/promises", async (req, res) => {
+    const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && !record.archivedAt);
+    const answers = {};
+    for (const entry of sessions.flatMap((session) => session.promiseLog || []).sort((a, b) => a.at.localeCompare(b.at))) answers[entry.commitmentId] = { done: entry.done, at: entry.at, note: entry.note || "" };
+    res.json({ promises: answers });
+  });
 
   async function available(db, userId) {
     const context = await db.getRelationshipContext(userId);
@@ -121,6 +132,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
+      openPromises: await openPromises(store, userId, session).catch(() => []),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
@@ -146,7 +158,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
     }
     plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "chat_import"].includes(action.kind)) };
-    const changes = []; let partnerMessage = null; let raced = false; const pendingShares = [];
+    const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
@@ -155,6 +167,10 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const currentRecords = await available(tx, userId);
       const cards = []; const replies = []; let createdSpace = null;
       for (const action of plan.actions) {
+        if (action.kind === "promise") {
+          if (!context.openPromises.some((promise) => promise.id === action.targetId)) throw fail(404, "This promise is no longer open.");
+          promiseAnswers.push({ commitmentId: action.targetId, done: action.fields.done === true, note: clean(action.fields?.text, 300), at: new Date().toISOString() }); continue;
+        }
         if (action.kind === "partner_message") {
           // A draft only: it stays on this private session until the member confirms the exact digest via share-confirm.
           const text = clean(action.fields?.text, 2000); if (!text) throw fail(400, "Say what you would like your partner to hear.");
@@ -271,7 +287,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       }
       // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
       const reply = clean(plan.reply, 1200) || replies.join("\n") || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });

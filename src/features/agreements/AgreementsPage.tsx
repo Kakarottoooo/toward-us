@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle, ClockCounterClockwise } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -11,6 +11,9 @@ const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): 
 export function AgreementsPage({ language, userId, payload, onChanged, onReview }: { language: Language; userId: string; payload: RelationshipHomePayload; onChanged: () => void | Promise<void>; onReview: (outcomeId: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [busy, setBusy] = useState(""); const [notice, setNotice] = useState("");
+  // What this member last told Pinky about each of their promises; only they see it.
+  const [answers, setAnswers] = useState<Record<string, { done: boolean; at: string }>>({});
+  useEffect(() => { relationshipApi<{ promises: Record<string, { done: boolean; at: string }> }>("/api/assistant/promises").then((result) => setAnswers(result.promises)).catch(() => {}); }, []);
   const { agreements, approvals, commitments } = payload.graph;
   const approvedByMe = (agreement: GraphRecord) => approvals.some((item) => item.agreementId === agreement.id && item.approvedVersion === agreement.version && item.ownerUserId === userId && !item.withdrawnAt);
   const decide = async (agreement: GraphRecord, action: "approve" | "request-change") => {
@@ -37,7 +40,7 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
           {!!agreement.summary && agreement.summary !== terms.join(" / ") && agreement.summary !== agreement.title && <p>{String(agreement.summary)}</p>}
           {!!terms.length && <ol>{terms.map((term, index) => <li key={index}>{term}</li>)}</ol>}
           {!!open.length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{open.map((point, index) => <li key={index}>{point}</li>)}</ul></div>}
-          {!!mine.length && <ul className="agreement-commitments">{mine.map((item) => <li key={item.id}>{String(item.description || "")}{item.dueAt ? ` · ${new Date(String(item.dueAt)).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" })}` : ""}</li>)}</ul>}
+          {!!mine.length && <ul className="agreement-commitments">{mine.map((item) => <li key={item.id}>{String(item.description || "")}{item.dueAt ? ` · ${new Date(String(item.dueAt)).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" })}` : ""}{answers[item.id] && <small className={`agreement-answer ${answers[item.id].done ? "done" : ""}`}>{answers[item.id].done ? t("你说做到了", "You said you did it", "Dijiste que lo cumpliste") : t("你说还没做到", "You said not yet", "Dijiste que aún no")} · {new Date(answers[item.id].at).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" })} · {t("只有你看得到", "only you see this", "solo tú lo ves")}</small>}</li>)}</ul>}
           <footer><span className="card-state">{agreement.status === "active" && <CheckCircle size={16} weight="fill" />}{status(agreement)}</span>
             {agreement.status === "awaiting_approvals" && !approvedByMe(agreement) && <div className="card-actions"><button className="card-primary" disabled={busy === agreement.id} onClick={() => void decide(agreement, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准第 ${agreement.version} 版`, `Approve v${agreement.version}`, `Aprobar v${agreement.version}`)}</button><button disabled={busy === agreement.id} onClick={() => void decide(agreement, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>}
           </footer>

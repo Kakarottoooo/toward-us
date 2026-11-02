@@ -8,6 +8,7 @@ import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mo
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { SettingsPage } from "./features/privacy/SettingsPage";
+import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
@@ -138,6 +139,8 @@ export default function Prototype() {
 function AccountPrototype() {
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const [screen, setScreen] = useState<Screen>("home");
+  // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
+  const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
@@ -208,6 +211,7 @@ function AccountPrototype() {
   if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onPrivacy={() => setScreen("privacy")} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
   if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
+  if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
   if (screen === "privacy" && user) return <SettingsPage user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} />;

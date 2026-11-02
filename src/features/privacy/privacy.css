@@ -40,3 +40,7 @@
 .account-recovery form > button { justify-self: start; }
 .account-recovery > button { margin-top: 16px; }
 @media (max-width: 600px) { .privacy-confirm, .privacy-recovery-code { padding: 15px; } .privacy-history time { margin-left: 0; flex-basis: 100%; } .privacy-workspace button { font-size: 13px; } }
+.account-recovery h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; font-weight: 500; }
+.account-recovery .reset-link { display: grid; gap: 14px; padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid #dedbd0; }
+.account-recovery .privacy-success h3 { display: block; }
+.account-recovery .reset-link form > button { justify-self: start; }

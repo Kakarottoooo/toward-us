@@ -61,6 +61,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [drawer, setDrawer] = useState(false);
   const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const [openStory, setOpenStory] = useState<Story | null>(null);
+  // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
+  const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
   const sessionRef = useRef<Session | null>(null);
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
@@ -78,7 +80,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const restore = async () => {
     let id: string | null = null; try { id = localStorage.getItem(sessionKey); } catch { /* No stored session. */ }
     if (!id) { try { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions/latest"); current(result.session); store(result.session.id); return result.session; } catch { return null; } }
-    try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(id)}`); current(result.session); return result.session; } catch { store(null); return null; }
+    try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(id)}?opened=1`); current(result.session); return result.session; } catch { store(null); return null; }
   };
   const create = async () => { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", jsonBody({ language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" })); current(result.session); store(result.session.id); return result.session; };
   const ensureSession = async (allowCreate = true): Promise<Session | null> => {
@@ -343,11 +345,9 @@ ${text}` : text, target);
     setBusy(true); setNotice("");
     try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
-  const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions">{items.map((text) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}</button>)}</div>;
-  const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p>
-    {suggest([t("有句话想对 TA 说，但不知道怎么开口", "There is something I want to tell my partner, but I do not know how", "Quiero decirle algo a mi pareja, pero no sé cómo"), t("帮我建一个生日礼物点子清单", "Start a list of birthday gift ideas", "Empieza una lista de ideas de regalo"), t("这周六晚上找家适合约会的餐厅", "Find a good date-night restaurant for Saturday", "Busca un buen restaurante para una cita el sábado"), t("周五晚上八点提醒我早点回家", "Remind me on Friday at 8 pm to head home early", "Recuérdame el viernes a las 8 de la noche volver temprano")], "me")}</section>;
-  const usEmpty = <section className="conversation-empty"><h1>{t("你们俩和 Pinky", "The two of you, plus Pinky", "Ustedes dos y Pinky")}</h1><p>{t("你们两人都能看到这里。Pinky 平时不插话；叫一声“Pinky”或点 @，它就来帮忙。", "You both see everything here. Pinky stays quiet until you say “Pinky” or tap @.", "Los dos ven todo aquí. Pinky no interviene hasta que digan «Pinky» o toquen @.")}</p>
-    {suggest([t("Pinky，帮我们建一个旅行行李清单", "Pinky, make us a packing list for our trip", "Pinky, haznos una lista para la maleta del viaje"), t("Pinky，这个周末我们做点什么好？", "Pinky, what should we do this weekend?", "Pinky, ¿qué hacemos este fin de semana?"), t("Pinky，建一个我们俩的相册", "Pinky, start an album for the two of us", "Pinky, empieza un álbum para los dos"), t("Pinky，帮我们把这件事定下来", "Pinky, help us settle this", "Pinky, ayúdanos a dejar esto acordado")], "us")}</section>;
+  const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions" data-testid="composer-ideas">{items.map((text) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}</button>)}</div>;
+  const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p></section>;
+  const usEmpty = <section className="conversation-empty"><h1>{t("你们俩和 Pinky", "The two of you, plus Pinky", "Ustedes dos y Pinky")}</h1><p>{t("你们两人都能看到这里。Pinky 平时不插话；叫一声“Pinky”或点 @，它就来帮忙。", "You both see everything here. Pinky stays quiet until you say “Pinky” or tap @.", "Los dos ven todo aquí. Pinky no interviene hasta que digan «Pinky» o toquen @.")}</p></section>;
   const invite = <section className="conversation-empty conversation-invite" data-testid="conversation-invite"><h1>{t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja")}</h1><p>{t("“我们俩”是你们两个人和 Pinky 的共同对话。TA 用自己的账号加入后，这里就会打开。", "Us is the shared conversation for the two of you and Pinky. It opens once your partner joins with their own account.", "Nosotros es la conversación compartida entre ustedes dos y Pinky. Se abre cuando tu pareja se une con su propia cuenta.")}</p>
     {pairing?.invitation ? <><div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{pairing.invitation.code}</strong></div><div className="card-actions"><button className="card-primary" onClick={() => void copyInvite()}><Copy size={18} />{copied ? t("已复制", "Copied", "Copiado") : t("复制邀请链接", "Copy invite link", "Copiar enlace")}</button><button disabled={busy} onClick={() => void onRefreshPairing()}>{t("检查是否已加入", "Check connection", "Comprobar conexión")}</button></div></> :
       <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void createInvite()}><LinkSimple size={18} />{t("生成邀请链接", "Create invite link", "Crear enlace de invitación")}</button><button onClick={() => { keyboard.hide(); onPair(); }}>{t("我有邀请码", "I have a code", "Tengo un código")}</button></div>}
@@ -357,6 +357,13 @@ ${text}` : text, target);
   // An import is reported twice (received, then read); its live card shows only on the latest of those messages.
   const importAt = new Map(privateMessages.flatMap((message, index) => (message.cards || []).filter((card) => card.kind === "chat_import").map((card) => [card.id, index] as const)));
   const sharedMessages = together?.conversation.messages || [];
+  const lastSeen = channel === "me" ? privateMessages.at(-1)?.id || "" : sharedMessages.at(-1)?.id || "";
+  useEffect(() => {
+    if (channel === "us" && !paired) return;
+    let alive = true;
+    relationshipApi<{ suggestions: string[] }>(`/api/suggestions?channel=${channel}&language=${language}`).then((result) => { if (alive) setIdeas((current) => ({ ...current, [channel]: result.suggestions })); }).catch(() => {});
+    return () => { alive = false; };
+  }, [channel, language, lastSeen, paired]);
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
   return <div className="paper-screen conversation-home" data-testid="conversation-screen">
     <header className="conversation-header">
@@ -383,6 +390,7 @@ ${text}` : text, target);
     </main></MobileScroll></div>
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {!call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
+      {!draft.trim() && !voice.listening && !!ideas[channel].length && suggest(ideas[channel], channel)}
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
       {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {voice.listening && channel === "me" && <p className="conversation-listening">{t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}

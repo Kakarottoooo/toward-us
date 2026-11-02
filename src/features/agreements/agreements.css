@@ -17,3 +17,5 @@
 .agreement-item .card-actions button { min-height: 44px; padding: 0 16px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
 .agreement-item .card-actions .card-primary { display: inline-flex; align-items: center; gap: 6px; border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
 .agreement-review { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
+.agreement-answer { display: block; margin-top: 2px; color: #8a837a; font-size: 13px; }
+.agreement-answer.done { color: #2f7a56; }

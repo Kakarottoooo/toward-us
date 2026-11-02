@@ -3,15 +3,16 @@ import { rm } from "node:fs/promises";
 import express from "express";
 import { photoFile } from "./photo-store.mjs";
 import { importFile } from "./chat-import.mjs";
-import { clearSessionCookie, hashPassword, normalizeEmail, validPassword, verifyPassword } from "./auth.mjs";
+import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
 import { createRelationshipRecord, projectRecord } from "./relationship-domain.mjs";
+import { createEmailSender } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
 const local = (req, zh, en, es) => (req.body?.language || req.query.language || "zh") === "zh" ? zh : (req.body?.language || req.query.language) === "es" ? es : en;
 const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices"]);
 
-export function createPrivacyRouter({ store, production = false, closeConnections = () => {} }) {
+export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, email = createEmailSender() }) {
   const router = express.Router(); const attempts = new Map();
   const limited = (key) => {
     const now = Date.now(); const recent = (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000);
@@ -53,6 +54,60 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     });
     if (!result) throw fail(401, local(req, "邮箱或恢复码不正确，或恢复码已被使用。", "Email or recovery code is invalid, or the code was already used.", "El correo o código es incorrecto, o el código ya se utilizó."));
     closeConnections([user.id]); clearSessionCookie(res, production); res.status(204).end();
+  });
+  // Password reset by email. The token is "<userId>.<secret>"; only sha256(secret) is stored, on the owner's private accountSettings record.
+  const RESET_TTL_MS = 30 * 60_000; const resetRequests = new Map();
+  const resetLimited = (key, max) => {
+    const now = Date.now(); const recent = (resetRequests.get(key) || []).filter((at) => at > now - 3_600_000);
+    const over = recent.length >= max; if (!over) recent.push(now); resetRequests.set(key, recent);
+    if (resetRequests.size > 5000) for (const [candidate, times] of resetRequests) if (times.every((at) => at < now - 3_600_000)) resetRequests.delete(candidate);
+    return over;
+  };
+  const resetMessage = (language, link) => language === "es"
+    ? { subject: "Restablece tu contraseña de Pinky", text: `Usa este enlace para elegir una nueva contraseña. Funciona durante 30 minutos y solo una vez.\n\n${link}\n\nSi no lo pediste, ignora este correo: tu contraseña no cambiará.` }
+    : language === "en"
+      ? { subject: "Reset your Pinky password", text: `Use this link to choose a new password. It works for 30 minutes and only once.\n\n${link}\n\nIf you did not ask for this, ignore this email; your password will not change.` }
+      : { subject: "重设你的 Pinky 密码", text: `用这个链接设置新密码。链接 30 分钟内有效，且只能使用一次。\n\n${link}\n\n如果不是你本人操作，请忽略这封邮件，你的密码不会改变。` };
+  router.post("/auth/reset-request", async (req, res) => {
+    const address = normalizeEmail(req.body?.email);
+    // Both counters always advance (non-short-circuit) and every outcome is the same 200, so limits reveal nothing about accounts.
+    const tooMany = resetLimited(`ip:${req.ip}`, 20) | resetLimited(`email:${address}`, 3);
+    const user = !tooMany && validEmail(address) ? await store.getUserByEmail(address) : null;
+    if (user && user.email === address && user.passwordHash !== "deleted") {
+      // Never build the link from a client-supplied Host in production (host-header poisoning): require TOWARD_US_BASE_URL there.
+      const base = String(process.env.TOWARD_US_BASE_URL || (production ? "" : `${req.protocol}://${req.get("host")}`)).replace(/\/+$/, "");
+      if (!base) console.error("[email] password reset skipped: set TOWARD_US_BASE_URL");
+      else {
+        const secret = randomBytes(32).toString("base64url");
+        await store.transaction(`user:${user.id}`, async (tx) => {
+          const live = await tx.getUserForUpdate(user.id); if (!live || live.passwordHash === "deleted") return;
+          await updateSettings(user.id, (record) => { record.passwordReset = { hash: hash(secret), expiresAt: new Date(Date.now() + RESET_TTL_MS).toISOString() }; }, tx);
+        });
+        const link = `${base}/?reset=${user.id}.${secret}`; const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : ["zh", "en", "es"].includes(user.language) ? user.language : "zh";
+        // Not awaited: the response must not reveal, by timing, whether an email was sent.
+        void Promise.resolve().then(() => email.send({ to: user.email, link, ...resetMessage(language, link) })).catch(() => console.error("[email] password reset delivery failed"));
+      }
+    }
+    res.json({ ok: true });
+  });
+  router.post("/auth/reset", async (req, res) => {
+    if (limited(`reset:${req.ip}`)) throw fail(429, local(req, "尝试过多，请稍后再试。", "Too many attempts. Try later.", "Demasiados intentos. Inténtalo más tarde."));
+    if (!validPassword(req.body?.password)) throw fail(400, local(req, "新密码需要10–128个字符。", "Use 10–128 characters for the new password.", "Usa entre 10 y 128 caracteres para la nueva contraseña."));
+    const invalid = () => fail(400, local(req, "这个重设链接无效或已过期，请重新申请。", "This reset link is invalid or has expired. Request a new one.", "Este enlace no es válido o ya caducó. Solicita uno nuevo."));
+    const [userId, secret, ...extra] = String(req.body?.token || "").split(".");
+    if (!userId || !secret || extra.length || userId.length > 80 || secret.length > 80) throw invalid();
+    const done = await store.transaction(`user:${userId}`, async (tx) => {
+      const liveUser = await tx.getUserForUpdate(userId); if (!liveUser || liveUser.passwordHash === "deleted") return false;
+      const reset = (await settings(userId, tx))?.passwordReset;
+      if (!reset?.hash || !reset.expiresAt || reset.expiresAt <= new Date().toISOString()) return false;
+      if (!timingSafeEqual(Buffer.from(hash(secret), "hex"), Buffer.from(reset.hash, "hex"))) return false;
+      await tx.updateUserPassword(userId, await hashPassword(req.body.password));
+      await tx.deleteUserSessions(userId);
+      await updateSettings(userId, (record) => { delete record.passwordReset; }, tx);
+      await audit(tx, userId, "account.password_reset"); return true;
+    });
+    if (!done) throw invalid();
+    closeConnections([userId]); clearSessionCookie(res, production); res.status(204).end();
   });
   router.use("/privacy", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");

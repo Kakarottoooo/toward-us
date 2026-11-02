@@ -36,6 +36,7 @@ import { createPhotoRouter } from "./photo-store.mjs";
 import { createHandoffRouter } from "./handoff.mjs";
 import { createChatImportRouter } from "./chat-import.mjs";
 import { createVoiceCallRouter } from "./voice-call.mjs";
+import { createSuggestionsRouter } from "./suggestions-router.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 
@@ -49,7 +50,7 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator, production = false, memoryContext = buildMemoryContext, reminderService }) {
+export function createApiApp({ store, mediator, production = false, memoryContext = buildMemoryContext, reminderService, email }) {
   const app = express();
   const eventClients = new Map();
   // The scheduler tick announces in the shared conversation; the realtime emitter only exists once the routers are built below.
@@ -699,13 +700,14 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit }));
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit });
   app.use(imessage.router);
-  app.use("/api", createPrivacyRouter({ store, production, closeConnections }));
+  app.use("/api", createPrivacyRouter({ store, production, closeConnections, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit }));
   app.use("/api", createSpaceRouter({ store, emit }));
   app.use("/api", createPhotoRouter({ store }));
   app.use("/api", createHandoffRouter());
+  app.use("/api", createSuggestionsRouter({ store, mediator }));
   app.use("/api", relationshipRouter);
 
   function broadcastRoom(code) {

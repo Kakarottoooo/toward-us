@@ -150,3 +150,6 @@
 .relationship-shell > .page-header ~ .relationship-main .relationship-feature :is(small, .memory-meta, .memory-provenance, .memory-consent, .reminders-time-note) { color: #6f6860; font-size: 13px; }
 .relationship-shell > .page-header ~ .relationship-main .relationship-feature + .relationship-feature { margin-top: 14px; }
 .drawer-together { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; color: #c2412f; font-size: 13px; font-style: normal; font-weight: 650; }
+/* Ideas above the composer: a short wrapping row of fresh things to say, gone as soon as typing starts. */
+.conversation-composer > .conversation-suggestions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; }
+.conversation-composer > .conversation-suggestions button { min-height: 34px; padding: 6px 12px; border-radius: 17px; font-size: 13px; line-height: 1.3; text-align: left; }
