@@ -1,5 +1,9 @@
 # Mobile Prototype Agent Guide
 
+## Founder voice
+
+Read `docs/founder-voice.md` before any task. It records every requirement and correction the founder has given and overrides older docs. When the founder states a new requirement or correction, add it there the same day.
+
 ## Prototype Instructions
 
 In ChatGPT Work Mode, run `sites-preview start "$PWD"`, open `http://terminal.local:4173/` in the cloud browser, and verify the rendered app and its primary interactions. Keep that preview open and tell the user to inspect it in the cloud browser; do not present the local URL as a user-facing chat link. In Codex Desktop, run the local server yourself, open the preview in the in-app browser, and provide the clickable local URL. Do not deploy to Sites unless the user explicitly asks to share, publish, or deploy. Do not give the user server-start instructions when you can run it.
