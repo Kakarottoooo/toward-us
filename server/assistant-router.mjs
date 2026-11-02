@@ -60,6 +60,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const session = await createSession(req.auth.user.id, { language, timezone: clean(req.body?.timezone, 64) || "UTC" });
     res.status(201).json({ session: await output(session) });
   });
+  // The member's most recent App conversation, for a device that has not remembered one (it may hold a question from Us).
+  router.get("/assistant/sessions/latest", async (req, res) => {
+    const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
+    const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    if (!latest) throw fail(404, "No conversation yet.");
+    res.json({ session: await output(latest) });
+  });
   router.get("/assistant/sessions/:id", async (req, res) => res.json({ session: await output(await owned(store, req.params.id, req.auth.user.id)) }));
 
   async function available(db, userId) {

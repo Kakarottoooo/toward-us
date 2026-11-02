@@ -82,3 +82,16 @@ test("a shared action that cannot be applied leaves nothing behind and the Agent
   assert.match(sent.body.reply.text, /couldn't do that/);
   assert.deepEqual((await f.request("/spaces")).body.spaces, []);
 });
+
+test("asking privately puts the same question in each partner's own chat and nowhere else", async (t) => {
+  const f = await fixture(t, { shared: () => ({ reply: "I asked each of you privately.", draftAgreement: null, actions: [together({ kind: "ask_privately", text: "Where would you like to spend New Year, and why?" })] }) });
+  await f.turn("PRIVATE_A: I would rather stay home");
+  const sent = await f.request("/together/messages", "POST", { text: "Pinky, help us decide where to spend New Year", itemId: randomUUID(), language: "en" });
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  const mine = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.at(-1);
+  assert.deepEqual([mine.role, mine.text], ["assistant", "Where would you like to spend New Year, and why?"]);
+  const theirs = (await f.request("/assistant/sessions/latest", "GET", null, f.ids[1])).body.session;
+  assert.deepEqual(theirs.messages.map((message) => message.text), ["Where would you like to spend New Year, and why?"]);
+  assert.ok(!JSON.stringify(theirs).includes("PRIVATE_A"));
+  assert.ok(!JSON.stringify((await f.request("/together", "GET", null, f.ids[1])).body).includes("PRIVATE_A"));
+});

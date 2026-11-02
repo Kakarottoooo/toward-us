@@ -81,7 +81,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, source = "app", handle = null, replyTo = null, language = "zh", emit = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, text, source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
@@ -108,21 +108,24 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
-    const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [] });
+    const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked });
     const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: outcome.reply, i18n: outcome.i18n || null, refs: [...made, ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
     if (!outcome.draftAgreement) return result;
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });
     return { ...result, conversation };
   });
   // Actions and reply land together or not at all; if an action cannot be applied, say so instead of claiming it.
+  const asked = [];
   let replied;
   try { replied = await reply(turn); }
   catch (error) {
     if (!turn.actions?.length) throw error;
+    asked.length = 0;
     const failed = { zh: "抱歉，这件事我没能办成，什么都没有改动。可以换个说法再试一次。", en: "Sorry, I couldn't do that, and nothing was changed. Try saying it another way.", es: "Lo siento, no pude hacerlo y no se cambió nada. Prueba a decirlo de otra forma." };
     replied = await reply({ reply: failed[language] || failed.zh, i18n: failed, actions: [], draftAgreement: null, source: "local" });
   }
   if (!replied.duplicate) emit(replied.conversation);
+  for (const session of asked) notifyPrivate(session);
   return { conversation: replied.conversation, message, reply: replied.message, duplicate: saved.duplicate };
 }
 
@@ -131,9 +134,24 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
  * `text` must only contain shared content. */
 /** What the shared Agent may change for both partners, applied in the same transaction as its reply. Returns refs the
  * conversation shows as links. Only shared spaces and dates of this couple; nothing private, nothing needing two approvals. */
-async function applyTogetherActions(tx, { relationshipId, userId, actions }) {
+async function applyTogetherActions(tx, { relationshipId, userId, actions, asked = [] }) {
   const refs = []; let created = null;
   for (const action of actions) {
+    if (action.kind === "ask_privately") {
+      // The question comes from the shared conversation only; each answer stays in its owner's private chat.
+      const question = clean(action.text, 600); if (!question || asked.length) continue;
+      const context = await tx.getRelationshipContext(userId);
+      for (const member of context?.members || []) {
+        const session = await privateSessionFor(tx, member.userId);
+        if (!session) continue;
+        const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, member.userId, (draft) => {
+          draft.messages = [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: question, askedFrom: "together", plannerQuestion: true, createdAt: new Date().toISOString() }].slice(-200);
+          draft.version += 1;
+        });
+        asked.push({ id: updated.id, version: updated.version, ownerUserId: member.userId, relationshipId });
+      }
+      continue;
+    }
     if (action.kind === "milestone") {
       if (action.operation !== "create") continue;
       if (!action.title || !action.date) throw decisionError(400, "message_required");
@@ -163,6 +181,16 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions }) {
     if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: record.version, title: "" });
   }
   return refs.slice(0, 4);
+}
+
+/** The member's current App conversation with their own Pinky (never an iMessage-owned one); created if they have none. */
+async function privateSessionFor(tx, memberId) {
+  const sessions = (await tx.listRelationshipRecordsForUser("privateAgentThreads", memberId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === memberId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
+  const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  if (latest) return latest;
+  const record = createRelationshipRecord({ relationshipId: null, userId: memberId, visibility: "private", aiAccessScope: "private", intentType: "assistant", language: await memberLanguage(tx, memberId), timezone: "UTC", messages: [] });
+  await tx.createRelationshipRecord("privateAgentThreads", record);
+  return record;
 }
 
 export async function announceInTogether(tx, { relationshipId, userId, kind, refs = [], text, i18n = null, handle = null, source = "app" }) {

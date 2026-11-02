@@ -37,6 +37,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [revising, setRevising] = useState(false);
   const [pending, setPending] = useState<Record<Channel, number>>({ me: 0, us: 0 });
   const [agentWorking, setAgentWorking] = useState(0);
+  const [unreadMe, setUnreadMe] = useState(false);
   const [queued, setQueued] = useState<Array<{ text: string; itemId: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<{ text: string; itemId: string } | null>(null);
@@ -59,7 +60,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // One assistant session per member for this channel: reopen the remembered one, otherwise create it once.
   const restore = async () => {
     let id: string | null = null; try { id = localStorage.getItem(sessionKey); } catch { /* No stored session. */ }
-    if (!id) return null;
+    if (!id) { try { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions/latest"); current(result.session); store(result.session.id); return result.session; } catch { return null; } }
     try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(id)}`); current(result.session); return result.session; } catch { store(null); return null; }
   };
   const create = async () => { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", jsonBody({ language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" })); current(result.session); store(result.session.id); return result.session; };
@@ -86,7 +87,12 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   useEffect(() => {
     if (!paired) return;
     const events = new EventSource("/api/relationship/events");
-    events.addEventListener("relationship", (event) => { try { const { eventType } = JSON.parse((event as MessageEvent).data); if (/^(together|agreement)/.test(eventType)) void loadTogether(); } catch { /* Ignore malformed events. */ } });
+    events.addEventListener("relationship", (event) => { try {
+      const { eventType, objectId } = JSON.parse((event as MessageEvent).data);
+      if (/^(together|agreement)/.test(eventType)) void loadTogether();
+      // A question Pinky asked privately on behalf of Us: refresh this conversation and mark "Just me" if it is not in view.
+      if (eventType === "assistant.updated" && (!sessionRef.current || sessionRef.current.id === objectId)) { void relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(objectId)}`).then((result) => { current(result.session); store(result.session.id); if (channelRef.current !== "me") setUnreadMe(true); }).catch(() => {}); }
+    } catch { /* Ignore malformed events. */ } });
     events.addEventListener("access-ended", () => { events.close(); accessChanged.current(); });
     return () => events.close();
   }, [paired, loadTogether]);
@@ -172,7 +178,7 @@ ${text}` : text, target);
     setNotice("");
     try { const active = await ensureSession(); await voice.start(`/api/assistant/sessions/${active!.id}/realtime`); } catch (error) { setNotice(errorText(error as ApiError)); }
   };
-  const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); setChannel(next); };
+  const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); if (next === "me") setUnreadMe(false); setChannel(next); };
   // The drawer is modal navigation: dismiss the keyboard and voice before it covers the conversation.
   const openDrawer = () => { keyboard.hide(); voice.stop(); setDrawer(true); };
   const open = (url: string) => { keyboard.hide(); voice.stop(); onOpen(url); };
@@ -275,7 +281,7 @@ ${text}` : text, target);
         <button className="conversation-menu" onClick={openDrawer} aria-label={t("打开菜单", "Open menu", "Abrir menú")} aria-expanded={drawer} data-testid="open-drawer"><List size={24} /></button>
       </div>
       <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
-        <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={18} />{t("只有我", "Just me", "Solo yo")}</button>
+        <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={18} />{t("只有我", "Just me", "Solo yo")}{unreadMe && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
         <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={18} />{t("我们俩", "Us", "Nosotros")}</button>
       </div>
     </header>
