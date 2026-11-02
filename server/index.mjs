@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -8,6 +9,10 @@ import { createMediator } from "./mediator.mjs";
 import { createStore } from "./store.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+// Local secrets (for example OPENAI_API_KEY for voice calls) live outside the repository, in a file only the owner edits.
+// Values already set in the environment win; hosted deployments set them there instead.
+const envFile = process.env.TOWARD_US_ENV_FILE || resolve(homedir(), ".pinky.env");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 const production = process.argv.includes("--production") || process.env.NODE_ENV === "production";
 const port = Number(process.env.PORT || 5173);
 const dataFile = resolve(process.env.TOWARD_US_DATA_FILE || resolve(root, "data", "toward-us.local.json"));
