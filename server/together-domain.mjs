@@ -106,6 +106,15 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     turn = await mediator.continueTogether({ ...context, webSearch: true, lookups }, language);
   }
   turn = { ...turn, actions: (turn.actions || []).filter((action) => action.kind !== "web_search") };
+  // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
+  if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
+    const membership = await store.getRelationshipContext(actorUserId);
+    const members = (membership?.members || []).map((member) => ({ id: member.userId, name: member.user?.name || "" }));
+    const named = { ...context, messages: context.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : members.find((member) => member.id === item.actorUserId)?.name || "" })) };
+    const mediation = await mediator.mediateTogether(named, members, language);
+    if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
+  }
+  turn = { ...turn, actions: turn.actions.filter((action) => action.kind !== "mediate") };
   const reply = (outcome) => transaction(async (tx) => {
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
@@ -142,6 +151,21 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
     if (action.kind === "link") {
       const url = handoffUrl({ url: action.localDateTime ? null : action.text, localDateTime: action.localDateTime, title: action.title || "", location: action.localDateTime ? action.text || "" : "", timezone });
       if (url && action.title) refs.push({ type: "link", id: randomUUID(), title: action.title.slice(0, 60), url });
+      continue;
+    }
+    if (action.kind === "private_notes") {
+      // Mediation feedback: each note goes only to its own member's private chat.
+      const context = await tx.getRelationshipContext(userId);
+      for (const note of action.notes || []) {
+        if (!context?.members.some((member) => member.userId === note.memberId)) continue;
+        const session = await privateSessionFor(tx, note.memberId);
+        const header = { zh: "Pinky 给你的私下反馈（只有你能看到）", en: "Private feedback from Pinky (only you can see this)", es: "Comentario privado de Pinky (solo tú puedes verlo)" }[session.language] || "Pinky 给你的私下反馈（只有你能看到）";
+        const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, note.memberId, (draft) => {
+          draft.messages = [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: `${header}\n\n${clean(note.text, 2000)}`, askedFrom: "mediation", createdAt: new Date().toISOString() }].slice(-200);
+          draft.version += 1;
+        });
+        asked.push({ id: updated.id, version: updated.version, ownerUserId: note.memberId, relationshipId });
+      }
       continue;
     }
     if (action.kind === "ask_privately") {

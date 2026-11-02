@@ -15,7 +15,7 @@ const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, 
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
 const together = (patch = {}) => ({ kind: "space", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: "once", remindDaysBefore: null, photoId: null, ...patch });
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }) } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), mediate = null } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "spaces-"));
   const store = await createFileStore(join(directory, "store.json"));
@@ -24,7 +24,7 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
-  const mediator = { planAssistantTurn: async (...args) => planner(...args), continueTogether: async (...args) => shared(...args), createRealtimeSession: async () => "v=0\r\n" };
+  const mediator = { planAssistantTurn: async (...args) => planner(...args), continueTogether: async (...args) => shared(...args), ...(mediate ? { mediateTogether: async (...args) => mediate(...args) } : {}), createRealtimeSession: async () => "v=0\r\n" };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   app.use("/api", createTogetherRouter({ store, mediator }));
@@ -131,4 +131,21 @@ test("only a shared photo of this couple can be sent to Us", async (t) => {
   const sent = await f.request("/together/messages", "POST", { text: "", itemId: randomUUID(), photoIds: [ours.id], language: "en" });
   assert.equal(sent.status, 201, JSON.stringify(sent.body));
   assert.equal(await f.photo(ours.id, f.ids[1]), 200);
+});
+
+test("mediation posts one shared reflection and each person's feedback only to that person", async (t) => {
+  let seen = null;
+  const f = await fixture(t, {
+    shared: () => ({ reply: "", draftAgreement: null, actions: [together({ kind: "mediate" })] }),
+    mediate: (context, members) => { seen = context; return { shared: "You both want to feel heard.", feedback: [{ memberId: members[0].id, text: "FOR_A_ONLY" }, { memberId: members[1].id, text: "FOR_B_ONLY" }] }; },
+  });
+  await f.request("/together/messages", "POST", { text: "You never listen", itemId: randomUUID(), language: "en" }, f.ids[1]);
+  const sent = await f.request("/together/messages", "POST", { text: "Pinky, help us with this", itemId: randomUUID(), language: "en" });
+  assert.equal(sent.body.reply.text, "You both want to feel heard.");
+  assert.ok(seen.messages.some((message) => message.text === "You never listen" && message.from));
+  const mine = JSON.stringify((await f.request(`/assistant/sessions/${f.session.id}`)).body.session);
+  const theirs = JSON.stringify((await f.request("/assistant/sessions/latest", "GET", null, f.ids[1])).body.session);
+  assert.ok(mine.includes("FOR_A_ONLY") && !mine.includes("FOR_B_ONLY"));
+  assert.ok(theirs.includes("FOR_B_ONLY") && !theirs.includes("FOR_A_ONLY"));
+  assert.ok(!JSON.stringify((await f.request("/together")).body).includes("FOR_"));
 });
