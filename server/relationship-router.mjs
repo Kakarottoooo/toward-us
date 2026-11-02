@@ -3,6 +3,9 @@ import express from "express";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createDecisionAgent } from "./decision-agent.mjs";
 import {
+  agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
+} from "./agreement-actions.mjs";
+import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
 } from "./relationship-domain.mjs";
@@ -172,29 +175,17 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     return { record: agreement, event: "agreement.updated", body: { agreement } };
   }));
   router.post("/agreements/:id/approve", decisionTransaction(async (tx, req, context) => {
-    const userId = req.auth.user.id;
-    const agreement = await tx.getRelationshipRecordForUser("agreements", req.params.id, userId);
-    if (!agreement) throw decisionError(404, "not_found");
-    assertVersion(agreement, req.body?.version);
-    if (!["awaiting_approvals", "active"].includes(agreement.status)) throw decisionError(409, "agreement_not_pending");
-    const snapshot = await tx.relationshipSnapshotForUser(userId);
-    const matching = snapshot.approvals.filter((item) => item.agreementId === agreement.id && item.approvedVersion === agreement.version && !item.withdrawnAt);
-    if (!matching.some((item) => item.ownerUserId === userId)) {
-      if (agreement.status !== "awaiting_approvals") throw decisionError(409, "agreement_not_pending");
-      const approval = createRelationshipRecord({ relationshipId: agreement.relationshipId, userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "approved", agreementId: agreement.id, approvedVersion: agreement.version, approvedAt: new Date().toISOString() });
-      approval.id = `approval:${agreement.id}:${agreement.version}:${userId}`;
-      await tx.createRelationshipRecord("approvals", approval); matching.push(approval);
-    }
-    const approvedUsers = new Set(matching.map((item) => item.ownerUserId));
-    let updated = agreement;
-    if (context.members.every((item) => approvedUsers.has(item.userId)) && agreement.status !== "active") {
-      updated = await tx.updateRelationshipRecordForUser("agreements", agreement.id, userId, (draft) => { draft.status = "active"; draft.effectiveAt = new Date().toISOString(); });
-    }
-    await audit(tx, updated, userId, "agreement.approved");
-    return { record: updated, event: "agreement.updated", body: { agreement: updated, approvedCount: approvedUsers.size, requiredCount: context.members.length } };
+    const { agreement, approvedCount, requiredCount } = await approveAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, context });
+    return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount } };
   }));
-  router.post("/agreements/:id/reject", decisionState("agreements", "cancelled", "agreement.rejected"));
-  router.post("/agreements/:id/request-change", decisionState("agreements", "draft", "agreement.change_requested"));
+  router.post("/agreements/:id/reject", decisionTransaction(async (tx, req) => {
+    const { agreement } = await rejectAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
+    return { record: agreement, event: "agreement.rejected", body: { item: agreement } };
+  }));
+  router.post("/agreements/:id/request-change", decisionTransaction(async (tx, req) => {
+    const { agreement } = await requestAgreementChange(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
+    return { record: agreement, event: "agreement.change_requested", body: { item: agreement } };
+  }));
 
   router.post("/issues/:id/messages", sharedDiscussion);
   router.post(["/issues/:id/transcripts", "/issues/:id/:language/transcripts"], sharedDiscussion);
@@ -386,7 +377,6 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       assertVersion(record, req.body?.version);
       if (["cancelled", "superseded", "archived"].includes(record.status)) throw decisionError(409, "agreement_not_editable");
       const updated = await tx.updateRelationshipRecordForUser(collection, record.id, req.auth.user.id, (draft) => { draft.status = status; draft.changeReason = clean(req.body?.reason, 1200); draft.changedByUserId = req.auth.user.id; draft.effectiveAt = null; draft.version += 1; });
-      if (collection === "agreements") await markCommitmentsForRenegotiation(tx, updated, req.auth.user.id);
       await audit(tx, updated, req.auth.user.id, event);
       return { record: updated, event, body: { item: updated } };
     });
@@ -453,20 +443,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
 }
 
 async function activeRelationship(store, req, res) { const context = await store.getRelationshipContext(req.auth.user.id); if (!context || context.relationship.status !== "active" || context.members.length !== 2) { res.status(409).json({ error: "需要双方账号完成伴侣绑定。" }); return null; } return context; }
-const decisionError = (statusCode, decisionCode) => Object.assign(new Error(decisionCode), { statusCode, decisionCode });
-function assertVersion(record, version) { if (!Number.isInteger(version) || version !== record.version) throw decisionError(409, "stale_version"); }
-function agreementValues(body) {
-  const title = clean(body?.title, 160), summary = clean(body?.summary, 1200), terms = cleanArray(body?.terms, 8, 500);
-  if (!title || !summary || !terms.length) throw decisionError(400, "agreement_fields");
-  return { title, summary, terms, unresolvedPoints: cleanArray(body?.unresolvedPoints, 8, 500) };
-}
 function responsibilityIds(context, ownerType) { return context.members.filter((member) => ownerType === "both" || ownerType === `member_${member.role.toLowerCase()}`).map((member) => member.userId); }
-async function markCommitmentsForRenegotiation(tx, agreement, userId) {
-  const commitments = await tx.listRelationshipRecordsForUser("commitments", userId);
-  for (const item of commitments.filter((item) => item.agreementId === agreement.id && ["active", "awaiting_confirmations"].includes(item.status))) {
-    await tx.updateRelationshipRecordForUser("commitments", item.id, userId, (draft) => { draft.status = "renegotiation_requested"; draft.version += 1; });
-  }
-}
 async function ensureOutcome(tx, commitment, userId, startNow = false) {
   const id = `outcome:${commitment.id}`;
   const existing = await tx.getRelationshipRecordForUser("outcomes", id, userId);
@@ -517,10 +494,7 @@ const DECISION_ERRORS = {
   message_required: ["请先输入想说的话。", "Enter a message first.", "Escribe un mensaje primero."],
   context_changed: ["你说的话已保存。共同摘要或协议刚刚发生变化，请检查新内容后继续讨论。", "Your message is saved. The shared summaries or agreement just changed; review them before continuing.", "Tu mensaje está guardado. Los resúmenes o el acuerdo acaban de cambiar; revísalos antes de continuar."],
 };
-async function audit(store, source, userId, eventType) { const event = createRelationshipRecord({ relationshipId: source.relationshipId, userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "recorded", objectId: source.id, objectType: eventType.split(".")[0], eventType, sourceVersion: source.version }); await store.createRelationshipRecord("consentEvents", event); }
 const PRIVATE_VISIBILITY = (record) => ["private", "private_surprise"].includes(record.visibility);
-const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
-const cleanArray = (value, count, limit) => Array.isArray(value) ? value.slice(0, count).map((item) => clean(item, limit)).filter(Boolean) : [];
 const cleanDate = (value) => { const text = String(value || ""); const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? text : null; };
 const validIso = (value) => { const date = new Date(value || ""); return Number.isNaN(date.getTime()) ? null : date.toISOString(); };
 const clampInt = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.round(Number(value)))) : fallback;
