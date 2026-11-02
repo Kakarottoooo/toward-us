@@ -191,7 +191,9 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         });
         const result = JSON.parse(response.output_text);
         const draft = result.draftAgreement ? { title: String(result.draftAgreement.title || "").trim().slice(0, 160), summary: String(result.draftAgreement.summary || "").trim().slice(0, 1200), terms: (result.draftAgreement.terms || []).map((item) => String(item).trim().slice(0, 500)).filter(Boolean).slice(0, 8), unresolvedPoints: (result.draftAgreement.unresolvedPoints || []).map((item) => String(item).trim().slice(0, 500)).filter(Boolean).slice(0, 8) } : null;
-        return { reply: sanitizeFollowUp(result.reply) || fallback.reply, draftAgreement: !context.pendingAgreement && draft?.title && draft.summary && draft.terms.length ? draft : null, source: "openai" };
+        const reply = sanitizeFollowUp(result.reply);
+        // Free-form model replies stay in one language; only the fixed fallback copy carries every language.
+        return { reply: reply || fallback.reply, i18n: reply ? null : fallback.i18n, draftAgreement: !context.pendingAgreement && draft?.title && draft.summary && draft.terms.length ? draft : null, source: "openai" };
       } catch (error) {
         console.error("Together agent unavailable; using local fallback.");
         return { ...fallback, source: "local" };
@@ -287,23 +289,24 @@ Set draftAgreement only when they ask you to settle or write down something conc
 }
 
 function localTogetherTurn(context, language) {
-  const pick = (zh, en, es) => language === "es" ? es : language === "en" ? en : zh;
+  // Fixed copy is returned in every language (i18n) so each partner reads it in their own; `reply` is the caller's language.
+  const pick = (zh, en, es) => { const i18n = { zh, en, es }; return { reply: i18n[language] || zh, i18n }; };
   const members = (context.messages || []).filter((item) => item.role === "member");
   const last = members.at(-1)?.text || "";
   const strip = (text) => String(text || "").replace(/@agent|彼此|toward(\s+us)?/gi, "").replace(/^[\s,，:：]+|[\s,，:：]+$/g, "").trim();
   if (/定下来|约定|说好|agree|settle|decide|acuerdo|decid/i.test(last)) {
-    if (context.pendingAgreement) return { reply: pick("已经有一份约定在等你们两人批准。先处理它，再起草新的。", "An agreement is already waiting for both of your approvals. Handle that one before drafting another.", "Ya hay un acuerdo esperando la aprobación de ambos. Resuélvanlo antes de redactar otro."), draftAgreement: null };
+    if (context.pendingAgreement) return { ...pick("已经有一份约定在等你们两人批准。先处理它，再起草新的。", "An agreement is already waiting for both of your approvals. Handle that one before drafting another.", "Ya hay un acuerdo esperando la aprobación de ambos. Resuélvanlo antes de redactar otro."), draftAgreement: null };
     // Terms come only from what the partners said to each other here, not from lines addressed to the Agent.
     const terms = members.slice(0, -1).filter((item) => !/彼此|toward|@agent/i.test(item.text)).slice(-3).map((item) => strip(item.text)).filter(Boolean);
     if (!terms.length && strip(last)) terms.push(strip(last));
-    if (!terms.length) return { reply: pick("你们想定下来的具体是什么？各说一句就好。", "What exactly do you want to settle? One sentence each is enough.", "¿Qué quieren acordar exactamente? Basta con una frase cada uno."), draftAgreement: null };
+    if (!terms.length) return { ...pick("你们想定下来的具体是什么？各说一句就好。", "What exactly do you want to settle? One sentence each is enough.", "¿Qué quieren acordar exactamente? Basta con una frase cada uno."), draftAgreement: null };
     return {
-      reply: pick("我只用你们在这里说过的原话，整理了一份约定草稿。请检查条款；只有你们两人都批准同一版本，它才会生效。", "I drafted an agreement using only what you both said here. Review the terms; it takes effect only after both of you approve the same version.", "Redacté un acuerdo usando solo lo que ambos dijeron aquí. Revisen los términos; solo entra en vigor cuando los dos aprueben la misma versión."),
+      ...pick("我只用你们在这里说过的原话，整理了一份约定草稿。请检查条款；只有你们两人都批准同一版本，它才会生效。", "I drafted an agreement using only what you both said here. Review the terms; it takes effect only after both of you approve the same version.", "Redacté un acuerdo usando solo lo que ambos dijeron aquí. Revisen los términos; solo entra en vigor cuando los dos aprueben la misma versión."),
       draftAgreement: { title: terms[0].slice(0, 60), summary: terms.join(" / ").slice(0, 1200), terms: terms.map((item) => item.slice(0, 500)), unresolvedPoints: [] },
     };
   }
   const active = (context.activeAgreements || []).length, open = (context.openCommitments || []).length;
-  return { reply: pick(`我在。我只看得到你们在这段共同对话里的 ${members.length} 条消息、${active} 份生效中的约定和 ${open} 项进行中的承诺。想把什么定下来，就说“帮我们定下来”。`, `I'm here. I can only see the ${members.length} messages you shared in this conversation, ${active} active agreements and ${open} open commitments. When you want to settle something, ask me to settle it.`, `Aquí estoy. Solo veo los ${members.length} mensajes que compartieron en esta conversación, ${active} acuerdos vigentes y ${open} compromisos abiertos. Cuando quieran dejar algo acordado, pídanmelo.`), draftAgreement: null };
+  return { ...pick(`我在。我只看得到你们在这段共同对话里的 ${members.length} 条消息、${active} 份生效中的约定和 ${open} 项进行中的承诺。想把什么定下来，就说“帮我们定下来”。`, `I'm here. I can only see the ${members.length} messages you shared in this conversation, ${active} active agreements and ${open} open commitments. When you want to settle something, ask me to settle it.`, `Aquí estoy. Solo veo los ${members.length} mensajes que compartieron en esta conversación, ${active} acuerdos vigentes y ${open} compromisos abiertos. Cuando quieran dejar algo acordado, pídanmelo.`), draftAgreement: null };
 }
 
 const privateAgentSchema = {

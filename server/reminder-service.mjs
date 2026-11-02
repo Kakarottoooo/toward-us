@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { createRelationshipRecord, canViewRecord } from "./relationship-domain.mjs";
 import { validatePushSubscription } from "./push-delivery.mjs";
-import { announceInTogether, memberLanguage } from "./together-domain.mjs";
+import { announceInTogether, memberLanguage, togetherI18n } from "./together-domain.mjs";
 
 const LOCK = "reminder-delivery";
 const MAX_ATTEMPTS = 5;
@@ -81,10 +81,11 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       if (!milestone || !canViewRecord(milestone, reminder.ownerUserId) || milestone.withdrawnAt || !JOINT.has(milestone.visibility)) continue;
       const due = jointReminderDue(milestone, reminder.minutesBefore, current);
       if (!due) continue;
+      const i18n = togetherI18n((language) => say(language, `到点提醒：「${milestone.title}」（${due.occursOn}）。`, `Reminder: "${milestone.title}" (${due.occursOn}).`, `Recordatorio: "${milestone.title}" (${due.occursOn}).`));
       await post(reminder.relationshipId, reminder.ownerUserId, (tx, language) => announceInTogether(tx, {
         relationshipId: reminder.relationshipId, userId: reminder.ownerUserId, kind: "reminder", handle: `reminder:${reminder.id}:${due.dueAt}`,
         refs: [{ type: "milestone", id: milestone.id, version: milestone.version }, { type: "reminder", id: reminder.id }],
-        text: say(language, `到点提醒：「${milestone.title}」（${due.occursOn}）。`, `Reminder: "${milestone.title}" (${due.occursOn}).`, `Recordatorio: "${milestone.title}" (${due.occursOn}).`),
+        text: i18n[language], i18n,
       }));
     }
     for (const outcome of (await store.listRecordsForJob("outcomes")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "pending" && !item.announcedAt && !item.archivedAt && !item.withdrawnAt && item.reviewAt && new Date(item.reviewAt) <= current).slice(0, 100)) {
@@ -92,9 +93,10 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       await post(outcome.relationshipId, userId, async (tx, language) => {
         const fresh = await tx.getRelationshipRecordForUser("outcomes", outcome.id, userId);
         if (!fresh || fresh.status !== "pending" || fresh.announcedAt) return null;
+        const i18n = togetherI18n((item) => say(item, `该复盘了：「${fresh.title}」。请你们各自私下完成复盘；双方都完成后才会形成共同结果。`, `Time to review "${fresh.title}". Each of you reviews it privately; the shared result forms once you have both finished.`, `Es hora de revisar "${fresh.title}". Cada uno lo revisa en privado; el resultado compartido se forma cuando ambos terminen.`));
         const result = await announceInTogether(tx, {
           relationshipId: outcome.relationshipId, userId, kind: "review", handle: `review:${outcome.id}`, refs: [{ type: "outcome", id: outcome.id, version: fresh.version }],
-          text: say(language, `该复盘了：「${fresh.title}」。请你们各自私下完成复盘；双方都完成后才会形成共同结果。`, `Time to review "${fresh.title}". Each of you reviews it privately; the shared result forms once you have both finished.`, `Es hora de revisar "${fresh.title}". Cada uno lo revisa en privado; el resultado compartido se forma cuando ambos terminen.`),
+          text: i18n[language], i18n,
         });
         await tx.updateRelationshipRecordForUser("outcomes", outcome.id, userId, (draft) => { draft.announcedAt = iso(current); draft.version += 1; });
         return result;
@@ -106,10 +108,11 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const userId = commitment.createdByUserId;
       await post(commitment.relationshipId, userId, (tx, language, context) => {
         const owner = context.members.find((member) => commitment.ownerType === `member_${String(member.role).toLowerCase()}`);
-        const who = owner?.user?.name || say(language, "你们俩", "both of you", "ambos"), due = iso(commitment.dueAt).slice(0, 16).replace("T", " ") + " UTC";
+        const due = iso(commitment.dueAt).slice(0, 16).replace("T", " ") + " UTC";
+        const i18n = togetherI18n((item) => { const who = owner?.user?.name || say(item, "你们俩", "both of you", "ambos"); return say(item, `承诺到期：${who}要做的「${commitment.description}」，到期时间 ${due}。`, `Commitment due: ${who} agreed to "${commitment.description}", due ${due}.`, `Compromiso vencido: ${who} acordó "${commitment.description}", vence el ${due}.`); });
         return announceInTogether(tx, {
           relationshipId: commitment.relationshipId, userId, kind: "reminder", handle: `commitment:${commitment.id}:due`, refs: [{ type: "commitment", id: commitment.id, version: commitment.version }],
-          text: say(language, `承诺到期：${who}要做的「${commitment.description}」，到期时间 ${due}。`, `Commitment due: ${who} agreed to "${commitment.description}", due ${due}.`, `Compromiso vencido: ${who} acordó "${commitment.description}", vence el ${due}.`),
+          text: i18n[language], i18n,
         });
       });
     }

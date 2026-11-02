@@ -45,8 +45,13 @@ export async function ensureTogetherConversation(tx, { relationshipId, userId })
   return { conversation: await tx.createRelationshipRecord("togetherConversations", record), created: true };
 }
 
+/** System copy in every interface language, so each reader sees it in their own; `text` stays the trigger language. */
+export function togetherI18n(build) { return Object.fromEntries([...LANGUAGES].map((language) => [language, build(language)])); }
+const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES].every((language) => typeof value[language] === "string") ? Object.fromEntries([...LANGUAGES].map((language) => [language, clean(value[language], 4000)])) : null;
+
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null }) {
+// `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null }) {
   const body = clean(text, 4000);
   if (!body) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -57,6 +62,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   const message = {
     id: randomUUID(), role: actorUserId ? "member" : "agent", actorUserId: actorUserId || null, source, kind, text: body,
     refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : null, createdAt: new Date().toISOString(),
+    ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
   };
   const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message].slice(-MESSAGE_LIMIT);
@@ -70,9 +76,9 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
 /** The agent speaks in the shared conversation on its own only for real business: an agreement card, a due joint reminder,
  * a due outcome review. Messages are role "agent"; a deterministic `handle` makes every retry or repeated tick a no-op.
  * `text` must only contain shared content. */
-export async function announceInTogether(tx, { relationshipId, userId, kind, refs = [], text, handle = null, source = "app" }) {
+export async function announceInTogether(tx, { relationshipId, userId, kind, refs = [], text, i18n = null, handle = null, source = "app" }) {
   if (!["agreement_card", "reminder", "review"].includes(kind)) throw decisionError(400, "message_required");
-  return appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source, kind, text, handle, refs });
+  return appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source, kind, text, i18n, handle, refs });
 }
 
 /** Language for agent-initiated copy: the triggering member's explicit choice, else their saved reminder-language preference, else zh. */
@@ -97,8 +103,9 @@ export function agreementCardText(agreement, language = "zh") {
 
 /** Posts the agreement card for the agreement's current version and status (new, changed, change requested, active). */
 export async function announceAgreement(tx, { agreement, userId, language = null, source = "app" }) {
+  const i18n = togetherI18n((item) => agreementCardText(agreement, item));
   return announceInTogether(tx, {
-    relationshipId: agreement.relationshipId, userId, source, kind: "agreement_card", text: agreementCardText(agreement, await memberLanguage(tx, userId, language)),
+    relationshipId: agreement.relationshipId, userId, source, kind: "agreement_card", text: i18n[await memberLanguage(tx, userId, language)], i18n,
     refs: [{ type: "agreement", id: agreement.id, version: agreement.version }], handle: `agreement:${agreement.id}:v${agreement.version}:${agreement.status}`,
   });
 }

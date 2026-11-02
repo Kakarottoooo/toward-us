@@ -49,7 +49,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     const context = buildTogetherContext(await store.relationshipSnapshotForUser(userId), saved.relationshipId, { userId, query: text });
     const turn = await mediator.continueTogether(context, language(req));
     const replied = await transaction(req, async (tx, _context, relationshipId) => {
-      const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: turn.reply, refs: context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version })), replyTo: saved.message.id });
+      const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: turn.reply, i18n: turn.i18n || null, refs: context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version })), replyTo: saved.message.id });
       if (!turn.draftAgreement) return result;
       const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, userId, (draft) => { draft.draftAgreement = { ...turn.draftAgreement, messageId: result.message.id, source: turn.source, createdAt: new Date().toISOString() }; draft.version += 1; });
       return { ...result, conversation };
