@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, CheckCircle, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
 import { browserSpeechAvailable, useBrowserSpeech } from "../../useBrowserSpeech";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
+import { ImportCard } from "../imports/ImportCard";
+import { importAction, importPastedChat, isChatFile, listImports, looksLikePastedChat, uploadChatFile } from "../imports/imports";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -14,7 +16,7 @@ type SpaceSummary = { id: string; title: string; layout: string; visibility: str
 type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[]; photoIds?: string[] };
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
-type Ref = { type: string; id: string; version?: number; title?: string; url?: string };
+type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string };
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
@@ -163,15 +165,29 @@ ${text}` : text, target);
   };
   const ready = attachments.filter((item) => item.id).map((item) => item.id!);
   const uploading = attachments.some((item) => !item.id && !item.failed);
+  // The import posts its own note into this conversation; reload it so the card shows up right away.
+  const reloadSession = async () => { const active = sessionRef.current; if (!active) return; try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}`)).session); } catch { /* The next event or poll refreshes it. */ } };
+  const importChat = async (run: (session: string | null) => Promise<unknown>) => {
+    setNotice(""); setPending((count) => ({ ...count, me: count.me + 1 }));
+    try { const active = await ensureSession(); await run(active?.id || null); await reloadSession(); }
+    catch (error) { setNotice((error as Error).message); } finally { setPending((count) => ({ ...count, me: count.me - 1 })); }
+  };
   const send = () => {
     const text = draft.trim(); if ((!text && !ready.length) || uploading) return;
+    // A long pasted conversation (for example copied WeChat messages) becomes a chat-history import, not one message.
+    if (channel === "me" && !ready.length && looksLikePastedChat(text)) { setDraft(""); void importChat((session) => importPastedChat(text, { language, session })); return; }
     setDraft(""); setAttachments([]);
     if (channel === "me") void sendPrivate(text, crypto.randomUUID(), false, ready); else void sendShared(text, ready);
   };
   // Photos are shrunk on the phone, then uploaded: private in Just me, shared in Us (sending there is the share).
   const pickPhotos = async (files: FileList | null) => {
-    const picked = [...(files || [])].filter((file) => file.type.startsWith("image/")).slice(0, 6 - attachments.length);
+    const all = [...(files || [])];
+    const picked = all.filter((file) => file.type.startsWith("image/")).slice(0, 6 - attachments.length);
     if (fileRef.current) fileRef.current.value = "";
+    // Exported chat files are imported privately from Just me; Us only gets an analysis both of you agreed to share.
+    const chats = all.filter((file) => !file.type.startsWith("image/") && isChatFile(file));
+    if (chats.length && channelRef.current === "us") setNotice(t("聊天记录请在“只有我”里导入，只有你能看到；之后可以邀请 TA 一起看。", "Import chat history in Just me, where only you see it; you can invite your partner to look together later.", "Importa el historial en Solo yo, donde solo tú lo ves; luego puedes invitar a tu pareja a verlo."));
+    else for (const file of chats.slice(0, 1)) void importChat((session) => uploadChatFile(file, { name: file.name, language, session }));
     const scope = channel === "us" ? "shared" : "private";
     for (const file of picked) {
       const key = crypto.randomUUID(), preview = URL.createObjectURL(file);
@@ -252,6 +268,7 @@ ${text}` : text, target);
   const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("跟我说说…", "Talk to me…", "Cuéntame…") : askAgent ? t("问 Pinky…", "Ask Pinky…", "Pregúntale a Pinky…") : t("发给你们俩…", "Message both of you…", "Escribe a los dos…");
 
   const privateCard = (card: Card) => {
+    if (card.kind === "chat_import") return <ImportCard key={card.id} id={card.id} language={language} onOpen={open} onFinished={() => void reloadSession()} />;
     if (card.kind === "partner_message") return <article key={card.id} className={`conversation-card partner-card is-${card.status}`} data-testid="partner-message-card">
       <header><LockKey size={16} />{t("想对 TA 说的话", "For your partner", "Para tu pareja")}</header><p>{card.text}</p>
       {card.status === "draft" ? <><small>{t("确认之前不会分享，你的原话也不会。", "Nothing is shared until you confirm, and your own words never are.", "No se comparte nada hasta que lo confirmes, y tus palabras originales nunca.")}</small><div className="card-actions">
@@ -264,7 +281,7 @@ ${text}` : text, target);
       {card.status === "draft" ? <><small>{t("确认后你们俩都能看到。", "Once you confirm, both of you can see it.", "Cuando lo confirmes, los dos podrán verlo.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void confirmSpace(card)}><CheckCircle size={18} weight="fill" />{t("确认放进去", "Confirm", "Confirmar")}</button></div></> :
         card.status === "shared" ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t("已放进共同空间", "Added to the shared space", "Añadido al espacio compartido")}</small> : null}
     </article>;
-    if (card.kind === "link" && card.url) return <div key={card.id} className="message-handoffs"><Handoff title={card.title} url={card.url} language={language} /></div>;
+    if (card.kind === "link" && card.url) return <div key={card.id} className="message-handoffs"><Handoff title={card.title} url={card.url} language={language} onOpen={open} /></div>;
     if (card.kind === "space_group") return <article key={card.id} className="conversation-card space-card"><header><ListBullets size={16} />{card.title || t("已放进空间", "Added to a space", "Añadido a un espacio")}</header>{card.text && <ul>{card.text.split("\n").map((line, index) => <li key={index}>{line}</li>)}</ul>}<div className="card-actions"><button onClick={() => open(card.url!)}>{t("打开", "Open", "Abrir")}<ArrowRight size={16} /></button></div></article>;
     return <article key={`${card.kind}:${card.id}`} className="conversation-card"><header>{card.title}</header>{card.text && <p>{card.text}</p>}{card.localDateTime && <small className="card-when">{card.localDateTime.replace("T", " ")}</small>}{card.status !== "unavailable" && card.url && <div className="card-actions"><button onClick={() => open(card.url!)}>{t("打开详情", "Open details", "Abrir detalles")}<ArrowRight size={16} /></button></div>}</article>;
   };
@@ -276,6 +293,7 @@ ${text}` : text, target);
     const next = card.kind === "space" ? { ...entry, title: card.title } : { ...entry, text: [entry.text, card.title].filter(Boolean).join("\n") };
     return index >= 0 ? list.map((item, position) => position === index ? next : item) : [...list, next];
   }, []);
+  const approvedImports = new Set((together?.conversation.messages || []).flatMap((message) => message.refs.filter((ref) => ref.type === "chat_import" && ref.requestFor).map((ref) => ref.requestFor!)));
   const sharedMessage = (message: SharedMessage) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
     const recorder = message.recordedByUserId ? (message.recordedByUserId === user.id ? user.name : partnerName) : "";
@@ -296,13 +314,21 @@ ${text}` : text, target);
       return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}</article>;
     }
     const links = message.role === "agent" ? message.refs.filter((ref) => ref.type === "space" || ref.type === "milestone") : [];
+    const chatRequest = message.refs.find((ref) => ref.type === "chat_import_request"), chatShared = message.refs.find((ref) => ref.type === "chat_import");
     const handoffs = message.role === "agent" ? message.refs.filter((ref) => ref.type === "link" && ref.url) : [];
     return <article key={message.id} className={`conversation-message ${message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner"}`}>{(author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{text && <p>{message.role === "agent" ? <Linked text={text} /> : text}</p>}
       {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
-      {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} />)}</div>}
+      {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} onOpen={open} />)}</div>}
+      {chatRequest && <div className="card-actions">{approvedImports.has(chatRequest.id) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t("已同意一起看", "Agreed to look together", "Aceptado para verlo juntos")}</small> : mine ? <small className="card-state">{t("等 TA 同意", "Waiting for your partner", "Esperando a tu pareja")}</small> : <button className="card-primary" disabled={busy} onClick={() => void approveImport(chatRequest.id)}><CheckCircle size={18} weight="fill" />{t("同意一起看", "Agree to look together", "Aceptar verlo juntos")}</button>}</div>}
+      {chatShared && <div className="message-links"><button onClick={() => open(`/?view=import&import=${encodeURIComponent(chatShared.id)}`)}><ChatsCircle size={16} />{t("查看聊天记录分析", "See the chat history analysis", "Ver el análisis del historial")}<ArrowRight size={15} /></button></div>}
     </article>;
   };
 
+  // B: the partner approves looking at the other's chat-history analysis together; only then does a shared copy exist.
+  const approveImport = async (id: string) => {
+    setBusy(true); setNotice("");
+    try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
+  };
   const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions">{items.map((text) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}</button>)}</div>;
   const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p>
     {suggest([t("有句话想对 TA 说，但不知道怎么开口", "There is something I want to tell my partner, but I do not know how", "Quiero decirle algo a mi pareja, pero no sé cómo"), t("帮我建一个生日礼物点子清单", "Start a list of birthday gift ideas", "Empieza una lista de ideas de regalo"), t("这周六晚上找家适合约会的餐厅", "Find a good date-night restaurant for Saturday", "Busca un buen restaurante para una cita el sábado"), t("周五晚上八点提醒我早点回家", "Remind me on Friday at 8 pm to head home early", "Recuérdame el viernes a las 8 de la noche volver temprano")], "me")}</section>;
@@ -314,6 +340,8 @@ ${text}` : text, target);
   </section>;
 
   const privateMessages = session?.messages || [];
+  // An import is reported twice (received, then read); its live card shows only on the latest of those messages.
+  const importAt = new Map(privateMessages.flatMap((message, index) => (message.cards || []).filter((card) => card.kind === "chat_import").map((card) => [card.id, index] as const)));
   const sharedMessages = together?.conversation.messages || [];
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
   return <div className="paper-screen conversation-home" data-testid="conversation-screen">
@@ -327,7 +355,7 @@ ${text}` : text, target);
       </div>
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards(message.cards || []).map(privateCard)}</div>)}</> :
+      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.role === "assistant" && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
           {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Pinky 起草的约定", "Agreement drafted by Pinky", "Acuerdo redactado por Pinky")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol><small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
@@ -351,7 +379,7 @@ ${text}` : text, target);
         <div className="conversation-input">
           {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Pinky 来帮忙", "Ask Pinky to help", "Pedir ayuda a Pinky")}><At size={20} weight="bold" /></button>}
           <button type="button" className="conversation-photo" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} disabled={attachments.length >= 6} aria-label={t("发照片", "Send a photo", "Enviar una foto")} data-testid="conversation-photo"><ImageSquare size={22} /></button>
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
+          <input ref={fileRef} type="file" accept="image/*,.txt,.zip,.json,.csv,.xml,.html" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
           <KeyboardTextarea data-testid="conversation-input" aria-label={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
           <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
@@ -379,6 +407,8 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
       .then((result) => setHome({ pending: result.home.pending.length, lists: result.graph.lists.length + result.graph.milestones.length > 0 })).catch(() => {});
   }, [paired]);
   useEffect(() => { relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => setSpaces(result.spaces)).catch(() => {}); }, []);
+  const [chats, setChats] = useState(0);
+  useEffect(() => { listImports().then((items) => setChats(items.length)).catch(() => {}); }, []);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [onClose]);
   const fixed: DrawerItem[] = paired ? [
     { key: "agreements", icon: <Handshake size={22} />, label: t("约定", "Agreements", "Acuerdos"), badge: home?.pending, onClick: () => onOpen("/?view=agreements") },
@@ -393,7 +423,8 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
   ];
   const layoutIcon: Record<string, ReactNode> = { checklist: <ListChecks size={22} />, timeline: <ClockCounterClockwise size={22} />, gallery: <Images size={22} />, notes: <NotePencil size={22} />, list: <ListBullets size={22} /> };
   const spaceRow = (space: SpaceSummary): DrawerItem => ({ key: `space-${space.id}`, icon: layoutIcon[space.layout] || layoutIcon.list, label: space.title, onClick: () => onOpen(`/?view=space&space=${encodeURIComponent(space.id)}`) });
-  const ours = spaces.filter((space) => space.visibility === "shared").map(spaceRow), mine = spaces.filter((space) => space.visibility === "private").map(spaceRow);
+  const ours = spaces.filter((space) => space.visibility === "shared").map(spaceRow);
+  const mine = [...spaces.filter((space) => space.visibility === "private").map(spaceRow), ...(chats ? [{ key: "imports", icon: <ChatsCircle size={22} />, label: t("聊天记录", "Chat history", "Historial de chat"), onClick: () => onOpen("/?view=import") }] : [])];
   const row = (item: DrawerItem) => <button key={item.key} className="drawer-row" onClick={item.onClick} data-testid={`drawer-${item.key}`}>{item.icon}<span>{item.label}</span>{!!item.badge && <em aria-label={t(`${item.badge} 件待处理`, `${item.badge} waiting`, `${item.badge} pendientes`)}>{item.badge}</em>}</button>;
   return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
     <button className="conversation-drawer-scrim" aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} onClick={onClose} />
@@ -408,7 +439,9 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
 }
 
 /** A hand-off: tapping finishes the thing on the phone (Maps, Messages, Mail, Phone, Calendar, a website). */
-function Handoff({ title, url, language }: { title: string; url: string; language: Language }) {
+function Handoff({ title, url, language, onOpen }: { title: string; url: string; language: Language; onOpen?: (url: string) => void }) {
+  // A page inside Pinky opens in place rather than in a new window.
+  if (url.startsWith("/?view=") && onOpen) return <button className="handoff" onClick={() => onOpen(url)}><ArrowRight size={18} weight="bold" /><span>{title}</span></button>;
   const icon = url.startsWith("sms:") ? <ChatCircleDots size={18} weight="fill" /> : url.startsWith("tel:") ? <Phone size={18} weight="fill" /> : url.startsWith("mailto:") ? <EnvelopeSimple size={18} weight="fill" /> : url.includes("/api/handoff/event.ics") ? <CalendarPlus size={18} weight="fill" /> : url.includes("maps.apple.com") || url.includes("google.com/maps") ? <MapPin size={18} weight="fill" /> : <ArrowSquareOut size={18} weight="bold" />;
   const label = url.includes("/api/handoff/event.ics") ? `${localized(language, "加入日历", "Add to calendar", "Añadir al calendario")} · ${title}` : title;
   return <a className="handoff" href={url} target={/^(https?:|\/)/.test(url) ? "_blank" : undefined} rel="noopener noreferrer">{icon}<span>{label}</span></a>;

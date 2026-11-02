@@ -12,6 +12,8 @@ const MAX_BYTES = 8 * 1024 * 1024, PHOTO_LIMIT = 2000;
 const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.${TYPES[record.mime]}`);
+/** Where a photo's bytes are on disk, for server-side readers such as screenshot import. */
+export const photoFile = fileFor;
 
 /** A visible photo record, or a 404 that does not reveal whether the photo exists. */
 export async function visiblePhoto(db, id, userId) {

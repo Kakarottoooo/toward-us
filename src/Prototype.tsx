@@ -12,6 +12,7 @@ import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
 import { SpacePage } from "./features/spaces/SpacePage";
+import { ImportsPage } from "./features/imports/ImportsPage";
 import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
@@ -19,7 +20,7 @@ import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./relationship.css";
 import "./controls.css";
 
-type Screen = "home" | "conversation" | "space" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
+type Screen = "home" | "conversation" | "space" | "import" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
 type Personality = "friend" | "counselor" | "direct";
 type User = { id: string; email: string; name: string; createdAt: string };
@@ -204,7 +205,8 @@ function AccountPrototype() {
   const openTalk = () => { window.history.replaceState(null, "", "/?view=talk"); setScreen("dashboard"); };
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
   const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
-  if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onPrivacy={() => setScreen("privacy")} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
+  if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onPrivacy={() => setScreen("privacy")} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
+  if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
   if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
@@ -381,5 +383,5 @@ function FeedbackBlock({ number, title, body }: { number: string; title: string;
 function AnalysisSection({ title, index, children }: { title: string; index: string; children: React.ReactNode }) { return <section className="analysis-section"><header><span>{index}</span><h2>{title}</h2></header>{children}</section>; }
 function BulletList({ items, tone }: { items: string[]; tone: "common" | "different" }) { return <ul className={`bullet-list ${tone}`}>{items.map((item) => <li key={item}>{tone === "common" ? <CheckCircle size={18} weight="fill" /> : <WarningCircle size={18} />}<span>{item}</span></li>)}</ul>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
-function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }

@@ -13,6 +13,8 @@ export function handoffUrl({ url, localDateTime, title, location = "", timezone 
     return `/api/handoff/event.ics?${new URLSearchParams({ title: title.slice(0, 120), start: localDateTime, tz: timezone, ...(location ? { location: location.slice(0, 200) } : {}) })}`;
   }
   if (typeof url !== "string" || url.length > 1000) return null;
+  // A page inside Pinky itself (for example the chat-history import page); the app opens it in place.
+  if (/^\/\?view=[a-z]+(&[a-z]+=[A-Za-z0-9-]+)*$/.test(url.trim())) return url.trim();
   try { const parsed = new URL(url.trim()); return SCHEMES.has(parsed.protocol) ? parsed.href : null; } catch { return null; }
 }
 

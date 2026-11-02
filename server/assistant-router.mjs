@@ -7,6 +7,7 @@ import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
 import { handoffUrl } from "./handoff.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
+import { importContext } from "./chat-import.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
 const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date, share.photoId || null])).digest("hex");
@@ -21,7 +22,7 @@ const localTime = (value, timezone) => {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
 
-export function createAssistantRouter({ store, mediator, reminderService, emit = () => {} }) {
+export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null }) {
   const router = express.Router();
   const liveUser = async (db, userId, lock = false) => {
     const user = await (lock ? db.getUserForUpdate(userId) : db.getUserById(userId));
@@ -39,6 +40,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
+        if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
         if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
@@ -115,6 +117,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
+      chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     let plan;
@@ -123,14 +126,22 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     plan = normalizeAssistantTurn(plan);
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
-    const searches = plan.actions.filter((action) => action.kind === "web_search").slice(0, 2);
-    if (searches.length && mediator.lookup) {
-      const lookups = await Promise.all(searches.map(async (action) => ({ query: action.query, findings: await mediator.lookup(action.query, session.language).catch(() => "No results: the search failed.") })));
+    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports).slice(0, 3);
+    if (searches.length) {
+      // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
+      const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
+        ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
+        : { query: action.query, findings: await mediator.lookup(action.query, session.language).catch(() => "No results: the search failed.") }));
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, session.language)); }
       catch { throw fail(503, say(session.language, "助手暂时不可用，没有执行任何操作。请稍后重试。", "The assistant is unavailable. Nothing was changed. Try again soon.", "El asistente no está disponible. No se cambió nada. Inténtalo pronto.")); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     }
-    plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "web_search") };
+    // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
+    if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
+      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language: session.language })
+        .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
+    }
+    plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "chat_import"].includes(action.kind)) };
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
@@ -323,7 +334,21 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (typeof req.body !== "string" || !req.body.includes("v=0")) throw fail(400, "Invalid audio connection.");
     res.type("application/sdp").send(await mediator.createRealtimeSession({ sdp: req.body, language: session.language, safetyIdentifier: createHash("sha256").update(req.auth.user.id).digest("hex") }));
   });
+  // Background work (a finished chat import) reports into the member's App conversation: the one it started from if it
+  // still exists, else their latest, else a new one.
+  async function postNote(userId, { sessionId = null, language = "zh", text, card = null }) {
+    let session = sessionId ? await owned(store, sessionId, userId).catch(() => null) : null;
+    if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    if (!session) session = await createSession(userId, { language, timezone: "UTC" });
+    const saved = await store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
+      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(card ? { cards: [card] } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
+    }));
+    // Private sessions carry no relationship id; route the event through the member's couple so their open app refreshes.
+    const context = await store.getRelationshipContext(userId);
+    if (saved && context?.relationship) emit({ ...saved, relationshipId: context.relationship.id }, "assistant.updated", userId);
+    return saved;
+  }
   // Channel adapters (iMessage) call the same domain code as the HTTP routes above.
-  router.assistant = { createSession, appendTurn, confirmShare, output };
+  router.assistant = { createSession, appendTurn, confirmShare, output, postNote };
   return router;
 }

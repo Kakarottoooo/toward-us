@@ -34,6 +34,7 @@ import { createTogetherRouter } from "./together-router.mjs";
 import { createSpaceRouter } from "./space-router.mjs";
 import { createPhotoRouter } from "./photo-store.mjs";
 import { createHandoffRouter } from "./handoff.mjs";
+import { createChatImportRouter } from "./chat-import.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 
@@ -686,8 +687,13 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     for (const clients of eventClients.values()) for (const client of clients) if (userIds.includes(client.userId)) client.res.end();
     relationshipRouter.closeUserConnections?.(userIds);
   };
+  // Chat-history import reports back into the member's private conversation when its background analysis finishes.
+  // Mounted first: its Mac helper script and upload are reached without a session (a one-time token stands in).
+  const chatImportRouter = createChatImportRouter({ store, mediator, appendAssistantMessage: (...args) => assistantRouter.assistant.postNote(...args) });
+  chatImportRouter.emitTogether = (conversation, actorUserId = null) => emit(conversation, "together.updated", null, actorUserId);
+  app.use("/api", chatImportRouter);
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
-  const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit });
+  const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter });
   app.use("/api", assistantRouter);
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit });
   app.use(imessage.router);

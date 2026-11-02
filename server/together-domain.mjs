@@ -4,6 +4,7 @@ import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { handoffUrl } from "./handoff.mjs";
+import { importContext, searchImport } from "./chat-import.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
@@ -38,6 +39,8 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
       id: space.id, title: space.title, layout: space.layout,
       items: (snapshot.spaceItems || []).filter((item) => item.spaceId === space.id && item.visibility === "shared" && !item.archivedAt).slice(-15).map((item) => ({ id: item.id, title: item.title || String(item.text || "").slice(0, 80), date: item.date, done: item.done })),
     })),
+    // Chat-history analyses only as the shared copies both partners approved; never a member's private import.
+    chatHistory: importContext((snapshot.chatImports || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt)),
     sharedDates: (snapshot.milestones || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt).slice(0, 30).map(({ id, title, date, recurringRule }) => ({ id, title, date, recurringRule })),
     safety: { rule: "Use only this shared context. Never quote or imply either person's private conversations, judge who is right, or approve on anyone's behalf." },
   };
@@ -101,12 +104,15 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const context = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
-  const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text).slice(0, 2);
-  if (searches.length && mediator.lookup) {
-    const lookups = await Promise.all(searches.map(async (action) => ({ query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") })));
+  const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
+  if (searches.length) {
+    const sharedImport = async (id) => (await store.relationshipSnapshotForUser(actorUserId)).chatImports?.find((item) => item.id === id && item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt);
+    const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
+      ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
+      : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));
     turn = await mediator.continueTogether({ ...context, webSearch: true, lookups }, language);
   }
-  turn = { ...turn, actions: (turn.actions || []).filter((action) => action.kind !== "web_search") };
+  turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
   if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
     const membership = await store.getRelationshipContext(actorUserId);

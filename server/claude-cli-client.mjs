@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 // Local dogfooding only: answers the OpenAI `responses.create` text calls through the `claude` CLI signed in with the
 // founder's Claude subscription. It never runs tools, keeps no session, and loads no user settings, hooks or MCP
@@ -29,8 +29,17 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
       if (result.is_error) throw new Error(`claude CLI lookup error: ${String(result.result || "unknown").slice(0, 200)}`);
       return String(result.result || "").slice(0, 3000);
     },
+    // Screenshot transcription for chat import: the model may only Read the given image files.
+    async readImages({ paths, system, prompt, schema }) {
+      const directories = [...new Set(paths.map((path) => dirname(path)))];
+      const stdout = await run(command, [...base, "--tools", "Read", "--allowedTools", "Read", ...directories.flatMap((directory) => ["--add-dir", directory]), "--system-prompt", system, "--json-schema", JSON.stringify(schema)], [prompt, ...paths].join("\n"), cwd, 600_000);
+      let result;
+      try { result = JSON.parse(stdout); } catch { throw new Error("claude CLI image read returned non-JSON output"); }
+      if (result.is_error) throw new Error(`claude CLI image read error: ${String(result.result || "unknown").slice(0, 200)}`);
+      return result.structured_output ?? {};
+    },
     responses: {
-      async create(params) {
+      async create(params, options = {}) {
         const input = Array.isArray(params.input) ? params.input : [{ role: "user", content: params.input }];
         const system = [params.instructions, ...input.filter((item) => item.role === "developer" || item.role === "system").map((item) => textOf(item.content))].filter(Boolean).join("\n\n");
         const prompt = input.filter((item) => item.role === "user" || item.role === "assistant").map((item) => `${item.role === "assistant" ? "Assistant: " : ""}${textOf(item.content)}`).join("\n\n");
@@ -38,7 +47,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         const args = ["-p", "--output-format", "json", "--model", model, "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "project"];
         if (system) args.push("--system-prompt", system);
         if (schema) args.push("--json-schema", JSON.stringify(schema));
-        const stdout = await run(command, args, prompt, cwd);
+        const stdout = await run(command, args, prompt, cwd, Math.max(TIMEOUT_MS, options.timeout || 0));
         let result;
         try { result = JSON.parse(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
         if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
@@ -48,11 +57,11 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
   };
 }
 
-function run(command, args, input, cwd) {
+function run(command, args, input, cwd, timeoutMs = TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let stdout = "", stderr = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error("claude CLI timed out")); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { child.kill(); reject(new Error("claude CLI timed out")); }, timeoutMs);
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("error", (error) => { clearTimeout(timer); reject(error); });
