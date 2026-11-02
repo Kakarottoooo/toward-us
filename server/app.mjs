@@ -165,7 +165,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use((req, res, next) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !(req.path.startsWith("/api/") || req.path.startsWith("/m/"))) return next();
     // This single server-to-server endpoint has its own constant-time Bearer gate.
-    if (req.method === "POST" && (req.path === "/api/internal/reminders/run" || req.path === "/api/internal/phone-links")) return next();
+    if (req.method === "POST" && req.path === "/api/internal/reminders/run") return next();
     return sameOriginRequest(req) ? next() : res.status(403).json({ error: "请求来源未通过安全检查。" });
   });
   app.use(async (req, _res, next) => {
@@ -655,7 +655,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.json({ item: historyDetail(room) });
   });
 
-  app.use(createPhoneRouter({ store, internalSecret: () => reminders.internalSecret }));
+  app.use(createPhoneRouter({ store }));
   app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
   const relationshipRouter = createRelationshipRouter({ store, mediator });
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);

@@ -158,6 +158,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     if (!context.members.every((item) => evaluatedUsers.has(item.userId))) throw decisionError(409, "both_evaluations");
     const existing = snapshot.agreements.find((item) => item.proposalId === proposal.id && !item.archivedAt);
     if (existing) return { body: { agreement: existing } };
+    await assertNoOtherPendingAgreement(tx, issue.relationshipId, userId);
     const record = createRelationshipRecord({ relationshipId: issue.relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "awaiting_approvals", sourceIssueId: issue.id, proposalId: proposal.id, title: clean(req.body?.title, 160) || proposal.title, summary: clean(req.body?.summary, 1200) || proposal.rationale, terms: cleanArray(req.body?.terms, 8, 500), unresolvedPoints: cleanArray(req.body?.unresolvedPoints, 8, 500), effectiveAt: null, reviewAt: validIso(req.body?.reviewAt), supersedesAgreementId: null });
     if (!record.terms.length) record.terms = [String(record.summary)];
     await tx.createRelationshipRecord("agreements", record);
@@ -171,6 +172,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     assertVersion(current, req.body?.version);
     if (!["draft", "awaiting_approvals"].includes(current.status)) throw decisionError(409, "agreement_not_editable");
     if (req.body?.confirmed !== true) throw decisionError(400, "confirm_draft");
+    await assertNoOtherPendingAgreement(tx, current.relationshipId, req.auth.user.id, current.id);
     const values = agreementValues(req.body);
     const agreement = await tx.updateRelationshipRecordForUser("agreements", current.id, req.auth.user.id, (draft) => { Object.assign(draft, values); draft.version += 1; draft.status = "awaiting_approvals"; });
     await audit(tx, agreement, req.auth.user.id, "agreement.changed");
@@ -208,6 +210,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     if (req.body?.confirmed !== true) throw decisionError(400, "confirm_draft");
     const context = await jointDiscussionContext(tx, issue, userId);
     if (JSON.stringify(candidate.sourceRefs) !== JSON.stringify([...context.confirmedSummaries, ...context.authorizedMemories].map(({ id, version }) => ({ id, version })))) throw decisionError(409, "draft_changed");
+    await assertNoOtherPendingAgreement(tx, issue.relationshipId, userId, candidate.agreementId || null);
     const values = agreementValues(req.body);
     let agreement;
     if (candidate.agreementId) {
@@ -360,6 +363,11 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.post("/notifications/:id/read", notificationMutation("readAt"));
   router.post("/notifications/:id/dismiss", notificationMutation("dismissedAt"));
 
+  // One pending agreement per couple on every path (together, proposal, edit, discussion draft); `exceptId` is the agreement being moved.
+  async function assertNoOtherPendingAgreement(tx, relationshipId, userId, exceptId = null) {
+    const agreements = await tx.listRelationshipRecordsForUser("agreements", userId);
+    if (agreements.some((item) => item.relationshipId === relationshipId && item.id !== exceptId && item.status === "awaiting_approvals" && !item.archivedAt && !item.withdrawnAt)) throw decisionError(409, "one_pending_agreement");
+  }
   function decisionTransaction(action, usage = null) {
     return async (req, res) => {
       const initial = await activeRelationship(store, req, res); if (!initial) return;

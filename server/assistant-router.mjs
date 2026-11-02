@@ -204,6 +204,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (!activePair(context) || context.relationship.id !== initial.relationship.id) throw fail(409, unpaired(session.language));
       const latest = await owned(tx, session.id, userId); const draft = latest.partnerMessage;
       if (!draft || draft.cardId !== cardId || draft.digest !== digest || createHash("sha256").update(draft.text).digest("hex") !== digest) throw fail(409, say(session.language, "这段话已经修改，请确认最新的版本。", "This message changed. Review and confirm the latest version.", "Este mensaje cambió. Revisa y confirma la última versión."));
+      // Already shared: answer from the durable stamp instead of the handle, which only dedupes within the last 200 messages.
+      if (draft.sharedAt) return { duplicate: true, message: { id: draft.messageId, text: draft.text, createdAt: draft.sharedAt }, session: latest };
       const sent = await appendTogetherMessage(tx, { relationshipId: initial.relationship.id, actorUserId: userId, source: "relay", kind: "relay", text: draft.text, handle: `partner_message:${draft.cardId}`, refs: [{ type: "partner_message", id: draft.cardId }] });
       if (sent.duplicate) return { ...sent, session: latest };
       await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: draft.cardId, objectType: "partner_message", eventType: "partner_message.shared", sourceVersion: latest.version }));

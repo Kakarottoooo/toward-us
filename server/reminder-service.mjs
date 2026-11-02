@@ -76,17 +76,29 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         if (result && !result.duplicate) onAnnounce(result.conversation, "together.updated");
       } catch (error) { console.error("together announcement failed", error?.code || "error"); /* One broken record must not stop the other announcements or push delivery. */ }
     };
-    for (const reminder of (await store.listRecordsForJob("reminders")).filter((item) => active(item) && item.visibility === "shared" && item.relationshipId && item.milestoneId).slice(0, 100)) {
+    // Due-ness is computed before the per-tick cap, so already-announced or not-yet-due reminders never crowd out due ones.
+    let announcedReminders = 0;
+    for (const reminder of (await store.listRecordsForJob("reminders")).filter((item) => active(item) && item.visibility === "shared" && item.relationshipId && item.milestoneId)) {
+      if (announcedReminders >= 100) break;
       const milestone = await store.getRelationshipRecordForUser("milestones", reminder.milestoneId, reminder.ownerUserId);
       if (!milestone || !canViewRecord(milestone, reminder.ownerUserId) || milestone.withdrawnAt || !JOINT.has(milestone.visibility)) continue;
       const due = jointReminderDue(milestone, reminder.minutesBefore, current);
-      if (!due) continue;
+      if (!due || reminder.announcedAt?.[due.dueAt]) continue;
+      announcedReminders += 1;
       const i18n = togetherI18n((language) => say(language, `到点提醒：「${milestone.title}」（${due.occursOn}）。`, `Reminder: "${milestone.title}" (${due.occursOn}).`, `Recordatorio: "${milestone.title}" (${due.occursOn}).`));
-      await post(reminder.relationshipId, reminder.ownerUserId, (tx, language) => announceInTogether(tx, {
-        relationshipId: reminder.relationshipId, userId: reminder.ownerUserId, kind: "reminder", handle: `reminder:${reminder.id}:${due.dueAt}`,
-        refs: [{ type: "milestone", id: milestone.id, version: milestone.version }, { type: "reminder", id: reminder.id }],
-        text: i18n[language], i18n,
-      }));
+      // The occurrence is stamped on the reminder in the same transaction as the post: the handle alone only dedupes against
+      // the last 200 messages, while a due occurrence stays in the 7-day window. No version bump: it is bookkeeping, not an edit.
+      await post(reminder.relationshipId, reminder.ownerUserId, async (tx, language) => {
+        const fresh = await tx.getRelationshipRecordForUser("reminders", reminder.id, reminder.ownerUserId);
+        if (!fresh || fresh.announcedAt?.[due.dueAt]) return null;
+        const result = await announceInTogether(tx, {
+          relationshipId: reminder.relationshipId, userId: reminder.ownerUserId, kind: "reminder", handle: `reminder:${reminder.id}:${due.dueAt}`,
+          refs: [{ type: "milestone", id: milestone.id, version: milestone.version }, { type: "reminder", id: reminder.id }],
+          text: i18n[language], i18n,
+        });
+        await tx.updateRelationshipRecordForUser("reminders", reminder.id, reminder.ownerUserId, (draft) => { draft.announcedAt = { ...(draft.announcedAt || {}), [due.dueAt]: iso(current) }; });
+        return result;
+      });
     }
     for (const outcome of (await store.listRecordsForJob("outcomes")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "pending" && !item.announcedAt && !item.archivedAt && !item.withdrawnAt && item.reviewAt && new Date(item.reviewAt) <= current).slice(0, 100)) {
       const userId = outcome.createdByUserId;
@@ -104,16 +116,22 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     }
     // Active shared commitments that reached their due time (completed, renegotiating or awaiting-confirmation ones are skipped;
     // so is anything overdue by more than the 7-day window, like joint reminders).
-    for (const commitment of (await store.listRecordsForJob("commitments")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "active" && !item.archivedAt && !item.withdrawnAt && item.dueAt && new Date(item.dueAt) <= current && current.getTime() - new Date(item.dueAt).getTime() <= ANNOUNCE_WINDOW_MS).slice(0, 100)) {
+    for (const commitment of (await store.listRecordsForJob("commitments")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "active" && !item.dueAnnouncedAt && !item.archivedAt && !item.withdrawnAt && item.dueAt && new Date(item.dueAt) <= current && current.getTime() - new Date(item.dueAt).getTime() <= ANNOUNCE_WINDOW_MS).slice(0, 100)) {
       const userId = commitment.createdByUserId;
-      await post(commitment.relationshipId, userId, (tx, language, context) => {
+      // Stamped like outcomes (dueAnnouncedAt) so the handle's 200-message horizon cannot re-announce it; no version bump, so
+      // members confirming or completing the commitment right at its due time do not hit stale_version.
+      await post(commitment.relationshipId, userId, async (tx, language, context) => {
+        const fresh = await tx.getRelationshipRecordForUser("commitments", commitment.id, userId);
+        if (!fresh || fresh.status !== "active" || fresh.dueAnnouncedAt) return null;
         const owner = context.members.find((member) => commitment.ownerType === `member_${String(member.role).toLowerCase()}`);
         const due = iso(commitment.dueAt).slice(0, 16).replace("T", " ") + " UTC";
         const i18n = togetherI18n((item) => { const who = owner?.user?.name || say(item, "你们俩", "both of you", "ambos"); return say(item, `承诺到期：${who}要做的「${commitment.description}」，到期时间 ${due}。`, `Commitment due: ${who} agreed to "${commitment.description}", due ${due}.`, `Compromiso vencido: ${who} acordó "${commitment.description}", vence el ${due}.`); });
-        return announceInTogether(tx, {
+        const result = await announceInTogether(tx, {
           relationshipId: commitment.relationshipId, userId, kind: "reminder", handle: `commitment:${commitment.id}:due`, refs: [{ type: "commitment", id: commitment.id, version: commitment.version }],
           text: i18n[language], i18n,
         });
+        await tx.updateRelationshipRecordForUser("commitments", commitment.id, userId, (draft) => { draft.dueAnnouncedAt = iso(current); });
+        return result;
       });
     }
   };

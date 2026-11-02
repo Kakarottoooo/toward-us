@@ -1,4 +1,4 @@
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { randomInt } from "node:crypto";
 import express from "express";
 import { sessionId } from "./auth.mjs";
 
@@ -65,32 +65,18 @@ function languageOf(req) {
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const maskPhone = (phone) => phone.length > 6 ? `${phone.slice(0, 2)}${"•".repeat(phone.length - 6)}${phone.slice(-4)}` : phone;
-const digest = (value) => createHash("sha256").update(value).digest();
 
 function page(req, res, status, language, code, heading, body, form = null) {
   res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Referrer-Policy", "no-referrer");
+  // same-origin, not no-referrer: with no-referrer browsers send `Origin: null` on the Confirm POST and the same-origin
+  // check rejects it. same-origin still never leaks the one-time code in the URL to another site.
+  res.setHeader("Referrer-Policy", "same-origin");
   if (req.accepts(["html", "json"]) === "json") return res.status(status).json({ code, error: heading, message: [body].flat().join(" ") });
   res.status(status).type("html").send(`<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(heading)}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f1e7;color:#1d1b18;font:17px/1.5 system-ui,sans-serif}main{max-width:26rem;padding:2rem 1.5rem}p.brand{letter-spacing:.2em;font-size:.8rem;margin:0 0 1.5rem}h1{font-size:1.5rem;margin:0 0 .75rem}p{margin:0 0 .75rem}button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:.5rem;background:#1d1b18;color:#f6f1e7;margin-top:.5rem}</style></head><body><main><p class="brand">${escapeHtml(TEXT[language].title)}</p><h1>${escapeHtml(heading)}</h1>${[body].flat().map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${form ? `<form method="post" action="${escapeHtml(form.action)}"><button type="submit">${escapeHtml(form.label)}</button></form>` : ""}</main></body></html>`);
 }
 
-export function createPhoneRouter({ store, internalSecret = () => "" }) {
+export function createPhoneRouter({ store }) {
   const router = express.Router();
-
-  // Server-to-server only: the future iMessage task mints links here (or calls createPhoneLink directly).
-  router.post("/api/internal/phone-links", async (req, res, next) => {
-    const secret = internalSecret();
-    if (!secret || secret.length < 32) return res.status(503).json({ error: "Phone links are not configured." });
-    const provided = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
-    if (!timingSafeEqual(digest(provided), digest(`Bearer ${secret}`))) return res.status(401).json({ error: "Unauthorized." });
-    const phone = normalizePhone(req.body?.phone);
-    if (!phone) return res.status(400).json({ error: "A phone number in E.164 format is required.", code: "invalid_phone" });
-    try {
-      const host = String(req.get("host") || "");
-      const baseUrl = process.env.TOWARD_US_BASE_URL || (/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) ? `${req.protocol}://${host}` : "");
-      res.status(201).json(await createPhoneLink(store, phone, { baseUrl }));
-    } catch (error) { next(error); }
-  });
 
   // GET only previews: it never consumes the link or touches the account.
   router.get("/m/:code", async (req, res, next) => {
@@ -102,7 +88,7 @@ export function createPhoneRouter({ store, internalSecret = () => "" }) {
       if (!phone) return page(req, res, 410, language, "link_expired", text.expired, text.expiredBody);
       const current = await store.getPhoneForUser(req.auth.user.id);
       const body = [text.confirmBody(maskPhone(phone)), text.confirmWarning, ...(current && current !== phone ? [text.replaceNote(maskPhone(current))] : [])];
-      page(req, res, 200, language, "confirm_required", text.confirm, body, { action: `/m/${code}`, label: text.confirmButton });
+      page(req, res, 200, language, "confirm_required", text.confirm, body, { action: `/m/${code}?language=${language}`, label: text.confirmButton });
     } catch (error) { next(error); }
   });
 
