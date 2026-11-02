@@ -123,14 +123,17 @@ export async function memberLanguage(tx, userId, hint = null) {
 }
 
 const CARD_COPY = {
-  zh: { title: (t, v) => `约定「${t}」v${v}`, awaiting_approvals: "等你们两人批准同一版本", active: "已生效", draft: "有人要求修改，等待新版本", open: "待定：" },
-  en: { title: (t, v) => `Agreement "${t}" v${v}`, awaiting_approvals: "waiting for both of you to approve this version", active: "now active", draft: "a change was requested; waiting for a new version", open: "Still open: " },
-  es: { title: (t, v) => `Acuerdo "${t}" v${v}`, awaiting_approvals: "esperando que ambos aprueben esta versión", active: "ya está activo", draft: "se pidió un cambio; esperando una nueva versión", open: "Pendiente: " },
+  zh: { title: (t, v) => `约定「${t}」v${v}`, plain: (v) => `约定 v${v}`, awaiting_approvals: "等你们两人批准同一版本", active: "已生效", draft: "有人要求修改，等待新版本", open: "待定：" },
+  en: { title: (t, v) => `Agreement "${t}" v${v}`, plain: (v) => `Agreement v${v}`, awaiting_approvals: "waiting for both of you to approve this version", active: "now active", draft: "a change was requested; waiting for a new version", open: "Still open: " },
+  es: { title: (t, v) => `Acuerdo "${t}" v${v}`, plain: (v) => `Acuerdo v${v}`, awaiting_approvals: "esperando que ambos aprueben esta versión", active: "ya está activo", draft: "se pidió un cambio; esperando una nueva versión", open: "Pendiente: " },
 };
 // The status line comes first so the 4000-character message cap can only ever trim trailing terms.
 export function agreementCardText(agreement, language = "zh") {
   const copy = CARD_COPY[language] || CARD_COPY.zh, status = copy[agreement.status] || copy.awaiting_approvals;
-  const lines = [`${copy.title(agreement.title, agreement.version)}${language === "zh" ? "，" : ", "}${status}`, agreement.summary, ...(agreement.terms || []).map((term, index) => `${index + 1}. ${term}`)];
+  // Title and summary are dropped when they only repeat the terms, so a card never shows the same words three times.
+  const terms = agreement.terms || [], heading = agreement.title && agreement.title !== terms[0] ? copy.title(agreement.title, agreement.version) : copy.plain(agreement.version);
+  const summary = agreement.summary && agreement.summary !== terms.join(" / ") && agreement.summary !== agreement.title ? agreement.summary : null;
+  const lines = [`${heading}${language === "zh" ? "，" : ", "}${status}`, summary, ...terms.map((term, index) => `${index + 1}. ${term}`)];
   if (agreement.unresolvedPoints?.length) lines.push(`${copy.open}${agreement.unresolvedPoints.join("; ")}`);
   return lines.filter(Boolean).join("\n");
 }

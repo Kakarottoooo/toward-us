@@ -14,7 +14,7 @@ type Session = { id: string; language: Language; timezone: string; version: numb
 type Ref = { type: string; id: string; version?: number };
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; kind: "text" | "relay" | "agreement_card" | "reminder" | "review"; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
-type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: { id: string; version: number } | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
+type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
 type ApiError = Error & { status?: number };
 const AGENT_CALL = /\bpinky\b|@agent/i;
@@ -213,7 +213,7 @@ ${text}` : text, target);
       const ref = message.refs.find((item) => item.type === "agreement");
       const live = ref && pendingAgreement && pendingAgreement.id === ref.id && pendingAgreement.version === ref.version && !together?.readOnly;
       const version = ref?.version || 1;
-      return <article key={message.id} className={`conversation-card agreement-card ${live ? "is-live" : ""}`} data-testid="agreement-card"><header><UsersThree size={16} />{t(`约定 v${version}`, `Agreement v${version}`, `Acuerdo v${version}`)}</header><p>{text}</p>
+      return <article key={message.id} className={`conversation-card agreement-card ${live ? "is-live" : ""}`} data-testid="agreement-card"><header><UsersThree size={16} />{t(`约定 v${version}`, `Agreement v${version}`, `Acuerdo v${version}`)}</header>{live ? <AgreementBody agreement={pendingAgreement!} language={language} /> : <p>{text}</p>}
         {live && (approved.includes(`${ref!.id}:${version}`) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t(`你已批准 v${version}，等 TA 批准`, `You approved v${version}. Waiting for your partner.`, `Aprobaste la v${version}. Esperando a tu pareja.`)}</small> :
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准 v${version}`, `Approve v${version}`, `Aprobar v${version}`)}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>)}
       </article>;
@@ -274,4 +274,16 @@ ${text}` : text, target);
 /** A quiet way back from the full UI to the conversation, overlaid so the full UI's own pages stay untouched. */
 export function BackToConversation({ language, onBack }: { language: Language; onBack: () => void }) {
   return <button className="back-to-conversation" onClick={onBack} data-testid="back-to-conversation"><ChatCircleDots size={20} weight="fill" />{localized(language, "回到对话", "Back to chat", "Volver al chat")}</button>;
+}
+
+/** The live agreement drawn from its own fields: a distinct title, numbered terms, open points, then the status. */
+function AgreementBody({ agreement, language }: { agreement: Draft & { status: string }; language: Language }) {
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const showTitle = agreement.title && agreement.title !== agreement.terms[0];
+  return <>
+    {showTitle && <strong>{agreement.title}</strong>}
+    <ol>{agreement.terms.map((term, index) => <li key={index}>{term}</li>)}</ol>
+    {!!agreement.unresolvedPoints?.length && <small>{t("待定：", "Still open: ", "Pendiente: ")}{agreement.unresolvedPoints.join("; ")}</small>}
+    <small>{t("等你们两人批准同一版本", "Waiting for both of you to approve this version", "Esperando que ambos aprueben esta versión")}</small>
+  </>;
 }
