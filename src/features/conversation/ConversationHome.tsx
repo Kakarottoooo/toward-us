@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
+import { browserSpeechAvailable, useBrowserSpeech } from "../../useBrowserSpeech";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
 import "./conversation.css";
@@ -182,23 +183,31 @@ ${text}` : text, target);
   };
 
   const channelRef = useRef(channel); channelRef.current = channel;
-  const voice = useRealtimeTranscription<unknown>({
+  const heard = async (text: string, itemId: string) => {
+    if (STOP_VOICE.test(text.trim())) { voice.stop(); return null; }
+    // In "Us" speech only fills the box: nothing reaches the partner until the member taps send.
+    if (channelRef.current === "us") { setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
+    return sendPrivate(text, itemId, true);
+  };
+  const voiceUnavailable = (message: string) => setNotice(t(message, "Voice is unavailable right now. You can still type.", "La voz no está disponible ahora. Puedes seguir escribiendo."));
+  // Realtime voice first; when that service is unavailable, the phone's own speech recognition takes over.
+  const phoneSpeech = useRef(false);
+  const speech = useBrowserSpeech({ lang: languageTag(language), onTranscript: heard, onError: voiceUnavailable });
+  const realtime = useRealtimeTranscription<unknown>({
     endpoint: session ? `/api/assistant/sessions/${session.id}/realtime` : "", speakerId: user.id,
     onSpeechStarted: () => window.speechSynthesis?.cancel(),
-    onTranscript: async (text, itemId) => {
-      if (STOP_VOICE.test(text.trim())) { voice.stop(); return null; }
-      // In "Us" speech only fills the box: nothing reaches the partner until the member taps send.
-      if (channelRef.current === "us") { setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
-      return sendPrivate(text, itemId, true);
-    },
+    onTranscript: heard,
     onCommitted: () => {},
-    onError: (message) => { voice.stop(); setNotice(t(message, "Voice is unavailable right now. You can still type.", "La voz no está disponible ahora. Puedes seguir escribiendo.")); },
+    onError: (message) => { realtime.stop(); if (browserSpeechAvailable()) { phoneSpeech.current = true; speech.start(); } else voiceUnavailable(message); },
   });
+  const voice = { listening: realtime.listening || speech.listening, connecting: realtime.connecting, partial: speech.partial ? { text: speech.partial } : realtime.partial, stop: () => { realtime.stop(); speech.stop(); } };
   const toggleVoice = async () => {
     keyboard.hide(); window.speechSynthesis?.cancel();
     if (voice.listening || voice.connecting) { voice.stop(); return; }
     setNotice("");
-    try { const active = await ensureSession(); await voice.start(`/api/assistant/sessions/${active!.id}/realtime`); } catch (error) { setNotice(errorText(error as ApiError)); }
+    if (phoneSpeech.current) { speech.start(); return; }
+    try { const active = await ensureSession(); await realtime.start(`/api/assistant/sessions/${active!.id}/realtime`); }
+    catch (error) { if (browserSpeechAvailable()) { phoneSpeech.current = true; speech.start(); } else setNotice(errorText(error as ApiError)); }
   };
   const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); setAttachments([]); if (next === "me") setUnreadMe(false); setChannel(next); };
   // The drawer is modal navigation: dismiss the keyboard and voice before it covers the conversation.

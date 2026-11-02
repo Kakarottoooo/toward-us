@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used only when you tap the microphone, to turn your speech into text in real time.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Used only when you tap the microphone, to turn your speech into text on your phone.</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
