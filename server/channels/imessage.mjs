@@ -88,10 +88,18 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
   };
   // Group sends for one couple leave in order on their own queue.
   const deliverGroup = (relationshipId, groupId, text) => serial(`send:${relationshipId}`, () => groupSend(groupId, text));
-  // The couple's group, only while both are still together in this relationship.
+  const boundPhones = (context) => Promise.all(context.members.map((member) => store.getPhoneForUser(member.userId)));
+  // The couple's group, only while both are still together in this relationship and both numbers are still linked.
   const coupleGroup = async (userId, relationshipId = null) => {
     const context = await store.getRelationshipContext(userId);
-    return activeCouple(context) && context.relationship.imessageGroupId && (!relationshipId || context.relationship.id === relationshipId) ? context : null;
+    if (!activeCouple(context) || !context.relationship.imessageGroupId || (relationshipId && context.relationship.id !== relationshipId)) return null;
+    return (await boundPhones(context)).every(Boolean) ? context : null;
+  };
+  // A service lookup is remembered for a day, so the backfill check costs no network on every message.
+  const services = new Map();
+  const isIMessage = async (phone) => {
+    const known = services.get(phone); if (known && known.expires > Date.now()) return known.answer;
+    const answer = await sendblue.isIMessage(phone); services.set(phone, { answer, expires: Date.now() + SEEN_MS }); return answer;
   };
 
   async function memberTimezone(userId, threads) {
@@ -124,6 +132,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
       await deliver(phone, `${everyLanguage("hello")}\n\n${url}`);
       return "link";
     }
+    void ensureCoupleGroup(userId);
     const text = String(content || "").trim();
     if (!text) return "empty";
     // Always the member's stored language: the channel itself carries none.
@@ -212,18 +221,19 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
   const mirrored = new Map();
   const startedAt = new Date().toISOString();
   function mirror(conversation) {
-    if (!conversation?.relationshipId || !Array.isArray(conversation.messages)) return;
+    if (!conversation?.relationshipId || conversation.id !== `together:${conversation.relationshipId}` || conversation.visibility !== "shared" || !Array.isArray(conversation.messages)) return;
     const cursor = mirrored.get(conversation.id) || { since: startedAt, ids: new Set() };
     const fresh = conversation.messages.filter((item) => item.createdAt > cursor.since || (item.createdAt === cursor.since && !cursor.ids.has(item.id)));
     if (!fresh.length) return;
     const since = fresh.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, cursor.since);
     mirrored.set(conversation.id, { since, ids: new Set([...(since === cursor.since ? cursor.ids : []), ...fresh.filter((item) => item.createdAt === since).map((item) => item.id)]) });
     const outgoing = fresh.filter((item) => item.role === "agent" || (item.role === "member" && ["app", "relay"].includes(item.source)));
-    if (!outgoing.length || !sendblue.groupsEnabled()) return;
+    if (!sendblue.groupsEnabled()) return;
     // Queued in emit order, so a member's line always goes out before the Agent's answer to it.
     serial(`send:${conversation.relationshipId}`, async () => {
       const context = await coupleGroup(conversation.createdByUserId, conversation.relationshipId);
-      if (!context) return;
+      // Activity from a couple without a group (paired before groups were enabled, or after a number changed) may create one.
+      if (!context) { void ensureCoupleGroup(conversation.createdByUserId); return; }
       for (const item of outgoing) {
         const author = item.role === "member" ? context.members.find((member) => member.userId === item.actorUserId) : null;
         if (item.role === "member" && !author) continue;
@@ -236,7 +246,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
 
   // Creates the couple's group once both members have linked iMessage numbers. `actorUserId` completed the last step (linking
   // a phone or pairing), so the one opening message is in their language. Any non-iMessage member means no group at all.
-  const creating = new Set();
+  const creating = new Set(), dryRunGroups = new Set();
   async function ensureCoupleGroup(actorUserId) {
     try {
       if (!sendblue.groupsEnabled()) return null;
@@ -245,11 +255,15 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
       const relationshipId = context.relationship.id;
       creating.add(relationshipId);
       try {
-        const numbers = await Promise.all(context.members.map((member) => store.getPhoneForUser(member.userId)));
+        const numbers = await boundPhones(context);
         if (numbers.some((phone) => !phone)) return null;
-        for (const phone of numbers) if (!(await sendblue.isIMessage(phone))) return null;
+        for (const phone of numbers) if (!(await isIMessage(phone))) return null;
+        // A dry-run group id is never stored (a later live hookup must create a real group) unless a local probe asks for it.
+        const persist = sendblue.live() || process.env.SENDBLUE_DRYRUN_PERSIST_GROUPS === "1";
+        if (!persist && dryRunGroups.has(numbers.join(","))) return null;
         const { groupId } = await sendblue.sendGroup({ numbers }, TEXT[await memberLanguage(store, actorUserId)].groupHello);
         if (!groupId) return null;
+        if (!persist) { dryRunGroups.add(numbers.join(",")); console.log("imessage: dry-run couple group not stored"); return null; }
         // Earlier conversation stays in the App; the group starts from here.
         mirrored.set(`together:${relationshipId}`, { since: new Date().toISOString(), ids: new Set() });
         if (!(await store.bindRelationshipGroup(relationshipId, groupId))) return null;
@@ -268,7 +282,8 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     if (!phone) return "invalid";
     // Only messages addressed to our own line count, and never our own line talking.
     const line = normalizePhone(String(process.env.SENDBLUE_FROM_NUMBER || ""));
-    if (line && (phone === line || ![message.sendblue_number, message.to_number].some((value) => normalizePhone(String(value || "")) === line))) return "foreign";
+    const addressed = [message.sendblue_number, message.to_number].filter(Boolean).map((value) => normalizePhone(String(value)));
+    if (line && (phone === line || (addressed.length && !addressed.includes(line)))) return "foreign";
     if (message.service !== "iMessage") {
       if (claim(`sms:${phone}:${new Date().toISOString().slice(0, 10)}`, SEEN_MS)) await deliver(phone, everyLanguage("sms"));
       return "sms";

@@ -79,6 +79,9 @@ export async function createFileStore(filePath) {
     return { relationship: { ...relationship }, membership: { ...membership }, members, invitation: invitation ? { ...invitation } : null };
   };
 
+  // Sendblue cannot remove anyone from a group, so a member's number leaving the account retires the couple's group.
+  const dropCoupleGroup = (userId) => { const relationship = state().relationships[state().memberships[userId]?.relationshipId]; if (relationship?.imessageGroupId) relationship.imessageGroupId = null; };
+
   const implementation = {
     kind: "file",
     transaction,
@@ -126,6 +129,7 @@ export async function createFileStore(filePath) {
     getPhoneLink(codeHash, now) { const link = state().phoneLinks[codeHash]; return link && link.expiresAt > now ? link.phone : null; },
     async bindPhone(userId, phone) {
       if (state().phones[phone] && state().phones[phone].userId !== userId) throw phoneTakenError();
+      if (Object.entries(state().phones).some(([other, record]) => record.userId === userId && other !== phone)) dropCoupleGroup(userId);
       for (const [other, record] of Object.entries(state().phones)) if (record.userId === userId && other !== phone) delete state().phones[other];
       state().phones[phone] ||= { userId, createdAt: new Date().toISOString() };
       await persist(); return phone;
@@ -135,7 +139,10 @@ export async function createFileStore(filePath) {
       if (!link || link.expiresAt <= now) return null;
       await store.bindPhone(userId, link.phone); delete state().phoneLinks[codeHash]; await persist(); return link.phone;
     },
-    async unbindPhone(userId) { for (const [phone, record] of Object.entries(state().phones)) if (record.userId === userId) delete state().phones[phone]; await persist(); },
+    async unbindPhone(userId) {
+      if (Object.values(state().phones).some((record) => record.userId === userId)) dropCoupleGroup(userId);
+      for (const [phone, record] of Object.entries(state().phones)) if (record.userId === userId) delete state().phones[phone]; await persist();
+    },
     getUserIdByPhone(phone) { return state().phones[phone]?.userId || null; },
     getPhoneForUser(userId) { return Object.keys(state().phones).find((phone) => state().phones[phone].userId === userId) || null; },
     async getPrivacySnapshot(userId) {

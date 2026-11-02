@@ -93,6 +93,8 @@ export async function createPostgresStore(databaseUrl) {
       return store.transaction(`user:${userId}`, async () => {
         const ownedByOther = async () => { const owner = (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id; return Boolean(owner) && owner !== userId; };
         if (await ownedByOther()) throw phoneTakenError();
+        // Sendblue cannot remove anyone from a group, so a member's number leaving the account retires the couple's group.
+        await pool.query("update relationships set imessage_group_id=null where imessage_group_id is not null and id=(select relationship_id from relationship_members where user_id=$1) and exists (select 1 from user_phones where user_id=$1 and phone<>$2)", [userId, phone]);
         await pool.query("delete from user_phones where user_id=$1 and phone<>$2", [userId, phone]);
         await pool.query("insert into user_phones (phone,user_id,created_at) values ($1,$2,now()) on conflict (phone) do nothing", [phone, userId]);
         if (await ownedByOther()) throw phoneTakenError();
@@ -108,7 +110,12 @@ export async function createPostgresStore(databaseUrl) {
         return link.phone;
       });
     },
-    async unbindPhone(userId) { await pool.query("delete from user_phones where user_id=$1", [userId]); },
+    async unbindPhone(userId) {
+      return store.transaction(`user:${userId}`, async () => {
+        await pool.query("update relationships set imessage_group_id=null where imessage_group_id is not null and id=(select relationship_id from relationship_members where user_id=$1) and exists (select 1 from user_phones where user_id=$1)", [userId]);
+        await pool.query("delete from user_phones where user_id=$1", [userId]);
+      });
+    },
     async getUserIdByPhone(phone) { return (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id || null; },
     async getPhoneForUser(userId) { return (await pool.query("select phone from user_phones where user_id=$1", [userId])).rows[0]?.phone || null; },
     async getPrivacySnapshot(userId) {
