@@ -31,6 +31,7 @@ import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
+import { sendblue } from "./sendblue.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
@@ -49,7 +50,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   let emitTogether = () => {};
   // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
   let imessage = null;
-  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args) });
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: (phone, text) => sendblue.send(phone, text) });
 
   const runDue = reminders.runDue.bind(reminders);
   reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); return result; };
