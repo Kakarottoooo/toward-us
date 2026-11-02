@@ -18,6 +18,8 @@ const MAX_BYTES = 120 * 1024 * 1024, IMPORT_LIMIT = 20;
 const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
 const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.chat.json`);
+/** Where an import's messages are on disk, for account and private-data deletion. */
+export const importFile = fileFor;
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";

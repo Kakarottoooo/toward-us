@@ -1,5 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { rm } from "node:fs/promises";
 import express from "express";
+import { photoFile } from "./photo-store.mjs";
+import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validPassword, verifyPassword } from "./auth.mjs";
 import { createRelationshipRecord, projectRecord } from "./relationship-domain.mjs";
 
@@ -88,12 +91,18 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     res.setHeader("Content-Disposition", 'attachment; filename="pinky-export.json"');
     res.json(privacyExport(snapshot, req.auth.user));
   });
+  // Private photos and imported chats keep their bytes in files beside the data; deleting the records deletes those too.
+  const privateFiles = async (userId) => [
+    ...(await store.listRelationshipRecordsForUser("photos", userId)).filter((record) => record.ownerUserId === userId && record.visibility === "private").map(photoFile),
+    ...(await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => record.ownerUserId === userId && record.visibility === "private").map(importFile),
+  ];
+  const removeFiles = (paths) => Promise.all(paths.map((path) => rm(path, { force: true }).catch(() => {})));
   router.post("/privacy/delete-private", async (req, res) => {
-    confirm(req);
+    confirm(req); const files = await privateFiles(req.auth.user.id);
     const deleted = await store.transaction(`user:${req.auth.user.id}`, async (tx) => {
       await reauthenticate(req, tx);
       const count = await tx.deletePrivateData(req.auth.user.id); await audit(tx, req.auth.user.id, "privacy.private_data_deleted"); return count;
-    }); res.json({ deleted });
+    }); await removeFiles(files); res.json({ deleted });
   });
   router.post("/privacy/leave", async (req, res) => {
     confirm(req); const context = await store.getRelationshipContext(req.auth.user.id);
@@ -102,9 +111,10 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     await audit(store, req.auth.user.id, "relationship.left"); res.json({ ended: Boolean(ended) });
   });
   router.delete("/privacy/account", async (req, res) => {
-    confirm(req);
+    confirm(req); const files = await privateFiles(req.auth.user.id);
     const context = await store.getRelationshipContext(req.auth.user.id);
     await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.deleteAccount(req.auth.user.id); });
+    await removeFiles(files);
     closeConnections(context?.members.map((member) => member.userId) || [req.auth.user.id]);
     clearSessionCookie(res, production); res.status(204).end();
   });
