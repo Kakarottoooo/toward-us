@@ -39,6 +39,21 @@ export async function ensureMomentSpaces(store, userId) {
   });
 }
 
+export async function migrateLegacyLists(store, userId) {
+  const context = await store.getRelationshipContext(userId);
+  if (!(context?.relationship.status === "active" && context.members.length === 2)) return;
+  const relationshipId = context.relationship.id;
+  const pending = (await store.listRelationshipRecordsForUser("lists", userId)).filter((list) => list.relationshipId === relationshipId && !list.archivedAt && !list.migratedToSpaceId);
+  for (const list of pending) await store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    const current = await tx.getRelationshipRecordForUser("lists", list.id, userId);
+    if (!current || current.migratedToSpaceId) return;
+    const space = await createSpace(tx, { userId, relationshipId, shared: true, title: current.title || "List", layout: "checklist", source: "migration" });
+    const items = (await tx.listRelationshipRecordsForUser("listItems", userId)).filter((item) => item.listId === current.id && item.visibility === "shared" && !item.archivedAt);
+    for (const item of items) await addSpaceItem(tx, { userId, space, title: item.title || "", text: item.description || "", date: item.desiredDate || null, done: ["done", "completed"].includes(item.status), source: "migration" });
+    await tx.updateRelationshipRecordForUser("lists", current.id, userId, (draft) => { draft.migratedToSpaceId = space.id; draft.version += 1; });
+  });
+}
+
 export async function visibleSpace(tx, id, userId) {
   const space = await tx.getRelationshipRecordForUser("spaces", clean(id, 80), userId);
   if (!space || !canViewRecord(space, userId)) throw fail(404, "Space not found.");

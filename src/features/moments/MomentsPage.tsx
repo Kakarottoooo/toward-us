@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChatCircleDots, LockKey, Trash, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { TogetherCard } from "./TogetherCard";
 import "./moments.css";
 
 type Item = { id: string; title: string; text: string; date: string | null; photoId?: string | null; createdAt: string; ownerUserId: string };
@@ -11,7 +12,7 @@ type Moment = { key: string; date: string; title: string; text: string; photos: 
 type Filter = "all" | "us" | "me";
 
 /** Moments: the couple's memory album and each member's own, as one timeline. Things are added by telling Pinky. */
-export function MomentsPage({ language, userId, paired, onAsk }: { language: Language; userId: string; paired: boolean; onAsk: (text: string, channel: "me" | "us") => void }) {
+export function MomentsPage({ language, userId, paired, since = null, onSince, onAsk }: { language: Language; userId: string; paired: boolean; since?: string | null; onSince?: (date: string) => Promise<void>; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [moments, setMoments] = useState<Moment[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -54,6 +55,7 @@ export function MomentsPage({ language, userId, paired, onAsk }: { language: Lan
   const ask = () => onAsk(t("帮我存一个回忆：", "Keep a memory for us: ", "Guarda un recuerdo: "), paired && filter !== "me" ? "us" : "me");
 
   return <div className="moments-page" data-testid="moments-page">
+    {paired && onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
     {!!onThisDay.length && <section className="moments-onthisday"><small>{t("往年的今天", "On this day", "Un día como hoy")}</small>{onThisDay.slice(0, 2).map((moment) => <div key={moment.key}>{moment.photos[0] && <img src={`/api/photos/${encodeURIComponent(moment.photos[0])}`} alt="" draggable={false} />}<span><strong>{moment.title || moment.text}</strong><small>{day(moment.date, true)}</small></span></div>)}</section>}
     {paired && <div className="moments-filter" role="group" aria-label={t("显示哪些回忆", "Which moments", "Qué recuerdos")}>{(["all", "us", "me"] as Filter[]).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? t("全部", "All", "Todos") : value === "us" ? t("我们俩的", "Ours", "Nuestros") : t("只有我", "Just me", "Solo yo")}</button>)}</div>}
     {error && <p className="space-error" role="alert">{error}</p>}

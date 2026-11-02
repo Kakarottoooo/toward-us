@@ -196,6 +196,11 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
     if (action.kind === "milestone") {
       if (action.operation !== "create") continue;
       if (!action.title || !action.date) throw decisionError(400, "message_required");
+      // The day they got together is one date per couple: telling Pinky again moves it rather than adding another.
+      if (action.text === "together_since") {
+        const record = await setTogetherSince(tx, { relationshipId, userId, date: action.date, title: action.title });
+        refs.push({ type: "milestone", id: record.id, version: record.version, title: record.title }); continue;
+      }
       const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title: action.title.slice(0, 120), date: action.date, timezone: "UTC", recurringRule: action.recurringRule, jointlyConfirmed: false, notes: action.text || "", provenanceSource: "agent" });
       await tx.createRelationshipRecord("milestones", record); refs.push({ type: "milestone", id: record.id, version: record.version, title: record.title });
       // A shared reminder on the date makes the Agent post it in this conversation when due (reminder-service announces it).
@@ -317,4 +322,15 @@ export async function recallOnThisDay(store, { relationshipId, userId, today }) 
   const photoIds = groups.flat().map((item) => item.photoId).filter(Boolean).slice(0, 6);
   const result = await store.transaction(`relationship:${relationshipId}`, (tx) => appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", text: line("zh"), i18n: togetherI18n(line), photoIds, refs: [{ type: "space", id: album.id, title: album.title, system: MOMENTS }], handle: `onthisday:${relationshipId}:${today}` }));
   return result.duplicate ? null : result.conversation;
+}
+
+/** The day the couple got together, which the together counter counts from and the calendar repeats yearly. Either partner
+ * may set or correct it; there is only ever one, so a new date moves it. */
+export async function setTogetherSince(tx, { relationshipId, userId, date, title }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || Number.isNaN(Date.parse(`${date}T12:00:00Z`)) || date > new Date().toISOString().slice(0, 10) || date < "1900-01-01") throw decisionError(400, "message_required");
+  const existing = (await tx.listRelationshipRecordsForUser("milestones", userId)).find((item) => item.relationshipId === relationshipId && item.type === "relationship_started" && !item.archivedAt);
+  if (existing) return tx.updateRelationshipRecordForUser("milestones", existing.id, userId, (draft) => { draft.date = date; if (title) draft.title = String(title).slice(0, 120); draft.recurringRule = "yearly"; draft.version += 1; });
+  const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "relationship_started", title: String(title || "").slice(0, 120) || "在一起纪念日", date, timezone: "UTC", recurringRule: "yearly", jointlyConfirmed: false, notes: "", provenanceSource: "member" });
+  await tx.createRelationshipRecord("milestones", record);
+  return record;
 }

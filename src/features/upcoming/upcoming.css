@@ -59,3 +59,12 @@
 .upcoming-manage > summary { display: flex; align-items: center; min-height: 52px; padding: 0 16px; color: var(--jian-blue); font-size: 15px; font-weight: 600; cursor: pointer; }
 .upcoming-manage[open] > summary { border-bottom: 1px solid rgba(37,37,37,.08); }
 .upcoming-manage > .relationship-feature { box-shadow: none !important; }
+.upcoming-sheet { display: grid; gap: 12px; padding-bottom: 8px; }
+.upcoming-sheet dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; font-size: 15px; }
+.upcoming-sheet dt { color: #7a736b; }
+.upcoming-sheet dd { margin: 0; color: var(--jian-ink); font-weight: 600; }
+.upcoming-sheet p { margin: 0; color: #5f5952; font-size: 14px; line-height: 1.5; }
+.upcoming-sheet button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border: 0; border-radius: 14px; font-size: 15px; font-weight: 650; cursor: pointer; }
+.upcoming-sheet-ask { background: var(--jian-ink); color: #fff; }
+.upcoming-sheet-delete { background: rgba(37,37,37,.06); color: #903e38; }
+.upcoming-sheet-delete.confirming { background: #f6e2de; }

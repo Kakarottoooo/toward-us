@@ -30,3 +30,18 @@
 .moment-photos.count-3 { grid-template-columns: repeat(3, 1fr); }
 .moment-photos img { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 12px; object-fit: cover; }
 .moment-photos.count-1 img { aspect-ratio: 3 / 2; }
+.together-card { display: grid; gap: 6px; padding: 18px 18px 14px; border-radius: 22px; background: #fbe4da; color: #7d2f17; }
+.together-card > small { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 650; }
+.together-card > strong { font-size: 34px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.together-span { font-size: 15px; font-weight: 600; opacity: .9; }
+.together-card p { margin: 0; font-size: 14px; line-height: 1.5; }
+.together-today { font-size: 16px !important; font-weight: 700; }
+.together-card label { display: grid; gap: 10px; }
+.together-ask { font-size: 20px; font-weight: 750; }
+.together-card input { min-height: 48px; padding: 0 12px; border: 1px solid rgba(125,47,23,.25); border-radius: 12px; background: #fffaf6; color: var(--jian-ink); font: inherit; font-size: 16px; }
+.together-actions { display: flex; gap: 8px; }
+.together-save { min-height: 44px; padding: 0 20px; border: 0; border-radius: 12px; background: #c2412f; color: #fff; font-size: 15px; font-weight: 650; cursor: pointer; }
+.together-save:disabled { opacity: .5; }
+.together-edit { justify-self: start; padding: 4px 0; border: 0; background: none; color: #993c1d; font-size: 13px; font-weight: 600; cursor: pointer; }
+.together-note { color: #993c1d; font-size: 13px !important; }
+.together-error { color: #903e38; }

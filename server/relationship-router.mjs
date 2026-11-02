@@ -5,7 +5,7 @@ import { createDecisionAgent } from "./decision-agent.mjs";
 import {
   agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
 } from "./agreement-actions.mjs";
-import { announceAgreement } from "./together-domain.mjs";
+import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
@@ -41,6 +41,14 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   });
 
   router.get("/milestones", listRoute("milestones"));
+  // The day they got together, for the counter on Moments; set by either partner, one per couple.
+  router.put("/relationship/together-since", async (req, res) => {
+    const context = await activeRelationship(store, req, res); if (!context) return;
+    const language = ["en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    const record = await store.transaction(`relationship:${context.relationship.id}`, (tx) => setTogetherSince(tx, { relationshipId: context.relationship.id, userId: req.auth.user.id, date: cleanDate(req.body?.date), title: language === "en" ? "Our anniversary" : language === "es" ? "Nuestro aniversario" : "在一起纪念日" }));
+    await audit(store, record, req.auth.user.id, "milestone.together_since"); emit(record, "milestone.updated");
+    res.json({ milestone: projectRecord(record, req.auth.user.id) });
+  });
   router.post("/milestones", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
     const type = MILESTONE_TYPES.has(req.body?.type) ? req.body.type : "custom";

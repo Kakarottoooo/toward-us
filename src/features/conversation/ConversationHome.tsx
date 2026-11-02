@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -9,6 +9,7 @@ import type { GraphRecord } from "../relationship/types";
 import { ImportCard } from "../imports/ImportCard";
 import { importAction, importPastedChat, isChatFile, listImports, looksLikePastedChat, uploadChatFile } from "../imports/imports";
 import { CallPanel, CallRecord } from "../call/CallPanel";
+import { togetherStats } from "../moments/together";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -411,13 +412,13 @@ type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number;
 /** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
 function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite, onPrivacy, onLogout }: { user: { id: string; name: string }; paired: boolean; language: Language; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onLogout: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [home, setHome] = useState<{ pending: number; lists: boolean } | null>(null);
+  const [home, setHome] = useState<{ pending: number; since: string | null } | null>(null);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const start = useRef<number | null>(null);
   useEffect(() => {
     if (!paired) return;
-    relationshipApi<{ home: { pending: unknown[] }; graph: { lists: unknown[]; milestones: unknown[] } }>("/api/relationship/home")
-      .then((result) => setHome({ pending: result.home.pending.length, lists: result.graph.lists.length + result.graph.milestones.length > 0 })).catch(() => {});
+    relationshipApi<{ home: { pending: unknown[] }; graph: { milestones: Array<{ type?: string; date?: string; archivedAt?: string | null }> } }>("/api/relationship/home")
+      .then((result) => setHome({ pending: result.home.pending.length, since: result.graph.milestones.find((item) => item.type === "relationship_started" && !item.archivedAt)?.date || null })).catch(() => {});
   }, [paired]);
   useEffect(() => { relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => setSpaces(result.spaces.filter((space) => !space.system))).catch(() => {}); }, []);
   const [chats, setChats] = useState(0);
@@ -432,17 +433,17 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
   ];
   const fixedSpaces: DrawerItem[] = [
     { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") },
-    ...(paired && home?.lists ? [{ key: "lists", icon: <ListChecks size={22} />, label: t("日期与清单", "Dates & lists", "Fechas y listas"), onClick: () => onOpen("/?view=lists") }] : []),
   ];
   const layoutIcon: Record<string, ReactNode> = { checklist: <ListChecks size={22} />, timeline: <ClockCounterClockwise size={22} />, gallery: <Images size={22} />, notes: <NotePencil size={22} />, list: <ListBullets size={22} /> };
   const spaceRow = (space: SpaceSummary): DrawerItem => ({ key: `space-${space.id}`, icon: layoutIcon[space.layout] || layoutIcon.list, label: space.title, onClick: () => onOpen(`/?view=space&space=${encodeURIComponent(space.id)}`) });
   const ours = spaces.filter((space) => space.visibility === "shared").map(spaceRow);
   const mine = [...spaces.filter((space) => space.visibility === "private").map(spaceRow), ...(chats ? [{ key: "imports", icon: <ChatsCircle size={22} />, label: t("聊天记录", "Chat history", "Historial de chat"), onClick: () => onOpen("/?view=import") }] : [])];
+  const together = home?.since ? togetherStats(home.since, new Date().toLocaleDateString("en-CA")) : null;
   const row = (item: DrawerItem) => <button key={item.key} className="drawer-row" onClick={item.onClick} data-testid={`drawer-${item.key}`}>{item.icon}<span>{item.label}</span>{!!item.badge && <em aria-label={t(`${item.badge} 件待处理`, `${item.badge} waiting`, `${item.badge} pendientes`)}>{item.badge}</em>}</button>;
   return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
     <button className="conversation-drawer-scrim" aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} onClick={onClose} />
     <nav className="conversation-drawer" aria-label={t("菜单", "Menu", "Menú")} onPointerDown={(event) => { start.current = event.clientX; }} onPointerUp={(event) => { if (start.current !== null && event.clientX - start.current < -60) onClose(); start.current = null; }}>
-      <header><div><strong>PINKY</strong><span>{user.name}</span></div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
+      <header><div><strong>PINKY</strong><span>{user.name}</span>{together && <em className="drawer-together"><Heart size={12} weight="fill" />{t(`在一起 ${together.days} 天`, `Together ${together.days} days`, `Juntos ${together.days} días`)}</em>}</div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
       <div className="drawer-group">{fixed.map(row)}</div>
       <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{(paired ? ours : mine).map(row)}{fixedSpaces.map(row)}</div>
       {paired && !!mine.length && <div className="drawer-group"><h2>{t("只有我的", "Just mine", "Solo mío")}</h2>{mine.map(row)}</div>}
