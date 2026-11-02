@@ -8,6 +8,7 @@ import "./call.css";
 type Started = { channel: "me" | "us"; sessionId: string | null };
 const ERRORS: Record<string, [string, string, string]> = {
   voice_not_configured: ["通话还没开通：服务器还没有配置语音服务。", "Calls aren't set up yet: the voice service isn't configured on the server.", "Las llamadas aún no están activadas: falta configurar el servicio de voz."],
+  voice_quota: ["语音服务的账户余额用完了，充值后就能通话。", "The voice service account is out of credit. Calls work again once it is topped up.", "La cuenta del servicio de voz se quedó sin saldo. Las llamadas vuelven al recargarla."],
   microphone_denied: ["需要麦克风权限才能通话。可以在手机设置里给 Pinky 打开麦克风。", "Pinky needs the microphone for calls. Turn it on for Pinky in your phone's settings.", "Pinky necesita el micrófono para llamar. Actívalo para Pinky en los ajustes del teléfono."],
   voice_already_active: ["已经有一通电话在进行中。", "A call is already in progress.", "Ya hay una llamada en curso."],
   voice_daily_limit: ["今天的通话时长用完了，明天再来。", "Today's call time is used up. Try again tomorrow.", "Se acabó el tiempo de llamada de hoy. Prueba mañana."],

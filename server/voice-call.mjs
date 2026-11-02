@@ -49,7 +49,12 @@ export function openAiLive(apiKey = process.env.OPENAI_API_KEY) {
     let response;
     try { response = await fetch(PROVIDER + path, { method: "POST", redirect: "error", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) }); }
     catch { throw fail(502, "voice_connection_uncertain"); }
-    if (!response.ok) throw Object.assign(fail(response.status === 429 ? 429 : 502, `voice_provider_${response.status}`), { providerStatus: response.status });
+    if (!response.ok) {
+      // Only the provider's error code is kept (e.g. insufficient_quota); its message can hold account details.
+      const code = await response.json().then((body) => String(body?.error?.code || body?.error?.type || "").replace(/[^a-z_]/gi, "").slice(0, 40)).catch(() => "");
+      console.error(`Voice provider refused the call: ${response.status} ${code}`);
+      throw Object.assign(fail(response.status === 429 ? 429 : 502, ["insufficient_quota", "credit_balance_exhausted"].includes(code) ? "voice_quota" : `voice_provider_${response.status}`), { providerStatus: response.status });
+    }
     return response.json().catch(() => ({}));
   };
   return {
