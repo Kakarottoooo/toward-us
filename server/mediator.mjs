@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import { createClaudeCliClient } from "./claude-cli-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
 import { assistantInstructions, assistantTurnSchema } from "./assistant-agent.mjs";
 
@@ -55,11 +56,14 @@ const analysisSchema = {
 };
 
 export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4" } = {}) {
-  const client = apiKey ? new OpenAI({ apiKey }) : null;
+  // AI_PROVIDER=claude-cli sends text calls through the founder’s local Claude subscription (dogfooding only); audio stays on OpenAI.
+  const openai = apiKey ? new OpenAI({ apiKey }) : null;
+  const cli = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : null;
+  const client = cli || openai;
 
   return {
     aiReady: Boolean(client),
-    model,
+    model: cli ? cli.model : model,
     async planAssistantTurn(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
       const response = await client.responses.create({
@@ -200,7 +204,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       }
     },
     async transcribe(buffer, mimeType = "audio/webm") {
-      if (!client) {
+      if (!openai) {
         const error = new Error("语音转录需要配置 OPENAI_API_KEY。");
         error.statusCode = 503;
         throw error;
@@ -212,7 +216,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
               : mimeType.includes("mp4") ? "mp4"
                 : "webm";
       const file = await toFile(buffer, `conversation.${extension}`, { type: mimeType });
-      const result = await client.audio.transcriptions.create({
+      const result = await openai.audio.transcriptions.create({
         file,
         model: "gpt-4o-transcribe-diarize",
         response_format: "diarized_json",

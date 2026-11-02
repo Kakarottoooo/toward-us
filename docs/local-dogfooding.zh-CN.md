@@ -14,6 +14,7 @@ npm run dev:full
 
 - 看到 `Toward Us is running on http://127.0.0.1:5173` 即可。端口默认 `5173`，用 `PORT` 改。
 - 启动日志里 `AI mediation: ready` 表示 key 生效；写 `local fallback` 说明没拿到 `OPENAI_API_KEY`，AI 只有占位回复。
+- **先用 Claude 订阅（不花 API 钱）**：再加 `$env:AI_PROVIDER = "claude-cli"`，文字类 AI（私人 Agent、我们俩、调解分析、共同决定、语音助手规划）改走本机已登录的 `claude` 命令，日志显示 `ready (claude-cli:sonnet)`。想更快设 `$env:CLAUDE_CLI_MODEL = "haiku"`。语音转文字仍走 OpenAI。只限自己内测；给别的用户用之前换回 API。
 - **必须是开发模式**（`npm run dev:full`），不要用 `npm start` 或设 `NODE_ENV=production`，否则 Cookie 带 `Secure`，`http://` 下登录不了。
 - **每次启动服务器都必须设 `TOWARD_US_DATA_FILE`**：新开的终端里不会保留，不设就会写进仓库里真正的 `data\toward-us.local.json`。
 - 改了环境变量要重启；停掉用 Ctrl+C。想要日志文件：`npm run dev:full 2>&1 | tee ./dev.log`。

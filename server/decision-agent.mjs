@@ -1,11 +1,12 @@
 import OpenAI from "openai";
+import { createClaudeCliClient } from "./claude-cli-client.mjs";
 
 const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
 const list = (value) => Array.isArray(value) ? value.slice(0, 8).map((item) => clean(item, 500)).filter(Boolean) : [];
 const pick = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
 /** This module receives only a server-built joint context, never a relationship snapshot. */
-export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4", client = apiKey ? new OpenAI({ apiKey }) : null } = {}) {
+export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4", client = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : apiKey ? new OpenAI({ apiKey }) : null } = {}) {
   return {
     async discuss(context, language = "zh") {
       const current = context.agreement;
