@@ -66,3 +66,7 @@
 /* The full UI's mobile tab bar is fixed at the bottom (58px); keep the way back above it. */
 @media (max-width: 899px) { .back-to-conversation { bottom: calc(58px + max(14px, env(safe-area-inset-bottom))); } }
 @media (min-width: 900px) { .conversation-header { padding-top: 22px; } .conversation-empty h1 { font-size: 34px; } }
+
+.agreement-open { margin-top: 10px; }
+.agreement-open small { margin-top: 0; font-weight: 600; }
+.agreement-open ul { margin: 4px 0 0; padding-left: 20px; color: #5d574f; font-size: 14px; line-height: 1.6; }

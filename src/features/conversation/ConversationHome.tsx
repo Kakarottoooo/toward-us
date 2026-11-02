@@ -283,7 +283,7 @@ function AgreementBody({ agreement, language }: { agreement: Draft & { status: s
   return <>
     {showTitle && <strong>{agreement.title}</strong>}
     <ol>{agreement.terms.map((term, index) => <li key={index}>{term}</li>)}</ol>
-    {!!agreement.unresolvedPoints?.length && <small>{t("待定：", "Still open: ", "Pendiente: ")}{agreement.unresolvedPoints.join("; ")}</small>}
+    {!!agreement.unresolvedPoints?.length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{agreement.unresolvedPoints.map((point, index) => <li key={index}>{point}</li>)}</ul></div>}
     <small>{t("等你们两人批准同一版本", "Waiting for both of you to approve this version", "Esperando que ambos aprueben esta versión")}</small>
   </>;
 }
