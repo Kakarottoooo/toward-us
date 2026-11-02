@@ -2,11 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import { createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
 import { validateAssistantTurn } from "./assistant-agent.mjs";
+import { appendTogetherMessage } from "./together-domain.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments" };
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+const unpaired = (language) => say(language, "先邀请另一半加入，再分享你确认的内容。私人对话仍可继续。", "Invite your partner before sharing. Your private conversation can continue.", "Invita a tu pareja antes de compartir. Puedes seguir hablando en privado.");
+const activePair = (context) => context?.relationship.status === "active" && context.members.length === 2;
 const privateRecord = (userId, data) => createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", ...data });
 const localTime = (value, timezone) => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(({ type, value }) => [type, value]));
@@ -30,6 +33,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
+        if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
       }) } : {}),
@@ -86,13 +90,14 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       messages: [...session.messages.filter((m) => m.role === "user" || m.plannerQuestion).map(({ role, text }) => ({ role, text })), userMessage].slice(-30),
       records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}) })),
+      partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
     };
     let plan;
     try { plan = await mediator.planAssistantTurn(context, session.language); }
     catch { throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
-    const changes = [];
+    const changes = []; let partnerMessage = null;
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
@@ -101,6 +106,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const currentRecords = await available(tx, userId);
       const cards = []; const replies = [];
       for (const action of plan.actions) {
+        if (action.kind === "partner_message") {
+          // A draft only: it stays on this private session until the member confirms the exact digest via share-confirm.
+          const text = clean(action.fields?.text, 2000); if (!text) throw fail(400, "Say what you would like your partner to hear.");
+          partnerMessage = { cardId: randomUUID(), text, digest: createHash("sha256").update(text).digest("hex"), createdAt: new Date().toISOString(), sharedAt: null, messageId: null };
+          cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest });
+          replies.push(say(session.language, "已为你起草好想对 TA 说的话。你确认之前不会分享，也不会分享你的原话。", "I drafted what you would like your partner to hear. Nothing is shared, and your own words never are, until you confirm.", "Redacté lo que quieres que tu pareja escuche. No se comparte nada, ni tus palabras originales, hasta que lo confirmes.")); continue;
+        }
         if (!Object.hasOwn(collections, action.kind) || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
         if (action.operation === "query") {
           const query = clean(action.query, 120).toLocaleLowerCase();
@@ -170,13 +182,35 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         } else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "已保存私人记录，未授权 AI 在其他对话中使用。", "Saved privately, without permission for AI use in other conversations.", "Se guardó en privado, sin autorizar el uso de la IA en otras conversaciones."));
       }
       const reply = replies.join("\n") || clean(plan.reply, 1200) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version }) => ({ id, kind, version })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
     for (const { kind, record } of changes) emit(record, `${kind === "plan" ? "private_agent_thread" : kind}.updated`, userId);
     res.json({ session: await output(updated) });
   };
+  // Only an explicit confirm of the current card's digest moves the polished text (never the member's raw words) into the shared conversation.
+  router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
+    const userId = req.auth.user.id; const session = await owned(store, req.params.id, userId);
+    if (req.body?.confirm !== true) throw fail(400, say(session.language, "请明确确认要分享这段话。", "Confirm explicitly that you want to share this message.", "Confirma explícitamente que quieres compartir este mensaje."));
+    const cardId = clean(req.body?.cardId, 80); const digest = clean(req.body?.digest, 64);
+    const initial = await store.getRelationshipContext(userId);
+    if (!activePair(initial)) throw fail(409, unpaired(session.language));
+    const result = await store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
+      await liveUser(tx, userId, true);
+      const context = await tx.getRelationshipContext(userId);
+      if (!activePair(context) || context.relationship.id !== initial.relationship.id) throw fail(409, unpaired(session.language));
+      const latest = await owned(tx, session.id, userId); const draft = latest.partnerMessage;
+      if (!draft || draft.cardId !== cardId || draft.digest !== digest || createHash("sha256").update(draft.text).digest("hex") !== digest) throw fail(409, say(session.language, "这段话已经修改，请确认最新的版本。", "This message changed. Review and confirm the latest version.", "Este mensaje cambió. Revisa y confirma la última versión."));
+      const sent = await appendTogetherMessage(tx, { relationshipId: initial.relationship.id, actorUserId: userId, source: "relay", kind: "relay", text: draft.text, handle: `partner_message:${draft.cardId}`, refs: [{ type: "partner_message", id: draft.cardId }] });
+      if (sent.duplicate) return { ...sent, session: latest };
+      await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: draft.cardId, objectType: "partner_message", eventType: "partner_message.shared", sourceVersion: latest.version }));
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.partnerMessage = { ...record.partnerMessage, sharedAt: new Date().toISOString(), messageId: sent.message.id }; record.version += 1; });
+      return { ...sent, session: saved };
+    });
+    if (!result.duplicate) emit(result.conversation, "together.updated");
+    res.json({ session: await output(result.session), message: { id: result.message.id, text: result.message.text, createdAt: result.message.createdAt }, duplicate: result.duplicate });
+  });
   router.post("/assistant/sessions/:id/messages", append);
   router.post("/assistant/sessions/:id/transcripts", append);
   router.post("/assistant/sessions/:id/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res) => {
