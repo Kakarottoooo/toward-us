@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { addSpaceItem, archiveSpaceRecord, createSpace, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
+import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { handoffUrl } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
 
@@ -36,7 +36,7 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
     pendingAgreement: pending ? agreement(pending) : null,
     authorizedMemories: userId ? buildMemoryContext(snapshot.memories || [], { userId, relationshipId, scope: "joint", query }).memories : [],
     spaces: (snapshot.spaces || []).filter((space) => space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt).slice(0, 30).map((space) => ({
-      id: space.id, title: space.title, layout: space.layout,
+      id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
       items: (snapshot.spaceItems || []).filter((item) => item.spaceId === space.id && item.visibility === "shared" && !item.archivedAt).slice(-15).map((item) => ({ id: item.id, title: item.title || String(item.text || "").slice(0, 80), date: item.date, done: item.done })),
     })),
     // Chat-history analyses only as the shared copies both partners approved; never a member's private import.
@@ -103,6 +103,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
   if (!saved.duplicate) emit(saved.conversation);
   if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  await ensureMomentSpaces(store, actorUserId);
   const context = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
@@ -205,7 +206,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
       const record = action.operation === "create" ? created = await createSpace(tx, { userId, relationshipId, shared: true, title: action.title, layout: action.layout, description: action.text || "", source: "agent" })
         : action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaces", id: action.targetId }) : await updateSpace(tx, { userId, id: action.targetId, fields: { title: action.title ?? undefined, layout: action.layout ?? undefined, description: action.text ?? undefined } });
       if (record.visibility !== "shared" || record.relationshipId !== relationshipId) throw decisionError(404, "not_found");
-      refs.push({ type: "space", id: record.id, version: record.version, title: record.title }); continue;
+      refs.push({ type: "space", id: record.id, version: record.version, title: record.title, ...(record.system ? { system: record.system } : {}) }); continue;
     }
     let record;
     if (action.operation === "create") {
@@ -214,14 +215,14 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
       const photo = action.photoId ? await tx.getRelationshipRecordForUser("photos", action.photoId, userId) : null;
       if (action.photoId && (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId || photo.archivedAt)) throw decisionError(404, "not_found");
       record = await addSpaceItem(tx, { userId, space, title: action.title || "", text: action.text || "", date: action.date, done: action.done === true, photoId: photo?.id || null, source: "agent" });
-      if (!refs.some((ref) => ref.type === "space" && ref.id === space.id)) refs.push({ type: "space", id: space.id, version: space.version, title: space.title });
+      if (!refs.some((ref) => ref.type === "space" && ref.id === space.id)) refs.push({ type: "space", id: space.id, version: space.version, title: space.title, ...(space.system ? { system: space.system } : {}) });
       continue;
     }
     const item = await tx.getRelationshipRecordForUser("spaceItems", action.targetId || "", userId);
     if (!item || item.visibility !== "shared" || item.relationshipId !== relationshipId) throw decisionError(404, "not_found");
     record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: item.id }) : await updateSpaceItem(tx, { userId, id: item.id, fields: { title: action.title ?? undefined, text: action.text ?? undefined, date: action.date ?? undefined, done: action.done ?? undefined } });
     const space = await tx.getRelationshipRecordForUser("spaces", item.spaceId, userId);
-    if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: space?.version || 1, title: space?.title || "" });
+    if (!refs.some((ref) => ref.type === "space" && ref.id === item.spaceId)) refs.push({ type: "space", id: item.spaceId, version: space?.version || 1, title: space?.title || "", ...(space?.system ? { system: space.system } : {}) });
   }
   return refs.slice(0, 6);
 }
@@ -299,4 +300,21 @@ export async function draftAgreementFromTogether(tx, { relationshipId, userId, v
   await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.draftAgreement = null; draft.version += 1; });
   await announceAgreement(tx, { agreement, userId, language, source });
   return agreement;
+}
+
+/** "On this day": the first time either partner opens Us on a date, Pinky recalls shared moments from that day in earlier
+ * years, with their photos. Only the couple's shared album counts; one post per day. Returns the updated conversation or null. */
+export async function recallOnThisDay(store, { relationshipId, userId, today }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return null;
+  const snapshot = await store.relationshipSnapshotForUser(userId);
+  const album = (snapshot.spaces || []).find((space) => space.system === MOMENTS && space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt);
+  if (!album) return null;
+  const moments = (snapshot.spaceItems || []).filter((item) => item.spaceId === album.id && item.visibility === "shared" && !item.archivedAt && item.date && item.date.slice(5) === today.slice(5) && item.date < today);
+  if (!moments.length) return null;
+  // One memory per title, oldest first, with all of its photos.
+  const groups = [...moments.reduce((map, item) => map.set(`${item.date}|${item.title}`, [...(map.get(`${item.date}|${item.title}`) || []), item]), new Map()).values()].sort((a, b) => a[0].date.localeCompare(b[0].date)).slice(0, 3);
+  const line = (language) => groups.map(([first]) => { const years = Number(today.slice(0, 4)) - Number(first.date.slice(0, 4)); const title = first.title || String(first.text || "").slice(0, 60); return language === "en" ? `${years} year${years > 1 ? "s" : ""} ago today: ${title}` : language === "es" ? `Hace ${years} año${years > 1 ? "s" : ""}, hoy: ${title}` : `${years} 年前的今天：${title}`; }).join(language === "zh" ? "；" : "; ");
+  const photoIds = groups.flat().map((item) => item.photoId).filter(Boolean).slice(0, 6);
+  const result = await store.transaction(`relationship:${relationshipId}`, (tx) => appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", text: line("zh"), i18n: togetherI18n(line), photoIds, refs: [{ type: "space", id: album.id, title: album.title, system: MOMENTS }], handle: `onthisday:${relationshipId}:${today}` }));
+  return result.duplicate ? null : result.conversation;
 }

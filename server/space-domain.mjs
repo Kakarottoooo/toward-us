@@ -22,6 +22,23 @@ export async function createSpace(tx, { userId, relationshipId = null, shared = 
   return record;
 }
 
+export const MOMENTS = "moments";
+/** Every member has a private moments album, and every couple one shared album: the Moments page and where Pinky keeps memories.
+ * Created on first need; the re-check inside each lock keeps exactly one even when both partners arrive at once. */
+export async function ensureMomentSpaces(store, userId) {
+  const albums = async (db) => (await db.listRelationshipRecordsForUser("spaces", userId)).filter((space) => space.system === MOMENTS && canViewRecord(space, userId));
+  const album = (relationshipId) => createRelationshipRecord({ relationshipId, userId, visibility: relationshipId ? "shared" : "private", aiAccessScope: relationshipId ? "joint" : "private", title: "Moments", layout: "timeline", description: "", system: MOMENTS, provenanceSource: "system" });
+  const existing = await albums(store);
+  if (!existing.some((space) => space.visibility === "private" && space.ownerUserId === userId)) await store.transaction(`user:${userId}`, async (tx) => {
+    if (!(await albums(tx)).some((space) => space.visibility === "private" && space.ownerUserId === userId)) await tx.createRelationshipRecord("spaces", album(null));
+  });
+  const context = await store.getRelationshipContext(userId);
+  const relationshipId = context?.relationship.status === "active" && context.members.length === 2 ? context.relationship.id : null;
+  if (relationshipId && !existing.some((space) => space.visibility === "shared" && space.relationshipId === relationshipId)) await store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    if (!(await albums(tx)).some((space) => space.visibility === "shared" && space.relationshipId === relationshipId)) await tx.createRelationshipRecord("spaces", album(relationshipId));
+  });
+}
+
 export async function visibleSpace(tx, id, userId) {
   const space = await tx.getRelationshipRecordForUser("spaces", clean(id, 80), userId);
   if (!space || !canViewRecord(space, userId)) throw fail(404, "Space not found.");
@@ -36,7 +53,7 @@ export async function addSpaceItem(tx, { userId, space, title = "", text = "", d
   if (items.length >= ITEM_LIMIT) throw fail(409, "This space is full.");
   const record = createRelationshipRecord({
     relationshipId: space.relationshipId, userId, visibility: space.visibility, aiAccessScope: space.aiAccessScope,
-    spaceId: space.id, title: name, text: body, date: date && isDate(date) ? date : null, done: Boolean(done), photoId: photoId ? clean(photoId, 80) : null, provenanceSource: source,
+    spaceId: space.id, ...(space.system ? { album: space.system } : {}), title: name, text: body, date: date && isDate(date) ? date : null, done: Boolean(done), photoId: photoId ? clean(photoId, 80) : null, provenanceSource: source,
   });
   await tx.createRelationshipRecord("spaceItems", record);
   await tx.updateRelationshipRecordForUser("spaces", space.id, userId, (draft) => { draft.version += 1; });
@@ -68,6 +85,7 @@ export async function updateSpace(tx, { userId, id, fields }) {
 export async function archiveSpaceRecord(tx, { userId, collection, id }) {
   const record = await tx.getRelationshipRecordForUser(collection, clean(id, 80), userId);
   if (!record || !canViewRecord(record, userId)) throw fail(404, "Not found.");
+  if (record.system) throw fail(403, "This album stays; remove what is in it instead.");
   return tx.updateRelationshipRecordForUser(collection, record.id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; });
 }
 
@@ -83,7 +101,7 @@ export async function listSpaces(db, userId) {
 /** What an agent may know about spaces in a given scope: titles and recent item titles, never another person's private space. */
 export function spaceContext(spaces, { shared }) {
   return spaces.filter((space) => shared ? space.visibility === "shared" : space.visibility === "private").slice(0, 30).map((space) => ({
-    id: space.id, title: space.title, layout: space.layout,
+    id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
     items: space.items.slice(-15).map((item) => ({ id: item.id, title: item.title || item.text.slice(0, 80), date: item.date, done: item.done })),
   }));
 }

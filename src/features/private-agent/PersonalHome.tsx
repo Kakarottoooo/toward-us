@@ -7,6 +7,7 @@ import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { CheckinPanel } from "../checkins/CheckinPanel";
 import { RemindersPanel } from "../reminders/RemindersPanel";
 import { UpcomingPage } from "../upcoming/UpcomingPage";
+import { MomentsPage } from "../moments/MomentsPage";
 import { relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
 import { PageHeader } from "../conversation/ConversationHome";
@@ -27,7 +28,7 @@ export function PersonalHome({ user, relationshipId, language, onShared, onBack,
     <main className="relationship-main">
       {error && <p role="alert">{error}</p>}
       {view === "plans" && <PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...threads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
-      {view === "memories" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={relationshipId} compose={false} /><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /><button className="space-ask" onClick={() => onAsk(localized(language, "帮我记下：", "Remember this for me: ", "Recuerda esto: "), "me")}><ChatCircleDots size={20} weight="fill" />{localized(language, "跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button></div>}
+      {view === "memories" && <MomentsPage language={language} userId={user.id} paired={false} onAsk={onAsk} />}
       {view === "reminders" && <UpcomingPage language={language} onAsk={(text) => onAsk(text, "me")} />}
     </main>
   </div>;

@@ -67,3 +67,4 @@ button.settings-row:focus-visible { outline: 2px solid var(--jian-blue); outline
 .settings-sheet button.danger { background: #d4402d; }
 .settings-sheet button.quiet { background: transparent; color: #5f5952; font-weight: 600; }
 .settings-sheet button:disabled { opacity: .45; cursor: not-allowed; }
+.settings-intro { margin: 0 4px; color: #5f5952; font-size: 15px; line-height: 1.6; }

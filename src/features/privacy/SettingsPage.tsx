@@ -1,16 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CaretRight, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Translate, Trash, UserMinus } from "@phosphor-icons/react";
+import { Brain, CaretRight, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Translate, Trash, UserMinus } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { PageHeader } from "../conversation/ConversationHome";
+import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./settings.css";
 
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "processors" | "retention" | "summaries" | "history" | "recovery";
-type SettingsProps = { user: { name: string; email: string }; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
+type Page = "main" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery";
+type SettingsProps = { user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 function downloadFile(contents: string, filename: string, type: string) {
@@ -27,7 +28,7 @@ function Row({ icon, tone = "blue", label, value, onClick, danger = false, testI
 const Group = ({ title, note, children }: { title?: string; note?: string; children: ReactNode }) => <section className="settings-group">{title && <h2>{title}</h2>}<div className="settings-card">{children}</div>{note && <p className="settings-note">{note}</p>}</section>;
 
 /** Settings: account, language, privacy and data, each one row deep; every irreversible step is confirmed in a sheet with the password. */
-export function SettingsPage({ user, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
+export function SettingsPage({ user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [page, setPage] = useState<Page>("main");
@@ -73,7 +74,7 @@ export function SettingsPage({ user, partnerName, language, onLanguage, onBack, 
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación") };
+  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación") };
 
   const main = <>
     <section className="settings-profile">
@@ -86,6 +87,7 @@ export function SettingsPage({ user, partnerName, language, onLanguage, onBack, 
       </Row>
     </Group>
     <Group title={t("隐私", "Privacy", "Privacidad")} note={t("退出关系或管理自己的数据，都不需要对方批准。", "Leaving a relationship or managing your own data never needs your partner's approval.", "Salir de una relación o gestionar tus datos nunca requiere la aprobación de tu pareja.")}>
+      <Row icon={<Brain size={18} weight="bold" />} tone="pink" label={titles.memory} onClick={() => open("memory")} testId="settings-memory" />
       <Row icon={<ShieldCheck size={18} weight="bold" />} tone="green" label={titles.processors} onClick={() => open("processors")} testId="settings-processors" />
       <Row icon={<ClockCounterClockwise size={18} weight="bold" />} tone="blue" label={t("私人内容保留", "Keep private content", "Conservar lo privado")} value={data ? period(data.privateRetentionDays) : ""} onClick={() => open("retention")} />
       <Row icon={<Eye size={18} weight="bold" />} tone="pink" label={titles.summaries} value={data ? String(confirmedSummaries.length) : ""} onClick={() => open("summaries")} />
@@ -115,6 +117,7 @@ export function SettingsPage({ user, partnerName, language, onLanguage, onBack, 
     [t("删除账号后", "After deleting your account", "Después de borrar la cuenta"), t("你在“我们俩”里说过的话会留给对方。", "What you wrote in Us stays for your partner.", "Lo que escribiste en Nosotros queda para tu pareja.")],
   ];
   const sub: Record<Exclude<Page, "main">, ReactNode> = {
+    memory: <><p className="settings-intro">{t("这些是 Pinky 为了更懂你们而记下的偏好和经验，比如“吵架时先安静十分钟”。你说“记住……”时它会记下；这里可以查看、修改、删除，以及决定 AI 能不能用。", "These are preferences and lessons Pinky keeps to understand you better, like “take ten quiet minutes before talking”. It keeps one when you say “remember…”; here you can review, edit or delete them and decide whether AI may use them.", "Son preferencias y aprendizajes que Pinky guarda para entenderlos mejor, como «diez minutos de calma antes de hablar». Guarda uno cuando dices «recuerda…»; aquí puedes revisarlos, editarlos o borrarlos y decidir si la IA puede usarlos.")}</p><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /></>,
     processors: <Group>{processors.map(([title, text]) => <div key={title} className="settings-row settings-text-row"><strong>{title}</strong><p>{text}</p></div>)}</Group>,
     retention: <Group note={t("按最后一次更新的时间计算，只包括私人对话、私人记忆和日常记录。", "Counted from the last change; covers only private conversations, private memories and check-ins.", "Se cuenta desde el último cambio; solo incluye conversaciones privadas, recuerdos privados y registros diarios.")}>
       {[null, 7, 30, 90, 365].map((value) => <button key={String(value)} type="button" className="settings-row" onClick={() => value !== data?.privateRetentionDays && prepare({ kind: "retention", days: value })}><span className="settings-label">{period(value)}</span>{value === (data?.privateRetentionDays ?? null) && <Check size={18} weight="bold" className="settings-check" />}</button>)}

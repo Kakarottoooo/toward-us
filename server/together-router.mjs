@@ -4,7 +4,7 @@ import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
-import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation } from "./together-domain.mjs";
+import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, recallOnThisDay } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {} }) {
@@ -26,7 +26,14 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
 
   router.get("/together", async (req, res) => {
     const userId = req.auth.user.id, context = await pairing(req), relationshipId = context.relationship.id;
-    if (writable(context)) { const ensured = await transaction(req, (tx) => ensureTogetherConversation(tx, { relationshipId, userId })); if (ensured.created) emit(ensured.conversation, "together.updated"); }
+    if (writable(context)) {
+      const ensured = await transaction(req, (tx) => ensureTogetherConversation(tx, { relationshipId, userId })); if (ensured.created) emit(ensured.conversation, "together.updated");
+      // The member's own calendar day decides what "today" is.
+      const timezone = clean(String(req.query?.timezone || ""), 64) || "UTC"; let today = "";
+      try { today = new Date().toLocaleDateString("en-CA", { timeZone: timezone }); } catch { today = new Date().toISOString().slice(0, 10); }
+      const recalled = await recallOnThisDay(store, { relationshipId, userId, today }).catch(() => null);
+      if (recalled) emit(recalled, "together.updated", null, userId);
+    }
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);
     if (!conversation) throw decisionError(409, "pairing_required");

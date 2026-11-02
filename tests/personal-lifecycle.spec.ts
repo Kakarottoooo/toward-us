@@ -11,11 +11,10 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   await expect(page.getByTestId("drawer-invite")).toBeVisible();
   await page.getByTestId("drawer-moments").click();
   await expect(page.getByTestId("personal-screen")).toBeVisible();
-  await expect(page.locator(".memory-composer")).toHaveCount(0);
-  await expect(page.locator(".checkin-workspace .memory-text")).toContainText("舒服些了");
-  await expect(page.locator('.memory-workspace[aria-labelledby="memory-title"] .memory-text')).toContainText("先休息十分钟");
-  await page.getByRole("button", { name: "跟 Pinky 说", exact: true }).click();
-  await expect(page.getByTestId("conversation-input")).toHaveValue("帮我记下：");
+  await expect(page.getByTestId("moments-page")).toContainText("舒服些了");
+  await expect(page.getByTestId("moments-page")).not.toContainText("先休息十分钟");
+  await page.getByRole("button", { name: "跟 Pinky 说一个回忆", exact: true }).click();
+  await expect(page.getByTestId("conversation-input")).toHaveValue("帮我存一个回忆：");
   expect((await context.request.post("/api/reminders", { data: { title: "给自己一分钟", localDateTime: `${new Date(Date.now() + 86400000).toISOString().slice(0, 10)}T19:00`, timezone: "UTC", frequency: "once", target: { kind: "reminders" } } })).ok()).toBe(true);
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-upcoming").click();
   await expect(page.locator(".reminders-form")).toHaveCount(0);
@@ -23,6 +22,10 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   await page.getByTestId("back-to-conversation").click();
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();
   await expect(page.getByTestId("settings-screen")).toBeVisible();
+  // What Pinky remembers lives in Settings, apart from the Moments the person looks at.
+  await page.getByTestId("settings-memory").click();
+  await expect(page.locator(".memory-workspace .memory-text")).toContainText("先休息十分钟");
+  await page.getByTestId("back-to-conversation").click();
   await page.getByRole("button", { name: "ES", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Ajustes" })).toBeVisible();

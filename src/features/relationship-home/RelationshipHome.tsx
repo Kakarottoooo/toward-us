@@ -13,6 +13,7 @@ import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { CheckinPanel } from "../checkins/CheckinPanel";
 import { RemindersPanel, type ReminderTarget } from "../reminders/RemindersPanel";
 import { UpcomingPage } from "../upcoming/UpcomingPage";
+import { MomentsPage } from "../moments/MomentsPage";
 import "../private-agent/personal.css";
 import { PageHeader } from "../conversation/ConversationHome";
 import { AgreementsPage } from "../agreements/AgreementsPage";
@@ -58,7 +59,7 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
       {view === "decide" && <div className="lifecycle-tools"><button onClick={() => selectReminder(selection.outcomeId ? { kind: "outcome", id: selection.outcomeId } : selection.issueId ? { kind: "issue", id: selection.issueId } : { kind: "reminders" })}>{localized(language, "设置我的跟进提醒", "Set my follow-up reminder", "Configurar mi recordatorio de seguimiento")}</button></div>}
       {view === "plans" && <div className="feature-stack"><PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...payload.graph.privateAgentThreads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onShared={(id) => { history.replaceState(null, "", `/?view=plans&milestone=${encodeURIComponent(id)}`); }} initialPrompt={null} onChanged={refresh} /></div>}
       {view === "lists" && <div className="feature-stack"><MilestonesPanel language={language} milestones={payload.graph.milestones} reminders={payload.graph.reminders} onRemind={(id, title) => selectReminder({ kind: "milestone", id }, title)} onChanged={refresh} /><ListsPanel language={language} lists={payload.graph.lists} items={payload.graph.listItems} onChanged={refresh} /></div>}
-      {view === "moments" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={payload.relationship.id} onChanged={refresh} compose={false} /><MemoryWorkspace language={language} userId={user.id} relationshipId={payload.relationship.id} onChanged={refresh} compose={false} /><button className="space-ask" onClick={() => onAsk(localized(language, "帮我记下：", "Remember this for me: ", "Recuerda esto: "), "me")}><ChatCircleDots size={20} weight="fill" />{localized(language, "跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button></div>}
+      {view === "moments" && <MomentsPage language={language} userId={user.id} paired onAsk={onAsk} />}
       {view === "reminders" && <RemindersPanel key={`${reminderTarget?.kind}:${reminderTarget?.id}`} language={language} initialTarget={reminderTarget} initialTitle={reminderTitle} onChanged={refresh} />}
     </main>
   </div>;

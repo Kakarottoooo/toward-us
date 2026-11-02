@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+// The moments albums every member and couple get automatically are left out: these tests are about spaces Pinky builds.
 import { test } from "node:test";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -48,9 +49,9 @@ test("a private space and its items stay with their owner", async (t) => {
   const response = await f.turn("Start a gift ideas list with a handwritten letter");
   assert.equal(response.status, 200, JSON.stringify(response.body));
   assert.equal(response.body.session.messages.at(-1).text, "Started your list.");
-  const mine = (await f.request("/spaces")).body.spaces;
+  const mine = (await f.request("/spaces")).body.spaces.filter((space) => !space.system);
   assert.deepEqual(mine.map((space) => [space.visibility, space.title, space.items.map((item) => item.title)]), [["private", "Gift ideas", ["Handwritten letter"]]]);
-  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces, []);
+  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system), []);
   assert.equal((await f.request(`/space-items/${mine[0].items[0].id}`, "PATCH", { done: true }, f.ids[1])).status, 404);
 });
 
@@ -63,7 +64,7 @@ test("the shared Agent's spaces reach both partners, and private additions wait 
   const sent = await f.request("/together/messages", "POST", { text: "Pinky, make us a beach packing list with sunscreen", itemId: randomUUID(), language: "en" });
   assert.equal(sent.status, 201, JSON.stringify(sent.body));
   assert.equal(sent.body.reply.refs[0].type, "space");
-  const partnerView = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces;
+  const partnerView = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system);
   assert.deepEqual(partnerView.map((space) => [space.visibility, space.title, space.items.map((item) => item.title)]), [["shared", "Beach packing", ["Sunscreen"]]]);
   spaceId = partnerView[0].id;
   assert.equal((await f.request(`/space-items/${partnerView[0].items[0].id}`, "PATCH", { done: true }, f.ids[1])).status, 200);
@@ -71,11 +72,11 @@ test("the shared Agent's spaces reach both partners, and private additions wait 
   const prepared = await f.turn("Add my passport to our beach list");
   const card = prepared.body.session.messages.at(-1).cards.find((item) => item.kind === "space_share");
   assert.equal(card.status, "draft");
-  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces[0].items.map((item) => item.title), ["Sunscreen"]);
+  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system)[0].items.map((item) => item.title), ["Sunscreen"]);
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}/space-confirm`, "POST", { cardId: card.id, digest: "0".repeat(64) })).status, 409);
   const confirmed = await f.request(`/assistant/sessions/${f.session.id}/space-confirm`, "POST", { cardId: card.id, digest: card.digest });
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
-  const items = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.find((space) => space.id === spaceId).items;
+  const items = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system).find((space) => space.id === spaceId).items;
   assert.deepEqual(items.map((item) => [item.title, item.done]), [["Sunscreen", true], ["Passport", false]]);
 });
 
@@ -84,7 +85,7 @@ test("a shared action that cannot be applied leaves nothing behind and the Agent
   const sent = await f.request("/together/messages", "POST", { text: "Pinky, add a ghost", itemId: randomUUID(), language: "en" });
   assert.equal(sent.status, 201, JSON.stringify(sent.body));
   assert.match(sent.body.reply.text, /couldn't do that/);
-  assert.deepEqual((await f.request("/spaces")).body.spaces, []);
+  assert.deepEqual((await f.request("/spaces")).body.spaces.filter((space) => !space.system), []);
 });
 
 test("asking privately puts the same question in each partner's own chat and nowhere else", async (t) => {
@@ -110,15 +111,15 @@ test("a private photo stays private until its owner confirms putting it in a sha
   assert.equal(await f.photo(mine.id), 200);
   assert.equal(await f.photo(mine.id, f.ids[1]), 404);
   await f.request("/together/messages", "POST", { text: "Pinky, start a trip album", itemId: randomUUID(), language: "en" });
-  album = (await f.request("/spaces")).body.spaces[0].id;
+  album = (await f.request("/spaces")).body.spaces.filter((space) => !space.system)[0].id;
   const turn = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Put this in our trip album", itemId: randomUUID(), photoIds: [mine.id] });
   assert.equal(turn.status, 200, JSON.stringify(turn.body));
   assert.deepEqual(turn.body.session.messages.at(-2).photoIds, [mine.id]);
   const card = turn.body.session.messages.at(-1).cards[0];
   assert.equal(card.kind, "space_share");
-  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces[0].items, []);
+  assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system)[0].items, []);
   await f.request(`/assistant/sessions/${f.session.id}/space-confirm`, "POST", { cardId: card.id, digest: card.digest });
-  const [item] = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces[0].items;
+  const [item] = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system)[0].items;
   assert.notEqual(item.photoId, mine.id);
   assert.equal(await f.photo(item.photoId, f.ids[1]), 200);
   assert.equal(await f.photo(mine.id, f.ids[1]), 404);
@@ -158,4 +159,29 @@ test("on one shared phone a sentence can be attributed to the partner, marked as
   assert.deepEqual([line.actorUserId, line.recordedByUserId, line.source], [f.ids[1], f.ids[0], "voice"]);
   const own = await f.request("/together/messages", "POST", { text: "Me too", itemId: randomUUID(), language: "en" });
   assert.equal(own.body.message.recordedByUserId, undefined);
+});
+
+test("every member has one private moments album and the couple one shared album, which cannot be archived", async (t) => {
+  const f = await fixture(t);
+  const [mine, theirs] = await Promise.all([f.request("/spaces"), f.request("/spaces", "GET", null, f.ids[1])]);
+  const albums = (spaces) => spaces.filter((space) => space.system === "moments").map((space) => space.visibility).sort();
+  assert.deepEqual(albums(mine.body.spaces), ["private", "shared"]);
+  assert.deepEqual(albums(theirs.body.spaces), ["private", "shared"]);
+  assert.deepEqual(albums((await f.request("/spaces")).body.spaces), ["private", "shared"], "asking again creates nothing new");
+  const shared = mine.body.spaces.find((space) => space.system === "moments" && space.visibility === "shared");
+  assert.equal(theirs.body.spaces.find((space) => space.system === "moments" && space.visibility === "shared").id, shared.id, "both partners share the same album");
+  assert.equal((await f.request(`/spaces/${shared.id}/archive`, "POST", {})).status, 403);
+});
+
+test("on the day, Pinky recalls the couple's shared moments from earlier years in Us once, never private ones", async (t) => {
+  const today = new Date().toISOString().slice(0, 10), lastYear = `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`;
+  let album = null;
+  const f = await fixture(t, { shared: () => ({ reply: "Kept it.", draftAgreement: null, actions: [together({ kind: "space_item", spaceId: album, title: "First trip to the sea", date: lastYear })] }) });
+  album = (await f.request("/spaces")).body.spaces.find((space) => space.system === "moments" && space.visibility === "shared").id;
+  await f.request("/together/messages", "POST", { text: "Pinky, keep our sea trip", itemId: randomUUID(), language: "en" });
+  const open = async (userId) => (await f.request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation.messages.filter((message) => message.handle?.startsWith("onthisday:"));
+  const first = await open(f.ids[1]);
+  assert.equal(first.length, 1);
+  assert.equal(first[0].i18n.en, "1 year ago today: First trip to the sea");
+  assert.equal((await open(f.ids[0])).length, 1, "posted once a day, whoever opens Us first");
 });
