@@ -22,6 +22,7 @@ import { createRelationshipRouter } from "./relationship-router.mjs";
 import { createPrivateAgentRouter } from "./private-agent-router.mjs";
 import { createMemoryRouter } from "./memory-router.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
+import { createPhoneRouter } from "./phone-identity.mjs";
 import { createReminderRouter } from "./reminder-router.mjs";
 import { createReminderService } from "./reminder-service.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
@@ -163,7 +164,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use((req, res, next) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !req.path.startsWith("/api/")) return next();
     // This single server-to-server endpoint has its own constant-time Bearer gate.
-    if (req.method === "POST" && req.path === "/api/internal/reminders/run") return next();
+    if (req.method === "POST" && (req.path === "/api/internal/reminders/run" || req.path === "/api/internal/phone-links")) return next();
     return sameOriginRequest(req) ? next() : res.status(403).json({ error: "请求来源未通过安全检查。" });
   });
   app.use(async (req, _res, next) => {
@@ -652,6 +653,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.json({ item: historyDetail(room) });
   });
 
+  app.use(createPhoneRouter({ store, internalSecret: () => reminders.internalSecret }));
   const relationshipRouter = createRelationshipRouter({ store, mediator });
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);
   emitTogether = emit;

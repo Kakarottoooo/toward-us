@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createPostgresStore } from "./postgres-store.mjs";
+import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
 const EMPTY_STATE = () => ({
@@ -13,6 +14,8 @@ const EMPTY_STATE = () => ({
   memberships: {},
   formerMemberships: {},
   invitations: {},
+  phones: {},
+  phoneLinks: {},
   rooms: {},
   demoRooms: {},
   relationshipGraph: Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, {}])),
@@ -114,6 +117,21 @@ export async function createFileStore(filePath) {
       }
       await persist(); return { relationshipId: id, memberIds: members.map((member) => member.userId) };
     },
+    async createPhoneLink(link) { state().phoneLinks[link.codeHash] = { ...link, usedAt: null }; await persist(); },
+    async bindPhone(userId, phone) {
+      if (state().phones[phone] && state().phones[phone].userId !== userId) throw phoneTakenError();
+      for (const [other, record] of Object.entries(state().phones)) if (record.userId === userId && other !== phone) delete state().phones[other];
+      state().phones[phone] ||= { userId, createdAt: new Date().toISOString() };
+      await persist(); return phone;
+    },
+    async consumePhoneLink(codeHash, userId, now) {
+      const link = state().phoneLinks[codeHash];
+      if (!link || link.usedAt || link.expiresAt <= now) return null;
+      await store.bindPhone(userId, link.phone); link.usedAt = now; await persist(); return link.phone;
+    },
+    async unbindPhone(userId) { for (const [phone, record] of Object.entries(state().phones)) if (record.userId === userId) delete state().phones[phone]; await persist(); },
+    getUserIdByPhone(phone) { return state().phones[phone]?.userId || null; },
+    getPhoneForUser(userId) { return Object.keys(state().phones).find((phone) => state().phones[phone].userId === userId) || null; },
     async getPrivacySnapshot(userId) {
       const ids = new Set(Object.entries(state().formerMemberships).filter(([, members]) => members.some((member) => member.userId === userId)).map(([id]) => id));
       const current = state().memberships[userId]?.relationshipId; if (current) ids.add(current);
@@ -121,6 +139,7 @@ export async function createFileStore(filePath) {
         relationships: [...ids].map((id) => structuredClone(state().relationships[id])),
         graph: Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => ids.has(record.relationshipId) || record.ownerUserId === userId).map((record) => structuredClone(record))])),
         rooms: Object.values(state().rooms).filter((room) => ids.has(room.relationshipId)).map((room) => structuredClone(room)),
+        phone: implementation.getPhoneForUser(userId),
       };
     },
     async deletePrivateData(userId) {
@@ -135,6 +154,7 @@ export async function createFileStore(filePath) {
     async deleteAccount(userId) {
       await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
       for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
+      await store.unbindPhone(userId);
       const user = state().users[userId]; if (!user) return false;
       delete state().userByEmail[user.email]; user.email = `${userId}@deleted.invalid`; user.name = "Deleted user"; user.passwordHash = "deleted";
       for (const room of Object.values(state().rooms)) {
@@ -270,7 +290,7 @@ export async function createFileStore(filePath) {
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,
-    typeof value === "function" && /^(create|update|delete|accept|finalize|leave)/.test(name)
+    typeof value === "function" && /^(create|update|delete|accept|finalize|leave|consume|bind|unbind)/.test(name)
       ? (...args) => transaction("file", () => value(...args)) : value,
   ]));
   return store;

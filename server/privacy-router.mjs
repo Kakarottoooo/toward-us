@@ -132,7 +132,7 @@ export function privacyExport(snapshot, user) {
     const ownIds = new Set(room.participants.filter((person) => person.userId === user.id).map((person) => person.id));
     return { code: room.code, relationshipId: room.relationshipId, status: room.status, messages: room.messages.filter((message) => ownIds.has(message.participantId)), sharedAnalysis: room.status === "archived" ? room.analysis?.shared || null : null, createdAt: room.createdAt, archivedAt: room.archivedAt || null };
   });
-  return { exportedAt: new Date().toISOString(), user: { id: user.id, name: user.name, email: user.email }, relationships: snapshot.relationships, graph, rooms };
+  return { exportedAt: new Date().toISOString(), user: { id: user.id, name: user.name, email: user.email, phone: snapshot.phone || null }, relationships: snapshot.relationships, graph, rooms };
 }
 
 export async function runPrivateRetention(store, now = new Date()) {

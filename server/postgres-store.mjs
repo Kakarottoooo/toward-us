@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
+import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
 const GRAPH_TABLES = Object.freeze({
@@ -81,12 +82,35 @@ export async function createPostgresStore(databaseUrl) {
         return { relationshipId: id, memberIds: context.members.map((member) => member.userId) };
       });
     },
+    async createPhoneLink(link) { await pool.query("insert into phone_links (code_hash,phone,created_at,expires_at) values ($1,$2,$3,$4)", [link.codeHash, link.phone, link.createdAt, link.expiresAt]); },
+    async bindPhone(userId, phone) {
+      return store.transaction(`user:${userId}`, async () => {
+        const ownedByOther = async () => { const owner = (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id; return Boolean(owner) && owner !== userId; };
+        if (await ownedByOther()) throw phoneTakenError();
+        await pool.query("delete from user_phones where user_id=$1 and phone<>$2", [userId, phone]);
+        await pool.query("insert into user_phones (phone,user_id,created_at) values ($1,$2,now()) on conflict (phone) do nothing", [phone, userId]);
+        if (await ownedByOther()) throw phoneTakenError();
+        return phone;
+      });
+    },
+    async consumePhoneLink(codeHash, userId, now) {
+      return store.transaction(`user:${userId}`, async () => {
+        const link = (await pool.query("select * from phone_links where code_hash=$1 for update", [codeHash])).rows[0];
+        if (!link || link.used_at || new Date(link.expires_at).toISOString() <= now) return null;
+        await store.bindPhone(userId, link.phone);
+        await pool.query("update phone_links set used_at=$2 where code_hash=$1", [codeHash, now]);
+        return link.phone;
+      });
+    },
+    async unbindPhone(userId) { await pool.query("delete from user_phones where user_id=$1", [userId]); },
+    async getUserIdByPhone(phone) { return (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id || null; },
+    async getPhoneForUser(userId) { return (await pool.query("select phone from user_phones where user_id=$1", [userId])).rows[0]?.phone || null; },
     async getPrivacySnapshot(userId) {
       const rows = (await pool.query("select distinct r.* from relationships r where exists (select 1 from relationship_members m where m.relationship_id=r.id and m.user_id=$1) or exists (select 1 from relationship_former_members m where m.relationship_id=r.id and m.user_id=$1)", [userId])).rows;
       const ids = rows.map((row) => row.id);
       const graph = Object.fromEntries(await mapCollections(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)]));
       const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
-      return { relationships: rows.map(mapRelationship), graph, rooms };
+      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId) };
     },
     async deletePrivateData(userId) {
       return store.transaction(`user:${userId}`, async () => {
@@ -103,7 +127,7 @@ export async function createPostgresStore(databaseUrl) {
       const context = await store.getRelationshipContext(userId);
       return store.transaction(context ? `relationship:${context.relationship.id}` : `user:${userId}`, async () => {
         await store.getUserForUpdate(userId);
-        await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
+        await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId); await store.unbindPhone(userId);
         for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
         const snapshot = await store.getPrivacySnapshot(userId);
         for (const room of snapshot.rooms) {
@@ -291,6 +315,10 @@ async function migrate(pool) {
       relationship_id text not null references relationships(id), user_id text not null references users(id),
       role text not null, joined_at timestamptz not null, primary key(relationship_id,user_id)
     );
+  `);
+  await pool.query(`
+    create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
+    create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null, used_at timestamptz);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
     await pool.query(`

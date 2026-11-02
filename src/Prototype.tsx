@@ -165,6 +165,8 @@ function AccountPrototype() {
 
   const selectLanguage = (value: Language) => setLanguage(value);
   const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {
+    const next = new URLSearchParams(location.search).get("next");
+    if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
     setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
   };
   const refreshPairing = async () => {
