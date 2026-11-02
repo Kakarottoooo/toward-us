@@ -140,3 +140,12 @@
 .together-speakers span { color: #5f5952; }
 .together-speakers button { min-height: 40px; padding: 0 14px; border: 1px solid rgba(7,61,185,.3); border-radius: 999px; background: #fffdf8; color: var(--jian-blue); font-size: 15px; font-weight: 600; cursor: pointer; }
 .together-speakers button.active { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
+
+/* Older panels shown on drawer pages (moments, reminders, dates): the same soft cards and readable type as the new pages. */
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature { padding: 18px 16px; border: 0; border-radius: 18px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature > header { margin-bottom: 14px; }
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature > header h2 { font-family: var(--jian-sans); font-size: 19px; font-weight: 650; line-height: 1.35; }
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature > header p { color: #5f5952; font-size: 15px; line-height: 1.55; }
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature :is(p, li) { font-size: 15px; }
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature :is(small, .memory-meta, .memory-provenance, .memory-consent, .reminders-time-note) { color: #6f6860; font-size: 13px; }
+.relationship-shell > .page-header ~ .relationship-main .relationship-feature + .relationship-feature { margin-top: 14px; }
