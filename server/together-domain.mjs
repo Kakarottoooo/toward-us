@@ -7,7 +7,7 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay"]);
 const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review"]);
-const AGENT_CALL = /彼此|toward\s*us|@toward|@agent/i;
+const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 const MESSAGE_LIMIT = 200;
 const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotiation_requested"]);

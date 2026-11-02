@@ -293,11 +293,11 @@ function localTogetherTurn(context, language) {
   const pick = (zh, en, es) => { const i18n = { zh, en, es }; return { reply: i18n[language] || zh, i18n }; };
   const members = (context.messages || []).filter((item) => item.role === "member");
   const last = members.at(-1)?.text || "";
-  const strip = (text) => String(text || "").replace(/@agent|彼此|toward(\s+us)?/gi, "").replace(/^[\s,，:：]+|[\s,，:：]+$/g, "").trim();
+  const strip = (text) => String(text || "").replace(/@agent|\bpinky\b/gi, "").replace(/^[\s,，:：]+|[\s,，:：]+$/g, "").trim();
   if (/定下来|约定|说好|agree|settle|decide|acuerdo|decid/i.test(last)) {
     if (context.pendingAgreement) return { ...pick("已经有一份约定在等你们两人批准。先处理它，再起草新的。", "An agreement is already waiting for both of your approvals. Handle that one before drafting another.", "Ya hay un acuerdo esperando la aprobación de ambos. Resuélvanlo antes de redactar otro."), draftAgreement: null };
     // Terms come only from what the partners said to each other here, not from lines addressed to the Agent.
-    const terms = members.slice(0, -1).filter((item) => !/彼此|toward|@agent/i.test(item.text)).slice(-3).map((item) => strip(item.text)).filter(Boolean);
+    const terms = members.slice(0, -1).filter((item) => !/\bpinky\b|@agent/i.test(item.text)).slice(-3).map((item) => strip(item.text)).filter(Boolean);
     if (!terms.length && strip(last)) terms.push(strip(last));
     if (!terms.length) return { ...pick("你们想定下来的具体是什么？各说一句就好。", "What exactly do you want to settle? One sentence each is enough.", "¿Qué quieren acordar exactamente? Basta con una frase cada uno."), draftAgreement: null };
     return {

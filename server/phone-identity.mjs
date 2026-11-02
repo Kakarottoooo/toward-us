@@ -28,7 +28,7 @@ export async function createPhoneLink(store, phone, { baseUrl = process.env.TOWA
 
 const TEXT = {
   zh: {
-    title: "彼此", ok: "手机号已绑定", okBody: (phone) => `${phone} 已绑定到你的账号。回到信息 App 继续对话即可。`,
+    title: "PINKY", ok: "手机号已绑定", okBody: (phone) => `${phone} 已绑定到你的账号。回到信息 App 继续对话即可。`,
     expired: "链接已失效", expiredBody: "这个链接已过期或已经用过了。请再给我们发一条消息，会收到新的链接。",
     taken: "无法绑定", takenBody: "这个手机号已经绑定了另一个账号。", unauthenticated: "请先登录。", unbound: "手机号已解绑。",
     confirm: "绑定这个手机号？", confirmBody: (phone) => `将把 ${phone} 绑定到你当前登录的账号。`,
@@ -36,19 +36,19 @@ const TEXT = {
     replaceNote: (old) => `你的账号已绑定 ${old}，确认后会被替换。`, confirmButton: "确认绑定",
   },
   en: {
-    title: "TOWARD US", ok: "Phone linked", okBody: (phone) => `${phone} is now linked to your account. Go back to Messages and keep talking.`,
+    title: "PINKY", ok: "Phone linked", okBody: (phone) => `${phone} is now linked to your account. Go back to Messages and keep talking.`,
     expired: "This link has expired", expiredBody: "The link expired or was already used. Text us again to get a new one.",
     taken: "Can't link this number", takenBody: "This phone number is already linked to another account.", unauthenticated: "Please sign in.", unbound: "Phone number unlinked.",
     confirm: "Link this phone number?", confirmBody: (phone) => `This will link ${phone} to the account you are signed in to.`,
-    confirmWarning: "Only confirm if you just texted Toward Us from this phone yourself. If someone else sent you this link, do not confirm.",
+    confirmWarning: "Only confirm if you just texted Pinky from this phone yourself. If someone else sent you this link, do not confirm.",
     replaceNote: (old) => `Your account is already linked to ${old}; confirming will replace it.`, confirmButton: "Confirm and link",
   },
   es: {
-    title: "TOWARD US", ok: "Teléfono vinculado", okBody: (phone) => `${phone} ya está vinculado a tu cuenta. Vuelve a Mensajes y sigue conversando.`,
+    title: "PINKY", ok: "Teléfono vinculado", okBody: (phone) => `${phone} ya está vinculado a tu cuenta. Vuelve a Mensajes y sigue conversando.`,
     expired: "El enlace ha caducado", expiredBody: "El enlace caducó o ya se usó. Escríbenos de nuevo para recibir uno nuevo.",
     taken: "No se puede vincular", takenBody: "Este número de teléfono ya está vinculado a otra cuenta.", unauthenticated: "Inicia sesión.", unbound: "Teléfono desvinculado.",
     confirm: "¿Vincular este teléfono?", confirmBody: (phone) => `Se vinculará ${phone} a la cuenta con la que has iniciado sesión.`,
-    confirmWarning: "Confirma solo si acabas de escribir a Toward Us tú mismo desde este teléfono. Si otra persona te envió este enlace, no confirmes.",
+    confirmWarning: "Confirma solo si acabas de escribir a Pinky tú mismo desde este teléfono. Si otra persona te envió este enlace, no confirmes.",
     replaceNote: (old) => `Tu cuenta ya está vinculada a ${old}; al confirmar se reemplazará.`, confirmButton: "Confirmar y vincular",
   },
 };

@@ -85,7 +85,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   });
   router.post("/privacy/export", async (req, res) => {
     const snapshot = await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.getPrivacySnapshot(req.auth.user.id); });
-    res.setHeader("Content-Disposition", 'attachment; filename="toward-us-export.json"');
+    res.setHeader("Content-Disposition", 'attachment; filename="pinky-export.json"');
     res.json(privacyExport(snapshot, req.auth.user));
   });
   router.post("/privacy/delete-private", async (req, res) => {

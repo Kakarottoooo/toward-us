@@ -17,7 +17,7 @@ type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: { id: string; version: number } | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
 type ApiError = Error & { status?: number };
-const AGENT_CALL = /彼此|toward\s*us|@toward|@agent/i;
+const AGENT_CALL = /\bpinky\b|@agent/i;
 const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|stop voice|pause|deja de escuchar|pausa)[。.!！]?$/i;
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",

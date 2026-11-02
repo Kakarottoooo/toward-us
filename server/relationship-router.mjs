@@ -75,7 +75,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const record = createRelationshipRecord({ relationshipId: list.relationshipId, userId: req.auth.user.id, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", approvalPolicy: "owner", status: "active", listId: list.id, title: clean(req.body?.title, 160), description: clean(req.body?.description, 1200), link: safeUrl(req.body?.link), category: clean(req.body?.category, 64), desiredDate: cleanDate(req.body?.desiredDate), estimatedCostRange: clean(req.body?.estimatedCostRange, 80), completedAt: null, revealedAt: null });
     if (!record.title) return res.status(400).json({ error: "请输入清单项目。" });
     await store.createRelationshipRecord("listItems", record); await audit(store, record, req.auth.user.id, "list_item.created"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "list_item_added" });
-    if (visibility === "shared") { await notifyMembers(await store.getRelationshipContext(req.auth.user.id), req.auth.user.id, "shared_item_added", "Toward Us 有一项共同清单更新。", `/lists/${list.id}`); emit(record, "list_item.updated"); }
+    if (visibility === "shared") { await notifyMembers(await store.getRelationshipContext(req.auth.user.id), req.auth.user.id, "shared_item_added", "Pinky 有一项共同清单更新。", `/lists/${list.id}`); emit(record, "list_item.updated"); }
     else emit(record, "list_item.updated", req.auth.user.id);
     res.status(201).json({ item: projectRecord(record, req.auth.user.id) });
   });

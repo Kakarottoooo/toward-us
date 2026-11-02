@@ -417,7 +417,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     const body = partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
     for (const device of devices) {
-      try { await sendNative(device.token, { title: "Toward Us", body, url: "/?channel=us" }); sent += 1; }
+      try { await sendNative(device.token, { title: "Pinky", body, url: "/?channel=us" }); sent += 1; }
       catch (error) {
         console.error("together native push failed", error?.code || "error");
         if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });
@@ -481,7 +481,7 @@ function reminderText(reminder, language) { return say(language, `提醒：「${
 function reminderPayload(reminder, language, key) {
   const target = reminder.target;
   const url = target?.kind === "issue" ? `/?view=decide&issue=${encodeURIComponent(target.id)}` : target?.kind === "outcome" ? `/?view=decide&outcome=${encodeURIComponent(target.id)}` : target?.kind === "milestone" || reminder.milestoneId ? `/?view=plans&milestone=${encodeURIComponent(target?.id || reminder.milestoneId)}` : target?.kind === "checkin" || target?.kind === "checkins" ? "/?view=checkins" : target?.kind === "plans" ? "/?view=plans" : `/?view=reminders&reminder=${encodeURIComponent(reminder.id)}`;
-  return { title: "Toward Us", body: language === "en" ? "You have a reminder. Open Toward Us when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Toward Us cuando quieras." : "你有一条提醒，方便时打开彼此查看。", url, tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
+  return { title: "Pinky", body: language === "en" ? "You have a reminder. Open Pinky when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Pinky cuando quieras." : "你有一条提醒，方便时打开 Pinky 查看。", url, tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
 }
 
 export function localDateTimeToInstant(localDateTime, timeZone, gapPolicy = "reject") {

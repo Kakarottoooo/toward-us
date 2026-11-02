@@ -23,7 +23,7 @@ export function PersonalHome({ user, relationshipId, language, onLanguage, onPai
   const refresh = useCallback(async () => { try { const data = await relationshipApi<{ threads: GraphRecord[] }>("/api/private-agent/threads"); setThreads(data.threads); setError(""); } catch (caught) { setError((caught as Error).message); } }, []);
   useEffect(() => { void refresh(); const focus = () => void refresh(); window.addEventListener("focus", focus); return () => window.removeEventListener("focus", focus); }, [refresh]);
   return <div className="paper-screen relationship-shell personal-shell" data-testid="personal-screen">
-    <header className="relationship-header"><div className="relationship-brand"><strong>TOWARD US</strong><span>{localized(language, "我的空间", "My space", "Mi espacio")}</span></div>
+    <header className="relationship-header"><div className="relationship-brand"><strong>PINKY</strong><span>{localized(language, "我的空间", "My space", "Mi espacio")}</span></div>
       <nav aria-label={localized(language, "个人空间导航", "Personal-space navigation", "Navegación del espacio personal")}>
         <button className={view === "agent" ? "active" : ""} onClick={() => setView("agent")}><LockKey /><span>{localized(language, "私人 Agent", "Private Agent", "Agente privado")}</span></button>
         <button className={view === "memories" ? "active" : ""} onClick={() => setView("memories")}><HandHeart /><span>{localized(language, "记忆与日常", "Memories & daily life", "Recuerdos y día a día")}</span></button>

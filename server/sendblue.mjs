@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 
-// Toward Us' own Sendblue line. Fully live only when SENDBLUE_API_KEY, SENDBLUE_API_SECRET and SENDBLUE_FROM_NUMBER are all set;
+// Pinky's own Sendblue line. Fully live only when SENDBLUE_API_KEY, SENDBLUE_API_SECRET and SENDBLUE_FROM_NUMBER are all set;
 // otherwise nothing touches the network: outbound messages are logged (masked, without text) and, when SENDBLUE_DRYRUN_FILE is
 // set, appended there as JSON lines so a local run can be inspected. Env is read at call time.
 // Base and endpoint names follow the Sendblue docs and the Onegent integration that ran live; each lives here once, so a docs
@@ -18,7 +18,7 @@ export function createSendblue({ env = process.env, fetchImpl = (...args) => glo
     const response = await fetchImpl(`${API}${path}${query ? `?${new URLSearchParams(query)}` : ""}`, {
       method, signal: AbortSignal.timeout(30_000),
       // Sendblue's Cloudflare rejected a bare runtime user agent in the Onegent live run.
-      headers: { "sb-api-key-id": env.SENDBLUE_API_KEY, "sb-api-secret-key": env.SENDBLUE_API_SECRET, Accept: "application/json", "User-Agent": "TowardUs/1.0", ...(body ? { "Content-Type": "application/json" } : {}) },
+      headers: { "sb-api-key-id": env.SENDBLUE_API_KEY, "sb-api-secret-key": env.SENDBLUE_API_SECRET, Accept: "application/json", "User-Agent": "Pinky/1.0", ...(body ? { "Content-Type": "application/json" } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     if (!response.ok) throw Object.assign(new Error(`sendblue_http_${response.status}`), { code: `sendblue_http_${response.status}`, statusCode: response.status }); // statusCode: callers treat 4xx (except 408/429) as permanent
