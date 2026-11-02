@@ -2,13 +2,14 @@ import express from "express";
 import { approveAgreement, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
-import { appendTogetherMessage, buildTogetherContext, draftAgreementFromTogether, ensureTogetherConversation, shouldAgentSpeak } from "./together-domain.mjs";
+import { announceAgreement, appendTogetherMessage, buildTogetherContext, draftAgreementFromTogether, ensureTogetherConversation, shouldAgentSpeak } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {} }) {
   const router = express.Router();
   router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
-  const language = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : "zh";
+  const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
+  const language = (req) => hint(req) || "zh";
   const pairing = async (req) => { const context = await store.getRelationshipContext(req.auth.user.id); if (!context) throw decisionError(409, "pairing_required"); return context; };
   const writable = (context) => context.relationship.status === "active" && context.members.length === 2;
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
@@ -58,7 +59,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
   router.post("/together/agreements/draft", async (req, res) => {
     const userId = req.auth.user.id;
     const result = await transaction(req, async (tx, _context, relationshipId) => {
-      const agreement = await draftAgreementFromTogether(tx, { relationshipId, userId, values: req.body?.title ? req.body : null });
+      const agreement = await draftAgreementFromTogether(tx, { relationshipId, userId, values: req.body?.title ? req.body : null, language: hint(req) });
       const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
       return { agreement, conversation };
     });
@@ -66,13 +67,19 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     res.status(201).json({ agreement: result.agreement, conversation: projectRecord(result.conversation, userId) });
   });
 
-  const decide = (action, event) => async (req, res) => {
-    const result = await transaction(req, (tx, context) => action(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason, context }));
-    emit(result.agreement, event); res.json(result);
+  // `announce` decides which outcomes the Agent posts as a card: the agreement becoming active, or a change request (new version).
+  const decide = (action, event, announce = () => false) => async (req, res) => {
+    const userId = req.auth.user.id;
+    const { conversation, ...result } = await transaction(req, async (tx, context) => {
+      const done = await action(tx, { agreementId: req.params.id, version: req.body?.version, userId, reason: req.body?.reason, context });
+      return announce(done.agreement) ? { ...done, conversation: (await announceAgreement(tx, { agreement: done.agreement, userId, language: hint(req) })).conversation } : done;
+    });
+    emit(result.agreement, event); if (conversation) emit(conversation, "together.updated");
+    res.json(result);
   };
-  router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated"));
+  router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active"));
   router.post("/together/agreements/:id/reject", decide(rejectAgreement, "agreement.rejected"));
-  router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested"));
+  router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested", () => true));
 
   router.use(decisionErrorHandler);
   return router;

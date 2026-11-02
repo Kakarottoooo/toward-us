@@ -1,15 +1,18 @@
 import { randomUUID, createHash } from "node:crypto";
 import { createRelationshipRecord, canViewRecord } from "./relationship-domain.mjs";
 import { validatePushSubscription } from "./push-delivery.mjs";
+import { announceInTogether, memberLanguage } from "./together-domain.mjs";
 
 const LOCK = "reminder-delivery";
 const MAX_ATTEMPTS = 5;
 const LEASE_MS = 120_000;
+const ANNOUNCE_WINDOW_MS = 7 * 86_400_000;
+const JOINT = new Set(["shared", "jointly_confirmed", "revealed"]);
 const active = (record) => record && !record.archivedAt && !record.withdrawnAt && record.status === "active";
 const iso = (value) => new Date(value).toISOString();
 const fail = (message, statusCode = 400, code = "invalid_reminder") => Object.assign(new Error(message), { statusCode, code });
 
-export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "" }) {
+export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {} }) {
   const owned = async (db, collection, userId) => (await db.listRelationshipRecordsForUser(collection, userId)).filter((item) => item.ownerUserId === userId && !item.archivedAt);
   const update = (db, collection, item, patch) => db.updateRelationshipRecordForUser(collection, item.id, item.ownerUserId, (record) => { Object.assign(record, patch); record.version += 1; });
   const privateRecord = (userId, data) => createRelationshipRecord({ userId, relationshipId: null, visibility: "private", aiAccessScope: "none", ...data });
@@ -56,6 +59,47 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     if (!active(device) || device.ownerUserId !== job.ownerUserId) return null;
     try { validatePushSubscription(device.subscription); } catch { return null; }
     return { reminder, device, language: preference.language || "zh" };
+  };
+
+  // The Agent's own voice in the shared "together" conversation, driven by the same run tick. Only genuinely joint things are
+  // announced, and only their shared title: personal reminders (this service's own records, titles included) and private
+  // review answers never leave their owner. Handles make a repeated tick or a retry a no-op.
+  const announceDue = async () => {
+    const current = now();
+    const post = async (relationshipId, userId, build) => {
+      try {
+        const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
+          const context = await tx.getRelationshipContext(userId);
+          if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) return null;
+          return build(tx, await memberLanguage(tx, userId));
+        });
+        if (result && !result.duplicate) onAnnounce(result.conversation, "together.updated");
+      } catch (error) { console.error("together announcement failed", error?.code || "error"); /* One broken record must not stop the other announcements or push delivery. */ }
+    };
+    for (const reminder of (await store.listRecordsForJob("reminders")).filter((item) => active(item) && item.visibility === "shared" && item.relationshipId && item.milestoneId).slice(0, 100)) {
+      const milestone = await store.getRelationshipRecordForUser("milestones", reminder.milestoneId, reminder.ownerUserId);
+      if (!milestone || !canViewRecord(milestone, reminder.ownerUserId) || milestone.withdrawnAt || !JOINT.has(milestone.visibility)) continue;
+      const due = jointReminderDue(milestone, reminder.minutesBefore, current);
+      if (!due) continue;
+      await post(reminder.relationshipId, reminder.ownerUserId, (tx, language) => announceInTogether(tx, {
+        relationshipId: reminder.relationshipId, userId: reminder.ownerUserId, kind: "reminder", handle: `reminder:${reminder.id}:${due.dueAt}`,
+        refs: [{ type: "milestone", id: milestone.id, version: milestone.version }, { type: "reminder", id: reminder.id }],
+        text: say(language, `到点提醒：「${milestone.title}」（${due.occursOn}）。`, `Reminder: "${milestone.title}" (${due.occursOn}).`, `Recordatorio: "${milestone.title}" (${due.occursOn}).`),
+      }));
+    }
+    for (const outcome of (await store.listRecordsForJob("outcomes")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "pending" && !item.announcedAt && !item.archivedAt && !item.withdrawnAt && item.reviewAt && new Date(item.reviewAt) <= current).slice(0, 100)) {
+      const userId = outcome.createdByUserId;
+      await post(outcome.relationshipId, userId, async (tx, language) => {
+        const fresh = await tx.getRelationshipRecordForUser("outcomes", outcome.id, userId);
+        if (!fresh || fresh.status !== "pending" || fresh.announcedAt) return null;
+        const result = await announceInTogether(tx, {
+          relationshipId: outcome.relationshipId, userId, kind: "review", handle: `review:${outcome.id}`, refs: [{ type: "outcome", id: outcome.id, version: fresh.version }],
+          text: say(language, `该复盘了：「${fresh.title}」。请你们各自私下完成复盘；双方都完成后才会形成共同结果。`, `Time to review "${fresh.title}". Each of you reviews it privately; the shared result forms once you have both finished.`, `Es hora de revisar "${fresh.title}". Cada uno lo revisa en privado; el resultado compartido se forma cuando ambos terminen.`),
+        });
+        await tx.updateRelationshipRecordForUser("outcomes", outcome.id, userId, (draft) => { draft.announcedAt = iso(current); draft.version += 1; });
+        return result;
+      });
+    }
   };
 
   return {
@@ -170,6 +214,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       });
     },
     async runDue({ limit = 25 } = {}) {
+      await announceDue();
       if (!enabled || typeof sendPush !== "function") return { configured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0 };
       const batchSize = Math.max(1, Math.min(50, Number.isInteger(limit) ? limit : 25));
       const claims = await store.transaction(LOCK, async (db) => {
@@ -240,6 +285,17 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   }
 }
 
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+// A joint milestone reminder is due `minutesBefore` ahead of the milestone's (yearly: nearest) occurrence; ignore ones that went stale.
+function jointReminderDue(milestone, minutesBefore, current) {
+  const source = new Date(`${milestone.date}T12:00:00.000Z`);
+  if (Number.isNaN(source.getTime())) return null;
+  const years = milestone.recurringRule === "yearly" ? [-1, 0, 1].map((offset) => current.getUTCFullYear() + offset) : [source.getUTCFullYear()];
+  const occurrences = years.map((year) => Date.UTC(year, source.getUTCMonth(), source.getUTCDate(), 12));
+  const offset = (Number.isFinite(minutesBefore) ? minutesBefore : 1440) * 60_000;
+  const due = occurrences.map((at) => ({ at, dueAt: at - offset })).filter((item) => item.dueAt <= current.getTime() && current.getTime() - item.dueAt <= ANNOUNCE_WINDOW_MS).sort((a, b) => b.dueAt - a.dueAt)[0];
+  return due ? { dueAt: iso(due.dueAt), occursOn: iso(due.at).slice(0, 10) } : null;
+}
 function reminderInput(input, current) {
   const timezone = input.timezone || "UTC";
   const dueAt = localDateTimeToInstant(input.localDateTime, timezone);

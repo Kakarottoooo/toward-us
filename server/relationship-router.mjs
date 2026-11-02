@@ -5,6 +5,7 @@ import { createDecisionAgent } from "./decision-agent.mjs";
 import {
   agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
 } from "./agreement-actions.mjs";
+import { announceAgreement } from "./together-domain.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
@@ -161,7 +162,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     await tx.createRelationshipRecord("agreements", record);
     await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.status = "agreement_pending"; draft.version += 1; });
     await audit(tx, record, userId, "agreement.created");
-    return { status: 201, record, event: "agreement.updated", body: { agreement: record } };
+    return { status: 201, record, event: "agreement.updated", body: { agreement: record }, conversation: await announce(tx, record, userId, req) };
   }));
   router.patch("/agreements/:id", decisionTransaction(async (tx, req) => {
     const current = await tx.getRelationshipRecordForUser("agreements", req.params.id, req.auth.user.id);
@@ -172,11 +173,11 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const values = agreementValues(req.body);
     const agreement = await tx.updateRelationshipRecordForUser("agreements", current.id, req.auth.user.id, (draft) => { Object.assign(draft, values); draft.version += 1; draft.status = "awaiting_approvals"; });
     await audit(tx, agreement, req.auth.user.id, "agreement.changed");
-    return { record: agreement, event: "agreement.updated", body: { agreement } };
+    return { record: agreement, event: "agreement.updated", body: { agreement }, conversation: await announce(tx, agreement, req.auth.user.id, req) };
   }));
   router.post("/agreements/:id/approve", decisionTransaction(async (tx, req, context) => {
     const { agreement, approvedCount, requiredCount } = await approveAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, context });
-    return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount } };
+    return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount }, conversation: agreement.status === "active" ? await announce(tx, agreement, req.auth.user.id, req) : null };
   }));
   router.post("/agreements/:id/reject", decisionTransaction(async (tx, req) => {
     const { agreement } = await rejectAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
@@ -184,7 +185,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   }));
   router.post("/agreements/:id/request-change", decisionTransaction(async (tx, req) => {
     const { agreement } = await requestAgreementChange(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
-    return { record: agreement, event: "agreement.change_requested", body: { item: agreement } };
+    return { record: agreement, event: "agreement.change_requested", body: { item: agreement }, conversation: await announce(tx, agreement, req.auth.user.id, req) };
   }));
 
   router.post("/issues/:id/messages", sharedDiscussion);
@@ -221,7 +222,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     }
     const updated = await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussionDraft = { ...draft.discussionDraft, confirmedAt: new Date().toISOString(), confirmedByUserId: userId, agreementId: agreement.id }; draft.status = "agreement_pending"; draft.version += 1; });
     await audit(tx, agreement, userId, "agreement.discussion_draft_confirmed");
-    return { record: updated, event: "issue.updated", body: { issue: updated, agreement } };
+    return { record: updated, event: "issue.updated", body: { issue: updated, agreement }, conversation: await announce(tx, agreement, userId, req, issue.discussionLanguage) };
   }));
 
   router.post("/commitments", decisionTransaction(async (tx, req, context) => {
@@ -367,9 +368,12 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
         return action(tx, req, context);
       });
       if (result.record) emit(result.record, result.event);
+      if (result.conversation) emit(result.conversation, "together.updated");
       res.status(result.status || 200).json(result.body);
     };
   }
+  // The Agent posts the agreement card in the shared "together" conversation, in the acting member's language.
+  async function announce(tx, agreement, userId, req, fallbackLanguage = null) { return (await announceAgreement(tx, { agreement, userId, language: req.body?.language || req.query?.language || fallbackLanguage })).conversation; }
   function decisionState(collection, status, event) {
     return decisionTransaction(async (tx, req) => {
       const record = await tx.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id);

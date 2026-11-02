@@ -42,7 +42,9 @@ const demoCreates = new Map();
 export function createApiApp({ store, mediator, production = false, memoryContext = buildMemoryContext, reminderService }) {
   const app = express();
   const eventClients = new Map();
-  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET });
+  // The scheduler tick announces in the shared conversation; the realtime emitter only exists once the routers are built below.
+  let emitTogether = () => {};
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args) });
 
   const runDue = reminders.runDue.bind(reminders);
   reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); return result; };
@@ -652,6 +654,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
 
   const relationshipRouter = createRelationshipRouter({ store, mediator });
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);
+  emitTogether = emit;
   const closeConnections = (userIds) => {
     for (const clients of eventClients.values()) for (const client of clients) if (userIds.includes(client.userId)) client.res.end();
     relationshipRouter.closeUserConnections?.(userIds);

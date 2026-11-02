@@ -8,6 +8,7 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 const SOURCES = new Set(["app", "imessage", "relay"]);
 const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review"]);
 const AGENT_CALL = /彼此|toward\s*us|@toward|@agent/i;
+const LANGUAGES = new Set(["zh", "en", "es"]);
 const MESSAGE_LIMIT = 200;
 const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotiation_requested"]);
 const togetherId = (relationshipId) => `together:${relationshipId}`;
@@ -66,9 +67,45 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   return { conversation: updated, message, duplicate: false };
 }
 
+/** The agent speaks in the shared conversation on its own only for real business: an agreement card, a due joint reminder,
+ * a due outcome review. Messages are role "agent"; a deterministic `handle` makes every retry or repeated tick a no-op.
+ * `text` must only contain shared content. */
+export async function announceInTogether(tx, { relationshipId, userId, kind, refs = [], text, handle = null, source = "app" }) {
+  if (!["agreement_card", "reminder", "review"].includes(kind)) throw decisionError(400, "message_required");
+  return appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source, kind, text, handle, refs });
+}
+
+/** Language for agent-initiated copy: the triggering member's explicit choice, else their saved reminder-language preference, else zh. */
+export async function memberLanguage(tx, userId, hint = null) {
+  if (LANGUAGES.has(hint)) return hint;
+  const preference = (await tx.listRelationshipRecordsForUser("deliveryPreferences", userId)).find((item) => item.ownerUserId === userId && !item.archivedAt);
+  return LANGUAGES.has(preference?.language) ? preference.language : "zh";
+}
+
+const CARD_COPY = {
+  zh: { title: (t, v) => `约定「${t}」v${v}`, awaiting_approvals: "等你们两人批准同一版本", active: "已生效", draft: "有人要求修改，等待新版本", open: "待定：" },
+  en: { title: (t, v) => `Agreement "${t}" v${v}`, awaiting_approvals: "waiting for both of you to approve this version", active: "now active", draft: "a change was requested; waiting for a new version", open: "Still open: " },
+  es: { title: (t, v) => `Acuerdo "${t}" v${v}`, awaiting_approvals: "esperando que ambos aprueben esta versión", active: "ya está activo", draft: "se pidió un cambio; esperando una nueva versión", open: "Pendiente: " },
+};
+// The status line comes first so the 4000-character message cap can only ever trim trailing terms.
+export function agreementCardText(agreement, language = "zh") {
+  const copy = CARD_COPY[language] || CARD_COPY.zh, status = copy[agreement.status] || copy.awaiting_approvals;
+  const lines = [`${copy.title(agreement.title, agreement.version)}${language === "zh" ? "，" : ", "}${status}`, agreement.summary, ...(agreement.terms || []).map((term, index) => `${index + 1}. ${term}`)];
+  if (agreement.unresolvedPoints?.length) lines.push(`${copy.open}${agreement.unresolvedPoints.join("; ")}`);
+  return lines.filter(Boolean).join("\n");
+}
+
+/** Posts the agreement card for the agreement's current version and status (new, changed, change requested, active). */
+export async function announceAgreement(tx, { agreement, userId, language = null, source = "app" }) {
+  return announceInTogether(tx, {
+    relationshipId: agreement.relationshipId, userId, source, kind: "agreement_card", text: agreementCardText(agreement, await memberLanguage(tx, userId, language)),
+    refs: [{ type: "agreement", id: agreement.id, version: agreement.version }], handle: `agreement:${agreement.id}:v${agreement.version}:${agreement.status}`,
+  });
+}
+
 /** Light agreement path (decision #11): no shareable summaries required, but both principals must still approve the same
  * version. `values` lets a member edit the Agent's draft before sending it for approval. */
-export async function draftAgreementFromTogether(tx, { relationshipId, userId, values = null, source = "app" }) {
+export async function draftAgreementFromTogether(tx, { relationshipId, userId, values = null, source = "app", language = null }) {
   const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
   const agreements = (await tx.listRelationshipRecordsForUser("agreements", userId)).filter((item) => item.relationshipId === relationshipId && !item.archivedAt && !item.withdrawnAt);
   if (agreements.some((item) => item.status === "awaiting_approvals")) throw decisionError(409, "one_pending_agreement");
@@ -87,6 +124,6 @@ export async function draftAgreementFromTogether(tx, { relationshipId, userId, v
   }
   await audit(tx, agreement, userId, "agreement.together_drafted");
   await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.draftAgreement = null; draft.version += 1; });
-  await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source, kind: "agreement_card", text: agreement.title, refs: [{ type: "agreement", id: agreement.id, version: agreement.version }] });
+  await announceAgreement(tx, { agreement, userId, language, source });
   return agreement;
 }
