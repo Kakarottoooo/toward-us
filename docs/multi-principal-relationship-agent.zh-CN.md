@@ -157,11 +157,17 @@ P0 只有站内通知。共同清单更新给另一位成员创建 owner-only no
 
 Companion 是双方共同完成善意行动的轻量表达，不是关系健康分、连续打卡、监控或惩罚系统。一方未登录、发生争执或没有提交内容都不能让 companion 生病、受伤或退化。一个来源事件最多产生一次成长事件，必须有 idempotency key。Companion 不读取私人内容，也不能诱导披露；系统没有 `relationship_score` 字段或 API。
 
-## 11. 前端与可访问性
+## 11. 前端与可访问性（2026-11-02 起：AI native，只做手机）
 
-正式 dashboard 是响应式 Relationship Home：桌面顶部导航，手机底部导航；1280×900 与 393×852 双浏览器场景已通过。调解仍在原连续页面内。新表单有 label、loading/error/empty 状态；按钮和输入沿用全局 visible focus，样式尊重 `prefers-reduced-motion`。中文、English、Español 是完整界面语言；非中文品牌不显示“彼此”。
+设计依据：`docs/superpowers/specs/2026-11-02-ai-native-redesign-design.md`。原则是流程交给模型，保证交给代码。
 
-模块路径为 `src/features/relationship-home`、`milestones`、`lists`、`decisions`、`notifications` 和 `relationship`（API/types）。P0 没有为 agreements/commitments/outcomes 再造空壳页面，而是保持在 Decision Workspace 的同一纵向流程中。
+- App 只有两个对话：“只有我”（私人 Pinky）和“我们俩”（共同 Pinky）。左上角是抽屉，只用来翻看：固定的“约定”“即将到来”，Pinky 为这对情侣建的空间（共同的、只有我的），回忆，以及设置。原来的共同空间首页、顶部导航、私人空间页、通知中心、页面里的第二个输入框和语音助手都已删除。
+- 空间（`server/space-domain.mjs`、`space-router.mjs`，集合 `spaces`/`spaceItems`）：列表、清单、时间线、相册、笔记五种通用展示，由模型选择；页面只看和做小改动（勾选、删除），新增回对话说。
+- 两个 Agent 的通用能力（私人见 `assistant-agent.mjs`，共同见 `mediator.mjs` 的 together 指令与 `together-domain.mjs` 的 `applyTogetherActions`）：建空间/放条目、记共同日期（可带到期提醒）、上网查（Claude CLI WebSearch，查完再答一次）、私下分别问两人、调解（共同反思 + 各自私下反馈）、交接按钮（地图、网页、短信、邮件、电话、日历 .ics）、照片。一轮的动作和回复原子生效，失败就说没办成、不留半成品。
+- 服务端写死的保证：私人空间和私人照片只属于本人；私人内容进入共同空间必须本人确认那一张卡片（私人照片此时复制成共同副本）；共同 Agent 只读共同上下文；调解反馈只进本人的私人对话；交接只允许 https/http/sms/mailto/tel，最后一步永远由本人点。
+- 照片在内测时存在数据文件旁的 `.media` 目录，按人鉴权读取；正式托管需要对象存储（待创始人批准费用）。
+- 语音：OpenAI 实时语音不可用时退回手机自带语音识别（`src/useBrowserSpeech.ts`）；iOS 壳新增语音识别权限说明，需重新编译安装后生效。
+- 中文、English、Español 是完整界面语言；Pinky 是三种语言的产品名。
 
 ## 12. 本地开发与验证
 
