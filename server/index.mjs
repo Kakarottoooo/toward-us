@@ -39,12 +39,13 @@ if (production) {
   app.get("*path", (_req, res) => res.sendFile(indexPath));
 } else {
   const { createServer: createViteServer } = await import("vite");
-  const vite = await createViteServer({ root, appType: "spa", server: { middlewareMode: true } });
+  // DEV_ALLOWED_HOSTS lets a phone reach the dev server through a tunnel such as Tailscale serve (comma-separated hostnames).
+  const vite = await createViteServer({ root, appType: "spa", server: { middlewareMode: true, allowedHosts: (process.env.DEV_ALLOWED_HOSTS || "").split(",").map((host) => host.trim()).filter(Boolean) } });
   app.use(vite.middlewares);
 }
 
 const server = app.listen(port, "0.0.0.0", () => {
-  console.log(`Toward Us is running on http://127.0.0.1:${port}`);
+  console.log(`Pinky is running on http://127.0.0.1:${port}`);
   console.log(`AI mediation: ${mediator.aiReady ? `ready (${mediator.model})` : "local fallback"}`);
   console.log(`Identity and storage: cookie sessions + ${store.kind}`);
   console.log("Audio is processed in memory and is not persisted by this server.");
