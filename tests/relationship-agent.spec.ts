@@ -10,6 +10,7 @@ test("private Agent conversations become joint work only after explicit sharing"
   await postJson(b.request, "/api/partner/accept", { code: invitation.pairing.invitation.code });
 
   const pageA = await a.newPage(); const pageB = await b.newPage(); await pageA.goto("/"); await pageB.goto("/");
+  await pageA.getByRole("button", { name: "全部功能" }).click(); await pageB.getByRole("button", { name: "全部功能" }).click();
   await expect(pageA.getByTestId("dashboard-screen")).toBeVisible(); await expect(pageB.getByTestId("dashboard-screen")).toBeVisible();
   await expect(pageA.getByText("属于两个人，也尊重每个人的内心空间", { exact: true })).toBeVisible();
   await pageA.getByRole("button", { name: "EN", exact: true }).click(); await expect(pageA.getByText("For both of you, with room to think alone", { exact: true })).toBeVisible(); await expect(pageA.getByText("彼此", { exact: true })).toHaveCount(0);

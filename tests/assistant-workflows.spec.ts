@@ -36,6 +36,7 @@ test("private assistant keeps navigation and supports queued speech, interruptio
     return route.fulfill({ json: { session: session() } });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "全部功能" }).click();
   await page.getByTestId("assistant-open").click();
   await page.getByTestId("assistant-microphone").click();
   await expect(page.getByTestId("assistant-microphone")).toContainText("结束语音");
@@ -75,6 +76,7 @@ test("shared home keeps the assistant clear of the hero on desktop and mobile", 
     const invitation = await (await context.request.post("/api/partner/invitations", { data: {} })).json();
     expect((await partner.request.post("/api/partner/accept", { data: { code: invitation.pairing.invitation.code } })).ok()).toBe(true);
     await page.goto("/");
+    await page.getByRole("button", { name: "全部功能" }).click();
     for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
       await expect(page.getByTestId("assistant-open")).toBeVisible();

@@ -20,6 +20,7 @@ test("two people can report a worse attempt, keep one review private and approve
 
   const pageA = await a.newPage(), pageB = await b.newPage();
   await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+  for (const page of [pageA, pageB]) await page.getByRole("button", { name: "全部功能" }).click();
   for (const page of [pageA, pageB]) await page.getByRole("button", { name: "决定", exact: true }).click();
   await pageA.getByRole("button", { name: "批准当前版本", exact: true }).click();
   await expect(pageA.getByRole("button", { name: "我已批准此版本，等待对方" })).toBeDisabled();

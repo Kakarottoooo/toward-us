@@ -4,6 +4,7 @@ test("an unpaired person can think, keep daily memories, schedule a reminder and
   const email = `personal-${Date.now()}@example.invalid`;
   expect((await context.request.post("/api/auth/register", { data: { name: "Solo", email, password: "synthetic-password-2026" } })).status()).toBe(201);
   await page.goto("/");
+  await page.getByRole("button", { name: "全部功能" }).click();
   await expect(page.getByTestId("personal-screen")).toBeVisible();
   const composer = page.locator(".private-agent-composer textarea");
   await composer.fill("我想找一个适合自己的休息安排。");

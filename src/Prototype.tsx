@@ -10,12 +10,13 @@ import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { PrivacySettings } from "./features/privacy/PrivacySettings";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
+import { BackToConversation, ConversationHome } from "./features/conversation/ConversationHome";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./relationship.css";
 
-type Screen = "home" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
+type Screen = "home" | "conversation" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
 type Personality = "friend" | "counselor" | "direct";
 type User = { id: string; email: string; name: string; createdAt: string };
@@ -149,7 +150,7 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
+      if (state.user) setScreen(landing(state.pairing));
     }).catch(() => {});
     api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
   }, []);
@@ -167,11 +168,11 @@ function AccountPrototype() {
   const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {
     const next = new URLSearchParams(location.search).get("next");
     if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
-    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
+    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(landing(state.pairing));
   };
   const refreshPairing = async () => {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
-    setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("dashboard");
+    setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("conversation");
   };
   const logout = async () => { keyboard.hide(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setRoom(null); setScreen("home"); };
   const loadActiveRooms = async () => { const result = await api<{ rooms: RoomSummary[] }>("/api/rooms"); setActiveRooms(result.rooms); };
@@ -188,14 +189,17 @@ function AccountPrototype() {
     setDetail(detailResult.item); setHistory(listResult.items); setScreen("historyDetail");
   };
 
-  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setRoom(null); setScreen(state.user ? state.pairing?.status === "active" ? "dashboard" : "personal" : "home"); };
+  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setRoom(null); setScreen(state.user ? landing(state.pairing) : "home"); };
+  const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
+  const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
+  if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onAllFeatures={() => setScreen(fullScreen)} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
   if (screen === "recovery") return <AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} />;
-  if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onLanguage={selectLanguage} onPair={() => setScreen("pairing")} onShared={() => setScreen("dashboard")} onPrivacy={() => setScreen("privacy")} onLogout={logout} />;
+  if (screen === "personal" && user) return <><PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onLanguage={selectLanguage} onPair={() => setScreen("pairing")} onShared={() => setScreen("dashboard")} onPrivacy={() => setScreen("privacy")} onLogout={logout} /><BackToConversation language={language} onBack={backToConversation} /></>;
   if (screen === "privacy" && user) return <div className="paper-screen relationship-shell"><header className="simple-header privacy-page-header"><button onClick={() => setScreen(pairing?.status === "active" ? "dashboard" : "personal")} aria-label={t.back}><ArrowLeft size={22} /></button><span>{localized(language, "隐私与账号", "Privacy & account", "Privacidad y cuenta")}</span><LanguageSwitch language={language} onLanguage={selectLanguage} compact /></header><main className="relationship-main"><PrivacySettings language={language} onChanged={async () => {}} onLeft={reloadIdentity} onDeleted={reloadIdentity} /></main></div>;
-  if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? pairing?.status === "active" ? "dashboard" : "personal" : "auth")} t={t} />;
+  if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
   if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("personal")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "dashboard" && user && pairing) return <DashboardScreen user={user} pairing={pairing} rooms={activeRooms} onAccessChanged={reloadIdentity} onPersonal={() => setScreen("personal")} onPrivacy={() => setScreen("privacy")} language={language} onLanguage={selectLanguage} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} t={t} />;
+  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "dashboard" && user && pairing) return <><DashboardScreen user={user} pairing={pairing} rooms={activeRooms} onAccessChanged={reloadIdentity} onPersonal={() => setScreen("personal")} onPrivacy={() => setScreen("privacy")} language={language} onLanguage={selectLanguage} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} t={t} /><BackToConversation language={language} onBack={backToConversation} /></>;
   if (screen === "setup") return <SetupScreen language={language} onBack={() => setScreen("dashboard")} onLanguage={selectLanguage} onRoom={(next) => { setRoom(next); setScreen("room"); }} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "history") return <HistoryScreen items={history} language={language} onBack={() => setScreen("dashboard")} onOpen={openHistoryDetail} t={t} />;
   if (screen === "historyDetail" && detail) return <HistoryDetailScreen detail={detail} language={language} onBack={() => setScreen("history")} t={t} />;
@@ -387,4 +391,6 @@ function SplitButton({ label, onClick, disabled, testId }: { label: string; onCl
 function FeedbackBlock({ number, title, body }: { number: string; title: string; body: string }) { return <article className="feedback-block"><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>; }
 function AnalysisSection({ title, index, children }: { title: string; index: string; children: React.ReactNode }) { return <section className="analysis-section"><header><span>{index}</span><h2>{title}</h2></header>{children}</section>; }
 function BulletList({ items, tone }: { items: string[]; tone: "common" | "different" }) { return <ul className={`bullet-list ${tone}`}>{items.map((item) => <li key={item}>{tone === "common" ? <CheckCircle size={18} weight="fill" /> : <WarningCircle size={18} />}<span>{item}</span></li>)}</ul>; }
+// After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
+function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }
