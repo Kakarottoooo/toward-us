@@ -344,3 +344,11 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+/* Account recovery uses the same paper page and margins as sign-in. */
+.recovery-content { padding: 64px 24px calc(var(--mobile-safe-area-height) + 40px); }
+.recovery-content .account-recovery > header { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.recovery-content .account-recovery h2 { margin: 0; font-family: var(--jian-serif); font-size: 26px; font-weight: 500; }
+.recovery-content .account-recovery > p { margin: 0 0 24px; color: var(--jian-muted); font-size: 14px; line-height: 1.6; }
+.recovery-content .account-recovery form { display: grid; gap: 18px; }
+.recovery-content .account-recovery form > button { justify-self: stretch; }

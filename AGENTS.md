@@ -23,7 +23,7 @@ Before making substantial visual changes, use the Product Design plugin's `get-c
 ## Delivery and self-verification
 
 - Treat a reproducible product bug report as authorization to diagnose, fix, regression-test, deploy under existing authority, and verify production unless the user explicitly asks for analysis only.
-- Before handing off a UI change, exercise the affected interaction at representative desktop and mobile widths, including focus, keyboard, hover, disabled, and responsive states that the change can influence.
+- Before handing off a UI change, exercise the affected interaction at representative phone widths (the desktop web version is no longer maintained), including focus, keyboard, hover, disabled, and responsive states that the change can influence.
 - Do not use the user as the first acceptance tester. Run the cheapest reliable automated checks first, then perform a real browser acceptance pass on the deployed route when deployment is in scope.
 
 When implementing from a selected generated mock, treat that image as the source of truth for layout, component anatomy, density, spacing, color, typography, visible content, and hierarchy.
