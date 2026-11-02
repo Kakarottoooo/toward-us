@@ -47,6 +47,8 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   const eventClients = new Map();
   // The scheduler tick announces in the shared conversation; the realtime emitter only exists once the routers are built below.
   let emitTogether = () => {};
+  // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
+  let imessage = null;
   const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args) });
 
   const runDue = reminders.runDue.bind(reminders);
@@ -442,6 +444,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     const finalized = await store.finalizeDemoRoom(code, { relationship, memberships, room: regularRoom, convertedAt: now });
     if (!finalized) return res.status(409).json({ error: "双方账号已发生变化，暂时无法保存这次体验。" });
     updated = finalized.demoRoom;
+    void imessage?.ensureCoupleGroup(req.auth.user.id);
     broadcastDemoRoom(code);
     res.json({ saved: true, room: publicDemoRoom(updated, actor.participant.id, req.auth.user.id), account: await appState(store, req.auth.user), historyCode: regularCode });
   });
@@ -470,6 +473,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     const code = normalizeLongCode(req.body?.code);
     const context = await store.acceptInvitation(code, req.auth.user.id, new Date().toISOString());
     if (!context) return res.status(409).json({ error: "邀请无效、已过期，或当前账号已经绑定伴侣。" });
+    void imessage?.ensureCoupleGroup(req.auth.user.id);
     res.json({ pairing: publicPairing(context, req.auth.user.id) });
   });
 
@@ -663,9 +667,9 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.json({ item: historyDetail(room) });
   });
 
-  app.use(createPhoneRouter({ store }));
+  app.use(createPhoneRouter({ store, onBound: (userId) => void imessage?.ensureCoupleGroup(userId) }));
   app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
-  const relationshipRouter = createRelationshipRouter({ store, mediator });
+  const relationshipRouter = createRelationshipRouter({ store, mediator, onTogether: (conversation) => imessage?.mirror(conversation) });
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);
   emitTogether = emit;
   const closeConnections = (userIds) => {
@@ -675,7 +679,8 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
   const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit });
   app.use("/api", assistantRouter);
-  app.use(createIMessageChannel({ store, assistant: assistantRouter.assistant }).router);
+  imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit });
+  app.use(imessage.router);
   app.use("/api", createPrivacyRouter({ store, production, closeConnections }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));

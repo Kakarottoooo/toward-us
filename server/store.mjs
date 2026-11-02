@@ -110,7 +110,7 @@ export async function createFileStore(filePath) {
       const id = context.relationship.id;
       const members = context.members.map(({ user, ...member }) => member);
       state().formerMemberships[id] = members;
-      state().relationships[id].status = "ended"; state().relationships[id].updatedAt = new Date().toISOString();
+      state().relationships[id].status = "ended"; state().relationships[id].imessageGroupId = null; state().relationships[id].updatedAt = new Date().toISOString();
       for (const invitation of Object.values(state().invitations)) if (invitation.relationshipId === id) invitation.expiresAt = new Date().toISOString();
       for (const member of members) delete state().memberships[member.userId];
       for (const collection of ["privateAgentThreads", "memories", "checkins"]) for (const record of Object.values(state().relationshipGraph[collection])) {
@@ -175,6 +175,12 @@ export async function createFileStore(filePath) {
     },
     async deleteSession(id) { delete state().sessions[id]; await persist(); },
     getRelationshipContext(userId) { return relationshipContext(userId); },
+    // The couple's iMessage group is attached once, only to an active relationship that has none yet; leaving clears it.
+    async bindRelationshipGroup(relationshipId, groupId) {
+      const relationship = state().relationships[relationshipId];
+      if (!relationship || relationship.status !== "active" || relationship.imessageGroupId) return false;
+      relationship.imessageGroupId = groupId; await persist(); return true;
+    },
     async createInvitation({ relationship, membership, invitation }) {
       if (state().memberships[membership.userId]) return null;
       state().relationships[relationship.id] = { ...relationship };

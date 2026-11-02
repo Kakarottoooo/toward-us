@@ -73,7 +73,7 @@ export async function createPostgresStore(databaseUrl) {
         const context = await store.getRelationshipContext(userId); if (!context) return null;
         const id = context.relationship.id;
         await pool.query("insert into relationship_former_members (relationship_id,user_id,role,joined_at) select relationship_id,user_id,role,joined_at from relationship_members where relationship_id=$1 on conflict do nothing", [id]);
-        await pool.query("update relationships set status='ended',updated_at=now() where id=$1", [id]);
+        await pool.query("update relationships set status='ended',imessage_group_id=null,updated_at=now() where id=$1", [id]);
         await pool.query("update invitations set expires_at=now() where relationship_id=$1", [id]);
         await pool.query("delete from relationship_members where relationship_id=$1", [id]);
         for (const collection of ["privateAgentThreads", "memories", "checkins"]) {
@@ -149,6 +149,8 @@ export async function createPostgresStore(databaseUrl) {
     },
     async deleteSession(id) { await pool.query("delete from sessions where id = $1", [id]); },
     async getRelationshipContext(userId) { return loadRelationshipContext(pool, userId); },
+    // The couple's iMessage group is attached once, only to an active relationship that has none yet; leaving clears it.
+    async bindRelationshipGroup(relationshipId, groupId) { return (await pool.query("update relationships set imessage_group_id=$2 where id=$1 and status='active' and imessage_group_id is null", [relationshipId, groupId])).rowCount === 1; },
     async createInvitation({ relationship, membership, invitation }) {
       const client = await pool.connect();
       try {
@@ -328,6 +330,7 @@ async function migrate(pool) {
   await pool.query(`
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
     alter table users add column if not exists language text;
+    alter table relationships add column if not exists imessage_group_id text;
     create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
@@ -382,6 +385,6 @@ function mapGraphRecord(row) {
 const iso = (value) => value ? new Date(value).toISOString() : null;
 const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, language: row.language || null, createdAt: iso(row.created_at) } : null;
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
-const mapRelationship = (row) => row ? { id: row.id, status: row.status, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
+const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
 const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;

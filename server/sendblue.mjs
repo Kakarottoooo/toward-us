@@ -54,9 +54,13 @@ export function createSendblue({ env = process.env, fetchImpl = (...args) => glo
       await call("POST", ENDPOINTS.modifyGroup, { body: { group_id: groupId, modify_type: "add_recipient", number: phone } });
       return true;
     },
-    // Without credentials the answer is unknown, so it is conservatively false.
+    // Without credentials a local run treats every number as iMessage, except those listed in SENDBLUE_DRYRUN_NON_IMESSAGE
+    // (comma-separated), so a mixed couple can be simulated. Nothing is sent either way.
     async isIMessage(phone) {
-      if (!live()) { log.log(`sendblue dry-run: service lookup for ${masked(phone)} answered false`); return false; }
+      if (!live()) {
+        const answer = !String(env.SENDBLUE_DRYRUN_NON_IMESSAGE || "").split(",").map((item) => item.trim()).includes(phone);
+        log.log(`sendblue dry-run: service lookup for ${masked(phone)} answered ${answer}`); return answer;
+      }
       return (await call("GET", ENDPOINTS.evaluateService, { query: { number: phone } }))?.service === "iMessage";
     },
   };

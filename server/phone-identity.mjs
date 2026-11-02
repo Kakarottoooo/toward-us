@@ -75,7 +75,8 @@ function page(req, res, status, language, code, heading, body, form = null) {
   res.status(status).type("html").send(`<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(heading)}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f1e7;color:#1d1b18;font:17px/1.5 system-ui,sans-serif}main{max-width:26rem;padding:2rem 1.5rem}p.brand{letter-spacing:.2em;font-size:.8rem;margin:0 0 1.5rem}h1{font-size:1.5rem;margin:0 0 .75rem}p{margin:0 0 .75rem}button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:.5rem;background:#1d1b18;color:#f6f1e7;margin-top:.5rem}</style></head><body><main><p class="brand">${escapeHtml(TEXT[language].title)}</p><h1>${escapeHtml(heading)}</h1>${[body].flat().map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${form ? `<form method="post" action="${escapeHtml(form.action)}"><button type="submit">${escapeHtml(form.label)}</button></form>` : ""}</main></body></html>`);
 }
 
-export function createPhoneRouter({ store }) {
+// `onBound(userId)` runs after a number is linked (the couple's iMessage group may now be possible).
+export function createPhoneRouter({ store, onBound = () => {} }) {
   const router = express.Router();
 
   // GET only previews: it never consumes the link or touches the account.
@@ -101,6 +102,7 @@ export function createPhoneRouter({ store }) {
     try {
       const phone = await store.consumePhoneLink(sessionId(code), req.auth.user.id, new Date().toISOString());
       if (!phone) return expired();
+      onBound(req.auth.user.id);
       page(req, res, 200, language, "phone_linked", text.ok, text.okBody(maskPhone(phone)));
     } catch (error) {
       if (error?.code === "phone_taken") return page(req, res, 409, language, "phone_taken", text.taken, text.takenBody);
