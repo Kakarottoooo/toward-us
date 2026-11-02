@@ -380,7 +380,6 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
   const fixedSpaces: DrawerItem[] = [
     { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") },
     ...(paired && home?.lists ? [{ key: "lists", icon: <ListChecks size={22} />, label: t("日期与清单", "Dates & lists", "Fechas y listas"), onClick: () => onOpen("/?view=lists") }] : []),
-    ...(paired ? [{ key: "talk", icon: <UsersThree size={22} />, label: t("调解与复盘", "Mediation & reviews", "Mediación y revisiones"), onClick: () => onOpen("/?view=talk") }] : []),
   ];
   const layoutIcon: Record<string, ReactNode> = { checklist: <ListChecks size={22} />, timeline: <ClockCounterClockwise size={22} />, gallery: <Images size={22} />, notes: <NotePencil size={22} />, list: <ListBullets size={22} /> };
   const spaceRow = (space: SpaceSummary): DrawerItem => ({ key: `space-${space.id}`, icon: layoutIcon[space.layout] || layoutIcon.list, label: space.title, onClick: () => onOpen(`/?view=space&space=${encodeURIComponent(space.id)}`) });

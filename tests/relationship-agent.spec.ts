@@ -45,12 +45,13 @@ test("private Agent conversations become joint work only after explicit sharing"
   await plan.getByLabel("复盘时间", { exact: true }).fill(new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 16));
   await expect(plan.getByRole("button", { name: "确认承诺安排", exact: true })).toBeDisabled();
   await plan.getByRole("checkbox").check(); await plan.getByRole("button", { name: "确认承诺安排", exact: true }).click();
-  expect((await getJson(a.request, "/api/relationship/home")).graph.commitments[0].status).toBe("awaiting_confirmations");
+  await expect.poll(async () => (await getJson(a.request, "/api/relationship/home")).graph.commitments[0]?.status).toBe("awaiting_confirmations");
   await pageB.getByRole("button", { name: "我确认自己的责任和日期", exact: true }).click();
   await pageA.getByRole("button", { name: "确认我的部分完成", exact: true }).click();
-  expect((await getJson(a.request, "/api/relationship/home")).graph.commitments[0].status).toBe("active");
+  await expect.poll(async () => (await getJson(a.request, "/api/relationship/home")).graph.commitments[0]?.status).toBe("active");
   await pageB.getByRole("button", { name: "确认我的部分完成", exact: true }).click();
-  const graphA = await getJson(a.request, "/api/relationship/home"); expect(graphA.graph.commitments[0].status).toBe("completed"); expect(graphA.graph.outcomes).toHaveLength(1); expect(graphA.graph.summaries.some((item: { text?: string }) => item.text === "我希望两边家庭轮流安排，也需要减少路途疲劳。")).toBe(true);
+  await expect.poll(async () => (await getJson(a.request, "/api/relationship/home")).graph.commitments[0]?.status).toBe("completed");
+  const graphA = await getJson(a.request, "/api/relationship/home"); expect(graphA.graph.outcomes).toHaveLength(1); expect(graphA.graph.summaries.some((item: { text?: string }) => item.text === "我希望两边家庭轮流安排，也需要减少路途疲劳。")).toBe(true);
   await a.close(); await b.close();
 });
 

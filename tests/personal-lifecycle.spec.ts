@@ -1,22 +1,21 @@
 import { expect, test } from "@playwright/test";
 
-test("an unpaired person keeps daily memories, schedules a reminder and reaches settings from the drawer", async ({ page, context }, testInfo) => {
+test("an unpaired person sees their memories, schedules a reminder and reaches settings from the drawer", async ({ page, context }, testInfo) => {
   const email = `personal-${Date.now()}@example.invalid`;
   expect((await context.request.post("/api/auth/register", { data: { name: "Solo", email, password: "synthetic-password-2026" } })).status()).toBe(201);
+  // New entries come from the conversation; the Moments page shows them and offers a way back to Pinky.
+  expect((await context.request.post("/api/checkins", { data: { text: "今天走了一小段路，舒服些了。", kind: "checkin", mood: null, language: "zh" } })).ok()).toBe(true);
+  expect((await context.request.post("/api/memories", { data: { text: "先休息十分钟，再开始谈事情。", allowPrivateAI: false, source: { type: "member" }, language: "zh" } })).ok()).toBe(true);
   await page.goto("/");
   await page.getByTestId("open-drawer").click();
   await expect(page.getByTestId("drawer-invite")).toBeVisible();
   await page.getByTestId("drawer-moments").click();
   await expect(page.getByTestId("personal-screen")).toBeVisible();
-  await page.getByLabel("用自己的话说一句", { exact: true }).fill("今天走了一小段路，舒服些了。");
-  await page.getByRole("button", { name: "只为自己保存", exact: true }).click();
+  await expect(page.locator(".memory-composer")).toHaveCount(0);
   await expect(page.locator(".checkin-workspace .memory-text")).toContainText("舒服些了");
-  await page.getByLabel("有什么值得下次记得？", { exact: true }).fill("先休息十分钟，再开始谈事情。");
-  const memories = page.locator('.memory-workspace[aria-labelledby="memory-title"]');
-  await expect(memories.getByRole("checkbox").first()).not.toBeChecked();
-  await memories.getByRole("button", { name: "存为私人记忆", exact: true }).click();
-  await expect(memories.locator(".memory-text")).toContainText("先休息十分钟");
-  await page.getByTestId("back-to-conversation").click();
+  await expect(page.locator('.memory-workspace[aria-labelledby="memory-title"] .memory-text')).toContainText("先休息十分钟");
+  await page.getByRole("button", { name: "跟 Pinky 说", exact: true }).click();
+  await expect(page.getByTestId("conversation-input")).toHaveValue("帮我记下：");
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-upcoming").click();
   await page.getByLabel("提醒自己什么", { exact: true }).fill("给自己一分钟");
   await page.getByLabel("当地日期与时间", { exact: true }).fill(`${new Date(Date.now() + 86400000).toISOString().slice(0, 10)}T19:00`);

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { ChatCircleDots } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
+import "../spaces/spaces.css";
 import { PrivateAgentWorkspace } from "./PrivateAgentWorkspace";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { CheckinPanel } from "../checkins/CheckinPanel";
@@ -12,7 +14,7 @@ import "./personal.css";
 type View = "memories" | "reminders" | "plans";
 
 /** The private pages the drawer opens before a partner joins. New things are asked for in the conversation. */
-export function PersonalHome({ user, relationshipId, language, onShared, onBack }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; onShared: () => void; onBack: () => void }) {
+export function PersonalHome({ user, relationshipId, language, onShared, onBack, onAsk }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; onShared: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const [view] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return requested === "reminders" ? "reminders" : requested === "plans" ? "plans" : "memories"; });
   const [selectedPlan] = useState(() => new URLSearchParams(location.search).get("thread") || "");
   const [threads, setThreads] = useState<GraphRecord[]>([]); const [error, setError] = useState("");
@@ -24,7 +26,7 @@ export function PersonalHome({ user, relationshipId, language, onShared, onBack 
     <main className="relationship-main">
       {error && <p role="alert">{error}</p>}
       {view === "plans" && <PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...threads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
-      {view === "memories" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={relationshipId} /><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} /></div>}
+      {view === "memories" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={relationshipId} compose={false} /><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /><button className="space-ask" onClick={() => onAsk(localized(language, "帮我记下：", "Remember this for me: ", "Recuerda esto: "), "me")}><ChatCircleDots size={20} weight="fill" />{localized(language, "跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button></div>}
       {view === "reminders" && <RemindersPanel language={language} />}
     </main>
   </div>;

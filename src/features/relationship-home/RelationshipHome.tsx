@@ -1,4 +1,5 @@
-import { CalendarBlank, ClockCounterClockwise, ListChecks, PaperPlaneRight, Sparkle, UsersThree } from "@phosphor-icons/react";
+import { CalendarBlank, ChatCircleDots, ClockCounterClockwise, ListChecks, PaperPlaneRight, Sparkle, UsersThree } from "@phosphor-icons/react";
+import "../spaces/spaces.css";
 import { useCallback, useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { DecisionWorkspace } from "../decisions/DecisionWorkspace";
@@ -21,7 +22,7 @@ const ALIASES: Record<string, View> = { checkins: "moments", memories: "moments"
 type RoomSummary = { code: string; title: string; updatedAt: string; joined: boolean };
 
 /** The shared pages the drawer opens. Each shows what Pinky has done; new things are asked for in the conversation. */
-export function RelationshipHome({ user, language, rooms, notice, busy, onSetup, onJoin, onHistory, onNotice, onAccessChanged, onBack }: { user: { id: string; name: string }; language: Language; rooms: RoomSummary[]; notice: string; busy: boolean; onSetup: () => void; onJoin: (code: string, join: boolean) => void; onHistory: () => void; onNotice: (value: string) => void; onAccessChanged: () => void; onBack: () => void }) {
+export function RelationshipHome({ user, language, rooms, notice, busy, onSetup, onJoin, onHistory, onNotice, onAccessChanged, onBack, onAsk }: { user: { id: string; name: string }; language: Language; rooms: RoomSummary[]; notice: string; busy: boolean; onSetup: () => void; onJoin: (code: string, join: boolean) => void; onHistory: () => void; onNotice: (value: string) => void; onAccessChanged: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const [view, setView] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return VIEWS.includes(requested as View) ? requested as View : ALIASES[requested] || "agreements"; }); const [parent, setParent] = useState<View | null>(null); const [payload, setPayload] = useState<RelationshipHomePayload | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [code, setCode] = useState("");
   const [selection, setSelection] = useState(() => ({ issueId: new URLSearchParams(location.search).get("issue") || undefined, outcomeId: new URLSearchParams(location.search).get("outcome") || undefined }));
   const [reminderTarget, setReminderTarget] = useState<ReminderTarget | undefined>();
@@ -55,7 +56,7 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
       {view === "decide" && <div className="lifecycle-tools"><button onClick={() => selectReminder(selection.outcomeId ? { kind: "outcome", id: selection.outcomeId } : selection.issueId ? { kind: "issue", id: selection.issueId } : { kind: "reminders" })}>{localized(language, "设置我的跟进提醒", "Set my follow-up reminder", "Configurar mi recordatorio de seguimiento")}</button></div>}
       {view === "plans" && <div className="feature-stack"><PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...payload.graph.privateAgentThreads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onShared={(id) => { history.replaceState(null, "", `/?view=plans&milestone=${encodeURIComponent(id)}`); }} initialPrompt={null} onChanged={refresh} /></div>}
       {view === "lists" && <div className="feature-stack"><MilestonesPanel language={language} milestones={payload.graph.milestones} reminders={payload.graph.reminders} onRemind={(id, title) => selectReminder({ kind: "milestone", id }, title)} onChanged={refresh} /><ListsPanel language={language} lists={payload.graph.lists} items={payload.graph.listItems} onChanged={refresh} /></div>}
-      {view === "moments" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={payload.relationship.id} onChanged={refresh} /><MemoryWorkspace language={language} userId={user.id} relationshipId={payload.relationship.id} onChanged={refresh} /></div>}
+      {view === "moments" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={payload.relationship.id} onChanged={refresh} compose={false} /><MemoryWorkspace language={language} userId={user.id} relationshipId={payload.relationship.id} onChanged={refresh} compose={false} /><button className="space-ask" onClick={() => onAsk(localized(language, "帮我记下：", "Remember this for me: ", "Recuerda esto: "), "me")}><ChatCircleDots size={20} weight="fill" />{localized(language, "跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button></div>}
       {view === "reminders" && <RemindersPanel key={`${reminderTarget?.kind}:${reminderTarget?.id}`} language={language} initialTarget={reminderTarget} initialTitle={reminderTitle} onChanged={refresh} />}
     </main>
   </div>;

@@ -77,7 +77,7 @@ test("every drawer page fits a phone and leads back to the conversation", async 
     const invitation = await (await context.request.post("/api/partner/invitations", { data: {} })).json();
     expect((await partner.request.post("/api/partner/accept", { data: { code: invitation.pairing.invitation.code } })).ok()).toBe(true);
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const key of ["agreements", "upcoming", "moments", "talk", "settings"]) {
+    for (const key of ["agreements", "upcoming", "moments", "settings"]) {
       await page.goto("/");
       await page.getByTestId("open-drawer").click();
       await page.getByTestId(`drawer-${key}`).click();
