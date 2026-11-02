@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from "openai";
 import { createClaudeCliClient } from "./claude-cli-client.mjs";
+import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
 import { assistantInstructions, assistantTurnSchema } from "./assistant-agent.mjs";
 
@@ -58,14 +59,15 @@ const analysisSchema = {
 export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4" } = {}) {
   // AI_PROVIDER=claude-cli sends text calls through the founder’s local Claude subscription (dogfooding only); audio stays on OpenAI.
   const openai = apiKey ? new OpenAI({ apiKey }) : null;
-  const cli = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : null;
+  // AI_PROVIDER=anthropic (or an ANTHROPIC_API_KEY) uses Claude through the API, for hosted use; both share one surface.
+  const cli = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : process.env.AI_PROVIDER === "anthropic" || (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "openai") ? createAnthropicClient() : null;
   const client = cli || openai;
 
   return {
     aiReady: Boolean(client),
     model: cli ? cli.model : model,
     webSearch: Boolean(cli),
-    // Real-world lookups (places, events, opening hours, prices). Only the Claude CLI provider supports them for now.
+    // Real-world lookups (places, events, opening hours, prices), through Claude (CLI or API).
     async lookup(query, language = "zh") {
       if (!cli) throw Object.assign(new Error("Web search is not available."), { statusCode: 503 });
       return cli.lookup(query, language);
