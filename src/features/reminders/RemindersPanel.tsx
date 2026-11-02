@@ -18,7 +18,8 @@ async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> 
   return result;
 }
 
-export function RemindersPanel({ language, initialTarget, initialTitle = "", onChanged }: { language: Language; initialTarget?: ReminderTarget; initialTitle?: string; onChanged?: () => Promise<void> }) {
+// compose=false shows reminders without the new-reminder form (drawer pages); editing an existing one still opens it.
+export function RemindersPanel({ language, initialTarget, initialTitle = "", onChanged, compose = true }: { language: Language; initialTarget?: ReminderTarget; initialTitle?: string; onChanged?: () => Promise<void>; compose?: boolean }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [title, setTitle] = useState(initialTitle);
@@ -111,7 +112,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
       {settings && settings.devices.length > 0 && <details><summary>{text("管理已连接浏览器", "Manage connected browsers", "Gestionar navegadores conectados")}</summary>{settings.devices.map((device, index) => <div className="reminders-device" key={device.id}><span>{text("浏览器", "Browser", "Navegador")} {index + 1} · {new Date(device.createdAt).toLocaleDateString(languageTag(language))}</span><button type="button" disabled={busy} onClick={() => void perform(async () => { await api(`/push-subscriptions/${device.id}`, "DELETE"); if (localStorage.getItem("toward-us-push-device") === device.id) { const registration = await navigator.serviceWorker?.getRegistration("/"); await (await registration?.pushManager.getSubscription())?.unsubscribe(); localStorage.removeItem("toward-us-push-device"); } })}>{text("断开", "Disconnect", "Desconectar")}</button></div>)}</details>}
     </div>
     {notice && <p role="status" className="relationship-notice">{notice}</p>}
-    <form className="relationship-form reminders-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+    {(compose || editing) && <form className="relationship-form reminders-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <label><span>{text("提醒自己什么", "What to remind yourself about", "Qué quieres recordar")}</span><KeyboardInput value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} required /></label>
       <label><span>{text("当地日期与时间", "Local date and time", "Fecha y hora locales")}</span><KeyboardInput type="datetime-local" value={localDateTime} onChange={(event) => setLocalDateTime(event.target.value)} required /></label>
       <label><span>{text("时区", "Time zone", "Zona horaria")}</span><KeyboardInput value={timezone} onChange={(event) => setTimezone(event.target.value)} maxLength={80} required /></label>
@@ -119,7 +120,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
       {!initialTarget && !editing && <label><span>{text("打开后前往", "Open to", "Abrir en")}</span><select value={targetKind} onChange={(event) => setTargetKind(event.target.value as ReminderTarget["kind"])}><option value="reminders">{text("这条提醒", "This reminder", "Este recordatorio")}</option><option value="plans">{text("共同计划", "Shared plans", "Planes compartidos")}</option><option value="checkins">{text("关心与好时刻", "Care and good moments", "Cariño y buenos momentos")}</option></select></label>}
       <div className="row-actions"><button type="submit" disabled={busy || !title.trim() || !localDateTime}><Plus size={16} />{editing ? text("保存时间修改", "Save changes", "Guardar cambios") : text("保存私人提醒", "Save private reminder", "Guardar recordatorio privado")}</button>{editing && <button type="button" disabled={busy} onClick={() => { setEditing(null); setTitle(""); setLocalDateTime(""); }}>{text("取消修改", "Cancel edit", "Cancelar edición")}</button>}</div>
       <small className="reminders-time-note">{text("每周提醒保留所选当地时间。夏令时跳过的时间会顺延，重复的时间取第一次。", "Weekly reminders keep the chosen local time. Clock-change gaps move forward; repeated times use the first occurrence.", "Los recordatorios semanales mantienen la hora local. Los huecos del cambio horario se adelantan; las horas repetidas usan la primera aparición.")}</small>
-    </form>
+    </form>}
     <div className="relationship-rows reminders-list">{reminders.length ? reminders.map((reminder) => <article key={reminder.id} id={`reminder-${reminder.id}`}>
       <div><strong>{reminder.title || text("计划提醒", "Plan reminder", "Recordatorio de plan")}</strong><span>{reminder.dueAt ? new Date(reminder.dueAt).toLocaleString(languageTag(language), { timeZone: safeTimeZone(reminder.timezone || timezone) }) : text("尚未选择时间", "Time not chosen", "Hora sin elegir")} · {reminder.timezone || timezone} · {reminder.occurrenceOriginalDueAt ? text("仅下次改期，之后恢复原每周安排", "Next occurrence moved; original weekly schedule resumes", "Solo cambia la próxima vez; después vuelve el horario semanal original") : reminder.frequency === "weekly" ? text("每周", "Weekly", "Semanal") : text("一次", "Once", "Una vez")}{reminder.occurrenceOriginalDueAt && ` · ${reminder.localTime}`}</span></div>
       <p>{reminder.status === "paused" ? text("已暂停", "Paused", "En pausa") : reminder.status === "cancelled" ? text("来源不可用，已取消", "Cancelled: source unavailable", "Cancelado: origen no disponible") : reminder.deliveries[0] ? statusText(reminder.deliveries[0].status) : text("已保存，待发送", "Saved, waiting to send", "Guardado, pendiente de envío")}</p>

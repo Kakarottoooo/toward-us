@@ -16,10 +16,9 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   await expect(page.locator('.memory-workspace[aria-labelledby="memory-title"] .memory-text')).toContainText("先休息十分钟");
   await page.getByRole("button", { name: "跟 Pinky 说", exact: true }).click();
   await expect(page.getByTestId("conversation-input")).toHaveValue("帮我记下：");
+  expect((await context.request.post("/api/reminders", { data: { title: "给自己一分钟", localDateTime: `${new Date(Date.now() + 86400000).toISOString().slice(0, 10)}T19:00`, timezone: "UTC", frequency: "once", target: { kind: "reminders" } } })).ok()).toBe(true);
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-upcoming").click();
-  await page.getByLabel("提醒自己什么", { exact: true }).fill("给自己一分钟");
-  await page.getByLabel("当地日期与时间", { exact: true }).fill(`${new Date(Date.now() + 86400000).toISOString().slice(0, 10)}T19:00`);
-  await page.getByRole("button", { name: "保存私人提醒", exact: true }).click();
+  await expect(page.locator(".reminders-form")).toHaveCount(0);
   await expect(page.getByText("给自己一分钟", { exact: true })).toBeVisible();
   await page.getByTestId("back-to-conversation").click();
   await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();

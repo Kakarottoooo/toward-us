@@ -27,7 +27,7 @@ export function PersonalHome({ user, relationshipId, language, onShared, onBack,
       {error && <p role="alert">{error}</p>}
       {view === "plans" && <PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...threads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
       {view === "memories" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={relationshipId} compose={false} /><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /><button className="space-ask" onClick={() => onAsk(localized(language, "帮我记下：", "Remember this for me: ", "Recuerda esto: "), "me")}><ChatCircleDots size={20} weight="fill" />{localized(language, "跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button></div>}
-      {view === "reminders" && <RemindersPanel language={language} />}
+      {view === "reminders" && <RemindersPanel language={language} compose={false} />}
     </main>
   </div>;
 }
