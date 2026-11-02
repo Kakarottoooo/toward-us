@@ -1,14 +1,14 @@
-# Toward Us 手机 App 外壳（Capacitor 8）
+# Pinky 手机 App 外壳（Capacitor 8）
 
 这是一个很薄的原生外壳：App 打开后直接加载网站（`server.url`），界面、登录、语音都是现有网页，没有重写。这样现有的 `HttpOnly` Cookie 登录不用改；网站更新后 App 里立即生效，不需要重新装包。公开上架前再评估要不要把前端打进安装包。
 
-- App ID：`us.toward.app`，名字：`Toward Us`。Bundle ID 正式占用前要在开发者账号里确认可用。
+- App ID：`us.toward.app`，名字：`Pinky`。Bundle ID 正式占用前要在开发者账号里确认可用。
 - 权限：麦克风和通知（`@capacitor/push-notifications`，经 Firebase Cloud Messaging）。通知权限只在登录后、或在「我的提醒」点「开启此手机通知」时问，而且只有服务器配了 `FCM_SERVICE_ACCOUNT_JSON` 才会问。安卓打包前把 Firebase 的 `google-services.json` 放进 `android/app/`（不进仓库；没有它也能编译，只是推送不可用）。iPhone 还缺 Firebase Messaging SDK（AppDelegate 里把 APNs token 换成 FCM token），要等 Apple 团队和 Mac。
   - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
   - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
 - 加载哪个网址在**打包时**决定：环境变量 `TOWARD_US_APP_URL`，不设时默认 `https://toward-us-private-beta.onrender.com`（取自 `render.yaml` 的服务名，**实际域名还要确认**；不对就改 `scripts/config.mjs` 里的 `DEFAULT_URL`）。换网址就要重新打包、重新安装。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
-- 图标和启动图还是 Capacitor 默认的，等定稿图标再换。
+- iOS 图标已换成 Pinky；安卓图标和两边的启动图还是 Capacitor 默认的。
 
 ## 安卓：编出 APK
 
@@ -102,3 +102,23 @@ npm run ios         # 打开 Xcode，选自己的 Signing Team 后真机运行 /
 ```
 
 需要 Xcode 26+。iPhone 上的局域网 `http://` 试用没有配置（iOS 默认拦截明文网页），iPhone 请直接用 HTTPS 地址。安全区（刘海、底部横条）的显示要在真机上确认。
+
+### 公司账号开通前：用免费 Apple ID 装到自己的 iPhone（内测）
+
+App 加载的是 Windows 电脑上经 Tailscale 发布的 HTTPS 地址，所以 iPhone 要开着 Tailscale，Windows 电脑上的服务器也要开着。
+
+```sh
+git clone https://github.com/Kakarottoooo/toward-us.git && cd toward-us
+git checkout claude/relaunch-impl-20261101
+cd mobile
+npm ci --ignore-scripts
+TOWARD_US_APP_URL=https://node.tail3f720f.ts.net npm run ios   # 生成配置、同步、打开 Xcode
+```
+
+在 Xcode 里：
+1. 左侧选 `App` 工程 → `Signing & Capabilities` → Team 选自己的 Apple ID（Personal Team；没有就在 Xcode → Settings → Accounts 里登录）。
+2. 如果提示 Bundle ID `us.toward.app` 不可用，改成只属于自己的，例如 `us.toward.app.<名字>`（只影响这台手机的内测包，不提交）。
+3. iPhone 用数据线连 Mac，在 Xcode 顶部选这台 iPhone，点运行。
+4. iPhone 第一次要：设置 → 隐私与安全性 → 开发者模式 打开（会重启）；设置 → 通用 → VPN 与设备管理 → 信任自己的开发者证书。
+
+免费签名的包 7 天后失效，到期重新点一次运行即可；不能收原生推送。图标已是 Pinky（`AppIcon-512@2x.png`，1024×1024）。
