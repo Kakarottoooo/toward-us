@@ -15,7 +15,7 @@ export function createMemoryRouter({ store, emit = () => {} }) {
       const record = createRelationshipRecord({ relationshipId: context?.relationship.id || null, userId, visibility: "private", aiAccessScope: req.body?.allowPrivateAI === true ? "private" : "none", text, kind: "memory", provenance, expiresAt: expiry(req.body?.expiresAt), approvals: [] });
       await tx.createRelationshipRecord("memories", record); await audit(tx, record, userId, "memory.created"); return record;
     });
-    emit(memory, "memory.updated", userId); await recordUsage(store, { userId, relationshipId: memory.relationshipId, action: "memory_saved" }); res.status(201).json({ memory });
+    emit(memory, "memory.updated", userId); void recordUsage(store, { userId, relationshipId: memory.relationshipId, action: "memory_saved" }); res.status(201).json({ memory });
   });
 
   router.patch("/memories/:id", async (req, res) => {
@@ -70,7 +70,7 @@ export function createMemoryRouter({ store, emit = () => {} }) {
       const record = createRelationshipRecord({ relationshipId: context?.relationship.id || null, userId, visibility: "private", aiAccessScope: "none", kind, text, mood, provenance: { source: "member", createdByUserId: userId, createdAt: new Date().toISOString() } });
       await tx.createRelationshipRecord("checkins", record); await audit(tx, record, userId, "checkin.created"); return record;
     });
-    emit(checkin, "checkin.updated", userId); await recordUsage(store, { userId, relationshipId: checkin.relationshipId, action: "checkin_saved" }); res.status(201).json({ checkin });
+    emit(checkin, "checkin.updated", userId); void recordUsage(store, { userId, relationshipId: checkin.relationshipId, action: "checkin_saved" }); res.status(201).json({ checkin });
   });
 
   for (const collection of ["memories", "checkins"]) {

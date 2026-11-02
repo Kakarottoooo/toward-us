@@ -489,7 +489,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
       createdAt: now, updatedAt: now,
     };
     await store.createRoom(room);
-    await recordUsage(store, { userId: req.auth.user.id, relationshipId: pairing.relationship.id, action: "mediation_started" });
+    void recordUsage(store, { userId: req.auth.user.id, relationshipId: pairing.relationship.id, action: "mediation_started" });
     res.status(201).json({ room: publicRoom(room, req.auth.user.id) });
   });
 

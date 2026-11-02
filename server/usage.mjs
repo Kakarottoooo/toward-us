@@ -11,8 +11,9 @@ const CHANNELS = new Set(["app", "imessage", "web"]);
 const ACTION = /^[a-z][a-z0-9_]{2,47}$/;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Call after the surrounding store.transaction has finished: a failed insert must never poison the caller's transaction, throw into
-// the request, or hold back the response. relationshipId undefined means "look it up"; null means explicitly unpaired.
+// Call as `void recordUsage(...)` after the surrounding store.transaction has finished: it never rejects, so it cannot become an
+// unhandled rejection, and callers do not wait for it. A failed insert must never poison the caller's transaction or the request.
+// The file store serializes the write through its transaction queue, so concurrent un-awaited writes cannot lose each other. relationshipId undefined means "look it up"; null means explicitly unpaired.
 export async function recordUsage(store, { userId, relationshipId, action, channel = "app" }) {
   try {
     if (!userId || !ACTION.test(action || "")) return null;

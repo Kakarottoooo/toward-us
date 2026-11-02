@@ -35,7 +35,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
     const thread = createRelationshipRecord({ relationshipId, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", status: "exploring", intentType: req.body?.intentType === "plan" ? "plan" : "decision", issueId, language: ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh", messages: [], draft: {}, readyToShare: false, source: "member" });
     await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await tx.createRelationshipRecord("privateAgentThreads", thread); await audit(tx, thread, req.auth.user.id, "private_agent_thread.created"); });
     emit(thread, "private_agent_thread.updated", req.auth.user.id);
-    await recordUsage(store, { userId: req.auth.user.id, relationshipId: thread.relationshipId, action: "private_thread_started" });
+    void recordUsage(store, { userId: req.auth.user.id, relationshipId: thread.relationshipId, action: "private_thread_started" });
     res.status(201).json({ thread });
   });
   router.get("/private-agent/threads/:id", async (req, res) => {

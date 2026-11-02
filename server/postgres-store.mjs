@@ -285,7 +285,8 @@ export async function createPostgresStore(databaseUrl) {
       return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);
     },
     async relationshipSnapshotForUser(userId) {
-      const entries = await mapCollections(async (collection) => [collection, await store.listRelationshipRecordsForUser(collection, userId)]);
+      // Usage events are write-only metering rows; keeping them out of every snapshot stops hot paths from loading them.
+      const entries = (await mapCollections(async (collection) => collection === "productEvents" ? null : [collection, await store.listRelationshipRecordsForUser(collection, userId)])).filter(Boolean);
       return Object.fromEntries(entries);
     },
   };
