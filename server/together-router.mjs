@@ -4,7 +4,7 @@ import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
-import { celebrationOn, composeStory } from "./story.mjs";
+import { celebrationOn, composeStory, lastWeek } from "./story.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, recallOnThisDay } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
@@ -38,6 +38,9 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
       const since = (await store.listRelationshipRecordsForUser("milestones", userId)).find((item) => item.relationshipId === relationshipId && item.type === "relationship_started" && !item.archivedAt)?.date;
       const occasion = celebrationOn(since, today), lang = language(req);
       if (occasion) void composeStory({ store, mediator, relationshipId, userId, language: lang, key: occasion.key, occasion: occasion.kind === "anniversary" ? (lang === "en" ? `${occasion.years}-year anniversary` : lang === "es" ? `${occasion.years}.º aniversario` : `${occasion.years} 周年`) : (lang === "en" ? `day ${occasion.day} together` : lang === "es" ? `el día ${occasion.day} juntos` : `在一起第 ${occasion.day} 天`), emit: (conversation) => emit(conversation, "together.updated", null, userId) });
+      // Once a week: the first one to open Us after a week ends starts that week's recap, if the two of them did anything in it.
+      const week = !occasion && lastWeek(today);
+      if (week) void composeStory({ store, mediator, relationshipId, userId, language: lang, key: week.key, week, occasion: lang === "en" ? `their week of ${week.from} to ${week.to}` : lang === "es" ? `su semana del ${week.from} al ${week.to}` : `${week.from} 到 ${week.to} 这一周`, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
     }
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);
