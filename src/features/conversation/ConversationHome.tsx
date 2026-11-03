@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { Lightbulb, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -66,6 +66,10 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
+  // Suggestions are a fresh-start aid, not fixed chrome: they show at the end of a channel that is empty or has been quiet
+  // for a while, or when asked for with the bulb, and fold away once the person starts typing or sends.
+  const [summoned, setSummoned] = useState<Channel | null>(null);
+  const [dismissedAt, setDismissedAt] = useState<Record<Channel, number>>({ me: 0, us: 0 });
   const sessionRef = useRef<Session | null>(null);
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
@@ -380,12 +384,20 @@ ${text}` : text, target);
   const importAt = new Map(privateMessages.flatMap((message, index) => (message.cards || []).filter((card) => card.kind === "chat_import").map((card) => [card.id, index] as const)));
   const sharedMessages = together?.conversation.messages || [];
   const lastSeen = channel === "me" ? privateMessages.at(-1)?.id || "" : sharedMessages.at(-1)?.id || "";
+  const lastAt = Date.parse((channel === "me" ? privateMessages.at(-1)?.createdAt : sharedMessages.at(-1)?.createdAt) || "") || 0;
+  const QUIET = 4 * 3_600_000;
+  const wantIdeas = summoned === channel || (Date.now() - lastAt >= QUIET && Date.now() - dismissedAt[channel] >= QUIET);
+  const showIdeas = wantIdeas && !draft.trim() && !voice.listening && !!ideas[channel].length && !readOnly && !(channel === "us" && !paired);
+  const dismissIdeas = () => { setSummoned(null); setDismissedAt((current) => ({ ...current, [channel]: Date.now() })); };
+  useEffect(() => { if (draft.trim() && wantIdeas) dismissIdeas(); }, [Boolean(draft.trim())]);
+  useEffect(() => { if (showIdeas) endRef.current?.scrollIntoView({ block: "end" }); }, [showIdeas, ideas[channel].length]);
+  // Fresh ideas only when they would be shown, so a busy conversation does not ask the model after every message.
   useEffect(() => {
-    if (channel === "us" && !paired) return;
+    if ((channel === "us" && !paired) || !wantIdeas) return;
     let alive = true;
     relationshipApi<{ suggestions: string[] }>(`/api/suggestions?channel=${channel}&language=${language}`).then((result) => { if (alive) setIdeas((current) => ({ ...current, [channel]: result.suggestions })); }).catch(() => {});
     return () => { alive = false; };
-  }, [channel, language, lastSeen, paired]);
+  }, [channel, language, lastSeen, paired, wantIdeas]);
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
   return <div className="paper-screen conversation-home" data-testid="conversation-screen">
     <header className="conversation-header">
@@ -408,11 +420,11 @@ ${text}` : text, target);
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {pending.me > 0 && channel === "me" && <p className="conversation-status" role="status">{t("正在想…", "Thinking…", "Pensando…")}</p>}
       {agentWorking > 0 && channel === "us" && <p className="conversation-status" role="status">{t("Pinky 正在想…", "Pinky is thinking…", "Pinky está pensando…")}</p>}
+      {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
     </main></MobileScroll></div>
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {!call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
-      {!draft.trim() && !voice.listening && !!ideas[channel].length && suggest(ideas[channel], channel)}
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
       {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {voice.listening && channel === "me" && <p className="conversation-listening">{t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}
@@ -426,6 +438,7 @@ ${text}` : text, target);
         <div className="conversation-input">
           {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Pinky 来帮忙", "Ask Pinky to help", "Pedir ayuda a Pinky")}><At size={20} weight="bold" /></button>}
           <button type="button" className="conversation-photo" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} disabled={attachments.length >= 6} aria-label={t("发照片", "Send a photo", "Enviar una foto")} data-testid="conversation-photo"><ImageSquare size={22} /></button>
+          {!draft.trim() && <button type="button" className={`conversation-ideas ${showIdeas ? "active" : ""}`} aria-pressed={showIdeas} onClick={() => showIdeas ? dismissIdeas() : setSummoned(channel)} aria-label={t("给我一些建议", "Show suggestions", "Mostrar sugerencias")} data-testid="show-ideas"><Lightbulb size={22} /></button>}
           <input ref={fileRef} type="file" accept="image/*,.txt,.zip,.json,.csv,.xml,.html" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
           <KeyboardTextarea data-testid="conversation-input" aria-label={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
