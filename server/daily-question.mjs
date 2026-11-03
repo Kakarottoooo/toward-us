@@ -56,8 +56,10 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
     const last = messages.filter((message) => message.kind === DAILY).at(-1);
     if (last && Date.now() - Date.parse(last.createdAt) < 20 * 3_600_000) return false;
     const material = questionMaterial(snapshot, relationshipId, today);
-    let question = "";
-    try { if (mediator?.structured) question = clean((await mediator.structured({ name: "daily_question", schema: questionSchema, instructions: questionInstructions(language), input: JSON.stringify(material), maxOutputTokens: 300 })).question, 300); } catch { question = ""; }
+    // Normally the question was made the day before, so it appears the moment Us opens.
+    const prepared = snapshot.togetherConversations?.find((item) => item.relationshipId === relationshipId)?.preparedDaily;
+    let question = prepared && prepared.language === language && Date.now() - Date.parse(prepared.at) < 48 * 3_600_000 && !material.previousQuestions.includes(prepared.question) ? prepared.question : "";
+    if (!question) question = await writeQuestion(mediator, material, language);
     if (!question) {
       // Without the model: the fixed set in order, skipping ones already asked.
       const pool = FALLBACK[language] || FALLBACK.zh, start = Math.round(Date.parse(`${today}T00:00:00Z`) / 86_400_000) % pool.length;
@@ -66,13 +68,30 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
     const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
       const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: DAILY, text: question, handle });
       if (posted.duplicate) return posted;
-      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === posted.message.id ? { ...item, day: today, answers: {} } : item); draft.version += 1; });
+      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === posted.message.id ? { ...item, day: today, answers: {} } : item); draft.preparedDaily = null; draft.version += 1; });
       return { ...posted, conversation };
     });
-    if (!result.duplicate) emit(result.conversation);
+    if (!result.duplicate) { emit(result.conversation); void prepareNext({ store, mediator, relationshipId, userId, language, material: { ...material, previousQuestions: [...material.previousQuestions, question] } }); }
     return !result.duplicate;
   } catch (error) { console.error("Daily question failed:", error?.message || error); return false; }
   finally { inFlight.delete(handle); }
+}
+
+async function writeQuestion(mediator, material, language) {
+  try { return mediator?.structured ? clean((await mediator.structured({ name: "daily_question", schema: questionSchema, instructions: questionInstructions(language), input: JSON.stringify(material), maxOutputTokens: 300 })).question, 300) : ""; }
+  catch { return ""; }
+}
+
+/** Tomorrow's question, written now in the background and kept on the conversation until it is posted. */
+async function prepareNext({ store, mediator, relationshipId, userId, language, material }) {
+  try {
+    const question = await writeQuestion(mediator, material, language);
+    if (!question) return;
+    await store.transaction(`relationship:${relationshipId}`, async (tx) => {
+      const conversation = await tx.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
+      if (conversation) await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.preparedDaily = { question, language, at: new Date().toISOString() }; draft.version += 1; });
+    });
+  } catch (error) { console.error("Preparing the next daily question failed:", error?.message || error); }
 }
 
 /** A member's answer. It can be changed until the partner has answered too; then both are revealed and final. */

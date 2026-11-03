@@ -4,7 +4,7 @@ import { MOMENTS } from "./space-domain.mjs";
 
 // The few small prompts above the composer: what someone might say to Pinky next, made fresh from where the couple is
 // (a date coming up, a promise still open, a recent moment, what was just talked about). They change as the conversation
-// moves; a fixed set stands in only when the model is unavailable.
+// moves; a fixed set stands in until the first fresh set is ready, or when the model is unavailable.
 const TTL = 6 * 60 * 60_000;
 const FALLBACK = {
   me: { zh: ["最近和 TA 有点小别扭，想聊聊", "帮我想个这周末的约会", "有句话想对 TA 说，不知道怎么开口", "记一下今天的心情", "TA 的生日快到了，送什么好"], en: ["Something small is bothering me with my partner", "Help me plan a date this weekend", "There's something I want to say but don't know how", "Note how I feel today", "Gift ideas for my partner's birthday"], es: ["Algo pequeño me molesta con mi pareja", "Ayúdame a planear una cita este fin de semana", "Quiero decir algo y no sé cómo", "Anota cómo me siento hoy", "Ideas de regalo para mi pareja"] },
@@ -22,7 +22,7 @@ Make them specific to the context when it offers something: a date or anniversar
 
 export function createSuggestionsRouter({ store, mediator }) {
   const router = express.Router();
-  const cache = new Map();
+  const cache = new Map(), latest = new Map(), inFlight = new Set();
   router.use("/suggestions", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
   router.get("/suggestions", async (req, res) => {
     const userId = req.auth.user.id, channel = req.query.channel === "us" ? "us" : "me";
@@ -37,31 +37,37 @@ export function createSuggestionsRouter({ store, mediator }) {
       : visible("privateAgentThreads").filter((item) => item.intentType === "assistant" && item.ownerUserId === userId && !item.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.messages || [];
     const last = conversation.at(-1);
     // New suggestions when the conversation moves on, the language changes, or a few hours pass.
-    const key = `${userId}|${channel}|${language}|${last?.id || "none"}`;
+    const base = `${userId}|${channel}|${language}`, key = `${base}|${last?.id || "none"}`;
     const hit = cache.get(key);
     if (hit && hit.at > Date.now() - TTL) return res.json({ suggestions: hit.suggestions });
     const today = new Date().toISOString().slice(0, 10);
-    const shared = (record) => relationshipId && record.relationshipId === relationshipId && record.visibility === "shared";
-    const context = {
-      today, hour: new Date().getHours(),
-      recent: conversation.slice(-8).map((message) => ({ from: message.role === "user" || message.role === "member" ? "person" : "pinky", text: String(message.text || "").slice(0, 200) })),
-      upcomingDates: visible("milestones").filter((item) => shared(item) && !item.archivedAt).map((item) => ({ title: item.title, next: nextOccurrence(item.date, item.recurringRule)?.slice(0, 10) })).filter((item) => item.next && item.next >= today).sort((a, b) => a.next.localeCompare(b.next)).slice(0, 3),
-      openPromises: visible("commitments").filter((item) => shared(item) && ["active", "renegotiation_requested"].includes(item.status)).map((item) => item.description).slice(0, 3),
-      recentMoments: visible("spaceItems").filter((item) => item.album === MOMENTS && (channel === "me" || shared(item)) && !item.archivedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3).map((item) => item.title),
-      paired: Boolean(relationshipId),
-    };
-    let suggestions = null;
+    // Never make the person wait for the model: answer with the last good set (or the fixed set) now and make fresh ones
+    // in the background for the next look.
+    const pool = FALLBACK[channel][language], start = Number(today.slice(8, 10)) % pool.length;
+    res.json({ suggestions: latest.get(base) || [...pool.slice(start), ...pool.slice(0, start)].slice(0, 3) });
+    if (inFlight.has(key)) return;
+    inFlight.add(key);
     try {
-      if (mediator?.structured) suggestions = (await mediator.structured({ name: "composer_suggestions", schema, instructions: instructions(channel, language), input: JSON.stringify(context), maxOutputTokens: 400 })).suggestions;
-    } catch { suggestions = null; }
-    suggestions = Array.isArray(suggestions) ? suggestions.map((text) => String(text || "").trim().slice(0, 60)).filter(Boolean).slice(0, 3) : [];
-    if (suggestions.length < 3) {
-      // Without the model: three from a small rotating set, different each day.
-      const pool = FALLBACK[channel][language], start = Number(today.slice(8, 10)) % pool.length;
-      suggestions = [...pool.slice(start), ...pool.slice(0, start)].slice(0, 3);
-    } else cache.set(key, { at: Date.now(), suggestions });
-    if (cache.size > 2000) cache.clear();
-    res.json({ suggestions });
+      const shared = (record) => relationshipId && record.relationshipId === relationshipId && record.visibility === "shared";
+      const context = {
+        today, hour: new Date().getHours(),
+        recent: conversation.slice(-8).map((message) => ({ from: message.role === "user" || message.role === "member" ? "person" : "pinky", text: String(message.text || "").slice(0, 200) })),
+        upcomingDates: visible("milestones").filter((item) => shared(item) && !item.archivedAt).map((item) => ({ title: item.title, next: nextOccurrence(item.date, item.recurringRule)?.slice(0, 10) })).filter((item) => item.next && item.next >= today).sort((a, b) => a.next.localeCompare(b.next)).slice(0, 3),
+        openPromises: visible("commitments").filter((item) => shared(item) && ["active", "renegotiation_requested"].includes(item.status)).map((item) => item.description).slice(0, 3),
+        recentMoments: visible("spaceItems").filter((item) => item.album === MOMENTS && (channel === "me" || shared(item)) && !item.archivedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3).map((item) => item.title),
+        paired: Boolean(relationshipId),
+      };
+      let suggestions = null;
+      try {
+        if (mediator?.structured) suggestions = (await mediator.structured({ name: "composer_suggestions", schema, instructions: instructions(channel, language), input: JSON.stringify(context), maxOutputTokens: 400 })).suggestions;
+      } catch { suggestions = null; }
+      suggestions = Array.isArray(suggestions) ? suggestions.map((text) => String(text || "").trim().slice(0, 60)).filter(Boolean).slice(0, 3) : [];
+      // Without the model the fixed set above stands in; only a full fresh set is kept.
+      if (suggestions.length === 3) { cache.set(key, { at: Date.now(), suggestions }); latest.set(base, suggestions); }
+      if (cache.size > 2000) cache.clear();
+      if (latest.size > 2000) latest.clear();
+    } catch { /* The fixed set stands in; fresh ones next time. */ }
+    finally { inFlight.delete(key); }
   });
   return router;
 }
