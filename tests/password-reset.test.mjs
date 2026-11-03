@@ -31,14 +31,17 @@ async function fixture(run) {
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
 }
 
-test("reset requests never reveal whether an email has an account", () => fixture(async ({ request, requestLink, sent, register }) => {
+test("reset requests never reveal whether an email has an account", () => fixture(async ({ request, requestLink, sent, register, base }) => {
   await requestLink("nobody@example.test");
   assert.equal(sent.length, 0);
   await register("known-a");
   await requestLink(" Known-A@Example.test ");
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, "known-a@example.test");
-  assert.match(sent[0].link, /^http:\/\/127\.0\.0\.1:\d+\/\?reset=.+\..+/);
+  // Hosted builds run these tests with TOWARD_US_BASE_URL set; the link then points there instead of at this test server.
+  const origin = (process.env.TOWARD_US_BASE_URL || base).replace(/\/+$/, "");
+  assert.ok(sent[0].link.startsWith(`${origin}/?reset=`), sent[0].link);
+  assert.match(new URL(sent[0].link).searchParams.get("reset"), /^.+\..+$/);
   assert.ok(sent[0].text.includes(sent[0].link));
   const unknown = await request("/api/auth/reset-request", { method: "POST", body: { email: "nobody@example.test" } });
   assert.deepEqual({ ok: unknown.ok }, { ok: true });
