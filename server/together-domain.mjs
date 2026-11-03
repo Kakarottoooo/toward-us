@@ -10,7 +10,7 @@ import { composeStory } from "./story.mjs";
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story"]);
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 const MESSAGE_LIMIT = 200;
@@ -31,7 +31,9 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
   // One pending agreement per couple, whatever path created it (together, full decision flow).
   const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
-    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}) })),
+    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call, answers }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}),
+      // A daily question carries its answers only once both have answered; before that neither answer reaches the model.
+      ...(answers && Object.keys(answers).length >= 2 ? { answers: Object.entries(answers).map(([userId, answer]) => ({ userId, text: answer.text })) } : {}) })),
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
     openCommitments: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && OPEN_COMMITMENTS.has(item.status) && !item.archivedAt).map(({ id, agreementId, description, ownerType, status, dueAt }) => ({ id, agreementId, description, ownerType, status, dueAt })),
     pendingAgreement: pending ? agreement(pending) : null,
@@ -110,7 +112,8 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const members = (membership?.members || []).map((member) => ({ id: member.userId, name: member.user?.name || "" }));
   const built = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
   // Each line says who wrote it, so the Agent answers the right person by name.
-  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : members.find((member) => member.id === item.actorUserId)?.name || "" })) };
+  const name = (id) => members.find((member) => member.id === id)?.name || "";
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })) };
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);

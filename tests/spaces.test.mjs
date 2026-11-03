@@ -197,7 +197,7 @@ test("recap cards: made on a day worth celebrating or on request, from shared mo
     shared: () => step === "since" ? { reply: "Noted.", draftAgreement: null, actions: [together({ kind: "milestone", title: "Together", date: since, recurringRule: "yearly", text: "together_since" })] }
       : step === "moment" ? { reply: "Kept.", draftAgreement: null, actions: [together({ kind: "space_item", spaceId: album, title: "Picnic", date: since, photoId: null })] }
       : { reply: "I'll make one now.", draftAgreement: null, actions: [together({ kind: "recap", title: "just because" })] },
-    structured: ({ input }) => { seen = JSON.parse(input); return { title: "100 days", subtitle: "So far", coverPhotoId: "not-a-shared-photo", stats: [{ label: "Days", value: "100" }], chapters: [{ heading: "A picnic", text: "You had a picnic.", date: since, photoId: "not-a-shared-photo" }], closing: "More to come." }; },
+    structured: ({ name, input }) => { if (name !== "couple_recap") return { question: "", reply: "" }; seen = JSON.parse(input); return { title: "100 days", subtitle: "So far", coverPhotoId: "not-a-shared-photo", stats: [{ label: "Days", value: "100" }], chapters: [{ heading: "A picnic", text: "You had a picnic.", date: since, photoId: "not-a-shared-photo" }], closing: "More to come." }; },
   });
   album = (await f.request("/spaces")).body.spaces.find((space) => space.system === "moments" && space.visibility === "shared").id;
   const say = (text) => f.request("/together/messages", "POST", { text, itemId: randomUUID(), language: "en" });
@@ -224,7 +224,7 @@ test("weekly recap: the first open after a week ends makes one card from that we
   assert.deepEqual(lastWeek("2026-11-09"), { key: "week-2026-11-02", from: "2026-11-02", to: "2026-11-08" }, "Monday: the week that just ended");
   assert.deepEqual(lastWeek("2026-11-08"), { key: "week-2026-10-26", from: "2026-10-26", to: "2026-11-01" }, "Sunday: that week is not over yet");
   let seen = null, calls = 0;
-  const f = await fixture(t, { structured: ({ input, instructions }) => { calls += 1; seen = { material: JSON.parse(input), instructions }; return { title: "Your week", subtitle: "", coverPhotoId: null, stats: [], chapters: [{ heading: "Dinner", text: "You picked a place.", date: null, photoId: null }], closing: "See you next week." }; } });
+  const f = await fixture(t, { structured: ({ name, input, instructions }) => { if (name !== "couple_recap") return { question: "", reply: "" }; calls += 1; seen = { material: JSON.parse(input), instructions }; return { title: "Your week", subtitle: "", coverPhotoId: null, stats: [], chapters: [{ heading: "Dinner", text: "You picked a place.", date: null, photoId: null }], closing: "See you next week." }; } });
   const stories = async (userId = f.ids[0]) => (await f.request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation.messages.filter((message) => message.kind === "story");
   const say = (text) => f.request("/together/messages", "POST", { text, itemId: randomUUID(), language: "en" });
   await say("Pinky, where should we eat on Saturday?"); await say("this one is from today");
@@ -241,4 +241,39 @@ test("weekly recap: the first open after a week ends makes one card from that we
   assert.match(seen.instructions, /weekly recap/);
   await stories(f.ids[1]); await new Promise((r) => setTimeout(r, 200));
   assert.equal((await stories()).length, 1, "one card per week, whoever opens Us");
+});
+
+test("daily question: one a day for both; each answer stays hidden from the partner and the model until both answered", async (t) => {
+  let context = null;
+  const f = await fixture(t, {
+    shared: (input) => { context = input; return { reply: "ok", draftAgreement: null, actions: [] }; },
+    structured: ({ name, input }) => name === "daily_question" ? { question: "What made you smile today?" } : name === "daily_reaction" ? { reply: `You both answered: ${JSON.parse(input).answers.map((item) => item.text).join(" / ")}` } : { question: "", reply: "" },
+  });
+  const [a, b] = f.ids;
+  const open = async (userId) => (await f.request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation.messages;
+  const daily = async (userId) => (await open(userId)).filter((message) => message.kind === "daily_question");
+  await open(a);
+  for (let i = 0; i < 50 && !(await daily(a)).length; i += 1) await new Promise((r) => setTimeout(r, 40));
+  await open(b); await f.request("/together?language=en&timezone=Pacific/Kiritimati", "GET", null, b); await new Promise((r) => setTimeout(r, 100));
+  const [question] = await daily(b);
+  assert.equal((await daily(a)).length, 1, "one question a day, whoever opens Us first, even from a time zone already on tomorrow");
+  assert.equal(question.text, "What made you smile today?");
+  const answer = (userId, text) => f.request(`/together/daily/${question.id}/answer`, "POST", { text, language: "en" }, userId);
+  assert.equal((await answer(a, "first draft")).status, 200);
+  assert.equal((await answer(a, "Your terrible pun at breakfast")).status, 200, "an answer can change until the partner answers");
+  assert.deepEqual(Object.keys((await daily(a))[0].answers), [a]);
+  assert.deepEqual((await daily(b))[0].answers, {}, "the partner cannot see an answer before giving their own");
+  await f.request("/together/messages", "POST", { text: "Pinky, what did my partner answer?", itemId: randomUUID(), language: "en" }, b);
+  assert.ok(!JSON.stringify(context).includes("terrible pun"), "nor can the model");
+  const { hideUnrevealedAnswers } = await import("../server/relationship-domain.mjs");
+  assert.deepEqual(hideUnrevealedAnswers({ messages: [{ answers: { [a]: { text: "x" } } }] }, b).messages[0].answers, {});
+  assert.equal((await answer(b, "Your hug before work")).status, 200);
+  const revealed = (await daily(b))[0].answers;
+  assert.equal(revealed[a].text, "Your terrible pun at breakfast"); assert.equal(revealed[b].text, "Your hug before work");
+  assert.equal((await answer(a, "too late")).status, 409, "revealed answers are final");
+  let reaction = null;
+  for (let i = 0; i < 50 && !reaction; i += 1) { reaction = (await open(a)).find((message) => message.replyTo === question.id && message.role === "agent"); if (!reaction) await new Promise((r) => setTimeout(r, 40)); }
+  assert.match(reaction.text, /terrible pun/);
+  await f.request("/together/messages", "POST", { text: "Pinky, that was sweet", itemId: randomUUID(), language: "en" }, a);
+  assert.equal(context.messages.find((message) => message.id === question.id).answers.length, 2, "once revealed, Pinky can talk about both answers");
 });

@@ -12,6 +12,7 @@ import { CallPanel, CallRecord } from "../call/CallPanel";
 import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
 import { OnboardingTour, tourSeen } from "./OnboardingTour";
+import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -22,7 +23,7 @@ type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; cr
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story"; call?: CallTranscript; story?: Story; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -288,8 +289,16 @@ ${text}` : text, target);
 
   const partnerName = together?.members.find((member) => member.id !== user.id)?.name || t("TA", "Your partner", "Tu pareja");
   const pendingAgreement = together?.pendingAgreement;
+  const answerDaily = async (id: string, text: string) => {
+    setNotice("");
+    try { await relationshipApi(`/api/together/daily/${encodeURIComponent(id)}/answer`, jsonBody({ text, language })); await loadTogether(); return true; }
+    catch (error) { setNotice(errorText(error as ApiError)); await loadTogether(); return false; }
+  };
+  // Today's question still waits for this member's answer.
+  const todayQuestion = together?.conversation.messages.filter((message) => message.kind === "daily_question").at(-1);
+  const dailyWaiting = Boolean(todayQuestion && Date.now() - Date.parse(todayQuestion.createdAt) < 86_400_000 && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2);
   // Something in Us waits for this member: an agreement they have not approved yet, or a new line from the partner or Pinky.
-  const unreadUs = channel !== "us" && (Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
+  const unreadUs = channel !== "us" && (dailyWaiting || Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
   const readOnly = channel === "us" && (!paired || Boolean(together?.readOnly));
   const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("跟我说说…", "Talk to me…", "Cuéntame…") : askAgent ? t("问 Pinky…", "Ask Pinky…", "Pregúntale a Pinky…") : t("发给你们俩…", "Message both of you…", "Escribe a los dos…");
 
@@ -335,6 +344,7 @@ ${text}` : text, target);
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准 v${version}`, `Approve v${version}`, `Aprobar v${version}`)}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>)}
       </article>;
     }
+    if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerDaily(message.id, answer)} />;
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {

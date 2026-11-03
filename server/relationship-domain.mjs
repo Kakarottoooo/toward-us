@@ -49,7 +49,15 @@ export function projectRecord(record, userId) {
     delete projected.conditions;
     delete projected.rawPerspective;
   }
-  return projected;
+  return hideUnrevealedAnswers(projected, userId);
+}
+
+/** A daily-question answer stays with its author until both partners have answered; then both see both. Mutates a copy. */
+export function hideUnrevealedAnswers(record, userId) {
+  for (const message of Array.isArray(record?.messages) ? record.messages : []) {
+    if (message.answers && Object.keys(message.answers).length < 2) message.answers = message.answers[userId] ? { [userId]: message.answers[userId] } : {};
+  }
+  return record;
 }
 
 export function projectGraph(snapshot, userId) {

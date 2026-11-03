@@ -1,0 +1,41 @@
+import { useState } from "react";
+import { ChatCircleDots, LockKey } from "@phosphor-icons/react";
+import { localized, type Language } from "../../i18n";
+import { KeyboardTextarea, useKeyboard } from "../../mobile";
+
+export type DailyAnswers = Record<string, { text: string; at: string }>;
+
+// Today's question for both. The server only ever sends the partner's answer once both have answered,
+// so this card just shows what it was given: write yours, wait for theirs, or both side by side.
+export function DailyQuestionCard({ question, answers, userId, members, language, onAnswer }: {
+  question: string; answers: DailyAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language; onAnswer: (text: string) => Promise<boolean>;
+}) {
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const keyboard = useKeyboard();
+  const mine = answers[userId];
+  const revealed = Object.keys(answers).length >= 2;
+  const [editing, setEditing] = useState(!mine);
+  const [draft, setDraft] = useState(mine?.text || "");
+  const [busy, setBusy] = useState(false);
+  const partner = members.find((member) => member.id !== userId);
+  const submit = async () => {
+    if (!draft.trim() || busy) return;
+    keyboard.hide(); setBusy(true);
+    try { if (await onAnswer(draft.trim())) setEditing(false); } finally { setBusy(false); }
+  };
+  return <article className="conversation-card daily-card" data-testid="daily-question">
+    <header><ChatCircleDots size={16} />{t("今日一问", "Today's question", "Pregunta del día")}</header>
+    <strong>{question}</strong>
+    {revealed ? <ul className="daily-answers">
+      {[userId, partner?.id || ""].map((id) => answers[id] && <li key={id}><small>{id === userId ? t("你", "You", "Tú") : partner?.name || t("TA", "Your partner", "Tu pareja")}</small><p>{answers[id].text}</p></li>)}
+    </ul> : mine && !editing ? <>
+      <div className="daily-mine"><p>{mine.text}</p></div>
+      <small><LockKey size={14} />{t(`等 ${partner?.name || "TA"} 也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partner?.name || "your partner"} answers too`, `Sus respuestas aparecen juntas cuando ${partner?.name || "tu pareja"} también responda`)}</small>
+      <div className="card-actions"><button onClick={() => { setDraft(mine.text); setEditing(true); }}>{t("改一下", "Edit", "Editar")}</button></div>
+    </> : <>
+      <div className="daily-input"><KeyboardTextarea aria-label={t("你的回答", "Your answer", "Tu respuesta")} value={draft} onChange={(event) => setDraft(event.target.value)} rows={2} maxLength={600} placeholder={t("写下你的回答…", "Write your answer…", "Escribe tu respuesta…")} /></div>
+      <small><LockKey size={14} />{t("对方回答前看不到你写了什么", "Your partner sees it only after answering too", "Tu pareja lo verá solo después de responder")}</small>
+      <div className="card-actions"><button className="card-primary" disabled={busy || !draft.trim()} onClick={() => void submit()}>{t("回答", "Answer", "Responder")}</button></div>
+    </>}
+  </article>;
+}
