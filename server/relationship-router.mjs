@@ -522,6 +522,7 @@ const DECISION_ERRORS = {
   one_pending_agreement: ["已经有一份约定在等你们批准，请先批准、拒绝或要求修改它。", "An agreement is already waiting for your approvals. Approve, reject or request changes to it first.", "Ya hay un acuerdo esperando sus aprobaciones. Apruébalo, recházalo o pide cambios primero."],
   together_draft_required: ["还没有可以起草的约定内容。先在共同对话里请 Agent 帮你们整理，或直接填写约定。", "There is nothing to draft yet. Ask the Agent in your shared conversation first, or write the agreement yourselves.", "Todavía no hay nada que redactar. Pídeselo primero al Agent en la conversación compartida o escriban el acuerdo ustedes."],
   pairing_required: ["需要双方账号完成伴侣绑定。", "Both accounts must be paired first.", "Ambas cuentas deben vincularse primero."],
+  already_revealed: ["你们俩都已回答，答案已经揭晓。", "You've both answered, so the answers are already revealed.", "Ya respondieron los dos, así que las respuestas ya se revelaron."],
 };
 const PRIVATE_VISIBILITY = (record) => ["private", "private_surprise"].includes(record.visibility);
 const cleanDate = (value) => { const text = String(value || ""); const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? text : null; };

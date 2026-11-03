@@ -5,6 +5,7 @@ import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { celebrationOn, composeStory, lastWeek } from "./story.mjs";
+import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, recallOnThisDay } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
@@ -41,6 +42,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
       // Once a week: the first one to open Us after a week ends starts that week's recap, if the two of them did anything in it.
       const week = !occasion && lastWeek(today);
       if (week) void composeStory({ store, mediator, relationshipId, userId, language: lang, key: week.key, week, occasion: lang === "en" ? `their week of ${week.from} to ${week.to}` : lang === "es" ? `su semana del ${week.from} al ${week.to}` : `${week.from} 到 ${week.to} 这一周`, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
+      // Every day: the first one to open Us gets today's question for both of them.
+      void askDailyQuestion({ store, mediator, relationshipId, userId, language: lang, today, emit: (conversation) => emit(conversation, "together.updated") });
     }
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);
@@ -91,6 +94,13 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
   router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active", "agreement_approved"));
   router.post("/together/agreements/:id/reject", decide(rejectAgreement, "agreement.rejected"));
   router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested", () => true));
+
+  router.post("/together/daily/:id/answer", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text: req.body?.text, language: language(req), emit: (updated) => emit(updated, "together.updated") });
+    void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "daily_answered" });
+    res.json({ conversation: projectRecord(conversation, userId) });
+  });
 
   router.use(decisionErrorHandler);
   return router;

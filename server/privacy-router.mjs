@@ -4,7 +4,7 @@ import express from "express";
 import { photoFile } from "./photo-store.mjs";
 import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
-import { createRelationshipRecord, projectRecord } from "./relationship-domain.mjs";
+import { createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { createEmailSender } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
@@ -192,7 +192,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
 }
 
 export function privacyExport(snapshot, user) {
-  const graph = Object.fromEntries(Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection)).map(([collection, records]) => [collection, records.filter((record) => record.ownerUserId === user.id || ["shared", "jointly_confirmed", "revealed"].includes(record.visibility) || (record.visibility === "shareable_summary" && record.status === "confirmed")).map((record) => { if (record.ownerUserId === user.id) return structuredClone(record); const projected = projectRecord({ ...record, archivedAt: null, status: record.status === "archived" ? "active" : record.status }, user.id); return projected ? { ...projected, status: record.status, archivedAt: record.archivedAt } : null; }).filter(Boolean)]));
+  const graph = Object.fromEntries(Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection)).map(([collection, records]) => [collection, records.filter((record) => record.ownerUserId === user.id || ["shared", "jointly_confirmed", "revealed"].includes(record.visibility) || (record.visibility === "shareable_summary" && record.status === "confirmed")).map((record) => { if (record.ownerUserId === user.id) return hideUnrevealedAnswers(structuredClone(record), user.id); const projected = projectRecord({ ...record, archivedAt: null, status: record.status === "archived" ? "active" : record.status }, user.id); return projected ? { ...projected, status: record.status, archivedAt: record.archivedAt } : null; }).filter(Boolean)]));
   const rooms = snapshot.rooms.map((room) => {
     const ownIds = new Set(room.participants.filter((person) => person.userId === user.id).map((person) => person.id));
     return { code: room.code, relationshipId: room.relationshipId, status: room.status, messages: room.messages.filter((message) => ownIds.has(message.participantId)), sharedAnalysis: room.status === "archived" ? room.analysis?.shared || null : null, createdAt: room.createdAt, archivedAt: room.archivedAt || null };
