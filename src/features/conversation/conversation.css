@@ -134,6 +134,12 @@
 .handoff { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 999px; background: var(--jian-blue); color: #fff; font-size: 15px; font-weight: 600; text-decoration: none; }
 .handoff span { overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
 .handoff:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
+/* Hand-off buttons sit inside messages, whose ordinary links are blue: keep the button text white. */
+.conversation-message a.handoff { color: #fff; text-decoration: none; }
+.handoff-preview { flex-basis: 100%; padding: 12px 14px 14px; border: 1px solid rgba(37,37,37,.14); border-radius: 16px; background: var(--jian-paper-bright); }
+.handoff-preview small { display: block; color: #5d574f; font-size: 13px; font-weight: 600; }
+.handoff-preview strong { display: block; margin-top: 6px; font-size: 15px; }
+.handoff-preview p { margin: 6px 0 12px; white-space: pre-wrap; font-size: 15px; line-height: 1.6; }
 .together-voice { display: grid; gap: 8px; margin: 0 0 8px; padding: 10px 12px; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-ink); font-size: 14px; }
 .together-voice p { margin: 0; color: #4a4540; }
 .together-switch { display: flex; align-items: center; gap: 8px; min-height: 32px; font-weight: 600; }

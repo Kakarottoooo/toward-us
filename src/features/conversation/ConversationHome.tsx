@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Lightbulb, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, SignOut, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -504,9 +504,31 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
 function Handoff({ title, url, language, onOpen }: { title: string; url: string; language: Language; onOpen?: (url: string) => void }) {
   // A page inside Pinky opens in place rather than in a new window.
   if (url.startsWith("/?view=") && onOpen) return <button className="handoff" onClick={() => onOpen(url)}><ArrowRight size={18} weight="bold" /><span>{title}</span></button>;
-  const icon = url.startsWith("sms:") ? <ChatCircleDots size={18} weight="fill" /> : url.startsWith("tel:") ? <Phone size={18} weight="fill" /> : url.startsWith("mailto:") ? <EnvelopeSimple size={18} weight="fill" /> : url.includes("/api/handoff/event.ics") ? <CalendarPlus size={18} weight="fill" /> : url.includes("maps.apple.com") || url.includes("google.com/maps") ? <MapPin size={18} weight="fill" /> : <ArrowSquareOut size={18} weight="bold" />;
+  const icon = url.startsWith("sms:") ? <ChatCircleDots size={18} weight="fill" /> : url.startsWith("tel:") ? <Phone size={18} weight="fill" /> : url.startsWith("mailto:") ? <EnvelopeSimple size={18} weight="fill" /> : url.includes("/api/handoff/event.ics") ? <CalendarPlus size={18} weight="fill" /> : url.includes("maps.apple.com") || url.includes("google.com/maps") ? <MapPin size={18} weight="fill" />
+    : /\/\/(www\.)?wa\.me\//.test(url) ? <WhatsappLogo size={18} weight="fill" /> : /opentable\.com|resy\.com|yelp\.com|doordash\.com|ubereats\.com/.test(url) ? <ForkKnife size={18} weight="fill" /> : /amazon\.com|instacart\.com/.test(url) ? <ShoppingCart size={18} weight="fill" /> : <ArrowSquareOut size={18} weight="bold" />;
   const label = url.includes("/api/handoff/event.ics") ? `${localized(language, "加入日历", "Add to calendar", "Añadir al calendario")} · ${title}` : title;
-  return <a className="handoff" href={url} target={/^(https?:|\/)/.test(url) ? "_blank" : undefined} rel="noopener noreferrer">{icon}<span>{label}</span></a>;
+  const link = <a className="handoff" href={url} target={/^(https?:|\/)/.test(url) ? "_blank" : undefined} rel="noopener noreferrer">{icon}<span>{label}</span></a>;
+  // A message to someone else shows exactly what will go out, and to whom, before the person taps to send it themselves.
+  const message = outgoing(url);
+  if (!message) return link;
+  return <div className="handoff-preview" data-testid="outgoing-preview">
+    <small>{message.to ? localized(language, `发给 ${message.to}`, `To ${message.to}`, `Para ${message.to}`) : localized(language, "发送时选收件人", "Pick who it goes to when sending", "Elige a quién al enviar")}</small>
+    {message.subject && <strong>{message.subject}</strong>}
+    <p>{message.body}</p>
+    {link}
+  </div>;
+}
+
+/** A prepared text, WhatsApp or email to someone else, read back from its hand-off link. */
+function outgoing(url: string): { to: string; subject?: string; body: string } | null {
+  try {
+    const sms = /^sms:([^?&]*)[?&]body=([\s\S]*)$/.exec(url);
+    if (sms) return { to: decodeURIComponent(sms[1]), body: decodeURIComponent(sms[2]) };
+    const parsed = new URL(url);
+    if (parsed.protocol === "mailto:") { const body = parsed.searchParams.get("body") || ""; return body ? { to: decodeURIComponent(parsed.pathname), subject: parsed.searchParams.get("subject") || undefined, body } : null; }
+    if (/^(www\.)?wa\.me$/.test(parsed.hostname)) { const body = parsed.searchParams.get("text") || ""; return body ? { to: parsed.pathname.replace(/\//g, "") ? `+${parsed.pathname.replace(/\D/g, "")}` : "", body } : null; }
+  } catch { /* Not a message link. */ }
+  return null;
 }
 
 /** Photos in a message: one large, or a tidy grid; each opens full size. */
