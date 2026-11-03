@@ -120,6 +120,14 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   useEffect(() => { setNotice(""); }, [language]);
   useEffect(() => { if (new URLSearchParams(location.search).has("say")) { window.history.replaceState(null, "", location.pathname); composerRef.current?.querySelector("textarea")?.focus(); } }, []);
   useEffect(() => { try { localStorage.setItem(channelKey, channel); } catch { /* Channel memory is a convenience. */ } }, [channel, channelKey]);
+  // When Us was last looked at on this device, so "Us" can show a dot for what the partner or Pinky said since.
+  const seenKey = `toward-us:us-seen:${user.id}`;
+  const [seenUs, setSeenUs] = useState(() => { try { return localStorage.getItem(seenKey) || ""; } catch { return ""; } });
+  const latestUs = together?.conversation.messages.at(-1);
+  useEffect(() => {
+    if (channel !== "us" || !latestUs) return;
+    setSeenUs(latestUs.createdAt); try { localStorage.setItem(seenKey, latestUs.createdAt); } catch { /* The dot just shows again. */ }
+  }, [channel, latestUs?.createdAt, seenKey]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [channel, session?.version, together?.conversation.messages.length, pending.me, queued.length]);
 
   const say = (text: string) => {
@@ -280,6 +288,8 @@ ${text}` : text, target);
 
   const partnerName = together?.members.find((member) => member.id !== user.id)?.name || t("TA", "Your partner", "Tu pareja");
   const pendingAgreement = together?.pendingAgreement;
+  // Something in Us waits for this member: an agreement they have not approved yet, or a new line from the partner or Pinky.
+  const unreadUs = channel !== "us" && (Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
   const readOnly = channel === "us" && (!paired || Boolean(together?.readOnly));
   const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("跟我说说…", "Talk to me…", "Cuéntame…") : askAgent ? t("问 Pinky…", "Ask Pinky…", "Pregúntale a Pinky…") : t("发给你们俩…", "Message both of you…", "Escribe a los dos…");
 
@@ -376,13 +386,13 @@ ${text}` : text, target);
       </div>
       <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
         <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={18} />{t("只有我", "Just me", "Solo yo")}{unreadMe && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
-        <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={18} />{t("我们俩", "Us", "Nosotros")}</button>
+        <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={18} />{t("我们俩", "Us", "Nosotros")}{unreadUs && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
       </div>
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
       {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
-          {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Pinky 起草的约定", "Agreement drafted by Pinky", "Acuerdo redactado por Pinky")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol><small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
+          {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Pinky 起草的约定", "Agreement drafted by Pinky", "Acuerdo redactado por Pinky")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol>{!!draftCard.unresolvedPoints?.length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{draftCard.unresolvedPoints.map((point, index) => <li key={index}>{point}</li>)}</ul></div>}<small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
