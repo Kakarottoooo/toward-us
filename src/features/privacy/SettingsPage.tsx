@@ -99,13 +99,13 @@ export function SettingsPage({ user, relationshipId, partnerName, language, onLa
       <Row icon={<Key size={18} weight="bold" />} tone="gray" label={titles.recovery} value={data ? data.recoveryEnabled ? t("已设置", "On", "Activado") : t("未设置", "Off", "Desactivado") : ""} onClick={() => open("recovery")} />
       <Row icon={<DownloadSimple size={18} weight="bold" />} tone="blue" label={t("下载我的数据", "Download my data", "Descargar mis datos")} onClick={() => prepare({ kind: "export" })} />
     </Group>
-    <Group>
-      <Row icon={<SignOut size={18} weight="bold" />} tone="gray" label={t("退出登录", "Sign out", "Cerrar sesión")} onClick={onLogout} testId="settings-logout" />
-    </Group>
     <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${data.privateCount} private records. Each step explains what it does and asks for your password first.`, `Tienes ${data.privateCount} registros privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
       {paired && <Row icon={<LinkBreak size={18} weight="bold" />} tone="red" danger label={t("退出当前关系", "Leave this relationship", "Salir de esta relación")} onClick={() => prepare({ kind: "leave" })} />}
       <Row icon={<Trash size={18} weight="bold" />} tone="red" danger label={t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado")} onClick={() => prepare({ kind: "delete-private" })} />
       <Row icon={<UserMinus size={18} weight="bold" />} tone="red" danger label={t("删除账号", "Delete account", "Borrar la cuenta")} onClick={() => prepare({ kind: "account" })} />
+    </Group>
+    <Group>
+      <Row icon={<SignOut size={18} weight="bold" />} tone="gray" label={t("退出登录", "Sign out", "Cerrar sesión")} onClick={onLogout} testId="settings-logout" />
     </Group>
     <p className="settings-footer">Pinky · {t("版本", "Version", "Versión")} 1.0</p>
   </>;
