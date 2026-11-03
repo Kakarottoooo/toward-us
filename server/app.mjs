@@ -36,6 +36,7 @@ import { createHandoffRouter } from "./handoff.mjs";
 import { createChatImportRouter } from "./chat-import.mjs";
 import { createVoiceCallRouter } from "./voice-call.mjs";
 import { createSuggestionsRouter } from "./suggestions-router.mjs";
+import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 
@@ -465,6 +466,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPhotoRouter({ store }));
   app.use("/api", createHandoffRouter());
   app.use("/api", createSuggestionsRouter({ store, mediator }));
+  app.use("/api", createFeedbackRouter({ store, mediator }));
   app.use("/api", relationshipRouter);
 
   function broadcastDemoRoom(code) {

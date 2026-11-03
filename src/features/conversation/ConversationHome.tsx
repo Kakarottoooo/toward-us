@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -33,7 +33,7 @@ const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",
  * the couple's together conversation). Every rule lives on the server; this screen only renders and forwards explicit taps. */
-export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: () => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: () => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -293,6 +293,14 @@ ${text}` : text, target);
 
   const partnerName = together?.members.find((member) => member.id !== user.id)?.name || t("TA", "Your partner", "Tu pareja");
   const pendingAgreement = together?.pendingAgreement;
+  // Recommend Pinky to friends: the phone's own share sheet when it has one, else the link is copied.
+  const sharePinky = async () => {
+    const url = "https://agentcert.app/";
+    const text = t("我在用 Pinky：两个人的 AI，帮我们好好说话、说到做到、记住在一起的日子。你们也试试：", "I'm using Pinky, an AI for two that helps us talk, keep our promises and remember our days together. Try it:", "Uso Pinky, una IA para dos que nos ayuda a hablar, cumplir lo que prometemos y recordar nuestros días. Pruébala:");
+    try { if (navigator.share) { await navigator.share({ title: "Pinky", text, url }); return; } } catch (error) { if ((error as Error).name === "AbortError") return; }
+    try { await navigator.clipboard.writeText(`${text} ${url}`); setNotice(t("链接已复制，发给朋友吧。", "Link copied. Send it to a friend.", "Enlace copiado. Envíaselo a alguien.")); }
+    catch { setNotice(`${text} ${url}`); }
+  };
   const answerDaily = async (id: string, text: string) => {
     setNotice("");
     try { await relationshipApi(`/api/together/daily/${encodeURIComponent(id)}/answer`, jsonBody({ text, language })); await loadTogether(); return true; }
@@ -454,7 +462,7 @@ ${text}` : text, target);
     </footer>}
     {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onDone={() => setTouring(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 
@@ -465,7 +473,7 @@ export function PageHeader({ language, title, onBack }: { language: Language; ti
 
 type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number; onClick: () => void };
 /** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
-function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite, onPrivacy }: { user: { id: string; name: string }; paired: boolean; language: Language; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void }) {
+function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite, onPrivacy, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onShare: () => void; onFeedback: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [home, setHome] = useState<{ pending: number; since: string | null } | null>(null);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
@@ -502,7 +510,7 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
       <div className="drawer-group">{fixed.map(row)}</div>
       <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{(paired ? ours : mine).map(row)}{fixedSpaces.map(row)}</div>
       {paired && !!mine.length && <div className="drawer-group"><h2>{t("只有我的", "Just mine", "Solo mío")}</h2>{mine.map(row)}</div>}
-      <footer className="drawer-group">{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}</footer>
+      <footer className="drawer-group">{row({ key: "share", icon: <ShareNetwork size={22} />, label: t("推荐给朋友", "Recommend to friends", "Recomendar a amigos"), onClick: onShare })}{row({ key: "feedback", icon: <ChatCircleText size={22} />, label: t("反馈", "Feedback", "Comentarios"), onClick: onFeedback })}{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}</footer>
     </nav>
   </div>;
 }
@@ -544,7 +552,7 @@ function Photos({ ids }: { ids: string[] }) {
 }
 
 /** Shrinks a picked photo to at most 1600px on its long side as JPEG, so uploads stay small on mobile data. */
-async function shrink(file: File): Promise<Blob> {
+export async function shrink(file: File): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => { const element = new Image(); element.onload = () => resolve(element); element.onerror = () => reject(new Error("This photo could not be read.")); element.src = url; });
