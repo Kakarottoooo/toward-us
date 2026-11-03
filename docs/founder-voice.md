@@ -62,6 +62,7 @@
 - 内测阶段 AI 先用 Claude 订阅额度（本机 claude 命令），不用 OpenAI API；后期再转 API，效果要和 API 差不多。（11-02，"先用我们 Claude 的订阅额度……后期再转用 API"）
 - Render 暂时不升级（11-01，"这个 render 先暂时不要升级"）；Sendblue 套餐、Apple/Google 开发者账号一并批准，动手前先查价格报给创始人。（11-01）
 - 线上恢复给真人用：恢复 Render 数据库（每月 $6）；线上 AI 先用 OpenAI 的 key（AI_PROVIDER=openai），不用 Claude API；照片先不加磁盘存储。（11-02，"恢复，$6 可以"；"先设成 OpenAI 吧……那边准备好"；"照片先不要存"）
+- 线上 agentcert.app 做 Pinky 的正式域名，但手机 App 先继续连本机内测服务器：本地改完立刻生效，线上部署太慢；先在本地把产品做完整，再把 App 改连线上。（11-02，"现在我们先本地把这个产品做完整之后再说"）
 
 ## 4. 隐私
 
