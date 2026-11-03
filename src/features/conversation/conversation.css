@@ -92,8 +92,8 @@
 @media (prefers-reduced-motion: reduce) { .conversation-drawer, .conversation-drawer-scrim { animation: none; } }
 
 /* Pages opened from the drawer: a way back to the conversation and the title, no tabs. Content starts below it. */
-.relationship-shell { --page-top: max(54px, env(safe-area-inset-top)); }
-.page-header { position: absolute; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; gap: 6px; padding: var(--page-top) 16px 10px 8px; background: var(--jian-paper); }
+.relationship-shell { --page-top: max(12px, env(safe-area-inset-top)); }
+.page-header { position: absolute; top: 0; right: 0; left: 0; z-index: 20; display: flex; align-items: center; gap: 6px; padding: var(--page-top) 16px 10px 10px; background: var(--jian-paper); }
 .page-back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--jian-blue); font-size: 16px; font-weight: 600; cursor: pointer; }
 .page-back:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
 .page-header h1 { flex: 1; min-width: 0; margin: 0 64px 0 0; overflow: hidden; color: var(--jian-ink); font-size: 18px; font-weight: 650; letter-spacing: 0; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
