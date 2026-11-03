@@ -7,15 +7,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
-import { PrivacySettings } from "./features/privacy/PrivacySettings";
+import { SettingsPage } from "./features/privacy/SettingsPage";
+import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
+import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
+import { SpacePage } from "./features/spaces/SpacePage";
+import { ImportsPage } from "./features/imports/ImportsPage";
+import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./relationship.css";
+import "./controls.css";
 
-type Screen = "home" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
+type Screen = "home" | "conversation" | "space" | "import" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
 type RoomMode = "remote" | "shared";
 type Personality = "friend" | "counselor" | "direct";
 type User = { id: string; email: string; name: string; createdAt: string };
@@ -133,6 +139,8 @@ export default function Prototype() {
 function AccountPrototype() {
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const [screen, setScreen] = useState<Screen>("home");
+  // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
+  const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
@@ -149,10 +157,13 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
+      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); }
     }).catch(() => {});
     api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
+    listenNativePushTaps();
   }, []);
+  // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
+  useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
   useEffect(() => { if (screen === "dashboard" && user) loadActiveRooms(); }, [screen, user]);
   useEffect(() => {
     if (!room || screen !== "room") return;
@@ -165,13 +176,17 @@ function AccountPrototype() {
 
   const selectLanguage = (value: Language) => setLanguage(value);
   const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {
-    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(state.pairing?.status === "active" ? "dashboard" : new URLSearchParams(location.search).has("invite") ? "pairing" : "personal");
+    const next = new URLSearchParams(location.search).get("next");
+    if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
+    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(landing(state.pairing));
+    // Signing in is the user action that may ask, once, for App notification permission (a no-op in a browser).
+    void enableNativePush();
   };
   const refreshPairing = async () => {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
-    setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("dashboard");
+    setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("conversation");
   };
-  const logout = async () => { keyboard.hide(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setRoom(null); setScreen("home"); };
+  const logout = async () => { keyboard.hide(); await disableNativePush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setRoom(null); setScreen("home"); };
   const loadActiveRooms = async () => { const result = await api<{ rooms: RoomSummary[] }>("/api/rooms"); setActiveRooms(result.rooms); };
   const openRoom = async (code: string, join = false) => {
     setBusy(true); setNotice("");
@@ -186,18 +201,28 @@ function AccountPrototype() {
     setDetail(detailResult.item); setHistory(listResult.items); setScreen("historyDetail");
   };
 
-  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setRoom(null); setScreen(state.user ? state.pairing?.status === "active" ? "dashboard" : "personal" : "home"); };
-  if (screen === "recovery") return <AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} />;
-  if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onLanguage={selectLanguage} onPair={() => setScreen("pairing")} onShared={() => setScreen("dashboard")} onPrivacy={() => setScreen("privacy")} onLogout={logout} />;
-  if (screen === "privacy" && user) return <div className="paper-screen relationship-shell"><header className="simple-header privacy-page-header"><button onClick={() => setScreen(pairing?.status === "active" ? "dashboard" : "personal")} aria-label={t.back}><ArrowLeft size={22} /></button><span>{localized(language, "隐私与账号", "Privacy & account", "Privacidad y cuenta")}</span><LanguageSwitch language={language} onLanguage={selectLanguage} compact /></header><main className="relationship-main"><PrivacySettings language={language} onChanged={async () => {}} onLeft={reloadIdentity} onDeleted={reloadIdentity} /></main></div>;
-  if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? pairing?.status === "active" ? "dashboard" : "personal" : "auth")} t={t} />;
+  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setRoom(null); setScreen(state.user ? landing(state.pairing) : "home"); };
+  const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
+  const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
+  // Mediation screens return to the page that lists rooms and reviews.
+  const openTalk = () => { window.history.replaceState(null, "", "/?view=talk"); setScreen("dashboard"); };
+  // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
+  const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
+  if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onPrivacy={() => setScreen("privacy")} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
+  if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
+  if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
+  if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
+  if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
+  if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
+  if (screen === "privacy" && user) return <SettingsPage user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} />;
+  if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
   if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("personal")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "dashboard" && user && pairing) return <DashboardScreen user={user} pairing={pairing} rooms={activeRooms} onAccessChanged={reloadIdentity} onPersonal={() => setScreen("personal")} onPrivacy={() => setScreen("privacy")} language={language} onLanguage={selectLanguage} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} t={t} />;
-  if (screen === "setup") return <SetupScreen language={language} onBack={() => setScreen("dashboard")} onLanguage={selectLanguage} onRoom={(next) => { setRoom(next); setScreen("room"); }} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "history") return <HistoryScreen items={history} language={language} onBack={() => setScreen("dashboard")} onOpen={openHistoryDetail} t={t} />;
+  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} rooms={activeRooms} notice={notice} busy={busy} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
+  if (screen === "setup") return <SetupScreen language={language} onBack={openTalk} onLanguage={selectLanguage} onRoom={(next) => { setRoom(next); setScreen("room"); }} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "history") return <HistoryScreen items={history} language={language} onBack={openTalk} onOpen={openHistoryDetail} t={t} />;
   if (screen === "historyDetail" && detail) return <HistoryDetailScreen detail={detail} language={language} onBack={() => setScreen("history")} t={t} />;
-  return <RoomScreen room={room} language={language} health={health} notice={notice} setNotice={setNotice} onHistory={async () => { if (room) await openHistoryDetail(room.code); }} onRoomUpdate={setRoom} onLeave={() => { setRoom(null); setScreen("dashboard"); }} t={t} />;
+  return <RoomScreen room={room} language={language} health={health} notice={notice} setNotice={setNotice} onHistory={async () => { if (room) await openHistoryDetail(room.code); }} onRoomUpdate={setRoom} onLeave={() => { setRoom(null); openTalk(); }} t={t} />;
 }
 
 function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; t: typeof copy.zh }) {
@@ -214,7 +239,7 @@ function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; 
       <div className="desktop-color-field desktop-color-field-red" aria-hidden="true" />
       <div className="desktop-color-field desktop-color-field-blue" aria-hidden="true" />
       <main className="desktop-home-hero">
-        <p className="desktop-kicker">{localized(language, "走向理解，走向彼此", "TOWARD UNDERSTANDING, TOWARD US", "HACIA EL ENTENDIMIENTO, HACIA NOSOTROS")}</p>
+        <p className="desktop-kicker">{localized(language, "拉钩，说好就算数", "A PINKY PROMISE FOR TWO", "UNA PROMESA DE MEÑIQUE PARA DOS")}</p>
         <h1>{t.homeLine}</h1>
         <PauseMark />
         <p className="desktop-home-support">{localized(language, "属于两个人的共同关系 Agent。帮助你们一起沟通、决定、计划、记住，并把说过的话真正做到。", "A shared relationship agent for two people. It helps you communicate, decide, plan, remember, and follow through together.", "Un agente de relación compartido para dos personas. Les ayuda a comunicarse, decidir, planear, recordar y cumplir juntos.")}</p>
@@ -250,8 +275,8 @@ function AuthScreen({ language, onLanguage, onBack, onAuth, onRecover, notice, s
       <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" /><small>{t.passwordHint}</small></label>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && !name.trim())} testId="auth-submit" />
-      {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
       <button className="auth-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
+      {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
     </main>
   </MobileScroll>;
 }
@@ -274,30 +299,6 @@ function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onBack,
         <><div className="invite-code-panel"><span>{t.inviteCode}</span><strong>{pairing.invitation?.code}</strong><button onClick={copyInvite}><Copy size={18} />{copied ? t.copied : t.copyInvite}</button></div><div className="waiting-pair"><span>{user.name.slice(0, 1)}</span><i>＋</i><span>?</span></div><button className="secondary-action" onClick={onRefresh}>{localized(language, "检查是否已加入", "Check connection", "Comprobar conexión")}</button></>}
       {notice && <p className="form-notice" role="alert">{notice}</p>}
     </main></MobileScroll>;
-}
-
-function DashboardScreen({ user, pairing, rooms, onPersonal, onPrivacy, onAccessChanged, language, onLanguage, onSetup, onJoin, onHistory, onLogout, notice, setNotice, busy, t }: {
-  user: User; pairing: Pairing; rooms: RoomSummary[]; onPersonal: () => void; onPrivacy: () => void; onAccessChanged: () => void; language: Language; onLanguage: (language: Language) => void; onSetup: () => void; onJoin: (code: string, join: boolean) => void;
-  onHistory: () => void; onLogout: () => void; notice: string; setNotice: (value: string) => void; busy: boolean; t: typeof copy.zh;
-}) {
-  const partner = pairing.members.find((member) => member.id !== user.id);
-  return <RelationshipHome
-    user={{ id: user.id, name: user.name }}
-    partnerName={partner?.name || ""}
-    onPersonal={onPersonal}
-    onPrivacy={onPrivacy}
-    onAccessChanged={onAccessChanged}
-    language={language}
-    rooms={rooms}
-    notice={notice}
-    busy={busy}
-    onLanguage={onLanguage}
-    onSetup={onSetup}
-    onJoin={onJoin}
-    onHistory={onHistory}
-    onLogout={onLogout}
-    onNotice={setNotice}
-  />;
 }
 
 function SetupScreen({ language, onBack, onLanguage, onRoom, notice, setNotice, busy, setBusy, t }: {
@@ -379,10 +380,12 @@ function SharedAnalysisContent({ analysis, t }: { analysis: SharedAnalysis; t: t
 function BottomNav({ current, onHome, onHistory, onLogout, t }: { current: "home" | "history"; onHome: () => void; onHistory: () => void; onLogout: () => void; t: typeof copy.zh }) { return <nav className="bottom-nav"><button className={current === "history" ? "" : "active"} onClick={onHome}><House size={21} /><span>{t.ownSpace}</span></button><button className={current === "history" ? "active" : ""} onClick={onHistory}><ClockCounterClockwise size={21} /><span>{t.history}</span></button><button onClick={onLogout}><UserCircle size={21} /><span>{t.settings}</span></button></nav>; }
 function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: (language: Language) => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark language={language} /><nav aria-label={localized(language, "主导航", "Main navigation", "Navegación principal")}><button onClick={() => location.assign("/demo")}>{localized(language, "快速体验", "Quick demo", "Demostración rápida")}</button><a href="#how-it-works">{localized(language, "如何工作", "How it works", "Cómo funciona")}</a><button onClick={onLogin}>{localized(language, "我们的复盘", "Our reviews", "Nuestras revisiones")}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{localized(language, "登录", "Sign in", "Iniciar sesión")}<ArrowRight size={17} /></button></div></header>; }
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: (language: Language) => void; compact?: boolean }) { return <div className={`language-switch ${compact ? "compact" : ""}`} role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div>; }
-function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>T O W A R D&nbsp;&nbsp;U S</strong>{language === "zh" && <span>｜彼此｜</span>}</div>; }
+function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>P I N K Y</strong>{language === "zh" && <span>拉钩，说好就算数</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 function FeedbackBlock({ number, title, body }: { number: string; title: string; body: string }) { return <article className="feedback-block"><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>; }
 function AnalysisSection({ title, index, children }: { title: string; index: string; children: React.ReactNode }) { return <section className="analysis-section"><header><span>{index}</span><h2>{title}</h2></header>{children}</section>; }
 function BulletList({ items, tone }: { items: string[]; tone: "common" | "different" }) { return <ul className={`bullet-list ${tone}`}>{items.map((item) => <li key={item}>{tone === "common" ? <CheckCircle size={18} weight="fill" /> : <WarningCircle size={18} />}<span>{item}</span></li>)}</ul>; }
+// After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
+function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }

@@ -3,6 +3,11 @@ import express from "express";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createDecisionAgent } from "./decision-agent.mjs";
 import {
+  agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
+} from "./agreement-actions.mjs";
+import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
+import { recordUsage } from "./usage.mjs";
+import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
 } from "./relationship-domain.mjs";
@@ -12,7 +17,9 @@ const LIST_TYPES = new Set(["date_ideas", "restaurants", "movies", "travel", "gi
 const ISSUE_CATEGORIES = new Set(["money", "time", "chores", "family", "travel", "living_together", "moving", "career", "marriage", "children", "boundaries", "custom"]);
 const EVALUATIONS = new Set(["accept", "accept_with_conditions", "revise", "reject"]);
 
-export function createRelationshipRouter({ store, mediator, decisionAgent = createDecisionAgent() }) {
+// `onTogether` sees every changed shared conversation, whichever router changed it (the iMessage group mirrors it, native push
+// nudges); its second argument is the member who triggered an Agent card, when known.
+export function createRelationshipRouter({ store, mediator, decisionAgent = createDecisionAgent(), onTogether = () => {} }) {
   const router = express.Router();
   const clients = new Map();
 
@@ -34,13 +41,21 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   });
 
   router.get("/milestones", listRoute("milestones"));
+  // The day they got together, for the counter on Moments; set by either partner, one per couple.
+  router.put("/relationship/together-since", async (req, res) => {
+    const context = await activeRelationship(store, req, res); if (!context) return;
+    const language = ["en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    const record = await store.transaction(`relationship:${context.relationship.id}`, (tx) => setTogetherSince(tx, { relationshipId: context.relationship.id, userId: req.auth.user.id, date: cleanDate(req.body?.date), title: language === "en" ? "Our anniversary" : language === "es" ? "Nuestro aniversario" : "在一起纪念日" }));
+    await audit(store, record, req.auth.user.id, "milestone.together_since"); emit(record, "milestone.updated");
+    res.json({ milestone: projectRecord(record, req.auth.user.id) });
+  });
   router.post("/milestones", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
     const type = MILESTONE_TYPES.has(req.body?.type) ? req.body.type : "custom";
     const date = cleanDate(req.body?.date); if (!date) return res.status(400).json({ error: "请提供有效日期。" });
     const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type, title: clean(req.body?.title, 120), date, timezone: clean(req.body?.timezone, 64) || "UTC", recurringRule: req.body?.recurringRule === "yearly" ? "yearly" : "once", jointlyConfirmed: false, notes: clean(req.body?.notes, 1200) });
     if (!record.title) return res.status(400).json({ error: "请输入纪念日名称。" });
-    await store.createRelationshipRecord("milestones", record); await audit(store, record, req.auth.user.id, "milestone.created"); emit(record, "milestone.updated");
+    await store.createRelationshipRecord("milestones", record); await audit(store, record, req.auth.user.id, "milestone.created"); emit(record, "milestone.updated"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "milestone_created" });
     res.status(201).json({ milestone: projectRecord(record, req.auth.user.id) });
   });
   router.patch("/milestones/:id", updateOwnedShared("milestones", ["title", "date", "timezone", "recurringRule", "notes"]));
@@ -67,8 +82,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const visibility = req.body?.visibility === "private_surprise" ? "private_surprise" : req.body?.visibility === "private" ? "private" : "shared";
     const record = createRelationshipRecord({ relationshipId: list.relationshipId, userId: req.auth.user.id, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", approvalPolicy: "owner", status: "active", listId: list.id, title: clean(req.body?.title, 160), description: clean(req.body?.description, 1200), link: safeUrl(req.body?.link), category: clean(req.body?.category, 64), desiredDate: cleanDate(req.body?.desiredDate), estimatedCostRange: clean(req.body?.estimatedCostRange, 80), completedAt: null, revealedAt: null });
     if (!record.title) return res.status(400).json({ error: "请输入清单项目。" });
-    await store.createRelationshipRecord("listItems", record); await audit(store, record, req.auth.user.id, "list_item.created");
-    if (visibility === "shared") { await notifyMembers(await store.getRelationshipContext(req.auth.user.id), req.auth.user.id, "shared_item_added", "Toward Us 有一项共同清单更新。", `/lists/${list.id}`); emit(record, "list_item.updated"); }
+    await store.createRelationshipRecord("listItems", record); await audit(store, record, req.auth.user.id, "list_item.created"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "list_item_added" });
+    if (visibility === "shared") { await notifyMembers(await store.getRelationshipContext(req.auth.user.id), req.auth.user.id, "shared_item_added", "Pinky 有一项共同清单更新。", `/lists/${list.id}`); emit(record, "list_item.updated"); }
     else emit(record, "list_item.updated", req.auth.user.id);
     res.status(201).json({ item: projectRecord(record, req.auth.user.id) });
   });
@@ -92,7 +107,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const context = await activeRelationship(store, req, res); if (!context) return;
     const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "collecting_perspectives", title: clean(req.body?.title, 160), category: ISSUE_CATEGORIES.has(req.body?.category) ? req.body.category : "custom", sharedContext: clean(req.body?.sharedContext, 1200) });
     if (!record.title) return res.status(400).json({ error: "请输入需要共同决定的事情。" });
-    await store.createRelationshipRecord("issues", record); await audit(store, record, req.auth.user.id, "issue.created"); emit(record, "issue.updated"); res.status(201).json({ issue: record });
+    await store.createRelationshipRecord("issues", record); await audit(store, record, req.auth.user.id, "issue.created"); emit(record, "issue.updated"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "issue_started" }); res.status(201).json({ issue: record });
   });
   router.post("/issues/:id/perspectives", async (req, res) => {
     const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" });
@@ -153,48 +168,38 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     if (!context.members.every((item) => evaluatedUsers.has(item.userId))) throw decisionError(409, "both_evaluations");
     const existing = snapshot.agreements.find((item) => item.proposalId === proposal.id && !item.archivedAt);
     if (existing) return { body: { agreement: existing } };
+    await assertNoOtherPendingAgreement(tx, issue.relationshipId, userId);
     const record = createRelationshipRecord({ relationshipId: issue.relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "awaiting_approvals", sourceIssueId: issue.id, proposalId: proposal.id, title: clean(req.body?.title, 160) || proposal.title, summary: clean(req.body?.summary, 1200) || proposal.rationale, terms: cleanArray(req.body?.terms, 8, 500), unresolvedPoints: cleanArray(req.body?.unresolvedPoints, 8, 500), effectiveAt: null, reviewAt: validIso(req.body?.reviewAt), supersedesAgreementId: null });
     if (!record.terms.length) record.terms = [String(record.summary)];
     await tx.createRelationshipRecord("agreements", record);
     await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.status = "agreement_pending"; draft.version += 1; });
     await audit(tx, record, userId, "agreement.created");
-    return { status: 201, record, event: "agreement.updated", body: { agreement: record } };
-  }));
+    return { status: 201, record, event: "agreement.updated", body: { agreement: record }, conversation: await announce(tx, record, userId, req) };
+  }, "agreement_drafted"));
   router.patch("/agreements/:id", decisionTransaction(async (tx, req) => {
     const current = await tx.getRelationshipRecordForUser("agreements", req.params.id, req.auth.user.id);
     if (!current) throw decisionError(404, "not_found");
     assertVersion(current, req.body?.version);
     if (!["draft", "awaiting_approvals"].includes(current.status)) throw decisionError(409, "agreement_not_editable");
     if (req.body?.confirmed !== true) throw decisionError(400, "confirm_draft");
+    await assertNoOtherPendingAgreement(tx, current.relationshipId, req.auth.user.id, current.id);
     const values = agreementValues(req.body);
     const agreement = await tx.updateRelationshipRecordForUser("agreements", current.id, req.auth.user.id, (draft) => { Object.assign(draft, values); draft.version += 1; draft.status = "awaiting_approvals"; });
     await audit(tx, agreement, req.auth.user.id, "agreement.changed");
-    return { record: agreement, event: "agreement.updated", body: { agreement } };
+    return { record: agreement, event: "agreement.updated", body: { agreement }, conversation: await announce(tx, agreement, req.auth.user.id, req) };
   }));
   router.post("/agreements/:id/approve", decisionTransaction(async (tx, req, context) => {
-    const userId = req.auth.user.id;
-    const agreement = await tx.getRelationshipRecordForUser("agreements", req.params.id, userId);
-    if (!agreement) throw decisionError(404, "not_found");
-    assertVersion(agreement, req.body?.version);
-    if (!["awaiting_approvals", "active"].includes(agreement.status)) throw decisionError(409, "agreement_not_pending");
-    const snapshot = await tx.relationshipSnapshotForUser(userId);
-    const matching = snapshot.approvals.filter((item) => item.agreementId === agreement.id && item.approvedVersion === agreement.version && !item.withdrawnAt);
-    if (!matching.some((item) => item.ownerUserId === userId)) {
-      if (agreement.status !== "awaiting_approvals") throw decisionError(409, "agreement_not_pending");
-      const approval = createRelationshipRecord({ relationshipId: agreement.relationshipId, userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "approved", agreementId: agreement.id, approvedVersion: agreement.version, approvedAt: new Date().toISOString() });
-      approval.id = `approval:${agreement.id}:${agreement.version}:${userId}`;
-      await tx.createRelationshipRecord("approvals", approval); matching.push(approval);
-    }
-    const approvedUsers = new Set(matching.map((item) => item.ownerUserId));
-    let updated = agreement;
-    if (context.members.every((item) => approvedUsers.has(item.userId)) && agreement.status !== "active") {
-      updated = await tx.updateRelationshipRecordForUser("agreements", agreement.id, userId, (draft) => { draft.status = "active"; draft.effectiveAt = new Date().toISOString(); });
-    }
-    await audit(tx, updated, userId, "agreement.approved");
-    return { record: updated, event: "agreement.updated", body: { agreement: updated, approvedCount: approvedUsers.size, requiredCount: context.members.length } };
+    const { agreement, approvedCount, requiredCount } = await approveAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, context });
+    return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount }, conversation: agreement.status === "active" ? await announce(tx, agreement, req.auth.user.id, req) : null };
+  }, "agreement_approved"));
+  router.post("/agreements/:id/reject", decisionTransaction(async (tx, req) => {
+    const { agreement } = await rejectAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
+    return { record: agreement, event: "agreement.rejected", body: { item: agreement } };
   }));
-  router.post("/agreements/:id/reject", decisionState("agreements", "cancelled", "agreement.rejected"));
-  router.post("/agreements/:id/request-change", decisionState("agreements", "draft", "agreement.change_requested"));
+  router.post("/agreements/:id/request-change", decisionTransaction(async (tx, req) => {
+    const { agreement } = await requestAgreementChange(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
+    return { record: agreement, event: "agreement.change_requested", body: { item: agreement }, conversation: await announce(tx, agreement, req.auth.user.id, req) };
+  }));
 
   router.post("/issues/:id/messages", sharedDiscussion);
   router.post(["/issues/:id/transcripts", "/issues/:id/:language/transcripts"], sharedDiscussion);
@@ -215,6 +220,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     if (req.body?.confirmed !== true) throw decisionError(400, "confirm_draft");
     const context = await jointDiscussionContext(tx, issue, userId);
     if (JSON.stringify(candidate.sourceRefs) !== JSON.stringify([...context.confirmedSummaries, ...context.authorizedMemories].map(({ id, version }) => ({ id, version })))) throw decisionError(409, "draft_changed");
+    await assertNoOtherPendingAgreement(tx, issue.relationshipId, userId, candidate.agreementId || null);
     const values = agreementValues(req.body);
     let agreement;
     if (candidate.agreementId) {
@@ -230,8 +236,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     }
     const updated = await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussionDraft = { ...draft.discussionDraft, confirmedAt: new Date().toISOString(), confirmedByUserId: userId, agreementId: agreement.id }; draft.status = "agreement_pending"; draft.version += 1; });
     await audit(tx, agreement, userId, "agreement.discussion_draft_confirmed");
-    return { record: updated, event: "issue.updated", body: { issue: updated, agreement } };
-  }));
+    return { record: updated, event: "issue.updated", body: { issue: updated, agreement }, conversation: await announce(tx, agreement, userId, req, issue.discussionLanguage) };
+  }, "agreement_drafted"));
 
   router.post("/commitments", decisionTransaction(async (tx, req, context) => {
     const userId = req.auth.user.id;
@@ -296,7 +302,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const outcome = commitment.status === "completed" ? await ensureOutcome(tx, commitment, userId) : null;
     await audit(tx, commitment, userId, "commitment.completed");
     return { record: commitment, event: "commitment.updated", body: { commitment, outcome } };
-  }));
+  }, "commitment_completed"));
   router.post("/commitments/:id/review", decisionTransaction(async (tx, req) => {
     const commitment = await tx.getRelationshipRecordForUser("commitments", req.params.id, req.auth.user.id);
     if (!commitment) throw decisionError(404, "not_found");
@@ -329,7 +335,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     await tx.createRelationshipRecord("outcomeResponses", response); await audit(tx, response, userId, "outcome.response_submitted");
     const updated = await tx.updateRelationshipRecordForUser("outcomes", outcome.id, userId, (draft) => { draft.responseCount = snapshot.outcomeResponses.filter((item) => item.outcomeId === outcome.id && !item.archivedAt && !item.withdrawnAt).length + 1; if (values.allowLearnedPattern) draft.learningCandidates = [...(draft.learningCandidates || []), { ownerUserId: userId, text: values.learnedPatternCandidate }]; draft.version += 1; });
     return { status: 201, record: updated, event: "outcome.updated", body: { response: projectRecord(response, userId) } };
-  }));
+  }, "review_submitted"));
   router.post("/outcome-reviews/:id/finalize", decisionTransaction(async (tx, req, context) => {
     const userId = req.auth.user.id;
     const outcome = await tx.getRelationshipRecordForUser("outcomes", req.params.id, userId);
@@ -367,7 +373,12 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.post("/notifications/:id/read", notificationMutation("readAt"));
   router.post("/notifications/:id/dismiss", notificationMutation("dismissedAt"));
 
-  function decisionTransaction(action) {
+  // One pending agreement per couple on every path (together, proposal, edit, discussion draft); `exceptId` is the agreement being moved.
+  async function assertNoOtherPendingAgreement(tx, relationshipId, userId, exceptId = null) {
+    const agreements = await tx.listRelationshipRecordsForUser("agreements", userId);
+    if (agreements.some((item) => item.relationshipId === relationshipId && item.id !== exceptId && item.status === "awaiting_approvals" && !item.archivedAt && !item.withdrawnAt)) throw decisionError(409, "one_pending_agreement");
+  }
+  function decisionTransaction(action, usage = null) {
     return async (req, res) => {
       const initial = await activeRelationship(store, req, res); if (!initial) return;
       const result = await store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
@@ -376,9 +387,13 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
         return action(tx, req, context);
       });
       if (result.record) emit(result.record, result.event);
+      if (result.conversation) emit(result.conversation, "together.updated", null, req.auth.user.id);
+      if (usage && result.record) void recordUsage(store, { userId: req.auth.user.id, relationshipId: initial.relationship.id, action: usage });
       res.status(result.status || 200).json(result.body);
     };
   }
+  // The Agent posts the agreement card in the shared "together" conversation, in the acting member's language.
+  async function announce(tx, agreement, userId, req, fallbackLanguage = null) { return (await announceAgreement(tx, { agreement, userId, language: req.body?.language || req.query?.language || fallbackLanguage })).conversation; }
   function decisionState(collection, status, event) {
     return decisionTransaction(async (tx, req) => {
       const record = await tx.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id);
@@ -386,7 +401,6 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       assertVersion(record, req.body?.version);
       if (["cancelled", "superseded", "archived"].includes(record.status)) throw decisionError(409, "agreement_not_editable");
       const updated = await tx.updateRelationshipRecordForUser(collection, record.id, req.auth.user.id, (draft) => { draft.status = status; draft.changeReason = clean(req.body?.reason, 1200); draft.changedByUserId = req.auth.user.id; draft.effectiveAt = null; draft.version += 1; });
-      if (collection === "agreements") await markCommitmentsForRenegotiation(tx, updated, req.auth.user.id);
       await audit(tx, updated, req.auth.user.id, event);
       return { record: updated, event, body: { item: updated } };
     });
@@ -434,39 +448,28 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     emit(updated, "issue.updated"); res.json({ issue: projectRecord(updated, userId) });
   }
 
-  router.use((error, req, res, next) => {
-    if (!error.decisionCode) return next(error);
-    const language = req.body?.language || req.query?.language || "zh";
-    const copy = DECISION_ERRORS[error.decisionCode] || DECISION_ERRORS.not_found;
-    res.status(error.statusCode || 400).json({ error: copy[language === "en" ? 1 : language === "es" ? 2 : 0], code: error.decisionCode });
-  });
+  router.use(decisionErrorHandler);
 
   function listRoute(collection) { return async (req, res) => { const records = await store.listRelationshipRecordsForUser(collection, req.auth.user.id); res.json({ items: records.map((item) => projectRecord(item, req.auth.user.id)).filter(Boolean) }); }; }
   function updateOwnedShared(collection, fields) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可修改的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { for (const field of fields) if (req.body?.[field] !== undefined) draft[field] = typeof req.body[field] === "string" ? clean(req.body[field], 1200) : req.body[field]; draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.updated`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.json({ item: projectRecord(record, req.auth.user.id) }); }; }
   function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可归档的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
   function notificationMutation(field) { return async (req, res) => { const current = await store.getRelationshipRecordForUser("notifications", req.params.id, req.auth.user.id); if (!current || current.ownerUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到通知。" }); const notification = await store.updateRelationshipRecordForUser("notifications", current.id, req.auth.user.id, (draft) => { draft[field] = new Date().toISOString(); draft.version += 1; }); res.json({ notification }); }; }
-  function emit(record, eventType, ownerUserId = null) { if (!record) return; const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
+  function emit(record, eventType, ownerUserId = null, actorUserId = null) { if (!record) return; if (eventType === "together.updated") onTogether(record, actorUserId); const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
   async function notifyMembers(context, actorId, type, title, actionUrl) { if (!context?.members) return; const current = await store.listRelationshipRecordsForUser("notifications", actorId); for (const member of context.members.filter((item) => item.userId !== actorId)) { const dedupeKey = `${type}:${actionUrl}:${member.userId}`; if (current.some((item) => item.dedupeKey === dedupeKey && !item.dismissedAt)) continue; const notification = createRelationshipRecord({ relationshipId: context.relationship.id, userId: actorId, ownerUserId: member.userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "unread", type, title, actionUrl, dedupeKey, readAt: null, dismissedAt: null }); await store.createRelationshipRecord("notifications", notification); emit(notification, "notification.updated", member.userId); } }
   router.emitRecord = emit;
   router.closeUserConnections = (userIds) => { for (const bucket of clients.values()) for (const client of bucket) if (userIds.includes(client.userId)) { client.res.write('event: access-ended\ndata: {}\n\n'); client.res.end(); } };
   return router;
 }
 
+// Shared with the "together" router so channel-independent agreement errors are localized the same way everywhere.
+export function decisionErrorHandler(error, req, res, next) {
+  if (!error.decisionCode) return next(error);
+  const language = req.body?.language || req.query?.language || "zh";
+  const copy = DECISION_ERRORS[error.decisionCode] || DECISION_ERRORS.not_found;
+  res.status(error.statusCode || 400).json({ error: copy[language === "en" ? 1 : language === "es" ? 2 : 0], code: error.decisionCode });
+}
 async function activeRelationship(store, req, res) { const context = await store.getRelationshipContext(req.auth.user.id); if (!context || context.relationship.status !== "active" || context.members.length !== 2) { res.status(409).json({ error: "需要双方账号完成伴侣绑定。" }); return null; } return context; }
-const decisionError = (statusCode, decisionCode) => Object.assign(new Error(decisionCode), { statusCode, decisionCode });
-function assertVersion(record, version) { if (!Number.isInteger(version) || version !== record.version) throw decisionError(409, "stale_version"); }
-function agreementValues(body) {
-  const title = clean(body?.title, 160), summary = clean(body?.summary, 1200), terms = cleanArray(body?.terms, 8, 500);
-  if (!title || !summary || !terms.length) throw decisionError(400, "agreement_fields");
-  return { title, summary, terms, unresolvedPoints: cleanArray(body?.unresolvedPoints, 8, 500) };
-}
 function responsibilityIds(context, ownerType) { return context.members.filter((member) => ownerType === "both" || ownerType === `member_${member.role.toLowerCase()}`).map((member) => member.userId); }
-async function markCommitmentsForRenegotiation(tx, agreement, userId) {
-  const commitments = await tx.listRelationshipRecordsForUser("commitments", userId);
-  for (const item of commitments.filter((item) => item.agreementId === agreement.id && ["active", "awaiting_confirmations"].includes(item.status))) {
-    await tx.updateRelationshipRecordForUser("commitments", item.id, userId, (draft) => { draft.status = "renegotiation_requested"; draft.version += 1; });
-  }
-}
 async function ensureOutcome(tx, commitment, userId, startNow = false) {
   const id = `outcome:${commitment.id}`;
   const existing = await tx.getRelationshipRecordForUser("outcomes", id, userId);
@@ -516,11 +519,11 @@ const DECISION_ERRORS = {
   relationship_changed: ["关系状态已变化，请刷新。", "The relationship changed. Refresh.", "La relación cambió. Actualiza."],
   message_required: ["请先输入想说的话。", "Enter a message first.", "Escribe un mensaje primero."],
   context_changed: ["你说的话已保存。共同摘要或协议刚刚发生变化，请检查新内容后继续讨论。", "Your message is saved. The shared summaries or agreement just changed; review them before continuing.", "Tu mensaje está guardado. Los resúmenes o el acuerdo acaban de cambiar; revísalos antes de continuar."],
+  one_pending_agreement: ["已经有一份约定在等你们批准，请先批准、拒绝或要求修改它。", "An agreement is already waiting for your approvals. Approve, reject or request changes to it first.", "Ya hay un acuerdo esperando sus aprobaciones. Apruébalo, recházalo o pide cambios primero."],
+  together_draft_required: ["还没有可以起草的约定内容。先在共同对话里请 Agent 帮你们整理，或直接填写约定。", "There is nothing to draft yet. Ask the Agent in your shared conversation first, or write the agreement yourselves.", "Todavía no hay nada que redactar. Pídeselo primero al Agent en la conversación compartida o escriban el acuerdo ustedes."],
+  pairing_required: ["需要双方账号完成伴侣绑定。", "Both accounts must be paired first.", "Ambas cuentas deben vincularse primero."],
 };
-async function audit(store, source, userId, eventType) { const event = createRelationshipRecord({ relationshipId: source.relationshipId, userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "recorded", objectId: source.id, objectType: eventType.split(".")[0], eventType, sourceVersion: source.version }); await store.createRelationshipRecord("consentEvents", event); }
 const PRIVATE_VISIBILITY = (record) => ["private", "private_surprise"].includes(record.visibility);
-const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
-const cleanArray = (value, count, limit) => Array.isArray(value) ? value.slice(0, count).map((item) => clean(item, limit)).filter(Boolean) : [];
 const cleanDate = (value) => { const text = String(value || ""); const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? text : null; };
 const validIso = (value) => { const date = new Date(value || ""); return Number.isNaN(date.getTime()) ? null : date.toISOString(); };
 const clampInt = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.round(Number(value)))) : fallback;

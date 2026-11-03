@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
+import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
 const GRAPH_TABLES = Object.freeze({
@@ -9,7 +10,8 @@ const GRAPH_TABLES = Object.freeze({
   issues: "relationship_issues", perspectives: "issue_perspectives", summaries: "shareable_summaries", proposals: "decision_proposals",
   evaluations: "proposal_evaluations", agreements: "agreements", approvals: "agreement_approvals", commitments: "commitments",
   outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
-  consentEvents: "consent_events", productEvents: "product_events",
+  consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations", nativePushDevices: "native_push_devices",
+  spaces: "relationship_spaces", spaceItems: "relationship_space_items", photos: "relationship_photos", chatImports: "relationship_chat_imports",
 });
 
 export async function createPostgresStore(databaseUrl) {
@@ -65,13 +67,14 @@ export async function createPostgresStore(databaseUrl) {
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
     async deleteUserSessions(userId) { await pool.query("delete from sessions where user_id=$1", [userId]); },
     async updateUserPassword(userId, passwordHash) { return (await pool.query("update users set password_hash=$2 where id=$1", [userId, passwordHash])).rowCount > 0; },
+    async updateUserLanguage(userId, language) { return (await pool.query("update users set language=$2 where id=$1", [userId, language])).rowCount > 0; },
     async leaveRelationship(userId) {
       const initial = await store.getRelationshipContext(userId); if (!initial) return null;
       return store.transaction(`relationship:${initial.relationship.id}`, async () => {
         const context = await store.getRelationshipContext(userId); if (!context) return null;
         const id = context.relationship.id;
         await pool.query("insert into relationship_former_members (relationship_id,user_id,role,joined_at) select relationship_id,user_id,role,joined_at from relationship_members where relationship_id=$1 on conflict do nothing", [id]);
-        await pool.query("update relationships set status='ended',updated_at=now() where id=$1", [id]);
+        await pool.query("update relationships set status='ended',imessage_group_id=null,updated_at=now() where id=$1", [id]);
         await pool.query("update invitations set expires_at=now() where relationship_id=$1", [id]);
         await pool.query("delete from relationship_members where relationship_id=$1", [id]);
         for (const collection of ["privateAgentThreads", "memories", "checkins"]) {
@@ -81,18 +84,53 @@ export async function createPostgresStore(databaseUrl) {
         return { relationshipId: id, memberIds: context.members.map((member) => member.userId) };
       });
     },
+    async createPhoneLink(link) {
+      // Links hold the raw number, so expired ones are purged as new ones are minted.
+      await pool.query("delete from phone_links where expires_at <= $1", [link.createdAt]);
+      await pool.query("insert into phone_links (code_hash,phone,created_at,expires_at) values ($1,$2,$3,$4)", [link.codeHash, link.phone, link.createdAt, link.expiresAt]);
+    },
+    async getPhoneLink(codeHash, now) { return (await pool.query("select phone from phone_links where code_hash=$1 and expires_at > $2", [codeHash, now])).rows[0]?.phone || null; },
+    async bindPhone(userId, phone) {
+      return store.transaction(`user:${userId}`, async () => {
+        const ownedByOther = async () => { const owner = (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id; return Boolean(owner) && owner !== userId; };
+        if (await ownedByOther()) throw phoneTakenError();
+        // Sendblue cannot remove anyone from a group, so a member's number leaving the account retires the couple's group.
+        await pool.query("update relationships set imessage_group_id=null where imessage_group_id is not null and id=(select relationship_id from relationship_members where user_id=$1) and exists (select 1 from user_phones where user_id=$1 and phone<>$2)", [userId, phone]);
+        await pool.query("delete from user_phones where user_id=$1 and phone<>$2", [userId, phone]);
+        await pool.query("insert into user_phones (phone,user_id,created_at) values ($1,$2,now()) on conflict (phone) do nothing", [phone, userId]);
+        if (await ownedByOther()) throw phoneTakenError();
+        return phone;
+      });
+    },
+    async consumePhoneLink(codeHash, userId, now) {
+      return store.transaction(`user:${userId}`, async () => {
+        const link = (await pool.query("select * from phone_links where code_hash=$1 for update", [codeHash])).rows[0];
+        if (!link || new Date(link.expires_at).toISOString() <= now) return null;
+        await store.bindPhone(userId, link.phone);
+        await pool.query("delete from phone_links where code_hash=$1", [codeHash]);
+        return link.phone;
+      });
+    },
+    async unbindPhone(userId) {
+      return store.transaction(`user:${userId}`, async () => {
+        await pool.query("update relationships set imessage_group_id=null where imessage_group_id is not null and id=(select relationship_id from relationship_members where user_id=$1) and exists (select 1 from user_phones where user_id=$1)", [userId]);
+        await pool.query("delete from user_phones where user_id=$1", [userId]);
+      });
+    },
+    async getUserIdByPhone(phone) { return (await pool.query("select user_id from user_phones where phone=$1", [phone])).rows[0]?.user_id || null; },
+    async getPhoneForUser(userId) { return (await pool.query("select phone from user_phones where user_id=$1", [userId])).rows[0]?.phone || null; },
     async getPrivacySnapshot(userId) {
       const rows = (await pool.query("select distinct r.* from relationships r where exists (select 1 from relationship_members m where m.relationship_id=r.id and m.user_id=$1) or exists (select 1 from relationship_former_members m where m.relationship_id=r.id and m.user_id=$1)", [userId])).rows;
       const ids = rows.map((row) => row.id);
       const graph = Object.fromEntries(await mapCollections(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)]));
       const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
-      return { relationships: rows.map(mapRelationship), graph, rooms };
+      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId) };
     },
     async deletePrivateData(userId) {
       return store.transaction(`user:${userId}`, async () => {
         let deleted = 0;
         for (const collection of GRAPH_COLLECTIONS) {
-          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs"].includes(collection)) continue;
+          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
         }
         await pool.query("update rooms set payload=jsonb_set(payload,'{analysis,private}',(payload#>'{analysis,private}') - $1) where payload#>'{analysis,private}' ? $1", [userId]);
@@ -104,7 +142,8 @@ export async function createPostgresStore(databaseUrl) {
       return store.transaction(context ? `relationship:${context.relationship.id}` : `user:${userId}`, async () => {
         await store.getUserForUpdate(userId);
         await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
-        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
+        await pool.query("delete from phone_links where phone=(select phone from user_phones where user_id=$1)", [userId]); await store.unbindPhone(userId);
+        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
         const snapshot = await store.getPrivacySnapshot(userId);
         for (const room of snapshot.rooms) {
           const participantIds = new Set((room.participants || []).filter((person) => person.userId === userId).map((person) => person.id));
@@ -118,6 +157,8 @@ export async function createPostgresStore(databaseUrl) {
     },
     async deleteSession(id) { await pool.query("delete from sessions where id = $1", [id]); },
     async getRelationshipContext(userId) { return loadRelationshipContext(pool, userId); },
+    // The couple's iMessage group is attached once, only to an active relationship that has none yet; leaving clears it.
+    async bindRelationshipGroup(relationshipId, groupId) { return (await pool.query("update relationships set imessage_group_id=$2 where id=$1 and status='active' and imessage_group_id is null", [relationshipId, groupId])).rowCount === 1; },
     async createInvitation({ relationship, membership, invitation }) {
       const client = await pool.connect();
       try {
@@ -250,11 +291,13 @@ export async function createPostgresStore(databaseUrl) {
       const result = await pool.query(`delete from ${table} r where r.id=$1 and r.owner_user_id=$2 and ${recordScopeSql(collection, "$2")}`, [id, userId]);
       return result.rowCount > 0;
     },
+    async listRelationshipsForJob() { return (await pool.query("select * from relationships")).rows.map(mapRelationship); },
     async listRecordsForJob(collection) {
       return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);
     },
     async relationshipSnapshotForUser(userId) {
-      const entries = await mapCollections(async (collection) => [collection, await store.listRelationshipRecordsForUser(collection, userId)]);
+      // Usage events are write-only metering rows; keeping them out of every snapshot stops hot paths from loading them.
+      const entries = (await mapCollections(async (collection) => collection === "productEvents" ? null : [collection, await store.listRelationshipRecordsForUser(collection, userId)])).filter(Boolean);
       return Object.fromEntries(entries);
     },
   };
@@ -291,6 +334,12 @@ async function migrate(pool) {
       relationship_id text not null references relationships(id), user_id text not null references users(id),
       role text not null, joined_at timestamptz not null, primary key(relationship_id,user_id)
     );
+  `);
+  await pool.query(`
+    create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
+    alter table users add column if not exists language text;
+    alter table relationships add column if not exists imessage_group_id text;
+    create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
     await pool.query(`
@@ -342,8 +391,8 @@ function mapGraphRecord(row) {
 }
 
 const iso = (value) => value ? new Date(value).toISOString() : null;
-const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, createdAt: iso(row.created_at) } : null;
+const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, language: row.language || null, createdAt: iso(row.created_at) } : null;
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
-const mapRelationship = (row) => row ? { id: row.id, status: row.status, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
+const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
 const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;

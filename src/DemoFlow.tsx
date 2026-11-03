@@ -54,7 +54,7 @@ const words = {
     saveHint: "两个人分别登录或创建账号并确认后，这次复盘才会进入你们的共同历史。", login: "登录", register: "创建账号",
     name: "你的称呼", email: "邮箱", password: "密码（至少 10 个字符）", claim: "确认保存我的这一侧", claimed: "我已确认，等待对方",
     saved: "双方已确认，这次体验已经进入共同历史。", goAccount: "进入正式空间", switchRegister: "还没有账号？创建一个",
-    switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "我不想和你争输赢，想和你好好把这件事说清楚。点击链接加入我们这次的 Toward Us 对话（15 分钟内有效）。", askAi: "继续问 AI", askAiPlaceholder: "追问这次分析，或请 AI 帮你们把下一句话说清楚…", askingAi: "AI 正在回应…",
+    switchLogin: "已有账号？返回登录", exit: "退出快速体验", shareText: "我不想和你争输赢，想和你好好把这件事说清楚。点击链接加入我们这次的 Pinky 对话（15 分钟内有效）。", askAi: "继续问 AI", askAiPlaceholder: "追问这次分析，或请 AI 帮你们把下一句话说清楚…", askingAi: "AI 正在回应…",
   },
   en: {
     back: "Back", send: "Send", quick: "Quick demo", entryTitle: "Beyond the argument, we choose each other.", choose: "Choose how to enter",
@@ -74,7 +74,7 @@ const words = {
     saveHint: "It enters shared history only after both people sign in or register and confirm.", login: "Sign in", register: "Create account",
     name: "Your name", email: "Email", password: "Password (10+ characters)", claim: "Confirm and save my side", claimed: "Confirmed — waiting for partner",
     saved: "Both confirmed. This experience is now in your shared history.", goAccount: "Open formal space", switchRegister: "New here? Create an account",
-    switchLogin: "Already registered? Sign in", exit: "Exit quick demo", shareText: "I don’t want this to be about winning. I want us to understand each other. Join our Toward Us conversation with this 15-minute invitation.", askAi: "Ask AI", askAiPlaceholder: "Ask about this analysis, or get help wording what to say next…", askingAi: "AI is responding…",
+    switchLogin: "Already registered? Sign in", exit: "Exit quick demo", shareText: "I don’t want this to be about winning. I want us to understand each other. Join our Pinky conversation with this 15-minute invitation.", askAi: "Ask AI", askAiPlaceholder: "Ask about this analysis, or get help wording what to say next…", askingAi: "AI is responding…",
   },
   es: {
     back: "Volver", send: "Enviar", quick: "Demostración rápida", entryTitle: "Más allá de la discusión, nos elegimos.", choose: "Elige cómo entrar",
@@ -94,7 +94,7 @@ const words = {
     saveHint: "Entrará en el historial compartido solo cuando ambos inicien sesión o se registren y confirmen.", login: "Iniciar sesión", register: "Crear cuenta",
     name: "Tu nombre", email: "Correo electrónico", password: "Contraseña (10+ caracteres)", claim: "Confirmar y guardar mi parte", claimed: "Confirmado; esperando a tu pareja",
     saved: "Ambos confirmaron. Esta experiencia ya está en su historial compartido.", goAccount: "Abrir espacio formal", switchRegister: "¿Eres nuevo? Crea una cuenta",
-    switchLogin: "¿Ya tienes cuenta? Inicia sesión", exit: "Salir de la demostración", shareText: "No quiero que esto se trate de ganar. Quiero que nos entendamos. Únete a nuestra conversación de Toward Us con esta invitación válida durante 15 minutos.", askAi: "Preguntar a la IA", askAiPlaceholder: "Pregunta sobre este análisis o pide ayuda para expresar lo que sigue…", askingAi: "La IA está respondiendo…",
+    switchLogin: "¿Ya tienes cuenta? Inicia sesión", exit: "Salir de la demostración", shareText: "No quiero que esto se trate de ganar. Quiero que nos entendamos. Únete a nuestra conversación de Pinky con esta invitación válida durante 15 minutos.", askAi: "Preguntar a la IA", askAiPlaceholder: "Pregunta sobre este análisis o pide ayuda para expresar lo que sigue…", askingAi: "La IA está respondiendo…",
   },
 };
 
@@ -246,7 +246,7 @@ function DemoInlineAnalysis({ room, account, notice, t, analysisRef, onRoom, onA
 }
 
 function DemoHeader({ language, onLanguage, onBack }: { language: Language; onLanguage: (language: Language) => void; onBack: () => void }) { return <header className="demo-header"><button onClick={onBack} aria-label={localized(language, "返回", "Back", "Volver")}><ArrowLeft size={21} /></button><Wordmark language={language} /><div className="demo-language" role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div></header>; }
-function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>T O W A R D&nbsp;&nbsp;U S</strong>{language === "zh" && <span>｜彼此｜</span>}</div>; }
+function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>P I N K Y</strong>{language === "zh" && <span>拉钩，说好就算数</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 function FeedbackBlock({ number, title, body }: { number: string; title: string; body: string }) { return <article className="feedback-block"><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>; }

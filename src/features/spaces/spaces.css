@@ -1,0 +1,42 @@
+/* Spaces: the containers Pinky builds per couple, drawn in one of five general layouts on the ivory surface. */
+.space-main { display: flex; flex-direction: column; gap: 14px; }
+.space-scope { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #6f6860; font-size: 14px; }
+.space-description { margin: 0; color: #4a4540; font-size: 16px; line-height: 1.55; }
+.space-error { margin: 0; color: #903e38; font-size: 15px; }
+.space-empty { margin: 24px 0; color: #6f6860; font-size: 16px; line-height: 1.6; }
+.space-subhead { margin: 10px 0 4px; color: #6f6860; font-size: 14px; font-weight: 600; letter-spacing: 0; }
+
+.space-list, .space-checklist { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.space-list li, .space-checklist li { display: flex; align-items: flex-start; gap: 10px; min-height: 56px; padding: 12px 0; border-bottom: 1px solid rgba(37,37,37,.09); }
+.space-list li > div, .space-checklist li > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.space-main strong { color: var(--jian-ink); font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.space-main li p, .space-notes p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.space-main small { color: #7a736b; font-size: 13px; }
+.space-check { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 40px; margin: -8px 0 -8px -8px; border: 0; border-radius: 12px; background: transparent; color: var(--jian-blue); cursor: pointer; }
+.space-checklist li.done strong { color: #8a837a; text-decoration: line-through; text-decoration-color: rgba(37,37,37,.3); }
+
+.space-remove { flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 40px; height: 40px; margin: -8px -8px -8px 0; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: #9a9389; font-size: 14px; font-weight: 600; cursor: pointer; }
+.space-remove.confirming { background: #f6e2de; color: #903e38; }
+
+.space-timeline section { display: grid; gap: 2px; }
+.space-timeline ol { position: relative; display: grid; gap: 0; margin: 0; padding: 0 0 0 4px; list-style: none; }
+.space-timeline ol::before { content: ""; position: absolute; top: 18px; bottom: 18px; left: 9px; width: 1.5px; background: rgba(37,37,37,.14); }
+.space-timeline li { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 10px 0; }
+.space-timeline li > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.space-dot { flex: 0 0 auto; width: 11px; height: 11px; margin-top: 6px; border: 2px solid var(--jian-paper); border-radius: 50%; background: var(--jian-red); box-shadow: 0 0 0 1px rgba(37,37,37,.12); }
+
+.space-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.space-gallery figure { position: relative; display: grid; gap: 6px; margin: 0; }
+.space-gallery img, .space-tile { width: 100%; aspect-ratio: 1; border-radius: 14px; object-fit: cover; background: #ebe4d8; }
+.space-tile { display: grid; place-items: center; padding: 14px; box-sizing: border-box; color: #4a4540; font-size: 15px; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
+.space-gallery figcaption { display: grid; gap: 2px; padding-right: 34px; }
+.space-gallery figcaption span { overflow: hidden; color: var(--jian-ink); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.space-gallery .space-remove { position: absolute; right: 0; bottom: 0; margin: 0; }
+
+.space-notes { display: grid; gap: 12px; }
+.space-notes article { display: grid; gap: 8px; padding: 16px; border-radius: 14px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.space-notes h2 { margin: 0; color: var(--jian-ink); font-size: 17px; font-weight: 650; letter-spacing: 0; }
+.space-notes footer { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+
+.space-ask { align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; margin: 12px 0 8px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--jian-ink); color: var(--jian-paper-bright); font-size: 16px; font-weight: 600; cursor: pointer; }
+.space-ask:focus-visible, .space-check:focus-visible, .space-remove:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
@@ -22,7 +22,7 @@ async function fixture(run) {
     return { ...result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
   const register = async (name) => request("/api/auth/register", { method: "POST", body: { name, email: `${name}@example.test`, password }, status: 201 });
-  try { await run({ store, request, register, mediator }); }
+  try { await run({ store, request, register, mediator, base }); }
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -123,4 +123,26 @@ test("reauthentication is checked after a queued recovery-code rotation acquires
   await request("/api/auth/recover", { method: "POST", body: { email: a.user.email, recoveryCode, password: "replacement-password-26" }, status: 204 });
   release(); await pending;
   assert.equal((await store.getRelationshipRecordForUser("accountSettings", `account:${a.user.id}`, a.user.id)).recoveryCodeHash, undefined);
+}));
+
+test("deleting private data or the account also deletes private photo and chat-history files from disk", () => fixture(async ({ register, request, base }) => {
+  const { readdir } = await import("node:fs/promises");
+  const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(tmpdir(), `toward-privacy-files-${Date.now()}`, "state.json");
+  const media = `${process.env.TOWARD_US_DATA_FILE}.media`;
+  try {
+    const files = async () => (await readdir(media).catch(() => [])).length;
+    const bring = async (cookie) => {
+      for (const [path, type, body] of [["/api/photos?scope=private", "image/jpeg", Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2])], ["/api/imports?name=chat.txt&language=en", "application/octet-stream", Buffer.from("[1/2/24, 9:00:00 PM] Sam: hi\n[1/2/24, 9:01:00 PM] Robin: hello\n[1/2/24, 9:02:00 PM] Sam: dinner?")]]) {
+        const response = await fetch(`${base}${path}`, { method: "POST", headers: { cookie, "content-type": type }, body });
+        assert.equal(response.status, 201, await response.text());
+      }
+    };
+    const a = await register("files-a"), b = await register("files-b");
+    await bring(a.cookie); await bring(b.cookie);
+    assert.equal(await files(), 4);
+    await request("/api/privacy/delete-private", { cookie: a.cookie, method: "POST", body: { password, confirm: true } });
+    assert.equal(await files(), 2, "a's photo and chat file are gone; b's stay");
+    await request("/api/privacy/account", { cookie: b.cookie, method: "DELETE", body: { password, confirm: true }, status: 204 });
+    assert.equal(await files(), 0);
+  } finally { await rm(dirname(process.env.TOWARD_US_DATA_FILE), { recursive: true, force: true }); process.env.TOWARD_US_DATA_FILE = previous; }
 }));

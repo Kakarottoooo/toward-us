@@ -3,7 +3,7 @@ self.addEventListener("push", (event) => {
   let payload;
   try { payload = event.data?.json(); } catch { return; }
   if (!payload || typeof payload.body !== "string") return;
-  event.waitUntil(self.registration.showNotification("Toward Us", {
+  event.waitUntil(self.registration.showNotification("Pinky", {
     body: payload.body.slice(0, 160), tag: String(payload.tag || "toward-us-reminder").slice(0, 64),
     data: { url: safeDestination(payload.url) }, renotify: false,
   }));

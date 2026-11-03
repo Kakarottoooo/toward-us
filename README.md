@@ -45,6 +45,8 @@ npm run dev:full
 
 本地数据默认写入 `data/toward-us.local.json`。可通过 `TOWARD_US_DATA_FILE` 指定其他位置。原始音频只在请求内存中处理，不写入文件；文字、转录和调解结果会持久化。
 
+手机 App（安卓 APK / iPhone 工程）见 [mobile/README.md](mobile/README.md)。
+
 ## 环境变量
 
 复制 `.env.example` 的变量名到本机或托管平台的密钥存储，不要把真实值写进仓库。

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import { createRelationshipRecord, projectRecord } from "./relationship-domain.mjs";
+import { recordUsage } from "./usage.mjs";
 
 const text = (req, zh, en, es) => (req.body?.language || req.query.language || "zh") === "zh" ? zh : (req.body?.language || req.query.language) === "es" ? es : en;
 const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
@@ -34,6 +35,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
     const thread = createRelationshipRecord({ relationshipId, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", status: "exploring", intentType: req.body?.intentType === "plan" ? "plan" : "decision", issueId, language: ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh", messages: [], draft: {}, readyToShare: false, source: "member" });
     await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await tx.createRelationshipRecord("privateAgentThreads", thread); await audit(tx, thread, req.auth.user.id, "private_agent_thread.created"); });
     emit(thread, "private_agent_thread.updated", req.auth.user.id);
+    void recordUsage(store, { userId: req.auth.user.id, relationshipId: thread.relationshipId, action: "private_thread_started" });
     res.status(201).json({ thread });
   });
   router.get("/private-agent/threads/:id", async (req, res) => {
