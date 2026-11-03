@@ -3,7 +3,7 @@ import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegot
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
-import { handoffUrl } from "./handoff.mjs";
+import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
 
@@ -168,7 +168,8 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
   const refs = []; let created = null;
   for (const action of actions) {
     if (action.kind === "link") {
-      const url = handoffUrl({ url: action.localDateTime ? null : action.text, localDateTime: action.localDateTime, title: action.title || "", location: action.localDateTime ? action.text || "" : "", timezone });
+      const calendar = isCalendar(action.text, action.localDateTime);
+      const url = handoffUrl({ url: calendar ? null : action.text, localDateTime: calendar ? action.localDateTime : null, title: action.title || "", location: calendar ? action.text || "" : "", timezone });
       if (url && action.title) refs.push({ type: "link", id: randomUUID(), title: action.title.slice(0, 60), url });
       continue;
     }

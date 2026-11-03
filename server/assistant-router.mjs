@@ -4,7 +4,7 @@ import { canViewRecord, createRelationshipRecord, projectRecord, nextOccurrence 
 import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
-import { handoffUrl } from "./handoff.mjs";
+import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
@@ -197,8 +197,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         }
         if (["agreement", "commitment", "milestone"].includes(action.kind)) throw fail(502, "Shared records require their existing confirmation flow. Nothing was changed.");
         if (action.kind === "link") {
-          const values = action.fields; const calendar = Boolean(values.localDateTime);
-          const url = handoffUrl({ url: calendar ? null : values.text, localDateTime: values.localDateTime, title: clean(values.title, 120), location: calendar ? clean(values.text, 200) : "", timezone: session.timezone });
+          const values = action.fields; const calendar = isCalendar(values.text, values.localDateTime);
+          const url = handoffUrl({ url: calendar ? null : values.text, localDateTime: calendar ? values.localDateTime : null, title: clean(values.title, 120), location: calendar ? clean(values.text, 200) : "", timezone: session.timezone });
           if (url) cards.push({ id: randomUUID(), kind: "link", version: 1, title: clean(values.title, 60), url });
           continue;
         }
