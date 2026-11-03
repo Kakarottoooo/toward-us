@@ -4,6 +4,8 @@ test("two people can report a worse attempt, keep one review private and approve
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const a = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
   const b = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
+  // The first-run tour is covered in personal-lifecycle; here both people have seen it.
+  for (const context of [a, b]) await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
   for (const [context, name] of [[a, "Alice"], [b, "Bob"]] as const) {
     expect((await context.request.post("/api/auth/register", { data: { name, email: `${name}-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
   }
@@ -20,7 +22,7 @@ test("two people can report a worse attempt, keep one review private and approve
 
   const pageA = await a.newPage(), pageB = await b.newPage();
   await Promise.all([pageA.goto("/"), pageB.goto("/")]);
-  for (const page of [pageA, pageB]) await page.getByRole("button", { name: "决定", exact: true }).click();
+  for (const page of [pageA, pageB]) await page.goto("/?view=decide");
   await pageA.getByRole("button", { name: "批准当前版本", exact: true }).click();
   await expect(pageA.getByRole("button", { name: "我已批准此版本，等待对方" })).toBeDisabled();
   await pageB.getByRole("button", { name: "批准当前版本", exact: true }).click();
@@ -51,7 +53,7 @@ test("two people can report a worse attempt, keep one review private and approve
   await expect(pageA.getByText("PRIVATE_REVIEW_B_DO_NOT_SHARE", { exact: true })).toHaveCount(0);
   await expect(pageA.locator(".decision-agreement .status-line")).toHaveText("需要重新协商");
 
-  await pageA.getByRole("button", { name: "EN", exact: true }).click();
+  await pageA.evaluate(() => localStorage.setItem("toward-us.language", "en")); await pageA.goto("/?view=decide");
   const discussion = pageA.getByRole("region", { name: "Shared conversation" });
   await discussion.getByPlaceholder("For example: This was exhausting. Could we try once a month?").fill("Could we try once a month instead? Keep each visit to one hour.");
   await discussion.getByRole("button", { name: "Send to shared conversation", exact: true }).click();
@@ -67,7 +69,7 @@ test("two people can report a worse attempt, keep one review private and approve
   await pageB.getByRole("button", { name: "批准当前版本", exact: true }).click();
   await expect(pageA.locator(".decision-agreement .status-line")).toHaveText("Active");
   await expect(pageA.locator(".decision-agreement")).toContainText("First Sunday of each month");
-  await pageA.getByRole("button", { name: "ES", exact: true }).click();
+  await pageA.evaluate(() => localStorage.setItem("toward-us.language", "es")); await pageA.goto("/?view=decide");
   await expect(pageA.getByRole("heading", { name: "Seguir hablando juntos" })).toBeVisible();
   await pageA.screenshot({ path: testInfo.outputPath("revised-agreement-desktop.png"), fullPage: true });
   await pageB.screenshot({ path: testInfo.outputPath("revised-agreement-mobile.png"), fullPage: true });

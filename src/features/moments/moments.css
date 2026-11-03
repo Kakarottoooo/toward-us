@@ -1,0 +1,47 @@
+/* Moments: one timeline of the couple's album and each member's own, newest first, photos large. */
+.moments-page { display: grid; gap: 16px; }
+.moments-onthisday { display: grid; gap: 8px; padding: 14px 16px; border-radius: 20px; background: #fbe6ee; color: #72243e; }
+.moments-onthisday > small { font-size: 13px; font-weight: 600; }
+.moments-onthisday > div { display: flex; align-items: center; gap: 12px; }
+.moments-onthisday img { flex: 0 0 auto; width: 64px; height: 64px; border-radius: 12px; object-fit: cover; }
+.moments-onthisday span { display: grid; gap: 2px; min-width: 0; }
+.moments-onthisday strong { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.moments-onthisday span small { font-size: 13px; opacity: .85; }
+.moments-filter { display: flex; gap: 6px; }
+.moments-filter button { min-height: 34px; padding: 0 14px; border: 0; border-radius: 17px; background: rgba(37,37,37,.06); color: #5f5952; font-size: 14px; font-weight: 600; cursor: pointer; }
+.moments-filter button.active { background: var(--jian-ink); color: #fff; }
+.moments-empty { display: grid; gap: 6px; padding: 18px; border-radius: 18px; background: var(--jian-paper-bright); }
+.moments-empty strong { color: var(--jian-ink); font-size: 17px; }
+.moments-empty p { margin: 0; color: #5f5952; font-size: 15px; line-height: 1.6; }
+.moments-year h2 { margin: 0 0 6px; color: #6f6860; font-size: 15px; font-weight: 700; }
+.moments-year ol { position: relative; display: grid; gap: 4px; margin: 0; padding: 0 0 0 6px; list-style: none; }
+.moments-year ol::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 10px; width: 1.5px; background: rgba(37,37,37,.13); }
+.moment { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 8px 0; }
+.moment-dot { position: relative; z-index: 1; flex: 0 0 auto; width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: #e46a9a; box-shadow: 0 0 0 4px var(--jian-paper); }
+.moment-body { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.moment-body > small { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #7a736b; font-size: 13px; }
+.moment-scope { display: inline-flex; align-items: center; gap: 3px; color: #8a837a; }
+.moment-body strong { color: var(--jian-ink); font-size: 17px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.moment-body p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.moment-body em { color: #993556; font-size: 14px; font-style: normal; }
+.moment-photos { display: grid; gap: 4px; margin-top: 4px; }
+.moment-photos.count-1 { grid-template-columns: 1fr; }
+.moment-photos.count-2 { grid-template-columns: repeat(2, 1fr); }
+.moment-photos.count-3 { grid-template-columns: repeat(3, 1fr); }
+.moment-photos img { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 12px; object-fit: cover; }
+.moment-photos.count-1 img { aspect-ratio: 3 / 2; }
+.together-card { display: grid; gap: 6px; padding: 18px 18px 14px; border-radius: 22px; background: #fbe4da; color: #7d2f17; }
+.together-card > small { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 650; }
+.together-card > strong { font-size: 34px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.together-span { font-size: 15px; font-weight: 600; opacity: .9; }
+.together-card p { margin: 0; font-size: 14px; line-height: 1.5; }
+.together-today { font-size: 16px !important; font-weight: 700; }
+.together-card label { display: grid; gap: 10px; }
+.together-ask { font-size: 20px; font-weight: 750; }
+.together-card input { min-height: 48px; padding: 0 12px; border: 1px solid rgba(125,47,23,.25); border-radius: 12px; background: #fffaf6; color: var(--jian-ink); font: inherit; font-size: 16px; }
+.together-actions { display: flex; gap: 8px; }
+.together-save { min-height: 44px; padding: 0 20px; border: 0; border-radius: 12px; background: #c2412f; color: #fff; font-size: 15px; font-weight: 650; cursor: pointer; }
+.together-save:disabled { opacity: .5; }
+.together-edit { justify-self: start; padding: 4px 0; border: 0; background: none; color: #993c1d; font-size: 13px; font-weight: 600; cursor: pointer; }
+.together-note { color: #993c1d; font-size: 13px !important; }
+.together-error { color: #903e38; }

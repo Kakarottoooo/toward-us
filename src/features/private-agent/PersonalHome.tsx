@@ -1,43 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, HandHeart, LockKey, SignOut, UserGear } from "@phosphor-icons/react";
-import { languages, localized, type Language } from "../../i18n";
+import { ChatCircleDots } from "@phosphor-icons/react";
+import { localized, type Language } from "../../i18n";
+import "../spaces/spaces.css";
 import { PrivateAgentWorkspace } from "./PrivateAgentWorkspace";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { CheckinPanel } from "../checkins/CheckinPanel";
 import { RemindersPanel } from "../reminders/RemindersPanel";
+import { UpcomingPage } from "../upcoming/UpcomingPage";
+import { MomentsPage } from "../moments/MomentsPage";
 import { relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
+import { PageHeader } from "../conversation/ConversationHome";
 import "./personal.css";
-import { VoiceAssistant, type AssistantCard } from "../assistant/VoiceAssistant";
 
-export function PersonalHome({ user, relationshipId, language, onLanguage, onPair, onShared, onPrivacy, onLogout }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; onLanguage: (language: Language) => void; onPair: () => void; onShared: () => void; onPrivacy: () => void; onLogout: () => void }) {
-  const [view, setView] = useState(() => new URLSearchParams(location.search).get("view") === "reminders" ? "reminders" : ["moments", "checkins"].includes(new URLSearchParams(location.search).get("view") || "") ? "memories" : "agent");
+type View = "memories" | "reminders" | "plans";
+
+/** The private pages the drawer opens before a partner joins. New things are asked for in the conversation. */
+export function PersonalHome({ user, relationshipId, language, onShared, onBack, onAsk }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; onShared: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+  const [view] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return requested === "reminders" ? "reminders" : requested === "plans" ? "plans" : "memories"; });
+  const [selectedPlan] = useState(() => new URLSearchParams(location.search).get("thread") || "");
   const [threads, setThreads] = useState<GraphRecord[]>([]); const [error, setError] = useState("");
-  const [selectedPlan, setSelectedPlan] = useState("");
-  const openAssistantCard = (card: AssistantCard) => {
-    if (card.kind === "plan") { setSelectedPlan(card.id); setView("plans"); }
-    else if (card.kind === "reminder") setView("reminders");
-    else if (["memory", "checkin"].includes(card.kind)) setView("memories");
-    else if (relationshipId) { history.replaceState(null, "", card.kind === "milestone" ? `/?view=plans&milestone=${encodeURIComponent(card.id)}` : "/?view=decide"); onShared(); }
-  };
   const refresh = useCallback(async () => { try { const data = await relationshipApi<{ threads: GraphRecord[] }>("/api/private-agent/threads"); setThreads(data.threads); setError(""); } catch (caught) { setError((caught as Error).message); } }, []);
   useEffect(() => { void refresh(); const focus = () => void refresh(); window.addEventListener("focus", focus); return () => window.removeEventListener("focus", focus); }, [refresh]);
+  const title = view === "reminders" ? localized(language, "即将到来", "Coming up", "Próximamente") : view === "plans" ? localized(language, "计划", "Plans", "Planes") : localized(language, "回忆", "Moments", "Momentos");
   return <div className="paper-screen relationship-shell personal-shell" data-testid="personal-screen">
-    <header className="relationship-header"><div className="relationship-brand"><strong>TOWARD US</strong><span>{localized(language, "我的空间", "My space", "Mi espacio")}</span></div>
-      <nav aria-label={localized(language, "个人空间导航", "Personal-space navigation", "Navegación del espacio personal")}>
-        <button className={view === "agent" ? "active" : ""} onClick={() => setView("agent")}><LockKey /><span>{localized(language, "私人 Agent", "Private Agent", "Agente privado")}</span></button>
-        <button className={view === "memories" ? "active" : ""} onClick={() => setView("memories")}><HandHeart /><span>{localized(language, "记忆与日常", "Memories & daily life", "Recuerdos y día a día")}</span></button>
-        <button className={view === "reminders" ? "active" : ""} onClick={() => setView("reminders")}><Bell /><span>{localized(language, "提醒", "Reminders", "Recordatorios")}</span></button>
-      </nav>
-      <div className="relationship-header-actions"><button onClick={onPrivacy} aria-label={localized(language, "隐私与账号", "Privacy & account", "Privacidad y cuenta")}><UserGear size={21} /></button><div className="relationship-languages">{languages.map(item => <button key={item} className={item === language ? "active" : ""} onClick={() => onLanguage(item)}>{item.toUpperCase()}</button>)}</div><button onClick={onLogout} aria-label={localized(language, "退出登录", "Sign out", "Cerrar sesión")}><SignOut size={20} /></button></div>
-    </header>
-    <main className="relationship-main"><div className="personal-welcome"><div><p>{localized(language, "先照顾自己的想法，再走向彼此", "Room for your thoughts, before sharing", "Espacio para pensar antes de compartir")}</p><h1>{user.name}</h1></div><button className="secondary-action" onClick={relationshipId ? onShared : onPair}>{relationshipId ? localized(language, "进入共同空间", "Open shared space", "Abrir espacio compartido") : localized(language, "邀请或加入另一半", "Invite or join your partner", "Invitar o unirme a mi pareja")}</button></div>
+    <PageHeader language={language} title={title} onBack={onBack} />
+    <main className="relationship-main">
       {error && <p role="alert">{error}</p>}
-      <VoiceAssistant key={`${user.id}:${language}`} userId={user.id} language={language} onChanged={refresh} onOpen={openAssistantCard} />
       {view === "plans" && <PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...threads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
-      {view === "agent" && <PrivateAgentWorkspace language={language} userId={user.id} intentType="decision" threads={threads} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
-      {view === "memories" && <div className="feature-stack"><CheckinPanel language={language} userId={user.id} relationshipId={relationshipId} /><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} /></div>}
-      {view === "reminders" && <RemindersPanel language={language} />}
+      {view === "memories" && <MomentsPage language={language} userId={user.id} paired={false} onAsk={onAsk} />}
+      {view === "reminders" && <UpcomingPage language={language} onAsk={(text) => onAsk(text, "me")} />}
     </main>
   </div>;
 }

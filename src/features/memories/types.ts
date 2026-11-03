@@ -8,5 +8,6 @@ export type MemoryRecord = {
   provenance: { source: string; sourceType?: string; sourceId?: string; sourceVersion?: number; createdAt?: string; correctedAt?: string };
 };
 export type MemorySource = { type: "outcome_review"; id: string; version: number; createdAt: string; text: string };
-export type WorkspaceProps = { language: Language; userId: string; relationshipId?: string | null; onChanged?: () => void | Promise<void> };
+// compose=false hides the writing form: pages opened from the drawer only show and adjust; new entries come from the chat.
+export type WorkspaceProps = { language: Language; userId: string; relationshipId?: string | null; onChanged?: () => void | Promise<void>; compose?: boolean };
 export type SharePreview = { sourceId: string; expectedVersion: number; text: string; digest: string };

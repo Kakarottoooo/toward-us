@@ -1,19 +1,35 @@
 import { randomUUID, createHash } from "node:crypto";
 import { createRelationshipRecord, canViewRecord } from "./relationship-domain.mjs";
 import { validatePushSubscription } from "./push-delivery.mjs";
+import { announceInTogether, memberLanguage, togetherI18n } from "./together-domain.mjs";
 
 const LOCK = "reminder-delivery";
 const MAX_ATTEMPTS = 5;
 const LEASE_MS = 120_000;
+const ANNOUNCE_WINDOW_MS = 7 * 86_400_000;
+const JOINT = new Set(["shared", "jointly_confirmed", "revealed"]);
 const active = (record) => record && !record.archivedAt && !record.withdrawnAt && record.status === "active";
 const iso = (value) => new Date(value).toISOString();
 const fail = (message, statusCode = 400, code = "invalid_reminder") => Object.assign(new Error(message), { statusCode, code });
+const NATIVE_TOKEN = /^[A-Za-z0-9_:-]{16,4096}$/;
+const TOGETHER_NOTIFY_MS = 10 * 60_000;
+// Channels the browser retry button never re-targets (it can only move a job to another browser).
+const OWN_CHANNELS = new Set(["imessage", "native"]);
+const RAW_APNS = /^[0-9a-f]{64}$/i;
 
-export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "" }) {
+export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null, groupsEnabled = () => false }) {
+  const pushOn = enabled && typeof sendPush === "function";
+  const nativeOn = typeof sendNative === "function";
+  // Like the iMessage mirror: what this process already nudged about per conversation, so nothing older than it goes out.
+  const togetherCursors = new Map(), startedAt = new Date().toISOString();
   const owned = async (db, collection, userId) => (await db.listRelationshipRecordsForUser(collection, userId)).filter((item) => item.ownerUserId === userId && !item.archivedAt);
   const update = (db, collection, item, patch) => db.updateRelationshipRecordForUser(collection, item.id, item.ownerUserId, (record) => { Object.assign(record, patch); record.version += 1; });
   const privateRecord = (userId, data) => createRelationshipRecord({ userId, relationshipId: null, visibility: "private", aiAccessScope: "none", ...data });
   const preferences = async (db, userId) => (await owned(db, "deliveryPreferences", userId))[0];
+  // What a member wants to be told about: messages in Us, Pinky's surprises, reminders and due dates, and a quiet night.
+  const NOTIFY_DEFAULTS = { messages: true, pinky: true, reminders: true, quiet: false };
+  const notifyOf = (preference) => ({ ...NOTIFY_DEFAULTS, ...(preference?.notify || {}) });
+  const quietNow = (preference) => { if (!notifyOf(preference).quiet) return false; let hour = 12; try { hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: preference?.timezone || "UTC" }).format(now())); } catch { hour = now().getUTCHours(); } return hour >= 22 || hour < 8; };
   const cancelJobs = async (db, userId, predicate = () => true) => {
     for (const job of await owned(db, "deliveryJobs", userId)) {
       if (["pending", "retry", "processing"].includes(job.status) && predicate(job)) await update(db, "deliveryJobs", job, { ...(job.status === "processing" ? {} : { status: "cancelled", leaseUntil: null }), cancelRequestedAt: iso(now()) });
@@ -21,7 +37,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   };
   const settings = async (userId) => {
     const preference = await preferences(store, userId);
-    return { enabled: enabled && preference?.enabled === true, configured: enabled, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
+    const imessage = typeof sendIMessage === "function" && Boolean(await store.getPhoneForUser(userId));
+    return { notify: notifyOf(preference), enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, imessage, imessageEnabled: imessage && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
   };
   const getOwnedReminder = async (db, id, userId) => {
     const reminder = await db.getRelationshipRecordForUser("reminders", id, userId);
@@ -47,6 +64,23 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     return true;
   };
   const authorizedDelivery = async (db, job) => {
+    // Reminders switched off in Settings are not delivered (the reminders themselves stay).
+    if (notifyOf(await preferences(db, job.ownerUserId)).reminders === false) return null;
+    // iMessage is the owner's own 1:1 line: it needs a still-bound number, not browser push; "turn off all reminder notifications" stops it too.
+    if (job.channel === "imessage") {
+      if (typeof sendIMessage !== "function" || (await preferences(db, job.ownerUserId))?.enabled === false) return null;
+      const reminder = await db.getRelationshipRecordForUser("reminders", job.reminderId, job.ownerUserId);
+      const phone = reminder && reminder.scheduleVersion === job.scheduleVersion && await authorizeReminder(db, reminder) ? await db.getPhoneForUser(job.ownerUserId) : null;
+      return phone ? { reminder, phone, language: await memberLanguage(db, job.ownerUserId) } : null;
+    }
+    // App push: registering the phone is the opt-in; "turn off all reminder notifications" (an explicit disabled preference) is the opt-out.
+    if (job.channel === "native") {
+      if (!nativeOn || (await preferences(db, job.ownerUserId))?.enabled === false) return null;
+      const reminder = await db.getRelationshipRecordForUser("reminders", job.reminderId, job.ownerUserId);
+      if (!reminder || reminder.scheduleVersion !== job.scheduleVersion || !await authorizeReminder(db, reminder)) return null;
+      const device = await db.getRelationshipRecordForUser("nativePushDevices", job.deviceId, job.ownerUserId);
+      return active(device) && device.ownerUserId === job.ownerUserId && device.token ? { reminder, device, native: true, language: await memberLanguage(db, job.ownerUserId) } : null;
+    }
     if (!enabled) return null;
     const preference = await preferences(db, job.ownerUserId);
     if (!preference?.enabled || !active(preference)) return null;
@@ -58,12 +92,98 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     return { reminder, device, language: preference.language || "zh" };
   };
 
+  // The Agent's own voice in the shared "together" conversation, driven by the same run tick. Only genuinely joint things are
+  // announced, and only their shared title: personal reminders (this service's own records, titles included) and private
+  // review answers never leave their owner. Handles make a repeated tick or a retry a no-op.
+  const announceDue = async () => {
+    const current = now();
+    const post = async (relationshipId, userId, build) => {
+      try {
+        const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
+          const context = await tx.getRelationshipContext(userId);
+          if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) return null;
+          return build(tx, await memberLanguage(tx, userId), context);
+        });
+        if (result && !result.duplicate) onAnnounce(result.conversation, "together.updated");
+      } catch (error) { console.error("together announcement failed", error?.code || "error"); /* One broken record must not stop the other announcements or push delivery. */ }
+    };
+    // Due-ness is computed before the per-tick cap, so already-announced or not-yet-due reminders never crowd out due ones.
+    let announcedReminders = 0;
+    for (const reminder of (await store.listRecordsForJob("reminders")).filter((item) => active(item) && item.visibility === "shared" && item.relationshipId && item.milestoneId)) {
+      if (announcedReminders >= 100) break;
+      const milestone = await store.getRelationshipRecordForUser("milestones", reminder.milestoneId, reminder.ownerUserId);
+      if (!milestone || !canViewRecord(milestone, reminder.ownerUserId) || milestone.withdrawnAt || !JOINT.has(milestone.visibility)) continue;
+      const due = jointReminderDue(milestone, reminder.minutesBefore, current);
+      if (!due || reminder.announcedAt?.[due.dueAt]) continue;
+      announcedReminders += 1;
+      const i18n = togetherI18n((language) => say(language, `到点提醒：「${milestone.title}」（${due.occursOn}）。`, `Reminder: "${milestone.title}" (${due.occursOn}).`, `Recordatorio: "${milestone.title}" (${due.occursOn}).`));
+      // The occurrence is stamped on the reminder in the same transaction as the post: the handle alone only dedupes against
+      // the last 200 messages, while a due occurrence stays in the 7-day window. No version bump: it is bookkeeping, not an edit.
+      await post(reminder.relationshipId, reminder.ownerUserId, async (tx, language) => {
+        const fresh = await tx.getRelationshipRecordForUser("reminders", reminder.id, reminder.ownerUserId);
+        if (!fresh || fresh.announcedAt?.[due.dueAt]) return null;
+        const result = await announceInTogether(tx, {
+          relationshipId: reminder.relationshipId, userId: reminder.ownerUserId, kind: "reminder", handle: `reminder:${reminder.id}:${due.dueAt}`,
+          refs: [{ type: "milestone", id: milestone.id, version: milestone.version }, { type: "reminder", id: reminder.id }],
+          text: i18n[language], i18n,
+        });
+        await tx.updateRelationshipRecordForUser("reminders", reminder.id, reminder.ownerUserId, (draft) => { draft.announcedAt = { ...(draft.announcedAt || {}), [due.dueAt]: iso(current) }; });
+        return result;
+      });
+    }
+    for (const outcome of (await store.listRecordsForJob("outcomes")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "pending" && !item.announcedAt && !item.archivedAt && !item.withdrawnAt && item.reviewAt && new Date(item.reviewAt) <= current).slice(0, 100)) {
+      const userId = outcome.createdByUserId;
+      await post(outcome.relationshipId, userId, async (tx, language) => {
+        const fresh = await tx.getRelationshipRecordForUser("outcomes", outcome.id, userId);
+        if (!fresh || fresh.status !== "pending" || fresh.announcedAt) return null;
+        const i18n = togetherI18n((item) => say(item, `该复盘了：「${fresh.title}」。请你们各自私下完成复盘；双方都完成后才会形成共同结果。`, `Time to review "${fresh.title}". Each of you reviews it privately; the shared result forms once you have both finished.`, `Es hora de revisar "${fresh.title}". Cada uno lo revisa en privado; el resultado compartido se forma cuando ambos terminen.`));
+        const result = await announceInTogether(tx, {
+          relationshipId: outcome.relationshipId, userId, kind: "review", handle: `review:${outcome.id}`, refs: [{ type: "outcome", id: outcome.id, version: fresh.version }],
+          text: i18n[language], i18n,
+        });
+        await tx.updateRelationshipRecordForUser("outcomes", outcome.id, userId, (draft) => { draft.announcedAt = iso(current); draft.version += 1; });
+        return result;
+      });
+    }
+    // Active shared commitments that reached their due time (completed, renegotiating or awaiting-confirmation ones are skipped;
+    // so is anything overdue by more than the 7-day window, like joint reminders).
+    for (const commitment of (await store.listRecordsForJob("commitments")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "active" && !item.dueAnnouncedAt && !item.archivedAt && !item.withdrawnAt && item.dueAt && new Date(item.dueAt) <= current && current.getTime() - new Date(item.dueAt).getTime() <= ANNOUNCE_WINDOW_MS).slice(0, 100)) {
+      const userId = commitment.createdByUserId;
+      // Stamped like outcomes (dueAnnouncedAt) so the handle's 200-message horizon cannot re-announce it; no version bump, so
+      // members confirming or completing the commitment right at its due time do not hit stale_version.
+      await post(commitment.relationshipId, userId, async (tx, language, context) => {
+        const fresh = await tx.getRelationshipRecordForUser("commitments", commitment.id, userId);
+        if (!fresh || fresh.status !== "active" || fresh.dueAnnouncedAt) return null;
+        const owner = context.members.find((member) => commitment.ownerType === `member_${String(member.role).toLowerCase()}`);
+        const due = iso(commitment.dueAt).slice(0, 16).replace("T", " ") + " UTC";
+        const i18n = togetherI18n((item) => { const who = owner?.user?.name || say(item, "你们俩", "both of you", "ambos"); return say(item, `承诺到期：${who}要做的「${commitment.description}」，到期时间 ${due}。`, `Commitment due: ${who} agreed to "${commitment.description}", due ${due}.`, `Compromiso vencido: ${who} acordó "${commitment.description}", vence el ${due}.`); });
+        const result = await announceInTogether(tx, {
+          relationshipId: commitment.relationshipId, userId, kind: "reminder", handle: `commitment:${commitment.id}:due`, refs: [{ type: "commitment", id: commitment.id, version: commitment.version }],
+          text: i18n[language], i18n,
+        });
+        await tx.updateRelationshipRecordForUser("commitments", commitment.id, userId, (draft) => { draft.dueAnnouncedAt = iso(current); });
+        return result;
+      });
+    }
+  };
+
   return {
     internalSecret,
     getSettings: settings,
+    async updateNotify(userId, input) {
+      const notify = Object.fromEntries(Object.keys(NOTIFY_DEFAULTS).filter((key) => typeof input?.[key] === "boolean").map((key) => [key, input[key]]));
+      if (!Object.keys(notify).length) throw fail("Choose what to be notified about.");
+      const timezone = typeof input.timezone === "string" && input.timezone ? input.timezone : null; if (timezone) dateFormatter(timezone);
+      await store.transaction(LOCK, async (db) => {
+        const existing = await preferences(db, userId);
+        if (existing) await update(db, "deliveryPreferences", existing, { notify: { ...notifyOf(existing), ...notify }, ...(timezone ? { timezone } : {}) });
+        else await db.createRelationshipRecord("deliveryPreferences", privateRecord(userId, { enabled: true, timezone: timezone || "UTC", language: "zh", status: "active", notify: { ...NOTIFY_DEFAULTS, ...notify } }));
+      });
+      return settings(userId);
+    },
     async updateSettings(userId, input) {
       if (typeof input?.enabled !== "boolean") throw fail("Choose whether reminders are enabled.");
-      if (input.enabled && !enabled) throw fail("Browser push has not been configured.", 503, "push_not_configured");
+      if (input.enabled && !enabled && !nativeOn && typeof sendIMessage !== "function") throw fail("Browser push has not been configured.", 503, "push_not_configured");
       const timezone = input.timezone || "UTC"; dateFormatter(timezone);
       await store.transaction(LOCK, async (db) => {
         const existing = await preferences(db, userId);
@@ -99,6 +219,57 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         await update(db, "pushSubscriptions", device, { status: "revoked", subscription: null });
         await cancelJobs(db, userId, (job) => job.subscriptionId === id);
       });
+    },
+    async registerNativeDevice(userId, input) {
+      if (!nativeOn) throw fail("Phone notifications have not been configured.", 503, "push_not_configured");
+      const token = typeof input?.token === "string" ? input.token : "";
+      // A raw APNs device token (64 hex) cannot be addressed through FCM: iOS must hand over Firebase's token.
+      if (!NATIVE_TOKEN.test(token) || !["ios", "android"].includes(input?.platform) || (input.platform === "ios" && RAW_APNS.test(token))) throw fail("Invalid phone notification token.", 400, "invalid_device");
+      return store.transaction(LOCK, async (db) => {
+        // One token, one account: a phone that switched accounts must stop receiving the previous account's reminders.
+        const holders = (await db.listRecordsForJob("nativePushDevices")).filter((item) => active(item) && item.token === token);
+        const mine = holders.find((item) => item.ownerUserId === userId);
+        for (const other of holders.filter((item) => item.ownerUserId !== userId)) await revokeNative(db, other);
+        if (mine) { if (mine.platform !== input.platform) await update(db, "nativePushDevices", mine, { platform: input.platform }); return { id: mine.id }; }
+        // Tokens rotate; keep the five newest phones instead of refusing a rotated token.
+        const devices = (await owned(db, "nativePushDevices", userId)).filter(active).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        for (const stale of devices.slice(0, Math.max(0, devices.length - 4))) await revokeNative(db, stale);
+        const record = privateRecord(userId, { token, platform: input.platform });
+        await db.createRelationshipRecord("nativePushDevices", record);
+        return { id: record.id };
+      });
+    },
+    async unregisterNativeDevice(userId, input) {
+      const token = typeof input?.token === "string" ? input.token : "";
+      if (!NATIVE_TOKEN.test(token)) throw fail("Invalid phone notification token.", 400, "invalid_device");
+      return store.transaction(LOCK, async (db) => {
+        const devices = (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token === token);
+        for (const device of devices) await revokeNative(db, device);
+        return { removed: devices.length };
+      });
+    },
+    // Every published "我们俩" change (member messages, relays, Agent replies, cards, due/review announcements) passes here.
+    // New messages since the last call nudge the members who did not write them, vaguely, when the couple has no live iMessage
+    // group to carry them. `actorUserId` is the member who triggered an Agent card, so they are not nudged about their own action.
+    async notifyTogether(conversation, actorUserId = null) {
+      if (!nativeOn || !conversation?.relationshipId || !Array.isArray(conversation.messages)) return { sent: 0 };
+      const cursor = togetherCursors.get(conversation.id) || { since: startedAt, ids: new Set() };
+      const fresh = conversation.messages.filter((item) => item.createdAt > cursor.since || (item.createdAt === cursor.since && !cursor.ids.has(item.id)));
+      if (!fresh.length) return { sent: 0 };
+      const since = fresh.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, cursor.since);
+      togetherCursors.set(conversation.id, { since, ids: new Set([...(since === cursor.since ? cursor.ids : []), ...fresh.filter((item) => item.createdAt === since).map((item) => item.id)]) });
+      const context = await store.getRelationshipContext(conversation.createdByUserId);
+      if (context?.relationship.id !== conversation.relationshipId || context.relationship.status !== "active" || context.members.length !== 2 || (groupsEnabled() && context.relationship.imessageGroupId)) return { sent: 0 };
+      const authorOf = (item) => item.role === "member" ? item.actorUserId : conversation.messages.find((other) => other.id === item.replyTo)?.actorUserId || actorUserId;
+      let sent = 0;
+      // Each member hears only the kinds they keep on, and nothing but reminders during their quiet night.
+      const kindOf = (item) => item.role === "member" ? "messages" : item.kind === "story" || String(item.handle || "").startsWith("onthisday:") ? "pinky" : ["reminder", "review"].includes(item.kind) ? "reminders" : "messages";
+      for (const member of context.members) {
+        const preference = await preferences(store, member.userId), notify = notifyOf(preference), quiet = quietNow(preference);
+        const mine = fresh.filter((item) => authorOf(item) !== member.userId).filter((item) => notify[kindOf(item)] !== false && (!quiet || kindOf(item) === "reminders"));
+        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"), mine.every((item) => kindOf(item) === "pinky"));
+      }
+      return { sent };
     },
     async listReminders(userId) {
       const reminders = await owned(store, "reminders", userId);
@@ -153,7 +324,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       return store.transaction(LOCK, async (db) => {
         const reminder = await getOwnedReminder(db, id, userId);
         if (!await authorizeReminder(db, reminder) || !(await preferences(db, userId))?.enabled) throw fail("Enable this reminder and browser notifications first.", 409, "reminder_disabled");
-        const jobs = (await owned(db, "deliveryJobs", userId)).filter((job) => job.reminderId === id && job.scheduleVersion === reminder.scheduleVersion && ["failed", "retry"].includes(job.status));
+        const jobs = (await owned(db, "deliveryJobs", userId)).filter((job) => job.reminderId === id && job.scheduleVersion === reminder.scheduleVersion && ["failed", "retry"].includes(job.status) && !OWN_CHANNELS.has(job.channel));
         if (!jobs.length) throw fail("There are no failed deliveries to retry.", 409, "no_failed_delivery");
         const devices = (await owned(db, "pushSubscriptions", userId)).filter(active);
         const queuedDevices = new Set();
@@ -170,7 +341,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       });
     },
     async runDue({ limit = 25 } = {}) {
-      if (!enabled || typeof sendPush !== "function") return { configured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0 };
+      await announceDue();
+      if (!pushOn && typeof sendIMessage !== "function" && !nativeOn) return { configured: false, imessageConfigured: false, nativeConfigured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0 };
       const batchSize = Math.max(1, Math.min(50, Number.isInteger(limit) ? limit : 25));
       const claims = await store.transaction(LOCK, async (db) => {
         const current = now(); const at = iso(current);
@@ -181,13 +353,28 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         for (const reminder of due.slice(0, 100)) {
           const preference = await preferences(db, reminder.ownerUserId);
           if (!await authorizeReminder(db, reminder)) { await update(db, "reminders", reminder, { status: "cancelled" }); continue; }
-          if (!preference?.enabled) continue;
-          const devices = (await owned(db, "pushSubscriptions", reminder.ownerUserId)).filter(active);
-          if (!devices.length) continue;
-          for (const device of devices) {
-            const dedupeKey = `${reminder.id}:${reminder.scheduleVersion || 0}:${reminder.dueAt}:${device.id}`;
+          const devices = pushOn && preference?.enabled ? (await owned(db, "pushSubscriptions", reminder.ownerUserId)).filter(active) : [];
+          const phone = typeof sendIMessage === "function" && preference?.enabled !== false ? await db.getPhoneForUser(reminder.ownerUserId) : null;
+          const phones = nativeOn && preference?.enabled !== false ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter((item) => active(item) && item.token) : [];
+          if (!devices.length && !phone && !phones.length) continue;
+          // One job per channel and occurrence; the channel suffix keeps a failure or retry on one from touching the other.
+          const occurrence = `${reminder.id}:${reminder.scheduleVersion || 0}:${reminder.dueAt}`;
+          if (phone && !keys.has(`${occurrence}:imessage`)) {
+            const dedupeKey = `${occurrence}:imessage`;
+            const job = privateRecord(reminder.ownerUserId, { status: "pending", channel: "imessage", reminderId: reminder.id, sourceRelationshipId: reminder.sourceRelationshipId || reminder.relationshipId, scheduleVersion: reminder.scheduleVersion, dueAt: reminder.dueAt, nextAttemptAt: at, dedupeKey, attempts: 0, leaseUntil: null });
+            await db.createRelationshipRecord("deliveryJobs", job); jobs.push(job); keys.add(dedupeKey);
+          }
+          // Channel order for a personal reminder: iMessage, then App push, then browser push.
+          for (const device of phones) {
+            const dedupeKey = `${occurrence}:${device.id}:native`;
             if (keys.has(dedupeKey)) continue;
-            const job = privateRecord(reminder.ownerUserId, { status: "pending", reminderId: reminder.id, subscriptionId: device.id, sourceRelationshipId: reminder.sourceRelationshipId || reminder.relationshipId, scheduleVersion: reminder.scheduleVersion, dueAt: reminder.dueAt, nextAttemptAt: at, dedupeKey, attempts: 0, leaseUntil: null });
+            const job = privateRecord(reminder.ownerUserId, { status: "pending", channel: "native", reminderId: reminder.id, deviceId: device.id, sourceRelationshipId: reminder.sourceRelationshipId || reminder.relationshipId, scheduleVersion: reminder.scheduleVersion, dueAt: reminder.dueAt, nextAttemptAt: at, dedupeKey, attempts: 0, leaseUntil: null });
+            await db.createRelationshipRecord("deliveryJobs", job); jobs.push(job); keys.add(dedupeKey);
+          }
+          for (const device of devices) {
+            const dedupeKey = `${occurrence}:${device.id}:push`;
+            if (keys.has(dedupeKey)) continue;
+            const job = privateRecord(reminder.ownerUserId, { status: "pending", channel: "push", reminderId: reminder.id, subscriptionId: device.id, sourceRelationshipId: reminder.sourceRelationshipId || reminder.relationshipId, scheduleVersion: reminder.scheduleVersion, dueAt: reminder.dueAt, nextAttemptAt: at, dedupeKey, attempts: 0, leaseUntil: null });
             await db.createRelationshipRecord("deliveryJobs", job); jobs.push(job); keys.add(dedupeKey);
           }
           await update(db, "reminders", reminder, { lastEnqueuedDueAt: reminder.dueAt, ...(reminder.frequency === "weekly" ? { dueAt: nextWeeklyOccurrence(reminder.occurrenceOriginalDueAt || reminder.dueAt, reminder.timezone, current, reminder.localTime), occurrenceOriginalDueAt: null } : {}) });
@@ -202,7 +389,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         }
         return selected;
       });
-      const result = { configured: true, claimed: claims.length, accepted: 0, failed: 0, cancelled: 0 };
+      // `configured` keeps meaning browser push (scripts/run-reminders.mjs relies on it); the iMessage sender is reported separately.
+      const result = { configured: pushOn, imessageConfigured: typeof sendIMessage === "function", nativeConfigured: nativeOn, claimed: claims.length, accepted: 0, failed: 0, cancelled: 0 };
       // Small parallel groups keep every provider timeout inside its persisted lease.
       for (let offset = 0; offset < claims.length; offset += 5) {
         await Promise.all(claims.slice(offset, offset + 5).map(async (job) => {
@@ -211,12 +399,19 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           const finalClaim = authorization ? await store.getRelationshipRecordForUser("deliveryJobs", job.id, job.ownerUserId) : null;
           if (!authorization || finalClaim?.status !== "processing" || finalClaim.leaseToken !== job.leaseToken || finalClaim.cancelRequestedAt) { await finish(job, { status: "cancelled" }); result.cancelled += 1; return; }
           try {
-            const receipt = await sendPush(authorization.device.subscription, reminderPayload(authorization.reminder, authorization.language, job.dedupeKey), { dedupeKey: job.dedupeKey });
-            if (!Number.isInteger(receipt?.statusCode) || receipt.statusCode < 200 || receipt.statusCode >= 300) throw fail("Push provider did not accept delivery.", 502, "provider_rejected");
+            if (authorization.phone) await sendIMessage(authorization.phone, reminderText(authorization.reminder, authorization.language));
+            // Same vague copy as browser push (only the 1:1 iMessage may carry the title); a tap opens the conversation home.
+            else if (authorization.native) { const { title, body } = reminderPayload(authorization.reminder, authorization.language, job.dedupeKey); await sendNative(authorization.device.token, { title, body, url: "/" }); }
+            else {
+              const receipt = await sendPush(authorization.device.subscription, reminderPayload(authorization.reminder, authorization.language, job.dedupeKey), { dedupeKey: job.dedupeKey });
+              if (!Number.isInteger(receipt?.statusCode) || receipt.statusCode < 200 || receipt.statusCode >= 300) throw fail("Push provider did not accept delivery.", 502, "provider_rejected");
+            }
             await finish(job, { status: "accepted", acceptedAt: iso(now()), lastErrorCode: null }); result.accepted += 1;
           } catch (error) {
-            const expired = [404, 410].includes(error.statusCode);
-            const terminal = expired || [400, 401, 403].includes(error.statusCode) || job.attempts >= MAX_ATTEMPTS;
+            const expired = authorization.native ? error.expired === true : !authorization.phone && [404, 410].includes(error.statusCode);
+            // FCM 401 means our cached access token went stale (native-push clears it): retry with a fresh one.
+            const permanent = authorization.phone || authorization.native ? error.statusCode >= 400 && error.statusCode < 500 && ![408, 429, ...(authorization.native ? [401] : [])].includes(error.statusCode) : [400, 401, 403].includes(error.statusCode);
+            const terminal = expired || permanent || job.attempts >= MAX_ATTEMPTS;
             const lastErrorCode = expired ? "subscription_expired" : error.statusCode === 429 ? "provider_rate_limited" : "provider_unavailable";
             await finish(job, { status: terminal ? "failed" : "retry", lastErrorCode, nextAttemptAt: iso(now().getTime() + Math.min(3600_000, 60_000 * 2 ** job.attempts)) }, expired);
             result.failed += 1;
@@ -227,12 +422,44 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     },
   };
 
+  // One member's phones, at most once per 10 minutes; respects "turn off all reminder notifications"; best effort, never retried.
+  async function nudge(userId, partnerWrote, surprise = false) {
+    const devices = await store.transaction(LOCK, async (db) => {
+      if ((await preferences(db, userId))?.enabled === false) return [];
+      const current = now(), mine = (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token);
+      const last = mine.map((item) => item.togetherNotifiedAt || "").sort().at(-1);
+      if (!mine.length || (last && current.getTime() - new Date(last).getTime() < TOGETHER_NOTIFY_MS)) return [];
+      // Bookkeeping stamp, no version bump: it must not conflict with a concurrent re-registration.
+      for (const device of mine) await db.updateRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId, (draft) => { draft.togetherNotifiedAt = iso(current); });
+      return mine;
+    });
+    const language = devices.length ? await memberLanguage(store, userId) : "zh";
+    const body = surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
+    let sent = 0;
+    for (const device of devices) {
+      try { await sendNative(device.token, { title: "Pinky", body, url: "/?channel=us" }); sent += 1; }
+      catch (error) {
+        console.error("together native push failed", error?.code || "error");
+        if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });
+      }
+    }
+    return sent;
+  }
+
+  async function revokeNative(db, device) {
+    await update(db, "nativePushDevices", device, { status: "revoked", token: null });
+    await cancelJobs(db, device.ownerUserId, (job) => job.deviceId === device.id);
+  }
+
   async function finish(job, patch, expired = false) {
     await store.transaction(LOCK, async (db) => {
       const current = await db.getRelationshipRecordForUser("deliveryJobs", job.id, job.ownerUserId);
       if (!current || current.status !== "processing" || current.leaseToken !== job.leaseToken) return;
       await update(db, "deliveryJobs", current, { ...patch, leaseUntil: null, leaseToken: null });
-      if (expired) {
+      if (expired && job.channel === "native") {
+        const device = await db.getRelationshipRecordForUser("nativePushDevices", job.deviceId, job.ownerUserId);
+        if (device) await revokeNative(db, device);
+      } else if (expired) {
         const device = await db.getRelationshipRecordForUser("pushSubscriptions", job.subscriptionId, job.ownerUserId);
         if (device) await update(db, "pushSubscriptions", device, { status: "revoked", subscription: null });
       }
@@ -240,6 +467,17 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   }
 }
 
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+// A joint milestone reminder is due `minutesBefore` ahead of the milestone's (yearly: nearest) occurrence; ignore ones that went stale.
+function jointReminderDue(milestone, minutesBefore, current) {
+  const source = new Date(`${milestone.date}T12:00:00.000Z`);
+  if (Number.isNaN(source.getTime())) return null;
+  const years = milestone.recurringRule === "yearly" ? [-1, 0, 1].map((offset) => current.getUTCFullYear() + offset) : [source.getUTCFullYear()];
+  const occurrences = years.map((year) => Date.UTC(year, source.getUTCMonth(), source.getUTCDate(), 12));
+  const offset = (Number.isFinite(minutesBefore) ? minutesBefore : 1440) * 60_000;
+  const due = occurrences.map((at) => ({ at, dueAt: at - offset })).filter((item) => item.dueAt <= current.getTime() && current.getTime() - item.dueAt <= ANNOUNCE_WINDOW_MS).sort((a, b) => b.dueAt - a.dueAt)[0];
+  return due ? { dueAt: iso(due.dueAt), occursOn: iso(due.at).slice(0, 10) } : null;
+}
 function reminderInput(input, current) {
   const timezone = input.timezone || "UTC";
   const dueAt = localDateTimeToInstant(input.localDateTime, timezone);
@@ -258,10 +496,12 @@ async function validateTarget(store, userId, target) {
   if (!record || !canViewRecord(record, userId) || record.withdrawnAt) throw fail("Reminder destination not found.", 404, "not_found");
   return record.relationshipId || null;
 }
+// The 1:1 iMessage is the owner's own private channel, so (unlike push) it may carry the reminder's title. Never used for the group.
+function reminderText(reminder, language) { return say(language, `提醒：「${reminder.title}」`, `Reminder: "${reminder.title}"`, `Recordatorio: "${reminder.title}"`); }
 function reminderPayload(reminder, language, key) {
   const target = reminder.target;
   const url = target?.kind === "issue" ? `/?view=decide&issue=${encodeURIComponent(target.id)}` : target?.kind === "outcome" ? `/?view=decide&outcome=${encodeURIComponent(target.id)}` : target?.kind === "milestone" || reminder.milestoneId ? `/?view=plans&milestone=${encodeURIComponent(target?.id || reminder.milestoneId)}` : target?.kind === "checkin" || target?.kind === "checkins" ? "/?view=checkins" : target?.kind === "plans" ? "/?view=plans" : `/?view=reminders&reminder=${encodeURIComponent(reminder.id)}`;
-  return { title: "Toward Us", body: language === "en" ? "You have a reminder. Open Toward Us when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Toward Us cuando quieras." : "你有一条提醒，方便时打开彼此查看。", url, tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
+  return { title: "Pinky", body: language === "en" ? "You have a reminder. Open Pinky when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Pinky cuando quieras." : "你有一条提醒，方便时打开 Pinky 查看。", url, tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
 }
 
 export function localDateTimeToInstant(localDateTime, timeZone, gapPolicy = "reject") {

@@ -20,9 +20,9 @@ export function localized(language: Language, zh: string, en: string, es: string
 }
 
 export function brandLabel(language: Language) {
-  return language === "zh" ? "Toward Us / 彼此" : "Toward Us";
+  return "Pinky";
 }
 
 export function pageTitle(language: Language) {
-  return localized(language, "Toward Us 彼此 · 两个人的共同关系 Agent", "Toward Us · A shared relationship agent for two", "Toward Us · Un agente compartido de relación para dos");
+  return localized(language, "Pinky · 拉钩，说好就算数", "Pinky · A shared relationship agent for two", "Pinky · Un agente compartido de relación para dos");
 }

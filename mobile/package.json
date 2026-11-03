@@ -1,0 +1,23 @@
+{
+  "name": "toward-us-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "config": "node scripts/config.mjs",
+    "sync": "npm run config && cap sync",
+    "android": "npm run sync && cap open android",
+    "ios": "npm run sync && cap open ios",
+    "check:ios": "npm run sync && node scripts/check-native.mjs ios",
+    "check:android": "npm run sync && node scripts/check-native.mjs android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/push-notifications": "8.1.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

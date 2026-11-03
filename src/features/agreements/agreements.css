@@ -1,0 +1,21 @@
+/* Agreements read in full on the ivory surface, with the same card actions as the conversation. */
+.agreements-page { display: flex; flex-direction: column; gap: 14px; }
+.agreements-page section { display: grid; gap: 10px; }
+.agreement-item { display: grid; gap: 10px; padding: 16px; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.agreement-item.is-waiting { box-shadow: inset 3px 0 0 var(--jian-blue), 0 1px 0 rgba(37,37,37,.06); }
+.agreement-item.is-past { opacity: .75; }
+.agreement-item header { display: grid; gap: 3px; }
+.agreement-item header strong { color: var(--jian-ink); font-size: 17px; font-weight: 650; line-height: 1.4; }
+.agreement-item header small { color: #7a736b; font-size: 13px; }
+.agreement-item p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.55; }
+.agreement-item ol, .agreement-item ul { margin: 0; padding-left: 22px; color: var(--jian-ink); font-size: 15px; line-height: 1.6; }
+.agreement-item .agreement-open small { color: #7a736b; font-size: 13px; font-weight: 600; }
+.agreement-commitments { color: #4a4540; }
+.agreement-item footer { display: grid; gap: 10px; }
+.agreement-item .card-state { display: inline-flex; align-items: center; gap: 6px; color: #5f5952; font-size: 14px; }
+.agreement-item .card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.agreement-item .card-actions button { min-height: 44px; padding: 0 16px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
+.agreement-item .card-actions .card-primary { display: inline-flex; align-items: center; gap: 6px; border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
+.agreement-review { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
+.agreement-answer { display: block; margin-top: 2px; color: #8a837a; font-size: 13px; }
+.agreement-answer.done { color: #2f7a56; }

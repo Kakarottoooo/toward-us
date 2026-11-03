@@ -1,0 +1,34 @@
+/* Recap cards: a warm cover in Us that opens into a full-screen little story. */
+.story-card { position: relative; display: grid; width: min(100%, 340px); min-height: 150px; margin: 6px 0; padding: 0; overflow: hidden; border: 0; border-radius: 22px; background: linear-gradient(150deg, #ffd9cf, #f4b6c8); color: #4b1528; text-align: left; cursor: pointer; box-shadow: 0 6px 20px rgba(153,53,86,.18); }
+.story-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.story-card.has-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 25%, rgba(40,10,20,.72)); }
+.story-card-text { position: relative; z-index: 1; display: grid; align-content: end; gap: 3px; padding: 18px; }
+.story-card.has-cover .story-card-text { min-height: 190px; color: #fff; }
+.story-card small { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 650; opacity: .9; }
+.story-card strong { font-size: 24px; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.story-card em { font-size: 14px; font-style: normal; opacity: .9; }
+.story-card b { justify-self: start; margin-top: 8px; padding: 6px 14px; border-radius: 14px; background: rgba(255,255,255,.88); color: #72243e; font-size: 13px; }
+
+.story-view { position: absolute; inset: 0; z-index: 60; background: #fff8f4; }
+.story-close { position: absolute; top: calc(max(54px, env(safe-area-inset-top)) + 6px); right: 14px; z-index: 2; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255,255,255,.85); color: #4b1528; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.story-scroll { height: 100%; overflow-y: auto; padding-bottom: 60px; }
+.story-cover { position: relative; display: grid; align-content: end; min-height: 300px; padding: calc(max(54px, env(safe-area-inset-top)) + 60px) 22px 26px; background: linear-gradient(160deg, #ffd9cf, #f4b6c8); color: #4b1528; }
+.story-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.story-cover.has-cover { min-height: 420px; color: #fff; }
+.story-cover.has-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.05) 30%, rgba(40,10,20,.78)); }
+.story-cover > div { position: relative; z-index: 1; display: grid; gap: 6px; }
+.story-cover small { font-size: 13px; font-weight: 700; letter-spacing: .02em; opacity: .9; }
+.story-cover h1 { margin: 0; font-size: 34px; font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
+.story-cover p { margin: 0; font-size: 16px; line-height: 1.5; opacity: .92; }
+.story-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 20px 20px 4px; }
+.story-stats div { display: grid; gap: 2px; padding: 14px; border-radius: 16px; background: #fde8e0; color: #712b13; }
+.story-stats strong { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.story-stats span { font-size: 13px; font-weight: 600; }
+.story-chapters { display: grid; gap: 22px; margin: 0; padding: 22px 22px 0; list-style: none; }
+.story-chapters li { display: grid; gap: 6px; }
+.story-chapters small { color: #993556; font-size: 13px; font-weight: 650; }
+.story-chapters h2 { margin: 0; color: #2c1a20; font-size: 20px; font-weight: 750; line-height: 1.35; }
+.story-chapters p { margin: 0; color: #4a3c40; font-size: 16px; line-height: 1.65; }
+.story-chapters img { width: 100%; margin-top: 6px; border-radius: 16px; object-fit: cover; aspect-ratio: 4 / 3; }
+.story-closing { margin: 28px 22px 0; color: #4b1528; font-size: 18px; font-weight: 600; line-height: 1.6; }
+.story-sign { margin: 10px 22px 0; color: #993556; font-size: 15px; font-weight: 650; }
