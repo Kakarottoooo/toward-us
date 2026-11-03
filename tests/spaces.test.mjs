@@ -41,7 +41,7 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
   const upload = async (scope, userId = ids[0]) => (await fetch(`http://127.0.0.1:${server.address().port}/api/photos?scope=${scope}`, { method: "POST", headers: { "x-user": userId, "content-type": "image/jpeg" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]) })).json();
   const photo = async (id, userId = ids[0]) => (await fetch(`http://127.0.0.1:${server.address().port}/api/photos/${id}`, { headers: { "x-user": userId } })).status;
-  return { ids, request, session, upload, photo, turn: (text) => request(`/assistant/sessions/${session.id}/messages`, "POST", { text, itemId: randomUUID() }) };
+  return { ids, store, request, session, upload, photo, turn: (text) => request(`/assistant/sessions/${session.id}/messages`, "POST", { text, itemId: randomUUID() }) };
 }
 
 test("a private space and its items stay with their owner", async (t) => {
@@ -217,4 +217,28 @@ test("recap cards: made on a day worth celebrating or on request, from shared mo
   step = "recap"; await say("Pinky, make us a recap");
   for (let i = 0; i < 50 && (await stories()).length < 2; i += 1) await new Promise((r) => setTimeout(r, 40));
   assert.equal((await stories()).length, 2, "asking for one makes another");
+});
+
+test("weekly recap: the first open after a week ends makes one card from that week only, and a quiet week makes none", async (t) => {
+  const { lastWeek } = await import("../server/story.mjs");
+  assert.deepEqual(lastWeek("2026-11-09"), { key: "week-2026-11-02", from: "2026-11-02", to: "2026-11-08" }, "Monday: the week that just ended");
+  assert.deepEqual(lastWeek("2026-11-08"), { key: "week-2026-10-26", from: "2026-10-26", to: "2026-11-01" }, "Sunday: that week is not over yet");
+  let seen = null, calls = 0;
+  const f = await fixture(t, { structured: ({ input, instructions }) => { calls += 1; seen = { material: JSON.parse(input), instructions }; return { title: "Your week", subtitle: "", coverPhotoId: null, stats: [], chapters: [{ heading: "Dinner", text: "You picked a place.", date: null, photoId: null }], closing: "See you next week." }; } });
+  const stories = async (userId = f.ids[0]) => (await f.request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation.messages.filter((message) => message.kind === "story");
+  const say = (text) => f.request("/together/messages", "POST", { text, itemId: randomUUID(), language: "en" });
+  await say("Pinky, where should we eat on Saturday?"); await say("this one is from today");
+  await stories(); await new Promise((r) => setTimeout(r, 100));
+  assert.equal(calls, 0, "nothing happened last week, so no card and no model call");
+  // Move the first exchange into last week, as if it had been said then.
+  const week = lastWeek(new Date().toISOString().slice(0, 10));
+  const conversation = (await f.store.relationshipSnapshotForUser(f.ids[0])).togetherConversations[0];
+  await f.store.updateRelationshipRecordForUser("togetherConversations", conversation.id, f.ids[0], (draft) => { for (const message of draft.messages.slice(0, 2)) message.createdAt = `${week.from}T12:00:00.000Z`; draft.version += 1; });
+  await stories(f.ids[1]);
+  for (let i = 0; i < 50 && !(await stories()).length; i += 1) await new Promise((r) => setTimeout(r, 40));
+  assert.equal((await stories()).length, 1);
+  assert.deepEqual(seen.material.week.conversation.map((message) => message.text), ["Pinky, where should we eat on Saturday?", "ok"]);
+  assert.match(seen.instructions, /weekly recap/);
+  await stories(f.ids[1]); await new Promise((r) => setTimeout(r, 200));
+  assert.equal((await stories()).length, 1, "one card per week, whoever opens Us");
 });
