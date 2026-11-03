@@ -23,6 +23,16 @@
 .conversation-message.is-sending { opacity: .65; }
 .conversation-message.from-partner { align-self: flex-start; padding: 10px 14px; border-radius: 18px 18px 18px 4px; background: var(--jian-red-soft); }
 .conversation-message.from-agent { align-self: flex-start; max-width: 100%; }
+/* Us reads like a group chat: me on the right; my partner and Pinky on the left, each with their own avatar. */
+.us-row { display: flex; align-items: flex-start; gap: 8px; width: 100%; }
+.us-row.from-me { justify-content: flex-end; }
+.us-row > .conversation-message { align-self: auto; }
+.us-row.from-partner > .conversation-message { max-width: calc(86% - 36px); }
+.us-row.from-agent > .conversation-message { max-width: calc(100% - 36px); }
+.us-row.is-continued { margin-top: -8px; }
+.us-avatar { flex: 0 0 28px; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 50%; background: var(--jian-red-soft); color: var(--jian-red); font-size: 13px; font-style: normal; font-weight: 700; }
+.us-avatar.is-pinky { background: var(--jian-blue); color: #fff; }
+.us-row.is-continued .us-avatar { visibility: hidden; }
 .conversation-card { align-self: stretch; padding: 16px; border: 1px solid rgba(37,37,37,.14); border-radius: 16px; background: var(--jian-paper-bright); }
 .conversation-card > header { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: #5d574f; font-size: 14px; font-weight: 700; }
 .conversation-card > strong { display: block; font-size: 17px; line-height: 1.5; }
