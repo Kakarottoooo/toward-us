@@ -1,16 +1,12 @@
-import { CalendarBlank, ChatCircleDots, ClockCounterClockwise, ListChecks, PaperPlaneRight, Sparkle, UsersThree } from "@phosphor-icons/react";
+import { Sparkle } from "@phosphor-icons/react";
 import "../spaces/spaces.css";
 import { useCallback, useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { DecisionWorkspace } from "../decisions/DecisionWorkspace";
-import { ListsPanel } from "../lists/ListsPanel";
-import { MilestonesPanel } from "../milestones/MilestonesPanel";
 import { PrivateAgentWorkspace } from "../private-agent/PrivateAgentWorkspace";
 import { relationshipApi } from "../relationship/api";
 import type { RelationshipHomePayload } from "../relationship/types";
 
-import { MemoryWorkspace } from "../memories/MemoryWorkspace";
-import { CheckinPanel } from "../checkins/CheckinPanel";
 import { RemindersPanel, type ReminderTarget } from "../reminders/RemindersPanel";
 import { UpcomingPage } from "../upcoming/UpcomingPage";
 import { MomentsPage } from "../moments/MomentsPage";
@@ -18,15 +14,14 @@ import "../private-agent/personal.css";
 import { PageHeader } from "../conversation/ConversationHome";
 import { AgreementsPage } from "../agreements/AgreementsPage";
 
-type View = "agreements" | "upcoming" | "talk" | "decide" | "plans" | "moments" | "reminders";
-const VIEWS: View[] = ["agreements", "upcoming", "talk", "decide", "plans", "moments", "reminders"];
+type View = "agreements" | "upcoming" | "decide" | "plans" | "moments" | "reminders";
+const VIEWS: View[] = ["agreements", "upcoming", "decide", "plans", "moments", "reminders"];
 // Older links (assistant cards, notifications) still name these views; they land on the page that now holds them.
 const ALIASES: Record<string, View> = { checkins: "moments", memories: "moments", home: "agreements", notifications: "upcoming", lists: "upcoming" };
-type RoomSummary = { code: string; title: string; updatedAt: string; joined: boolean };
 
 /** The shared pages the drawer opens. Each shows what Pinky has done; new things are asked for in the conversation. */
-export function RelationshipHome({ user, language, rooms, notice, busy, onSetup, onJoin, onHistory, onNotice, onAccessChanged, onBack, onAsk }: { user: { id: string; name: string }; language: Language; rooms: RoomSummary[]; notice: string; busy: boolean; onSetup: () => void; onJoin: (code: string, join: boolean) => void; onHistory: () => void; onNotice: (value: string) => void; onAccessChanged: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
-  const [view, setView] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return VIEWS.includes(requested as View) ? requested as View : ALIASES[requested] || "agreements"; }); const [parent, setParent] = useState<View | null>(null); const [payload, setPayload] = useState<RelationshipHomePayload | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [code, setCode] = useState("");
+export function RelationshipHome({ user, language, onNotice, onAccessChanged, onBack, onAsk }: { user: { id: string; name: string }; language: Language; onNotice: (value: string) => void; onAccessChanged: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+  const [view, setView] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return VIEWS.includes(requested as View) ? requested as View : ALIASES[requested] || "agreements"; }); const [parent, setParent] = useState<View | null>(null); const [payload, setPayload] = useState<RelationshipHomePayload | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [selection, setSelection] = useState(() => ({ issueId: new URLSearchParams(location.search).get("issue") || undefined, outcomeId: new URLSearchParams(location.search).get("outcome") || undefined }));
   const [reminderTarget, setReminderTarget] = useState<ReminderTarget | undefined>();
   const [reminderTitle, setReminderTitle] = useState("");
@@ -44,7 +39,7 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
   if (!payload) return <div className="relationship-loading"><Sparkle size={25} /><p role="alert">{error}</p><button className="secondary-action" onClick={() => { setLoading(true); void refresh(); }}>{localized(language, "重新加载", "Try again", "Reintentar")}</button></div>;
   const titles: Record<View, string> = {
     agreements: localized(language, "约定", "Agreements", "Acuerdos"), upcoming: localized(language, "即将到来", "Coming up", "Próximamente"),
-    talk: localized(language, "调解与复盘", "Mediation & reviews", "Mediación y revisiones"), decide: localized(language, "约定详情", "Agreement details", "Detalles del acuerdo"),
+    decide: localized(language, "约定详情", "Agreement details", "Detalles del acuerdo"),
     plans: localized(language, "计划", "Plans", "Planes"), moments: localized(language, "回忆", "Moments", "Momentos"),
     reminders: localized(language, "我的提醒", "My reminders", "Mis recordatorios"),
   };
@@ -54,7 +49,6 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
     <main className="relationship-main">
       {view === "agreements" && <AgreementsPage language={language} userId={user.id} payload={payload} onChanged={refresh} onReview={(id) => openItem({ type: "outcome_review", id })} />}
       {view === "upcoming" && <UpcomingPage language={language} userId={user.id} milestones={payload.graph.milestones} reminders={payload.graph.reminders} commitments={payload.graph.commitments} onOpenCommitment={(id) => openItem({ type: "commitment", id })} onAsk={(text) => onAsk(text, "us")} onChanged={refresh} />}
-      {view === "talk" && <TalkView language={language} rooms={rooms} code={code} setCode={setCode} busy={busy} notice={notice} onSetup={onSetup} onJoin={onJoin} onHistory={onHistory} />}
       {view === "decide" && <DecisionWorkspace language={language} userId={user.id} graph={payload.graph} members={payload.relationship.members} initialIssueId={selection.issueId} initialOutcomeId={selection.outcomeId} initialPrompt={null} onChanged={refresh} />}
       {view === "decide" && <div className="lifecycle-tools"><button onClick={() => selectReminder(selection.outcomeId ? { kind: "outcome", id: selection.outcomeId } : selection.issueId ? { kind: "issue", id: selection.issueId } : { kind: "reminders" })}>{localized(language, "设置我的跟进提醒", "Set my follow-up reminder", "Configurar mi recordatorio de seguimiento")}</button></div>}
       {view === "plans" && <div className="feature-stack"><PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...payload.graph.privateAgentThreads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onShared={(id) => { history.replaceState(null, "", `/?view=plans&milestone=${encodeURIComponent(id)}`); }} initialPrompt={null} onChanged={refresh} /></div>}
@@ -63,9 +57,3 @@ export function RelationshipHome({ user, language, rooms, notice, busy, onSetup,
     </main>
   </div>;
 }
-
-function TalkView({ language, rooms, code, setCode, busy, notice, onSetup, onJoin, onHistory }: { language: Language; rooms: RoomSummary[]; code: string; setCode: (value: string) => void; busy: boolean; notice: string; onSetup: () => void; onJoin: (code: string, join: boolean) => void; onHistory: () => void }) {
-  return <section className="relationship-feature talk-view"><header><div><UsersThree size={24} /><h2>{localized(language, "沟通与调解", "Talk & mediate", "Hablar y mediar")}</h2></div><p>{localized(language, "原有调解、实时语音、私人反馈与共同复盘完整保留。", "Mediation, live voice, private feedback, and shared reviews remain intact.", "Se conservan la mediación, la voz en vivo, los comentarios privados y las revisiones compartidas.")}</p></header><button className="relationship-primary" onClick={onSetup}>{localized(language, "开始一次调解", "Start a mediation", "Iniciar una mediación")}</button><div className="join-relationship-room"><input value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))} placeholder={localized(language, "六位房间码", "Six-character room code", "Código de seis caracteres")} maxLength={6} /><button data-testid="join-active-room" onClick={() => onJoin(code, true)} disabled={busy || code.length !== 6}><PaperPlaneRight size={19} /></button></div>{notice && <p role="alert" className="relationship-notice">{notice}</p>}<div className="relationship-rows">{rooms.map((room) => <article key={room.code}><div><strong>{room.title}</strong><span>{room.code}</span></div><button onClick={() => onJoin(room.code, !room.joined)}>{localized(language, "打开", "Open", "Abrir")}</button></article>)}</div><button className="text-action history-action" onClick={onHistory}><ClockCounterClockwise size={18} />{localized(language, "查看我们的复盘", "Open our reviews", "Abrir nuestras revisiones")}</button></section>;
-}
-
-function HomeSection({ title, empty, items }: { title: string; empty: string; items: Array<{ id: string; title: string; meta: string; onClick: () => void }> }) { return <section className="home-section"><h2>{title}</h2>{items.length ? items.map((item) => <article key={`${item.id}:${item.meta}`}><button onClick={item.onClick}><strong>{item.title}</strong><span>{item.meta}</span></button></article>) : <p>{empty}</p>}</section>; }

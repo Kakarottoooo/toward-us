@@ -3,7 +3,6 @@ import express from "express";
 import helmet from "helmet";
 import {
   clearSessionCookie,
-  clearDemoCookie,
   createUser,
   hashPassword,
   issueSession,
@@ -24,7 +23,7 @@ import { createMemoryRouter } from "./memory-router.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createPhoneRouter } from "./phone-identity.mjs";
 import { createReminderRouter } from "./reminder-router.mjs";
-import { createUsageRouter, recordUsage } from "./usage.mjs";
+import { createUsageRouter } from "./usage.mjs";
 import { createReminderService } from "./reminder-service.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createNativePush } from "./native-push.mjs";
@@ -41,7 +40,6 @@ import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-const PERSONALITIES = new Set(["friend", "counselor", "direct"]);
 const LANGUAGES = new Set(["zh", "en", "es"]);
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const loginAttempts = new Map();
@@ -83,24 +81,6 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     }
   });
 
-  app.post("/api/rooms/:code/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res) => {
-    try {
-      if (!sameOriginRequest(req)) return res.status(403).json({ error: "请求来源未通过安全检查。" });
-      const viewer = await authenticateRequest(store, req);
-      if (!viewer) return res.status(401).json({ error: "请先登录。" });
-      const code = normalizeCode(req.params.code);
-      const room = await store.getRoomForUser(code, viewer.user.id);
-      if (!room) return res.status(404).json({ error: "没有找到这个调解房间。" });
-      if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-      if (!room.participants.some((participant) => participant.userId === viewer.user.id)) return res.status(403).json({ error: "请先加入这个房间。" });
-      if (typeof req.body !== "string" || !req.body.includes("v=0")) return res.status(400).json({ error: "没有收到有效的实时语音连接信息。" });
-      const answer = await mediator.createRealtimeSession({ sdp: req.body, language: room.language, safetyIdentifier: sessionId(viewer.user.id) });
-      res.type("application/sdp").send(answer);
-    } catch (error) {
-      res.status(error?.statusCode || 500).json({ error: error?.message || "实时语音暂时不可用。" });
-    }
-  });
-
   app.post("/api/demo/rooms/:code/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res) => {
     try {
       if (!sameOriginRequest(req)) return res.status(403).json({ error: "请求来源未通过安全检查。" });
@@ -114,33 +94,6 @@ export function createApiApp({ store, mediator, production = false, memoryContex
       res.type("application/sdp").send(answer);
     } catch (error) {
       res.status(error?.statusCode || 500).json({ error: error?.message || "实时语音暂时不可用。" });
-    }
-  });
-
-  app.post("/api/rooms/:code/audio", express.raw({ type: () => true, limit: "24mb" }), async (req, res) => {
-    try {
-      if (!sameOriginRequest(req)) return res.status(403).json({ error: "请求来源未通过安全检查。" });
-      const viewer = await authenticateRequest(store, req);
-      if (!viewer) return res.status(401).json({ error: "请先登录。" });
-      const code = normalizeCode(req.params.code);
-      const room = await store.getRoomForUser(code, viewer.user.id);
-      if (!room) return res.status(404).json({ error: "没有找到这个调解房间。" });
-      if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-      if (!room.participants.some((participant) => participant.userId === viewer.user.id)) return res.status(403).json({ error: "请先加入这个房间。" });
-      if (!Buffer.isBuffer(req.body) || req.body.length < 100) return res.status(400).json({ error: "没有收到有效录音。" });
-
-      const transcript = await mediator.transcribe(req.body, req.headers["content-type"] || "audio/webm");
-      const requestedSpeakerId = String(req.headers["x-toward-us-speaker-id"] || "");
-      const selectedSpeaker = resolveSpeaker(room, viewer.user.id, requestedSpeakerId);
-      const additions = mapTranscriptToMessages(room, viewer.user.id, transcript.segments, transcript.text, selectedSpeaker?.id || null, Boolean(requestedSpeakerId));
-      await store.updateRoomForUser(code, viewer.user.id, (draft) => {
-        draft.messages.push(...additions);
-        draft.safety = mergeSafety(draft.safety, additions.map((message) => message.text).join(" "), draft.language);
-      });
-      broadcastRoom(code);
-      res.json({ messagesAdded: additions.length, transcriptDeleted: true, room: publicRoom(await store.getRoomForUser(code, viewer.user.id), viewer.user.id) });
-    } catch (error) {
-      res.status(error?.statusCode || 500).json({ error: error?.message || "语音转录失败。" });
     }
   });
 
@@ -458,11 +411,6 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.json({ saved: true, room: publicDemoRoom(updated, actor.participant.id, req.auth.user.id), account: await appState(store, req.auth.user), historyCode: regularCode });
   });
 
-  app.post("/api/demo/logout", async (_req, res) => {
-    clearDemoCookie(res, production);
-    res.status(204).end();
-  });
-
   app.post("/api/partner/invitations", requireAuth, async (req, res) => {
     const existing = await store.getRelationshipContext(req.auth.user.id);
     if (existing) return res.json({ pairing: publicPairing(existing, req.auth.user.id) });
@@ -486,196 +434,6 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     res.json({ pairing: publicPairing(context, req.auth.user.id) });
   });
 
-  app.get("/api/rooms", requireAuth, async (req, res) => {
-    const active = await store.listRoomsForUser(req.auth.user.id, "active");
-    res.json({ rooms: active.map((room) => roomSummary(room, req.auth.user.id)) });
-  });
-
-  app.post("/api/rooms", requireAuth, async (req, res) => {
-    const pairing = await store.getRelationshipContext(req.auth.user.id);
-    if (!pairing || pairing.relationship.status !== "active" || pairing.members.length !== 2) return res.status(409).json({ error: "需要先由双方账号加入共同空间。" });
-    const mode = req.body?.mode === "shared" ? "shared" : "remote";
-    const language = normalizeLanguage(req.body?.language);
-    const personality = PERSONALITIES.has(req.body?.personality) ? req.body.personality : "friend";
-    const code = await createUniqueCode(store, 6, "room");
-    const participants = pairing.members
-      .filter((member) => mode === "shared" || member.userId === req.auth.user.id)
-      .map((member) => createParticipant(member.user, member.role));
-    const now = new Date().toISOString();
-    const room = {
-      code, relationshipId: pairing.relationship.id, creatorUserId: req.auth.user.id, mode, language, personality, participants,
-      messages: [], analysis: null, aiConversation: [], analyzing: false, status: "active", archivedAt: null,
-      archiveConfirmation: { userIds: [], requestedAt: null, completedAt: null },
-      safety: { level: 0, message: safetyBoundaryMessage(language) },
-      createdAt: now, updatedAt: now,
-    };
-    await store.createRoom(room);
-    void recordUsage(store, { userId: req.auth.user.id, relationshipId: pairing.relationship.id, action: "mediation_started" });
-    res.status(201).json({ room: publicRoom(room, req.auth.user.id) });
-  });
-
-  app.post("/api/rooms/:code/join", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const pairing = await store.getRelationshipContext(req.auth.user.id);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room || !pairing) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-    if (room.mode !== "remote") return res.status(409).json({ error: "同设备房间不需要加入。" });
-    const member = pairing.members.find((candidate) => candidate.userId === req.auth.user.id);
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
-      if (!draft.participants.some((participant) => participant.userId === req.auth.user.id)) draft.participants.push(createParticipant(member.user, member.role));
-    });
-    broadcastRoom(code);
-    res.json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-  });
-
-  app.get("/api/rooms/:code", requireAuth, async (req, res) => {
-    const room = await store.getRoomForUser(normalizeCode(req.params.code), req.auth.user.id);
-    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    res.json({ room: publicRoom(room, req.auth.user.id) });
-  });
-
-  app.get("/api/rooms/:code/events", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room) return res.status(404).end();
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders?.();
-    registerClient(code, { res, userId: req.auth.user.id });
-    sendEvent(res, publicRoom(room, req.auth.user.id));
-    const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 20_000);
-    req.on("close", () => { clearInterval(keepAlive); unregisterClient(code, res); });
-  });
-
-  app.post("/api/rooms/:code/messages", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-    const text = cleanText(req.body?.text);
-    if (!text) return res.status(400).json({ error: "请输入想说的话。" });
-    const speaker = resolveSpeaker(room, req.auth.user.id, req.body?.speakerId);
-    if (!speaker) return res.status(403).json({ error: "当前账号不能代表这位参与者发言。" });
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
-      draft.messages.push(createMessage(speaker.id, text, "text"));
-      draft.safety = mergeSafety(draft.safety, text, draft.language);
-    });
-    broadcastRoom(code);
-    res.status(201).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-  });
-
-  app.post("/api/rooms/:code/transcripts", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-    const text = cleanText(req.body?.text);
-    const itemId = cleanRealtimeItemId(req.body?.itemId);
-    if (!text || !itemId) return res.status(400).json({ error: "实时转录缺少完整内容或语音片段标识。" });
-    const speaker = resolveSpeaker(room, req.auth.user.id, req.body?.speakerId);
-    if (!speaker) return res.status(403).json({ error: "当前账号不能代表这位参与者发言。" });
-    let created = false;
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
-      if (draft.messages.some((message) => message.realtimeItemId === itemId)) return;
-      draft.messages.push(createMessage(speaker.id, text, "voice", null, itemId));
-      draft.safety = mergeSafety(draft.safety, text, draft.language);
-      created = true;
-    });
-    broadcastRoom(code);
-    res.status(created ? 201 : 200).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-  });
-
-  app.post("/api/rooms/:code/personality", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (!PERSONALITIES.has(req.body?.personality)) return res.status(400).json({ error: "未知的调解风格。" });
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => { draft.personality = req.body.personality; });
-    broadcastRoom(code);
-    res.json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-  });
-
-  app.post("/api/rooms/:code/analyze", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-    if (room.messages.length < 2) return res.status(400).json({ error: "至少需要两段表达，AI 才能提供有依据的视角。" });
-    if (room.analyzing) return res.status(409).json({ error: "AI 已经在整理这次对话。" });
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => { draft.analyzing = true; });
-    broadcastRoom(code);
-    try {
-      const analysis = await mediator.analyze(await store.getRoomForUser(code, req.auth.user.id));
-      await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
-        draft.analysis = analysis;
-        draft.analyzing = false;
-        if (analysis.safety?.level > draft.safety.level) draft.safety = analysis.safety;
-      });
-      broadcastRoom(code);
-      res.json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-    } catch (error) {
-      await store.updateRoomForUser(code, req.auth.user.id, (draft) => { draft.analyzing = false; });
-      broadcastRoom(code);
-      res.status(500).json({ error: error?.message || "AI 暂时无法完成分析。" });
-    }
-  });
-
-  app.post("/api/rooms/:code/ask-ai", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    if (!room) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (room.status !== "active") return res.status(409).json({ error: "这次调解已经归档。" });
-    if (!room.analysis) return res.status(409).json({ error: "请先邀请 AI 完成第一轮分析。" });
-    const question = cleanText(req.body?.question);
-    if (!question) return res.status(400).json({ error: "请输入想继续问 AI 的问题。" });
-    if ((room.aiConversation || []).filter((entry) => entry.role === "user").length >= 20) return res.status(429).json({ error: "本次调解的 AI 追问已达到上限。" });
-    const answer = await mediator.answer(room, question);
-    const now = new Date().toISOString();
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
-      draft.aiConversation ||= [];
-      draft.aiConversation.push(
-        { id: randomUUID(), role: "user", participantId: req.auth.user.id, text: question, createdAt: now },
-        { id: randomUUID(), role: "assistant", participantId: null, text: cleanText(answer), createdAt: new Date().toISOString() },
-      );
-    });
-    broadcastRoom(code);
-    res.status(201).json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-  });
-
-  app.post("/api/rooms/:code/confirm-archive", requireAuth, async (req, res) => {
-    const code = normalizeCode(req.params.code);
-    const room = await store.getRoomForUser(code, req.auth.user.id);
-    const pairing = await store.getRelationshipContext(req.auth.user.id);
-    if (!room || !pairing) return res.status(404).json({ error: "这个房间不属于你们的共同空间。" });
-    if (!room.analysis) return res.status(409).json({ error: "先完成一次共同反馈，才能归档复盘。" });
-    if (room.status === "archived") return res.json({ room: publicRoom(room, req.auth.user.id) });
-    const requiredIds = pairing.members.map((member) => member.userId);
-    await store.updateRoomForUser(code, req.auth.user.id, (draft) => {
-      if (!draft.archiveConfirmation.userIds.includes(req.auth.user.id)) draft.archiveConfirmation.userIds.push(req.auth.user.id);
-      draft.archiveConfirmation.requestedAt ||= new Date().toISOString();
-      if (requiredIds.every((id) => draft.archiveConfirmation.userIds.includes(id))) {
-        draft.status = "archived";
-        draft.archivedAt = new Date().toISOString();
-        draft.archiveConfirmation.completedAt = draft.archivedAt;
-      }
-    });
-    broadcastRoom(code);
-    res.json({ room: publicRoom(await store.getRoomForUser(code, req.auth.user.id), req.auth.user.id) });
-  });
-
-  app.get("/api/history", requireAuth, async (req, res) => {
-    const rooms = await store.listRoomsForUser(req.auth.user.id, "archived");
-    res.json({ items: rooms.map(historySummary) });
-  });
-
-  app.get("/api/history/:code", requireAuth, async (req, res) => {
-    const room = await store.getRoomForUser(normalizeCode(req.params.code), req.auth.user.id);
-    if (!room || room.status !== "archived") return res.status(404).json({ error: "没有找到这份复盘。" });
-    res.json({ item: historyDetail(room) });
-  });
-
   app.use(createPhoneRouter({ store, onBound: (userId) => void imessage?.ensureCoupleGroup(userId) }));
   app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
   // Every published "我们俩" change is mirrored to the couple's iMessage group and, without one, nudges the other member's phone.
@@ -686,7 +444,6 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);
   emitTogether = emit;
   const closeConnections = (userIds) => {
-    for (const clients of eventClients.values()) for (const client of clients) if (userIds.includes(client.userId)) client.res.end();
     relationshipRouter.closeUserConnections?.(userIds);
   };
   // Chat-history import reports back into the member's private conversation when its background analysis finishes.
@@ -710,11 +467,6 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createSuggestionsRouter({ store, mediator }));
   app.use("/api", relationshipRouter);
 
-  function broadcastRoom(code) {
-    for (const client of eventClients.get(code) || []) {
-      Promise.resolve(store.getRoomForUser(code, client.userId)).then((room) => { if (room) sendEvent(client.res, publicRoom(room, client.userId)); }).catch(() => {});
-    }
-  }
   function broadcastDemoRoom(code) {
     for (const client of eventClients.get(`demo:${code}`) || []) {
       Promise.resolve(store.getDemoRoom(code)).then((room) => {
@@ -773,26 +525,6 @@ function publicPairing(context, viewerId) {
 
 function sendEvent(res, room) { res.write(`event: room\ndata: ${JSON.stringify(room)}\n\n`); }
 
-function publicRoom(room, viewerUserId) {
-  const viewer = room.participants.find((participant) => participant.userId === viewerUserId) || null;
-  const privateFeedback = room.analysis && viewer ? { [viewer.id]: room.analysis.private?.[viewer.id] } : null;
-  return {
-    code: room.code, mode: room.mode, language: room.language, personality: room.personality, status: room.status,
-    participants: room.participants.map(({ userId: _userId, ...participant }) => participant), messages: room.messages, aiConversation: room.aiConversation || [],
-    analyzing: room.analyzing, safety: room.safety, sharedAnalysis: room.analysis?.shared || null, privateFeedback,
-    analysisMeta: room.analysis ? { id: room.analysis.id, source: room.analysis.source, model: room.analysis.model, generatedAt: room.analysis.generatedAt, notice: room.analysis.notice } : null,
-    currentParticipantId: viewer?.id || null,
-    canControlAllSpeakers: room.mode === "shared" && room.creatorUserId === viewerUserId,
-    confirmation: {
-      confirmedByCurrent: room.archiveConfirmation.userIds.includes(viewerUserId),
-      confirmedCount: room.archiveConfirmation.userIds.length,
-      requiredCount: 2,
-      complete: room.status === "archived",
-    },
-    createdAt: room.createdAt, updatedAt: room.updatedAt, archivedAt: room.archivedAt,
-  };
-}
-
 function publicDemoRoom(room, participantId) {
   const viewer = room.participants.find((participant) => participant.id === participantId) || null;
   const privateFeedback = room.analysis && viewer ? { [viewer.id]: room.analysis.private?.[viewer.id] } : null;
@@ -817,34 +549,9 @@ function publicDemoRoom(room, participantId) {
   };
 }
 
-function roomSummary(room, viewerUserId) {
-  return { code: room.code, mode: room.mode, status: room.status, participantCount: room.participants.length, title: room.analysis?.shared?.title || localText(room.language, "尚未生成共同反馈", "Shared feedback not generated", "Reflexión compartida pendiente"), updatedAt: room.updatedAt, joined: room.participants.some((participant) => participant.userId === viewerUserId) };
-}
-function historySummary(room) { return { code: room.code, title: room.analysis?.shared?.title || localText(room.language, "一次共同复盘", "A shared review", "Una revisión compartida"), category: room.analysis?.shared?.category || "communication", overview: room.analysis?.shared?.overview || "", archivedAt: room.archivedAt, commonGroundCount: room.analysis?.shared?.commonGround?.length || 0, differenceCount: room.analysis?.shared?.differences?.length || 0 }; }
-function historyDetail(room) { return { ...historySummary(room), participants: room.participants.map(({ userId: _userId, ...participant }) => participant), messages: room.messages, sharedAnalysis: room.analysis?.shared || null, analysisMeta: room.analysis ? { source: room.analysis.source, model: room.analysis.model, generatedAt: room.analysis.generatedAt, notice: room.analysis.notice } : null }; }
-
-function resolveSpeaker(room, viewerUserId, requestedId) {
-  const viewer = room.participants.find((participant) => participant.userId === viewerUserId);
-  if (!viewer) return null;
-  if (room.mode === "shared" && room.creatorUserId === viewerUserId) return room.participants.find((participant) => participant.id === requestedId) || viewer;
-  return viewer;
-}
-
 function resolveDemoSpeaker(room, actor, requestedId) {
   if (actor.canControlAll) return room.participants.find((participant) => participant.id === requestedId) || actor.participant;
   return actor.participant;
-}
-
-function mapTranscriptToMessages(room, viewerUserId, segments, fullText, selectedSpeakerId = null, manualSelection = false) {
-  const viewer = room.participants.find((participant) => participant.userId === viewerUserId);
-  const usableSegments = segments.filter((segment) => cleanText(segment.text));
-  if (!usableSegments.length && cleanText(fullText)) return [createMessage(selectedSpeakerId || viewer.id, cleanText(fullText), "voice")];
-  const labels = [...new Set(usableSegments.map((segment) => segment.speaker))];
-  return usableSegments.map((segment) => {
-    let participantId = selectedSpeakerId || viewer.id;
-    if (!manualSelection && (room.mode === "shared" || labels.length > 1)) participantId = room.participants[Math.max(0, labels.indexOf(segment.speaker))]?.id || viewer.id;
-    return createMessage(participantId, cleanText(segment.text), "voice", { start: segment.start, end: segment.end, speakerLabel: segment.speaker });
-  });
 }
 
 function mapDemoTranscriptToMessages(room, participantId, segments, fullText, selectedSpeakerId = null, manualSelection = false) {
@@ -859,7 +566,6 @@ function mapDemoTranscriptToMessages(room, participantId, segments, fullText, se
 }
 
 function createMessage(participantId, text, source, timing = null, realtimeItemId = null) { return { id: randomUUID(), participantId, text, source, timing, realtimeItemId, createdAt: new Date().toISOString() }; }
-function createParticipant(user, role) { return { id: user.id, userId: user.id, name: user.name, role, joinedAt: new Date().toISOString() }; }
 function createDemoParticipant(name, role, accessHash, joinedAt) { return { id: randomUUID(), name, role, accessHash, consentAt: null, joinedAt }; }
 
 function demoActor(room, token) {
@@ -890,7 +596,6 @@ async function createUniqueDemoCode(store) {
   throw new Error("暂时无法生成临时房间，请重试。");
 }
 
-function normalizeCode(value) { return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); }
 function normalizeLongCode(value) { return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8); }
 function cleanName(value, fallback) { return String(value || "").trim().replace(/[<>]/g, "").slice(0, 24) || fallback; }
 function cleanText(value) { return String(value || "").trim().replace(/\0/g, "").slice(0, 1200); }

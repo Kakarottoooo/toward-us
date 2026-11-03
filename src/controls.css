@@ -6,7 +6,6 @@
   .relationship-form select,
   .issue-picker select,
   .perspective-form textarea,
-  .join-relationship-room input,
   .reminders-feature .reminders-form input,
   .reminders-feature .reminders-form select,
   .decision-workspace input:not([type="checkbox"]):not([type="radio"]),
@@ -50,9 +49,9 @@
 
 :is(.relationship-form, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace) input::-webkit-date-and-time-value { text-align: left; }
 
-:is(.auth-content .editorial-field, .relationship-form, .perspective-form, .join-relationship-room, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) :is(input, textarea)::placeholder { color: #a39c92; opacity: 1; }
+:is(.auth-content .editorial-field, .relationship-form, .perspective-form, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) :is(input, textarea)::placeholder { color: #a39c92; opacity: 1; }
 
-:is(.auth-content .editorial-field, .relationship-form, .issue-picker, .perspective-form, .join-relationship-room, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) :is(input, select, textarea:not(.private-agent-composer *)):focus {
+:is(.auth-content .editorial-field, .relationship-form, .issue-picker, .perspective-form, .reminders-feature, .decision-workspace, .memory-workspace, .privacy-workspace, .agent-share-preview) :is(input, select, textarea:not(.private-agent-composer *)):focus {
   border-color: var(--jian-blue);
   box-shadow: 0 0 0 3px rgba(7, 61, 185, .13);
 }
@@ -68,8 +67,7 @@
 /* Buttons: brand blue for the main action, a hairline outline for the rest, clear grey when disabled. */
 :is(.memory-workspace, .privacy-workspace) button:not(.memory-quiet):not(.privacy-quiet),
 .reminders-feature .row-actions button[type="submit"],
-.agent-share-preview button:last-child,
-.join-relationship-room button {
+.agent-share-preview button:last-child {
   min-height: 48px;
   padding: 11px 18px;
   border: 1px solid var(--jian-blue);
@@ -111,7 +109,6 @@
 .agent-share-preview button:disabled,
 .agent-private-actions button:disabled,
 .lifecycle-tools button:disabled,
-.join-relationship-room button:disabled,
 .primary-action:disabled, .secondary-action:disabled {
   border-color: transparent;
   background: #e6e0d6;
@@ -119,7 +116,6 @@
   opacity: 1;
 }
 
-/* Chat-style composers keep their borderless field; their buttons and the red-blue action match the rounded controls. */
+/* Chat-style composers keep their borderless field; their buttons match the rounded controls. */
 .private-agent-composer button { border-radius: 12px; }
 .private-agent-composer textarea { resize: none; }
-.relationship-primary { border-radius: 12px; }

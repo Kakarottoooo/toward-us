@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
 import { createMediator, sanitizeFollowUp } from "../server/mediator.mjs";
 import { createFileStore } from "../server/store.mjs";
-import { nextOccurrence, publicRelationshipEvent } from "../server/relationship-domain.mjs";
+import { createRelationshipRecord, nextOccurrence, publicRelationshipEvent } from "../server/relationship-domain.mjs";
 
 let server;
 let baseUrl;
@@ -81,112 +81,6 @@ test("registration uses an HttpOnly cookie and partner invitations bind exactly 
   assert.deepEqual(accepted.pairing.members.map((member) => member.name), ["Alice", "Bob"]);
 });
 
-test("relationship data is isolated and private AI feedback is visible only to its account", async () => {
-  const pairOne = await createPair("Red", "Blue");
-  const pairTwo = await createPair("Green", "Gold");
-
-  const created = await request("/api/rooms", { method: "POST", cookie: pairOne.a.cookie, body: { mode: "remote", language: "zh", personality: "friend" }, expectedStatus: 201 });
-  const code = created.room.code;
-  await request(`/api/rooms/${code}/join`, { method: "POST", cookie: pairOne.b.cookie });
-  await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pairOne.a.cookie, body: { text: "我希望先确认事实。" }, expectedStatus: 201 });
-  await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pairOne.b.cookie, body: { text: "我希望先被完整听完。" }, expectedStatus: 201 });
-  await request(`/api/rooms/${code}/analyze`, { method: "POST", cookie: pairOne.a.cookie });
-
-  const viewA = await request(`/api/rooms/${code}`, { cookie: pairOne.a.cookie });
-  const viewB = await request(`/api/rooms/${code}`, { cookie: pairOne.b.cookie });
-  assert.deepEqual(Object.keys(viewA.room.privateFeedback), [pairOne.a.user.id]);
-  assert.deepEqual(Object.keys(viewB.room.privateFeedback), [pairOne.b.user.id]);
-  assert.equal(viewA.room.sharedAnalysis.title, "A shared view");
-
-  const crossPair = await request(`/api/rooms/${code}`, { cookie: pairTwo.a.cookie, expectedStatus: 404 });
-  assert.match(crossPair.error, /不属于/);
-});
-
-test("realtime speech commits one voice turn to the speaker selected when speech started", async () => {
-  const pair = await createPair("RealtimeA", "RealtimeB");
-  const created = await request("/api/rooms", { method: "POST", cookie: pair.a.cookie, body: { mode: "shared", language: "zh", personality: "friend" }, expectedStatus: 201 });
-  const partner = created.room.participants.find((participant) => participant.role === "B");
-
-  const first = await request(`/api/rooms/${created.room.code}/transcripts`, {
-    method: "POST", cookie: pair.a.cookie, expectedStatus: 201,
-    body: { itemId: "speech-item-1", speakerId: partner.id, text: "这是停顿后自动完成的一句话。" },
-  });
-  assert.equal(first.room.messages.at(-1).participantId, partner.id);
-  assert.equal(first.room.messages.at(-1).source, "voice");
-
-  const duplicate = await request(`/api/rooms/${created.room.code}/transcripts`, {
-    method: "POST", cookie: pair.a.cookie,
-    body: { itemId: "speech-item-1", speakerId: pair.a.user.id, text: "重复事件不应新增消息。" },
-  });
-  assert.equal(duplicate.room.messages.length, 1);
-  assert.equal(duplicate.room.messages[0].participantId, partner.id);
-});
-
-test("realtime microphone setup is authorized by room membership and returns an SDP answer", async () => {
-  const pair = await createPair("WebRtcA", "WebRtcB");
-  const created = await request("/api/rooms", { method: "POST", cookie: pair.a.cookie, body: { mode: "remote", language: "en", personality: "friend" }, expectedStatus: 201 });
-  const response = await fetch(`${baseUrl}/api/rooms/${created.room.code}/realtime`, {
-    method: "POST",
-    headers: { cookie: pair.a.cookie, origin: baseUrl, "content-type": "application/sdp" },
-    body: "v=0\r\no=test-offer",
-  });
-  const answer = await response.text();
-  assert.equal(response.status, 200, answer);
-  assert.equal(response.headers.get("content-type"), "application/sdp; charset=utf-8");
-  assert.equal(answer, "v=0\r\no=test-answer");
-});
-
-test("both partners can continue a shared conversation with the AI in the same room", async () => {
-  const pair = await createPair("AskA", "AskB");
-  const created = await request("/api/rooms", { method: "POST", cookie: pair.a.cookie, body: { mode: "remote", language: "zh", personality: "friend" }, expectedStatus: 201 });
-  const code = created.room.code;
-  await request(`/api/rooms/${code}/join`, { method: "POST", cookie: pair.b.cookie });
-  await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pair.a.cookie, body: { text: "我需要安静一下。" }, expectedStatus: 201 });
-  await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pair.b.cookie, body: { text: "我需要知道什么时候再谈。" }, expectedStatus: 201 });
-  await request(`/api/rooms/${code}/analyze`, { method: "POST", cookie: pair.a.cookie });
-
-  const asked = await request(`/api/rooms/${code}/ask-ai`, { method: "POST", cookie: pair.b.cookie, body: { question: "我们今晚可以怎么重新开始？" }, expectedStatus: 201 });
-  assert.deepEqual(asked.room.aiConversation.map((entry) => entry.role), ["user", "assistant"]);
-  assert.equal(asked.room.aiConversation[0].participantId, pair.b.user.id);
-  assert.match(asked.room.aiConversation[1].text, /先约定一个时间/);
-
-  const viewA = await request(`/api/rooms/${code}`, { cookie: pair.a.cookie });
-  assert.deepEqual(viewA.room.aiConversation, asked.room.aiConversation);
-});
-
-test("archiving requires confirmation from both partners and then appears in shared history", async () => {
-  const pair = await createPair("North", "South");
-  const created = await request("/api/rooms", { method: "POST", cookie: pair.a.cookie, body: { mode: "shared", language: "en", personality: "direct" }, expectedStatus: 201 });
-  const code = created.room.code;
-  const partner = created.room.participants.find((participant) => participant.role === "B");
-  await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pair.a.cookie, body: { text: "I want a clear date.", speakerId: pair.a.user.id }, expectedStatus: 201 });
-  const attributed = await request(`/api/rooms/${code}/messages`, { method: "POST", cookie: pair.a.cookie, body: { text: "I want a budget first.", speakerId: partner.id }, expectedStatus: 201 });
-  assert.equal(attributed.room.messages[1].participantId, partner.id);
-  const audioResponse = await fetch(`${baseUrl}/api/rooms/${code}/audio`, {
-    method: "POST",
-    headers: { cookie: pair.a.cookie, origin: baseUrl, "content-type": "audio/webm", "x-toward-us-speaker-id": partner.id },
-    body: Buffer.alloc(128, 1),
-  });
-  const audioPayload = await audioResponse.json();
-  assert.equal(audioResponse.status, 200, JSON.stringify(audioPayload));
-  assert.equal(audioPayload.room.messages.at(-1).participantId, partner.id);
-  await request(`/api/rooms/${code}/analyze`, { method: "POST", cookie: pair.a.cookie });
-
-  const first = await request(`/api/rooms/${code}/confirm-archive`, { method: "POST", cookie: pair.a.cookie });
-  assert.equal(first.room.status, "active");
-  assert.equal(first.room.confirmation.confirmedCount, 1);
-  const second = await request(`/api/rooms/${code}/confirm-archive`, { method: "POST", cookie: pair.b.cookie });
-  assert.equal(second.room.status, "archived");
-  assert.equal(second.room.confirmation.complete, true);
-
-  const historyA = await request("/api/history", { cookie: pair.a.cookie });
-  const historyB = await request("/api/history", { cookie: pair.b.cookie });
-  assert.equal(historyA.items[0].code, code);
-  assert.equal(historyB.items[0].code, code);
-  const detail = await request(`/api/history/${code}`, { cookie: pair.b.cookie });
-  assert.equal(detail.item.sharedAnalysis.commonGround[0], "repair");
-});
-
 test("logout revokes the server session", async () => {
   const account = await register("Logout");
   await request("/api/auth/logout", { method: "POST", cookie: account.cookie, expectedStatus: 204, parseJson: false });
@@ -196,11 +90,16 @@ test("logout revokes the server session", async () => {
 
 test("P0 relationship graph enforces private reminders and private-surprise non-disclosure", async () => {
   const pair = await createPair("GraphA", "GraphB");
-  const milestone = await request("/api/milestones", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { type: "anniversary", title: "Our anniversary", date: "2020-09-10", timezone: "America/Los_Angeles", recurringRule: "yearly" } });
-  await request(`/api/milestones/${milestone.milestone.id}/reminders`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { visibility: "private", minutesBefore: 20160, privateNotes: "SECRET_GIFT_REMINDER" } });
-  await request(`/api/milestones/${milestone.milestone.id}/reminders`, { method: "POST", cookie: pair.b.cookie, expectedStatus: 201, body: { visibility: "private", minutesBefore: 1440, privateNotes: "B_PRIVATE_REMINDER" } });
-  const list = await request("/api/lists", { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { title: "Wishlist", type: "gifts" } });
-  const surprise = await request(`/api/lists/${list.list.id}/items`, { method: "POST", cookie: pair.a.cookie, expectedStatus: 201, body: { title: "Secret preparation", visibility: "private_surprise", estimatedCostRange: "private-budget" } });
+  const relationshipId = (await request("/api/auth/me", { cookie: pair.a.cookie })).pairing.id;
+  const milestone = createRelationshipRecord({ relationshipId, userId: pair.a.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", type: "anniversary", title: "Our anniversary", date: "2020-09-10", timezone: "America/Los_Angeles", recurringRule: "yearly" });
+  await store.createRelationshipRecord("milestones", milestone);
+  for (const [userId, minutesBefore, privateNotes] of [[pair.a.user.id, 20160, "SECRET_GIFT_REMINDER"], [pair.b.user.id, 1440, "B_PRIVATE_REMINDER"]]) {
+    await store.createRelationshipRecord("reminders", createRelationshipRecord({ relationshipId, userId, visibility: "private", aiAccessScope: "private", milestoneId: milestone.id, minutesBefore, privateNotes, channel: "in_app" }));
+  }
+  const list = createRelationshipRecord({ relationshipId, userId: pair.a.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", title: "Wishlist", type: "gifts" });
+  await store.createRelationshipRecord("lists", list);
+  const surprise = createRelationshipRecord({ relationshipId, userId: pair.a.user.id, visibility: "private_surprise", aiAccessScope: "private", listId: list.id, title: "Secret preparation", estimatedCostRange: "private-budget" });
+  await store.createRelationshipRecord("listItems", surprise);
   const homeA = await request("/api/relationship/home", { cookie: pair.a.cookie });
   const homeB = await request("/api/relationship/home", { cookie: pair.b.cookie });
   assert.equal(homeA.graph.reminders.length, 1);
@@ -209,17 +108,9 @@ test("P0 relationship graph enforces private reminders and private-surprise non-
   assert.equal(homeB.graph.reminders[0].minutesBefore, 1440);
   assert.equal(homeA.graph.milestones[0].timezone, "America/Los_Angeles");
   assert.equal(JSON.stringify(homeB).includes("SECRET_GIFT_REMINDER"), false);
-  assert.equal(homeA.graph.listItems.some((item) => item.id === surprise.item.id), true);
-  assert.equal(homeB.graph.listItems.some((item) => item.id === surprise.item.id), false);
+  assert.equal(homeA.graph.listItems.some((item) => item.id === surprise.id), true);
+  assert.equal(homeB.graph.listItems.some((item) => item.id === surprise.id), false);
   assert.equal(JSON.stringify(homeB).includes("private-budget"), false);
-  const firstReveal = await request(`/api/list-items/${surprise.item.id}/reveal`, { method: "POST", cookie: pair.a.cookie });
-  const secondReveal = await request(`/api/list-items/${surprise.item.id}/reveal`, { method: "POST", cookie: pair.a.cookie });
-  assert.equal(secondReveal.item.version, firstReveal.item.version);
-  const revealed = await request("/api/relationship/home", { cookie: pair.b.cookie });
-  assert.equal(revealed.graph.listItems.some((item) => item.id === surprise.item.id), true);
-  await request(`/api/list-items/${surprise.item.id}`, { method: "DELETE", cookie: pair.a.cookie, expectedStatus: 204, parseJson: false });
-  const archived = await request("/api/relationship/home", { cookie: pair.b.cookie });
-  assert.equal(archived.graph.listItems.some((item) => item.id === surprise.item.id), false);
 });
 
 test("joint decision context excludes private perspective tokens and objects stay relationship-scoped", async () => {
@@ -439,9 +330,9 @@ test("both demo participants can create accounts and jointly preserve the result
   const accountStateB = await request("/api/auth/me", { cookie: accountB.cookie });
   assert.equal(accountStateA.pairing.status, "active");
   assert.equal(accountStateB.pairing.status, "active");
-  const historyA = await request("/api/history", { cookie: accountA.cookie });
-  assert.equal(historyA.items[0].code, secondClaim.historyCode);
-  assert.equal(historyA.items[0].title, "A shared view");
+  const saved = await store.getRoomForUser(secondClaim.historyCode, accountA.user.id);
+  assert.equal(saved.status, "archived");
+  assert.equal(saved.analysis.shared.title, "A shared view");
 });
 
 const fakeMediator = {

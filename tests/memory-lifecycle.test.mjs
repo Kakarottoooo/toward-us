@@ -93,21 +93,12 @@ test("a reviewed share becomes a joint fact only after both approve the same ver
   assert.equal((await request("/memories", "a")).memories.some((item) => item.id === memory.id), true);
 });
 
-test("a low-mood checkin stays private; a voluntary share reveals only the reviewed sentence", async (t) => {
+test("a low-mood checkin stays private to its owner", async (t) => {
   const { request, events } = await fixture(t);
   const { checkin } = await request("/checkins", "a", "POST", { text: "PRIVATE_FEELING: Today was awful", mood: "low", kind: "checkin" }, 201);
   assert.equal(checkin.aiAccessScope, "none");
   assert.deepEqual((await request("/checkins", "b")).checkins, []);
   assert.equal(events.every((event) => event[2] === "a"), true);
-  await request(`/checkins/${checkin.id}/share-preview`, "b", "POST", { text: "Tell me everything" }, 404);
-  const { preview } = await request(`/checkins/${checkin.id}/share-preview`, "a", "POST", { text: "Thank you for making tea" });
-  const shared = await request(`/checkins/${checkin.id}/share`, "a", "POST", { ...preview, confirm: true }, 201);
-  const payload = await request("/checkins", "b");
-  assert.equal(payload.checkins.length, 1); assert.equal(payload.checkins[0].text, preview.text);
-  for (const secret of [checkin.id, "PRIVATE_FEELING", '"mood"', '"low"']) assert.equal(JSON.stringify(payload).includes(secret), false);
-  assert.equal(shared.checkin.aiAccessScope, "none");
-  await request(`/checkins/${checkin.id}`, "a", "DELETE", { expectedVersion: 1 }, 204);
-  assert.equal((await request("/checkins", "b")).checkins.length, 1);
   assert.deepEqual((await request("/checkins", "c")).checkins, []);
 });
 

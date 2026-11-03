@@ -8,12 +8,10 @@ import {
 import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import {
-  buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
+  buildJointDecisionContext, buildRelationshipHome, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
 } from "./relationship-domain.mjs";
 
-const MILESTONE_TYPES = new Set(["met", "relationship_started", "first_date", "engagement", "marriage", "birthday", "anniversary", "trip", "custom"]);
-const LIST_TYPES = new Set(["date_ideas", "restaurants", "movies", "travel", "gifts", "things_to_learn", "shared_goals", "groceries", "custom"]);
 const ISSUE_CATEGORIES = new Set(["money", "time", "chores", "family", "travel", "living_together", "moving", "career", "marriage", "children", "boundaries", "custom"]);
 const EVALUATIONS = new Set(["accept", "accept_with_conditions", "revise", "reject"]);
 
@@ -40,7 +38,6 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     req.on("close", () => { bucket.delete(client); if (!bucket.size) clients.delete(context.relationship.id); });
   });
 
-  router.get("/milestones", listRoute("milestones"));
   // The day they got together, for the counter on Moments; set by either partner, one per couple.
   router.put("/relationship/together-since", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
@@ -49,52 +46,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     await audit(store, record, req.auth.user.id, "milestone.together_since"); emit(record, "milestone.updated");
     res.json({ milestone: projectRecord(record, req.auth.user.id) });
   });
-  router.post("/milestones", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
-    const type = MILESTONE_TYPES.has(req.body?.type) ? req.body.type : "custom";
-    const date = cleanDate(req.body?.date); if (!date) return res.status(400).json({ error: "请提供有效日期。" });
-    const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type, title: clean(req.body?.title, 120), date, timezone: clean(req.body?.timezone, 64) || "UTC", recurringRule: req.body?.recurringRule === "yearly" ? "yearly" : "once", jointlyConfirmed: false, notes: clean(req.body?.notes, 1200) });
-    if (!record.title) return res.status(400).json({ error: "请输入纪念日名称。" });
-    await store.createRelationshipRecord("milestones", record); await audit(store, record, req.auth.user.id, "milestone.created"); emit(record, "milestone.updated"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "milestone_created" });
-    res.status(201).json({ milestone: projectRecord(record, req.auth.user.id) });
-  });
-  router.patch("/milestones/:id", updateOwnedShared("milestones", ["title", "date", "timezone", "recurringRule", "notes"]));
   router.delete("/milestones/:id", archiveOwned("milestones"));
-  router.post("/milestones/:id/reminders", async (req, res) => {
-    const milestone = await store.getRelationshipRecordForUser("milestones", req.params.id, req.auth.user.id); if (!milestone) return res.status(404).json({ error: "没有找到这个纪念日。" });
-    const isShared = req.body?.visibility === "shared";
-    const minutesBefore = clampInt(req.body?.minutesBefore, 0, 525600, 1440); const existing = (await store.listRelationshipRecordsForUser("reminders", req.auth.user.id)).find((item) => item.milestoneId === milestone.id && item.ownerUserId === req.auth.user.id && item.visibility === (isShared ? "shared" : "private") && item.minutesBefore === minutesBefore && !item.archivedAt); if (existing) return res.json({ reminder: projectRecord(existing, req.auth.user.id) });
-    const record = createRelationshipRecord({ relationshipId: milestone.relationshipId, userId: req.auth.user.id, visibility: isShared ? "shared" : "private", aiAccessScope: isShared ? "joint" : "private", approvalPolicy: "owner", status: "active", milestoneId: milestone.id, minutesBefore, privateNotes: clean(req.body?.privateNotes, 500), channel: "in_app" });
-    await store.createRelationshipRecord("reminders", record); await audit(store, record, req.auth.user.id, "reminder.created"); emit(record, "reminder.updated", isShared ? null : req.auth.user.id);
-    res.status(201).json({ reminder: projectRecord(record, req.auth.user.id) });
-  });
-
-  router.get("/lists", listRoute("lists"));
-  router.post("/lists", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
-    const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", title: clean(req.body?.title, 120), type: LIST_TYPES.has(req.body?.type) ? req.body.type : "custom" });
-    if (!record.title) return res.status(400).json({ error: "请输入清单名称。" });
-    await store.createRelationshipRecord("lists", record); await audit(store, record, req.auth.user.id, "list.created"); emit(record, "list.updated");
-    res.status(201).json({ list: record });
-  });
-  router.post("/lists/:id/items", async (req, res) => {
-    const list = await store.getRelationshipRecordForUser("lists", req.params.id, req.auth.user.id); if (!list) return res.status(404).json({ error: "没有找到这个清单。" });
-    const visibility = req.body?.visibility === "private_surprise" ? "private_surprise" : req.body?.visibility === "private" ? "private" : "shared";
-    const record = createRelationshipRecord({ relationshipId: list.relationshipId, userId: req.auth.user.id, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", approvalPolicy: "owner", status: "active", listId: list.id, title: clean(req.body?.title, 160), description: clean(req.body?.description, 1200), link: safeUrl(req.body?.link), category: clean(req.body?.category, 64), desiredDate: cleanDate(req.body?.desiredDate), estimatedCostRange: clean(req.body?.estimatedCostRange, 80), completedAt: null, revealedAt: null });
-    if (!record.title) return res.status(400).json({ error: "请输入清单项目。" });
-    await store.createRelationshipRecord("listItems", record); await audit(store, record, req.auth.user.id, "list_item.created"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "list_item_added" });
-    if (visibility === "shared") { await notifyMembers(await store.getRelationshipContext(req.auth.user.id), req.auth.user.id, "shared_item_added", "Pinky 有一项共同清单更新。", `/lists/${list.id}`); emit(record, "list_item.updated"); }
-    else emit(record, "list_item.updated", req.auth.user.id);
-    res.status(201).json({ item: projectRecord(record, req.auth.user.id) });
-  });
-  router.patch("/list-items/:id", updateOwnedShared("listItems", ["title", "description", "link", "desiredDate", "estimatedCostRange", "status"]));
-  router.post("/list-items/:id/reveal", async (req, res) => {
-    const current = await store.getRelationshipRecordForUser("listItems", req.params.id, req.auth.user.id);
-    if (!current || current.ownerUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到这个私人项目。" });
-    const item = await store.updateRelationshipRecordForUser("listItems", current.id, req.auth.user.id, (draft) => { if (draft.visibility === "revealed") return; if (draft.visibility !== "private_surprise") throw statusError(409, "只有私人惊喜可以揭晓。"); draft.visibility = "revealed"; draft.aiAccessScope = "joint"; draft.revealedAt = new Date().toISOString(); draft.version += 1; });
-    await audit(store, item, req.auth.user.id, "list_item.revealed"); emit(item, "list_item.updated"); res.json({ item });
-  });
-  router.delete("/list-items/:id", archiveOwned("listItems"));
 
   router.get("/issues", listRoute("issues"));
   router.get("/issues/:id", async (req, res) => {
@@ -314,7 +266,6 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   }));
   router.post("/commitments/:id/renegotiate", decisionState("commitments", "renegotiation_requested", "commitment.renegotiation_requested"));
 
-  router.get("/outcome-reviews/due", async (req, res) => { const graph = projectGraph(await store.relationshipSnapshotForUser(req.auth.user.id), req.auth.user.id); res.json({ outcomes: graph.outcomes.filter((item) => item.status === "pending" && new Date(item.reviewAt) <= new Date()) }); });
   router.post("/outcome-reviews/:id/responses", decisionTransaction(async (tx, req) => {
     const userId = req.auth.user.id;
     const outcome = await tx.getRelationshipRecordForUser("outcomes", req.params.id, userId);
@@ -368,10 +319,6 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     await audit(tx, updated, userId, "outcome.finalized");
     return { record: updated, event: "outcome.updated", body: { outcome: updated } };
   }));
-
-  router.get("/notifications", async (req, res) => { const items = await store.listRelationshipRecordsForUser("notifications", req.auth.user.id); res.json({ notifications: items.filter((item) => item.ownerUserId === req.auth.user.id && canViewRecord(item, req.auth.user.id)) }); });
-  router.post("/notifications/:id/read", notificationMutation("readAt"));
-  router.post("/notifications/:id/dismiss", notificationMutation("dismissedAt"));
 
   // One pending agreement per couple on every path (together, proposal, edit, discussion draft); `exceptId` is the agreement being moved.
   async function assertNoOtherPendingAgreement(tx, relationshipId, userId, exceptId = null) {
@@ -451,11 +398,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.use(decisionErrorHandler);
 
   function listRoute(collection) { return async (req, res) => { const records = await store.listRelationshipRecordsForUser(collection, req.auth.user.id); res.json({ items: records.map((item) => projectRecord(item, req.auth.user.id)).filter(Boolean) }); }; }
-  function updateOwnedShared(collection, fields) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可修改的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { for (const field of fields) if (req.body?.[field] !== undefined) draft[field] = typeof req.body[field] === "string" ? clean(req.body[field], 1200) : req.body[field]; draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.updated`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.json({ item: projectRecord(record, req.auth.user.id) }); }; }
   function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可归档的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
-  function notificationMutation(field) { return async (req, res) => { const current = await store.getRelationshipRecordForUser("notifications", req.params.id, req.auth.user.id); if (!current || current.ownerUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到通知。" }); const notification = await store.updateRelationshipRecordForUser("notifications", current.id, req.auth.user.id, (draft) => { draft[field] = new Date().toISOString(); draft.version += 1; }); res.json({ notification }); }; }
   function emit(record, eventType, ownerUserId = null, actorUserId = null) { if (!record) return; if (eventType === "together.updated") onTogether(record, actorUserId); const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
-  async function notifyMembers(context, actorId, type, title, actionUrl) { if (!context?.members) return; const current = await store.listRelationshipRecordsForUser("notifications", actorId); for (const member of context.members.filter((item) => item.userId !== actorId)) { const dedupeKey = `${type}:${actionUrl}:${member.userId}`; if (current.some((item) => item.dedupeKey === dedupeKey && !item.dismissedAt)) continue; const notification = createRelationshipRecord({ relationshipId: context.relationship.id, userId: actorId, ownerUserId: member.userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "unread", type, title, actionUrl, dedupeKey, readAt: null, dismissedAt: null }); await store.createRelationshipRecord("notifications", notification); emit(notification, "notification.updated", member.userId); } }
   router.emitRecord = emit;
   router.closeUserConnections = (userIds) => { for (const bucket of clients.values()) for (const client of bucket) if (userIds.includes(client.userId)) { client.res.write('event: access-ended\ndata: {}\n\n'); client.res.end(); } };
   return router;
@@ -527,7 +471,4 @@ const DECISION_ERRORS = {
 const PRIVATE_VISIBILITY = (record) => ["private", "private_surprise"].includes(record.visibility);
 const cleanDate = (value) => { const text = String(value || ""); const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? text : null; };
 const validIso = (value) => { const date = new Date(value || ""); return Number.isNaN(date.getTime()) ? null : date.toISOString(); };
-const clampInt = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.round(Number(value)))) : fallback;
-const safeUrl = (value) => { try { const url = new URL(String(value || "")); return ["http:", "https:"].includes(url.protocol) ? url.toString().slice(0, 1200) : ""; } catch { return ""; } };
-const statusError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const capabilities = () => ({ p0RelationshipAgent: true, memories: true, checkins: true, sharedCompanion: true, calendarIntegration: false, safeShare: true, privateAgentBeforePairing: true, privacyControls: true, recoveryCodes: true, durableReminders: true, moneyProtocol: false, intimacyMatching: false, nativeBackgroundLocation: false });

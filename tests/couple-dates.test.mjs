@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
+import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 
 async function couple(run) {
   const directory = await mkdtemp(join(tmpdir(), "toward-dates-"));
@@ -20,7 +21,7 @@ async function couple(run) {
   const a = await register("dates-a"), b = await register("dates-b");
   const invite = await request("/api/partner/invitations", { method: "POST", body: {}, cookie: a });
   await request("/api/partner/accept", { method: "POST", body: { code: invite.body.pairing.invitation.code }, cookie: b });
-  try { await run({ request, a, b }); } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
+  try { await run({ request, a, b, store }); } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
 }
 
 test("either partner sets the day they got together; setting it again moves the one date, and future days are refused", () => couple(async ({ request, a, b }) => {
@@ -31,10 +32,11 @@ test("either partner sets the day they got together; setting it again moves the 
   assert.deepEqual(started.map((item) => [item.date, item.recurringRule, item.title]), [["2025-05-21", "yearly", "在一起纪念日"]]);
 }));
 
-test("an old shared list becomes a checklist space once, with its items", () => couple(async ({ request, a, b }) => {
-  const list = (await request("/api/lists", { method: "POST", body: { title: "Date ideas", type: "custom" }, cookie: a })).body.list;
-  await request(`/api/lists/${list.id}/items`, { method: "POST", body: { title: "Picnic", visibility: "shared" }, cookie: a });
-  await request(`/api/lists/${list.id}/items`, { method: "POST", body: { title: "A surprise", visibility: "private_surprise" }, cookie: a });
+test("an old shared list becomes a checklist space once, with its items", () => couple(async ({ request, a, b, store }) => {
+  const { user, pairing } = (await request("/api/auth/me", { cookie: a })).body;
+  const list = createRelationshipRecord({ relationshipId: pairing.id, userId: user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", title: "Date ideas", type: "custom" });
+  await store.createRelationshipRecord("lists", list);
+  for (const [title, visibility] of [["Picnic", "shared"], ["A surprise", "private_surprise"]]) await store.createRelationshipRecord("listItems", createRelationshipRecord({ relationshipId: pairing.id, userId: user.id, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", listId: list.id, title }));
   const spaces = async (cookie) => (await request("/api/spaces", { cookie })).body.spaces.filter((space) => !space.system);
   const seen = await spaces(b);
   assert.deepEqual(seen.map((space) => [space.title, space.layout, space.visibility, space.items.map((item) => item.title)]), [["Date ideas", "checklist", "shared", ["Picnic"]]]);

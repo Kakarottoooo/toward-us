@@ -99,7 +99,6 @@
 .page-header h1 { flex: 1; min-width: 0; margin: 0 64px 0 0; overflow: hidden; color: var(--jian-ink); font-size: 18px; font-weight: 650; letter-spacing: 0; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .relationship-shell > .page-header ~ .relationship-main { top: calc(var(--page-top) + 54px); padding: 8px 18px calc(40px + env(safe-area-inset-bottom)); }
 .home-columns.page-sections { grid-template-columns: 1fr; gap: 16px; width: 100%; max-width: none; margin: 0; }
-.page-sections .home-section { min-height: 0; }
 .settings-language { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; margin-bottom: 18px; padding: 6px 2px 14px; border-bottom: 1px solid rgba(37,37,37,.1); }
 .settings-language .language-switch { position: static; gap: 4px; color: #8a837a; font-size: 16px; }
 .settings-language .language-switch > span { gap: 4px; }
