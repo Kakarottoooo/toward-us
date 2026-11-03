@@ -127,13 +127,8 @@ pgTest("PostgreSQL enforces explicit sharing, joint memory consent, relationship
   await Promise.all([a, b].map((actor) => f.request(`/memories/${memory.id}/approve`, { actor, method: "POST", body: { expectedVersion: 2, allowJointAI: true } })));
   await f.request(`/memories/${memory.id}/withdraw`, { actor: b, method: "POST", body: { expectedVersion: 2 } });
   assert.equal((await context()).memories.length, 0);
-  const { checkin } = await f.request("/checkins", { actor: a, method: "POST", body: { text: "PRIVATE_LOW_MOOD", mood: "low", kind: "checkin" }, status: 201 });
+  await f.request("/checkins", { actor: a, method: "POST", body: { text: "PRIVATE_LOW_MOOD", mood: "low", kind: "checkin" }, status: 201 });
   assert.equal((await f.request("/checkins", { actor: b })).checkins.length, 0);
-  const checkinPreview = await f.request(`/checkins/${checkin.id}/share-preview`, { actor: a, method: "POST", body: { text: "Thank you for listening" } });
-  await f.request(`/checkins/${checkin.id}/share`, { actor: a, method: "POST", body: { ...checkinPreview.preview, confirm: true }, status: 201 });
-  const partnerCheckins = await f.request("/checkins", { actor: b });
-  assert.equal(partnerCheckins.checkins[0].text, "Thank you for listening");
-  for (const secret of ["PRIVATE_LOW_MOOD", checkin.id, '"mood"']) assert.equal(JSON.stringify(partnerCheckins).includes(secret), false);
   const exported = await f.request("/privacy/export", { actor: a, method: "POST", body: { password: a.password } });
   assert.equal(JSON.stringify(exported).includes("PRIVATE_MEMORY_A"), true); assert.equal(JSON.stringify(exported).includes("PRIVATE_MEMORY_B"), false);
   await f.request("/privacy/leave", { actor: a, method: "POST", body: { password: a.password, confirm: true } });

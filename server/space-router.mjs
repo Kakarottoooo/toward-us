@@ -1,5 +1,5 @@
 import express from "express";
-import { archiveSpaceRecord, ensureMomentSpaces, listSpaces, migrateLegacyLists, updateSpace, updateSpaceItem } from "./space-domain.mjs";
+import { archiveSpaceRecord, ensureMomentSpaces, listSpaces, migrateLegacyLists, updateSpaceItem } from "./space-domain.mjs";
 
 // Pages only show spaces and make small changes; Pinky creates spaces and items from the conversation.
 export function createSpaceRouter({ store, emit = () => {} }) {
@@ -18,8 +18,6 @@ export function createSpaceRouter({ store, emit = () => {} }) {
   };
 
   router.get("/spaces", async (req, res) => { await ensureMomentSpaces(store, req.auth.user.id); await migrateLegacyLists(store, req.auth.user.id); res.json({ spaces: await listSpaces(store, req.auth.user.id) }); });
-  router.patch("/spaces/:id", handle((tx, userId, req) => updateSpace(tx, { userId, id: req.params.id, fields: req.body || {} })));
-  router.post("/spaces/:id/archive", handle((tx, userId, req) => archiveSpaceRecord(tx, { userId, collection: "spaces", id: req.params.id })));
   router.patch("/space-items/:id", handle((tx, userId, req) => updateSpaceItem(tx, { userId, id: req.params.id, fields: req.body || {} })));
   router.post("/space-items/:id/archive", handle((tx, userId, req) => archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: req.params.id })));
   return router;

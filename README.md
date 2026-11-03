@@ -69,7 +69,6 @@ npm run test:app
 npm run test:relationship
 npm run test:demo
 npm run build
-npx playwright test --config playwright.beta.config.ts
 npx playwright test tests/responsive-site.spec.ts
 npm run test:sites
 ```

@@ -1,10 +1,6 @@
-import {
-  ArrowLeft, ArrowRight, CheckCircle, ClockCounterClockwise, Copy, DeviceMobile, HandHeart, House,
-  LinkSimple, LockKey, Microphone, Minus, PaperPlaneRight, SignOut, Sparkle, StopCircle, UserCircle, UsersThree,
-  WarningCircle, Waveform,
-} from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
+import { ArrowLeft, ArrowRight, Copy, LinkSimple, SignOut } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { SettingsPage } from "./features/privacy/SettingsPage";
@@ -16,41 +12,13 @@ import { SpacePage } from "./features/spaces/SpacePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
-import { usePanelSplit } from "./usePanelSplit";
-import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./relationship.css";
 import "./controls.css";
 
-type Screen = "home" | "conversation" | "space" | "import" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard" | "setup" | "room" | "history" | "historyDetail";
-type RoomMode = "remote" | "shared";
-type Personality = "friend" | "counselor" | "direct";
+type Screen = "home" | "conversation" | "space" | "import" | "personal" | "privacy" | "recovery" | "auth" | "pairing" | "dashboard";
 type User = { id: string; email: string; name: string; createdAt: string };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; expiresAt: string } | null };
-type Participant = { id: string; name: string; role: "A" | "B"; joinedAt: string };
-type Message = { id: string; participantId: string; text: string; source: "text" | "voice"; createdAt: string };
-type AiConversationEntry = { id: string; role: "user" | "assistant"; participantId: string | null; text: string; createdAt: string };
-type Feedback = { validation: string; reflection: string; suggestion: string };
-type SharedAnalysis = {
-  title: string; overview: string; category: string;
-  perspectives: Array<{ participantId: string; name: string; view: string }>;
-  responsibility: Array<{ side: string; behavior: string; assessment: string }>;
-  commonGround: string[]; differences: string[]; nextSteps: string[];
-};
-type Room = {
-  code: string; mode: RoomMode; language: Language; personality: Personality; status: "active" | "archived";
-  participants: Participant[]; messages: Message[]; analyzing: boolean; safety: { level: number; message: string };
-  aiConversation: AiConversationEntry[];
-  sharedAnalysis: SharedAnalysis | null; privateFeedback: Record<string, Feedback> | null;
-  analysisMeta: { source: string; model: string; generatedAt: string; notice: string } | null;
-  currentParticipantId: string | null; canControlAllSpeakers: boolean;
-  confirmation: { confirmedByCurrent: boolean; confirmedCount: number; requiredCount: number; complete: boolean };
-  createdAt: string; updatedAt: string; archivedAt: string | null;
-};
-type RoomSummary = { code: string; mode: RoomMode; status: string; participantCount: number; title: string; updatedAt: string; joined: boolean };
-type HistoryItem = { code: string; title: string; category: string; overview: string; archivedAt: string; commonGroundCount: number; differenceCount: number };
-type HistoryDetail = HistoryItem & { participants: Participant[]; messages: Message[]; sharedAnalysis: SharedAnalysis; analysisMeta: Room["analysisMeta"] };
-type Health = { ok: boolean; aiReady: boolean; model: string; audioPersistence: string; storage: string };
 
 const copy = {
   zh: {
@@ -60,24 +28,7 @@ const copy = {
     switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
     waitingHint: "邀请已发出。对方用自己的账号接受后，你们才会共享调解与复盘。", acceptInvite: "接受邀请",
-    inviteCode: "八位邀请码", ownSpace: "共同空间", paired: "已经和伴侣建立连接", startMediation: "开始一次调解",
-    activeRooms: "正在进行", noActive: "没有正在进行的调解。", joinRoom: "加入调解", roomCode: "六位房间码",
-    history: "我们的复盘", settings: "设置", logout: "退出登录", setupTitle: "今天，怎么坐到一起", remote: "两台设备",
-    remoteHint: "各用自己的账号和麦克风。", shared: "同一台设备", sharedHint: "面对面共用一个麦克风。",
-    tone: "AI 调解风格", friend: "温和朋友", counselor: "专业咨询师", direct: "直接但尊重", createRoom: "创建房间",
-    room: "调解房间", connected: "已连接", waiting: "等待伴侣加入", emptyTitle: "先把发生的事说出来",
-    emptyBody: "AI 会保持安静，直到你们主动请它加入；安全边界除外。", textPlaceholder: "说说你看到的事实、感受或需要…",
-    send: "发送", aiJoin: "请 AI 加入", aiWorking: "AI 正在分别理解你们…", viewAnalysis: "查看这次调解",
-    speakingAs: "现在由谁表达", record: "开启实时倾听", stop: "暂停倾听", transcribing: "正在连接实时语音…", speakerSelectedHint: "每段话开始时会锁定当前姓名；说话期间切换不会改掉正在进行的这句话。",
-    audioNote: "停顿后自动成句；原始音频不保存。", voiceUnavailable: "当前浏览器或服务不支持实时语音，仍可使用文字。",
-    privateTitle: "先只对你说", sharedTitle: "共同反馈", private: "给我的话", sharedFeedback: "共同结论", perspective: "双方视角",
-    responsibility: "行为与责任", commonGround: "已经形成的共识", differences: "仍然不同的地方", nextSteps: "下一步",
-    validation: "先接住你的感受", reflection: "值得独自想一想", suggestion: "现在可以这样做", category: "本次议题",
-    returnRoom: "回到对话", modelFallback: "本地复盘框架", modelReady: "AI 调解已连接",
-    notVerdict: "这不是输赢裁决，而是一份可以共同修改的第三方视角。", confirmArchive: "确认保存为共同复盘",
-    confirmedWaiting: "我已确认，等待伴侣", archived: "双方已确认并归档", confirmHint: "只有双方分别确认后，才会进入共同历史。",
-    noHistory: "共同复盘会在双方确认后出现在这里。", agreements: "共同结论", stillDifferent: "仍有分歧", next: "下一步",
-    open: "查看", accountBoundary: "每个账号只能访问自己所属共同空间的数据。", askAi: "继续问 AI", askAiPlaceholder: "追问这次分析，或请 AI 帮你们把下一句话说清楚…", askingAi: "AI 正在回应…",
+    inviteCode: "八位邀请码", logout: "退出登录",
   },
   en: {
     homeLine: "Beyond the argument, we choose each other.", start: "Begin", homeFooter: "Pause · Listen · Repair", back: "Back",
@@ -86,23 +37,7 @@ const copy = {
     switchLogin: "Already registered? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
     createInvite: "Create partner invite", copyInvite: "Copy invite link", copied: "Copied", waitingPartner: "Waiting for your partner",
     waitingHint: "They must accept with their own account before mediation and reviews are shared.", acceptInvite: "Accept invite",
-    inviteCode: "Eight-character code", ownSpace: "Our space", paired: "Your shared space is connected", startMediation: "Start a mediation",
-    activeRooms: "In progress", noActive: "No active mediations.", joinRoom: "Join mediation", roomCode: "Six-character room code",
-    history: "Our reviews", settings: "Settings", logout: "Sign out", setupTitle: "How will you sit together today?", remote: "Two devices",
-    remoteHint: "Each person uses their own account and microphone.", shared: "One device", sharedHint: "Share one microphone in person.",
-    tone: "Mediator style", friend: "Warm friend", counselor: "Counselor", direct: "Direct, respectful", createRoom: "Create room",
-    room: "Mediation room", connected: "Connected", waiting: "Waiting for partner", emptyTitle: "Start with what happened",
-    emptyBody: "AI stays quiet until you invite it in, except when a safety boundary is crossed.", textPlaceholder: "Share facts, feelings, or needs…",
-    send: "Send", aiJoin: "Invite AI", aiWorking: "AI is hearing each of you…", viewAnalysis: "View this mediation", speakingAs: "Speaking as",
-    record: "Start live listening", stop: "Pause listening", transcribing: "Connecting live voice…", speakerSelectedHint: "The selected name is locked when each turn starts; switching mid-sentence will not reassign it.", audioNote: "Pauses complete each turn automatically; raw audio is not stored.",
-    voiceUnavailable: "Voice is unavailable here. Text still works.", privateTitle: "First, just for you", sharedTitle: "Shared feedback", private: "For me",
-    sharedFeedback: "Shared view", perspective: "Both perspectives", responsibility: "Behavior and responsibility", commonGround: "Common ground",
-    differences: "What remains different", nextSteps: "Next steps", validation: "What deserves care", reflection: "Something to reflect on",
-    suggestion: "What you can do now", category: "Topic", returnRoom: "Back to conversation", modelFallback: "Local reflection framework",
-    modelReady: "AI mediator connected", notVerdict: "This is not a winner/loser verdict. It is a third-party view you can revise together.",
-    confirmArchive: "Confirm and save as shared review", confirmedWaiting: "Confirmed — waiting for partner", archived: "Both confirmed and archived",
-    confirmHint: "The review enters shared history only after both partners confirm.", noHistory: "Shared reviews appear here after both partners confirm.",
-    agreements: "Agreements", stillDifferent: "Differences", next: "Next step", open: "Open", accountBoundary: "Each account can access only its own shared-space data.", askAi: "Ask AI", askAiPlaceholder: "Ask about this analysis, or get help wording what to say next…", askingAi: "AI is responding…",
+    inviteCode: "Eight-character code", logout: "Sign out",
   },
   es: {
     homeLine: "Más allá de la discusión, nos elegimos.", start: "Comenzar", homeFooter: "Pausar · Escuchar · Reparar", back: "Volver",
@@ -111,24 +46,7 @@ const copy = {
     switchLogin: "¿Ya tienes cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
     createInvite: "Crear invitación", copyInvite: "Copiar enlace", copied: "Copiado", waitingPartner: "Esperando a tu pareja",
     waitingHint: "Debe aceptar con su propia cuenta antes de compartir mediaciones y revisiones.", acceptInvite: "Aceptar invitación",
-    inviteCode: "Código de ocho caracteres", ownSpace: "Nuestro espacio", paired: "Su espacio compartido está conectado", startMediation: "Iniciar una mediación",
-    activeRooms: "En curso", noActive: "No hay mediaciones activas.", joinRoom: "Unirse a la mediación", roomCode: "Código de seis caracteres",
-    history: "Nuestras revisiones", settings: "Ajustes", logout: "Cerrar sesión", setupTitle: "¿Cómo se sentarán juntos hoy?", remote: "Dos dispositivos",
-    remoteHint: "Cada persona usa su cuenta y micrófono.", shared: "Un dispositivo", sharedHint: "Compartan un micrófono en persona.",
-    tone: "Estilo de mediación", friend: "Amigo cercano", counselor: "Consejero", direct: "Directo y respetuoso", createRoom: "Crear sala",
-    room: "Sala de mediación", connected: "Conectados", waiting: "Esperando a tu pareja", emptyTitle: "Empiecen por lo que ocurrió",
-    emptyBody: "La IA permanece en silencio hasta que la inviten, salvo que se cruce un límite de seguridad.", textPlaceholder: "Comparte hechos, sentimientos o necesidades…",
-    send: "Enviar", aiJoin: "Invitar a la IA", aiWorking: "La IA está escuchando a cada uno…", viewAnalysis: "Ver esta mediación", speakingAs: "Habla como",
-    record: "Iniciar escucha en vivo", stop: "Pausar escucha", transcribing: "Conectando la voz en vivo…", speakerSelectedHint: "El nombre seleccionado queda fijado al comenzar cada turno; cambiarlo a mitad de frase no reasigna ese turno.",
-    audioNote: "Las pausas completan cada turno; el audio original no se guarda.", voiceUnavailable: "La voz no está disponible aquí. El texto sigue funcionando.",
-    privateTitle: "Primero, solo para ti", sharedTitle: "Reflexión compartida", private: "Para mí", sharedFeedback: "Visión compartida", perspective: "Ambas perspectivas",
-    responsibility: "Conducta y responsabilidad", commonGround: "Puntos en común", differences: "Lo que sigue siendo distinto", nextSteps: "Próximos pasos",
-    validation: "Lo que merece cuidado", reflection: "Algo para reflexionar", suggestion: "Lo que puedes hacer ahora", category: "Tema",
-    returnRoom: "Volver a la conversación", modelFallback: "Marco de reflexión local", modelReady: "Mediador de IA conectado",
-    notVerdict: "Esto no decide quién gana o pierde. Es una perspectiva externa que pueden revisar juntos.", confirmArchive: "Confirmar y guardar como revisión compartida",
-    confirmedWaiting: "Confirmado; esperando a tu pareja", archived: "Ambos confirmaron y se archivó", confirmHint: "La revisión entra en el historial compartido solo cuando ambos confirman.",
-    noHistory: "Las revisiones aparecerán aquí cuando ambos las confirmen.", agreements: "Acuerdos", stillDifferent: "Diferencias", next: "Próximo paso",
-    open: "Abrir", accountBoundary: "Cada cuenta solo puede acceder a los datos de su propio espacio compartido.", askAi: "Preguntar a la IA", askAiPlaceholder: "Pregunta sobre este análisis o pide ayuda para expresar lo que sigue…", askingAi: "La IA está respondiendo…",
+    inviteCode: "Código de ocho caracteres", logout: "Cerrar sesión",
   },
 };
 
@@ -143,11 +61,6 @@ function AccountPrototype() {
   const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [detail, setDetail] = useState<HistoryDetail | null>(null);
-  const [activeRooms, setActiveRooms] = useState<RoomSummary[]>([]);
-  const [health, setHealth] = useState<Health | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const keyboard = useKeyboard();
@@ -159,20 +72,10 @@ function AccountPrototype() {
       setUser(state.user); setPairing(state.pairing);
       if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); }
     }).catch(() => {});
-    api<Health>("/api/health").then(setHealth).catch(() => setHealth(null));
     listenNativePushTaps();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
-  useEffect(() => { if (screen === "dashboard" && user) loadActiveRooms(); }, [screen, user]);
-  useEffect(() => {
-    if (!room || screen !== "room") return;
-    let active = true;
-    const events = new EventSource(`/api/rooms/${room.code}/events`);
-    events.addEventListener("room", (event) => { if (active) setRoom(JSON.parse((event as MessageEvent).data)); });
-    events.onerror = () => setNotice(localized(language, "正在重新连接…", "Reconnecting…", "Reconectando…"));
-    return () => { active = false; events.close(); };
-  }, [room?.code, screen, language]);
 
   const selectLanguage = (value: Language) => setLanguage(value);
   const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {
@@ -186,26 +89,11 @@ function AccountPrototype() {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
     setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("conversation");
   };
-  const logout = async () => { keyboard.hide(); await disableNativePush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setRoom(null); setScreen("home"); };
-  const loadActiveRooms = async () => { const result = await api<{ rooms: RoomSummary[] }>("/api/rooms"); setActiveRooms(result.rooms); };
-  const openRoom = async (code: string, join = false) => {
-    setBusy(true); setNotice("");
-    try {
-      if (join) await api(`/api/rooms/${code}/join`, { method: "POST" });
-      const result = await api<{ room: Room }>(`/api/rooms/${code}`); setRoom(result.room); setLanguage(result.room.language); setScreen("room");
-    } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
-  };
-  const openHistory = async () => { const result = await api<{ items: HistoryItem[] }>("/api/history"); setHistory(result.items); setScreen("history"); };
-  const openHistoryDetail = async (code: string) => {
-    const [detailResult, listResult] = await Promise.all([api<{ item: HistoryDetail }>(`/api/history/${code}`), api<{ items: HistoryItem[] }>("/api/history")]);
-    setDetail(detailResult.item); setHistory(listResult.items); setScreen("historyDetail");
-  };
+  const logout = async () => { keyboard.hide(); await disableNativePush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setScreen("home"); };
 
-  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setRoom(null); setScreen(state.user ? landing(state.pairing) : "home"); };
+  const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
   const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
-  // Mediation screens return to the page that lists rooms and reviews.
-  const openTalk = () => { window.history.replaceState(null, "", "/?view=talk"); setScreen("dashboard"); };
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
   const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
   if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onPrivacy={() => setScreen("privacy")} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
@@ -218,11 +106,8 @@ function AccountPrototype() {
   if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
   if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} rooms={activeRooms} notice={notice} busy={busy} onSetup={() => setScreen("setup")} onJoin={openRoom} onHistory={openHistory} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
-  if (screen === "setup") return <SetupScreen language={language} onBack={openTalk} onLanguage={selectLanguage} onRoom={(next) => { setRoom(next); setScreen("room"); }} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "history") return <HistoryScreen items={history} language={language} onBack={openTalk} onOpen={openHistoryDetail} t={t} />;
-  if (screen === "historyDetail" && detail) return <HistoryDetailScreen detail={detail} language={language} onBack={() => setScreen("history")} t={t} />;
-  return <RoomScreen room={room} language={language} health={health} notice={notice} setNotice={setNotice} onHistory={async () => { if (room) await openHistoryDetail(room.code); }} onRoomUpdate={setRoom} onLeave={() => { setRoom(null); openTalk(); }} t={t} />;
+  if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
+  return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
 }
 
 function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; t: typeof copy.zh }) {
@@ -301,91 +186,11 @@ function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onBack,
     </main></MobileScroll>;
 }
 
-function SetupScreen({ language, onBack, onLanguage, onRoom, notice, setNotice, busy, setBusy, t }: {
-  language: Language; onBack: () => void; onLanguage: (language: Language) => void; onRoom: (room: Room) => void; notice: string; setNotice: (value: string) => void;
-  busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
-}) {
-  const [mode, setMode] = useState<RoomMode>("remote"); const [personality, setPersonality] = useState<Personality>("friend"); const keyboard = useKeyboard();
-  const createRoom = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { const result = await api<{ room: Room }>("/api/rooms", { method: "POST", body: JSON.stringify({ mode, language, personality }) }); onRoom(result.room); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); } };
-  return <MobileScroll className="paper-screen setup-screen"><header className="simple-header"><button onClick={onBack}><ArrowLeft size={22} /></button><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header><main className="setup-content"><h1>{t.setupTitle}</h1>
-    <div className="mode-selector"><button className={mode === "remote" ? "selected" : ""} onClick={() => setMode("remote")}><DeviceMobile size={25} /><strong>{t.remote}</strong><span>{t.remoteHint}</span></button><button className={mode === "shared" ? "selected" : ""} onClick={() => setMode("shared")}><UsersThree size={25} /><strong>{t.shared}</strong><span>{t.sharedHint}</span></button></div>
-    <section className="tone-section"><span>{t.tone}</span><div>{(["friend", "counselor", "direct"] as Personality[]).map((option) => <button key={option} className={personality === option ? "selected" : ""} onClick={() => setPersonality(option)}>{option === "friend" ? t.friend : option === "counselor" ? t.counselor : t.direct}</button>)}</div></section>
-    {notice && <p className="form-notice">{notice}</p>}<SplitButton label={t.createRoom} onClick={createRoom} disabled={busy} /></main></MobileScroll>;
-}
-
-function RoomScreen({ room, language, health, notice, setNotice, onHistory, onRoomUpdate, onLeave, t }: { room: Room | null; language: Language; health: Health | null; notice: string; setNotice: (value: string) => void; onHistory: () => void; onRoomUpdate: (room: Room) => void; onLeave: () => void; t: typeof copy.zh }) {
-  const [draft, setDraft] = useState(""); const [speakerId, setSpeakerId] = useState(""); const [copied, setCopied] = useState(false);
-  const [composerHeight, setComposerHeight] = useState(0);
-  const analysisRef = useRef<HTMLElement | null>(null); const composerRef = useRef<HTMLElement | null>(null); const keyboard = useKeyboard(); const split = usePanelSplit();
-  useEffect(() => { if (room?.currentParticipantId && !speakerId) setSpeakerId(room.currentParticipantId); }, [room?.currentParticipantId, speakerId]);
-  useEffect(() => {
-    const composer = composerRef.current;
-    if (!composer) return;
-    const updateHeight = () => setComposerHeight(Math.ceil(composer.getBoundingClientRect().height));
-    updateHeight();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateHeight);
-    observer?.observe(composer);
-    window.addEventListener("resize", updateHeight);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", updateHeight); };
-  }, [room?.code, room?.canControlAllSpeakers]);
-  const participantMap = useMemo(() => new Map(room?.participants.map((participant) => [participant.id, participant]) || []), [room?.participants]);
-  const voice = useRealtimeTranscription<{ room: Room }>({
-    endpoint: `/api/rooms/${room?.code || ""}/realtime`, speakerId,
-    onCommitted: (payload) => { if (payload.room) onRoomUpdate(payload.room); setNotice(""); },
-    onError: setNotice,
-  });
-  if (!room) return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
-  const send = async () => { if (!draft.trim()) return; const text = draft; setDraft(""); keyboard.hide(); try { await api(`/api/rooms/${room.code}/messages`, { method: "POST", body: JSON.stringify({ text, speakerId }) }); setNotice(""); } catch (error) { setDraft(text); setNotice((error as Error).message); } };
-  const analyze = async () => { keyboard.hide(); setNotice(""); try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/analyze`, { method: "POST" }); onRoomUpdate(result.room); } catch (error) { setNotice((error as Error).message); } };
-  const copyCode = async () => { await navigator.clipboard.writeText(room.code); setCopied(true); setTimeout(() => setCopied(false), 1400); };
-  const measuredComposerHeight = composerHeight || (room.canControlAllSpeakers ? 214 : 142);
-  const aiActive = Boolean(room.analyzing || room.analysisMeta);
-  const partialPerson = voice.partial ? participantMap.get(voice.partial.speakerId) : null;
-  return <div className="room-shell" data-testid="room-screen" style={{ "--message-bottom": `${measuredComposerHeight}px` } as React.CSSProperties}><header className="room-header"><button onClick={onLeave} aria-label={t.back}><ArrowLeft size={20} /></button><div><span>{t.room}</span><strong>{room.code}</strong></div><button onClick={copyCode} aria-label={t.copyInvite}>{copied ? <CheckCircle size={21} weight="fill" /> : <Copy size={21} />}</button></header>
-    <div className="room-presence"><div className="participant-pair">{room.participants.map((participant) => <span key={participant.id} className={participant.role === "A" ? "red-person" : "blue-person"}>{participant.name.slice(0, 1)}</span>)}{room.participants.length < 2 && <span className="empty-person">?</span>}</div><p>{room.participants.length < 2 ? t.waiting : t.connected}<i /></p><span className={`ai-status ${health?.aiReady ? "ready" : "fallback"}`}><Sparkle size={13} weight="fill" />{health?.aiReady ? t.modelReady : t.modelFallback}</span></div>
-    <div ref={split.containerRef} className={`mediation-workspace ${aiActive ? "ai-active" : ""}`} style={split.style}>
-      <section className="conversation-pane" aria-label={localized(language, "双方对话", "Conversation", "Conversación")}><MobileScroll className="message-scroll"><main className="message-content">{room.safety.level > 0 && <aside className={`safety-banner level-${room.safety.level}`}><WarningCircle size={22} weight="fill" /><p>{room.safety.message}</p></aside>}
-        {!room.messages.length && !voice.partial ? <section className="empty-conversation"><HandHeart size={40} /><h2>{t.emptyTitle}</h2><p>{t.emptyBody}</p></section> : room.messages.map((message) => { const participant = participantMap.get(message.participantId); return <article key={message.id} className={`message ${participant?.role === "A" ? "side-a" : "side-b"}`}><header>{participant?.name}{message.source === "voice" && <Waveform size={14} />}</header><p>{message.text}</p></article>; })}
-        {voice.partial && <article className={`message live-partial ${partialPerson?.role === "A" ? "side-a" : "side-b"}`} data-testid="live-transcript"><header>{partialPerson?.name}<Waveform size={14} /></header><p>{voice.partial.text || localized(language, "正在听…", "Listening…", "Escuchando…")}</p></article>}
-      </main></MobileScroll></section>
-      {aiActive && <button className="mediation-divider" type="button" role="separator" aria-label={localized(language, "拖动调整对话与 AI 分析空间", "Resize conversation and AI analysis", "Cambiar el espacio entre la conversación y el análisis de IA")} aria-orientation="horizontal" aria-valuemin={18} aria-valuemax={72} {...split.handleProps}><Minus size={30} weight="bold" /></button>}
-      {aiActive && <section className="ai-pane" aria-label={localized(language, "AI 调解分析", "AI mediation analysis", "Análisis de mediación con IA")}><MobileScroll className="ai-scroll"><AnalysisScreen analysisRef={analysisRef} room={room} language={language} onHistory={onHistory} onRoomUpdate={onRoomUpdate} setNotice={setNotice} t={t} /></MobileScroll></section>}
-    </div>
-    <footer ref={composerRef} className="composer">{room.canControlAllSpeakers && <div className="speaker-control"><div className="speaker-toggle"><span>{t.speakingAs}</span>{room.participants.map((participant) => <button key={participant.id} type="button" onClick={() => setSpeakerId(participant.id)} aria-pressed={speakerId === participant.id} className={speakerId === participant.id ? `selected ${participant.role === "A" ? "red" : "blue"}` : ""}>{participant.name}</button>)}</div><p className="speaker-selection-note">{t.speakerSelectedHint}</p></div>}<div className="live-control-row"><button className={`live-listen ${voice.listening ? "listening" : ""}`} onClick={() => { keyboard.hide(); voice.listening ? voice.stop() : void voice.start(); }} disabled={voice.connecting} aria-label={voice.listening ? t.stop : t.record}>{voice.listening ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} weight="fill" />}<span>{voice.connecting ? t.transcribing : voice.listening ? t.stop : t.record}</span></button><p>{t.audioNote}</p></div><div className="composer-row"><KeyboardTextarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t.textPlaceholder} rows={1} maxLength={1200} /><button className="send-button" onClick={send} disabled={!draft.trim()} aria-label={t.send}><PaperPlaneRight size={21} weight="fill" /></button></div>{!aiActive && <button className="invite-ai" disabled={room.messages.length < 2 || room.analyzing || room.participants.length < 2} onClick={analyze}><Sparkle size={17} weight="fill" />{room.analyzing ? t.aiWorking : t.aiJoin}</button>}{notice && <p className="room-notice">{notice}</p>}</footer>
-  </div>;
-}
-
-function AnalysisScreen({ room, language, analysisRef, onHistory, onRoomUpdate, setNotice, t }: { room: Room; language: Language; analysisRef: React.RefObject<HTMLElement | null>; onHistory: () => void; onRoomUpdate: (room: Room) => void; setNotice: (value: string) => void; t: typeof copy.zh }) {
-  const [tab, setTab] = useState<"private" | "shared">("shared"); const [question, setQuestion] = useState(""); const [asking, setAsking] = useState(false); const keyboard = useKeyboard(); const feedback = room.privateFeedback?.[room.currentParticipantId || ""]; const analysis = room.sharedAnalysis;
-  const confirm = async () => { try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/confirm-archive`, { method: "POST" }); onRoomUpdate(result.room); } catch (error) { setNotice((error as Error).message); } };
-  const ask = async () => { if (!question.trim() || asking) return; const pending = question; setQuestion(""); setAsking(true); keyboard.hide(); try { const result = await api<{ room: Room }>(`/api/rooms/${room.code}/ask-ai`, { method: "POST", body: JSON.stringify({ question: pending }) }); onRoomUpdate(result.room); setNotice(""); } catch (error) { setQuestion(pending); setNotice((error as Error).message); } finally { setAsking(false); } };
-  return <section ref={analysisRef} className="formal-inline-analysis" data-testid="room-ai-panel"><header className="inline-analysis-header"><div><Sparkle size={20} weight="fill" /><span>{tab === "private" ? t.privateTitle : t.sharedTitle}</span></div></header><main className="analysis-content"><div className="analysis-tabs"><button className={tab === "private" ? "selected" : ""} onClick={() => setTab("private")}><LockKey size={17} />{t.private}</button><button className={tab === "shared" ? "selected" : ""} onClick={() => setTab("shared")}><UsersThree size={17} />{t.sharedFeedback}</button></div>
-    {!analysis ? <section className="analysis-loading"><Sparkle size={34} weight="fill" /><h1>{t.aiWorking}</h1></section> : tab === "private" ? <section>{feedback && <div className="private-letter"><span className="letter-mark">{localized(language, "私 / PRIVATE", "PRIVATE", "PRIVADO")}</span><FeedbackBlock number="01" title={t.validation} body={feedback.validation} /><FeedbackBlock number="02" title={t.reflection} body={feedback.reflection} /><FeedbackBlock number="03" title={t.suggestion} body={feedback.suggestion} /></div>}<button className="primary-action" onClick={() => setTab("shared")}>{t.sharedFeedback}<ArrowRight size={20} /></button></section> : <section className="shared-analysis"><SharedAnalysisContent analysis={analysis} t={t} />
-      <section className="ai-followup" aria-label={t.askAi}><div className="ai-thread">{(room.aiConversation || []).map((entry) => <article key={entry.id} className={entry.role === "assistant" ? "ai-reply" : "ai-question"}><span>{entry.role === "assistant" ? "AI" : room.participants.find((participant) => participant.id === entry.participantId)?.name || localized(language, "你", "You", "Tú")}</span><p>{entry.text}</p></article>)}{asking && <article className="ai-reply pending"><span>AI</span><p>{t.askingAi}</p></article>}</div><div className="ai-question-row"><KeyboardTextarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.askAiPlaceholder} rows={1} maxLength={1200} /><button type="button" onClick={ask} disabled={!question.trim() || asking} aria-label={t.askAi}><PaperPlaneRight size={20} weight="fill" /></button></div></section>
-      <section className="confirmation-panel"><p><LockKey size={17} />{t.confirmHint}</p><div className="confirmation-progress"><i className={room.confirmation.confirmedCount > 0 ? "done" : ""} /><i className={room.confirmation.confirmedCount > 1 ? "done" : ""} /><span>{room.confirmation.confirmedCount}/{room.confirmation.requiredCount}</span></div>{room.confirmation.complete ? <button className="primary-action" onClick={onHistory}><CheckCircle size={20} weight="fill" />{t.archived}</button> : <button className="primary-action" onClick={confirm} disabled={room.confirmation.confirmedByCurrent}>{room.confirmation.confirmedByCurrent ? t.confirmedWaiting : t.confirmArchive}</button>}</section>
-      {room.analysisMeta && <p className="analysis-meta"><Sparkle size={14} />{room.analysisMeta.source === "openai" ? `${room.analysisMeta.model} · ${new Date(room.analysisMeta.generatedAt).toLocaleString(languageTag(language))}` : t.modelFallback}<br />{room.analysisMeta.notice}</p>}</section>}
-    </main></section>;
-}
-
-function HistoryScreen({ items, language, onBack, onOpen, t }: { items: HistoryItem[]; language: Language; onBack: () => void; onOpen: (code: string) => void; t: typeof copy.zh }) {
-  return <div className="paper-screen history-screen"><header className="simple-header"><button onClick={onBack}><ArrowLeft size={22} /></button><span>{t.history}</span><i /></header><MobileScroll className="history-scroll"><main className="history-content"><div className="vertical-title"><h1>{t.history}</h1><PauseMark /></div><div className="history-tabs"><span className="active">{t.agreements}</span><span>{t.stillDifferent}</span></div>{!items.length ? <p className="empty-history">{t.noHistory}</p> : items.map((item) => <button className="history-row" key={item.code} onClick={() => onOpen(item.code)}><time>{new Date(item.archivedAt).toLocaleDateString(languageTag(language))}</time><div><strong>{item.title}</strong><p>{item.overview}</p><span>{t.agreements} {item.commonGroundCount} · {t.stillDifferent} {item.differenceCount}</span></div><ArrowRight size={18} /></button>)}</main></MobileScroll></div>;
-}
-
-function HistoryDetailScreen({ detail, language, onBack, t }: { detail: HistoryDetail; language: Language; onBack: () => void; t: typeof copy.zh }) {
-  return <MobileScroll className="paper-screen history-detail"><header className="simple-header"><button onClick={onBack}><ArrowLeft size={22} /></button><span>{new Date(detail.archivedAt).toLocaleDateString(languageTag(language))}</span><i /></header><main className="analysis-content"><SharedAnalysisContent analysis={detail.sharedAnalysis} t={t} /><AnalysisSection title={localized(language, "当时的表达", "What was said", "Lo que se dijo")} index="06"><div className="history-transcript">{detail.messages.map((message) => <p key={message.id}><strong>{detail.participants.find((participant) => participant.id === message.participantId)?.name}</strong>{message.text}</p>)}</div></AnalysisSection></main></MobileScroll>;
-}
-
-function SharedAnalysisContent({ analysis, t }: { analysis: SharedAnalysis; t: typeof copy.zh }) { return <><div className="analysis-heading"><p>{t.category} · {analysis.category}</p><h1>{analysis.title}</h1><span>{t.notVerdict}</span></div><p className="analysis-overview">{analysis.overview}</p><AnalysisSection title={t.perspective} index="01"><div className="perspective-grid">{analysis.perspectives.map((item, index) => <article key={item.participantId} className={index ? "blue-edge" : "red-edge"}><strong>{item.name}</strong><p>{item.view}</p></article>)}</div></AnalysisSection><AnalysisSection title={t.responsibility} index="02">{analysis.responsibility.map((item, index) => <div className="responsibility-item" key={`${item.side}-${index}`}><strong>{item.behavior}</strong><p>{item.assessment}</p></div>)}</AnalysisSection><AnalysisSection title={t.commonGround} index="03"><BulletList items={analysis.commonGround} tone="common" /></AnalysisSection><AnalysisSection title={t.differences} index="04"><BulletList items={analysis.differences} tone="different" /></AnalysisSection><AnalysisSection title={t.nextSteps} index="05"><ol className="next-step-list">{analysis.nextSteps.map((item, index) => <li key={item}><span>{String(index + 1).padStart(2, "0")}</span><p>{item}</p></li>)}</ol></AnalysisSection></>; }
-
-function BottomNav({ current, onHome, onHistory, onLogout, t }: { current: "home" | "history"; onHome: () => void; onHistory: () => void; onLogout: () => void; t: typeof copy.zh }) { return <nav className="bottom-nav"><button className={current === "history" ? "" : "active"} onClick={onHome}><House size={21} /><span>{t.ownSpace}</span></button><button className={current === "history" ? "active" : ""} onClick={onHistory}><ClockCounterClockwise size={21} /><span>{t.history}</span></button><button onClick={onLogout}><UserCircle size={21} /><span>{t.settings}</span></button></nav>; }
 function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: (language: Language) => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark language={language} /><nav aria-label={localized(language, "主导航", "Main navigation", "Navegación principal")}><button onClick={() => location.assign("/demo")}>{localized(language, "快速体验", "Quick demo", "Demostración rápida")}</button><a href="#how-it-works">{localized(language, "如何工作", "How it works", "Cómo funciona")}</a><button onClick={onLogin}>{localized(language, "我们的复盘", "Our reviews", "Nuestras revisiones")}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{localized(language, "登录", "Sign in", "Iniciar sesión")}<ArrowRight size={17} /></button></div></header>; }
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: (language: Language) => void; compact?: boolean }) { return <div className={`language-switch ${compact ? "compact" : ""}`} role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div>; }
 function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>P I N K Y</strong>{language === "zh" && <span>拉钩，说好就算数</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
-function FeedbackBlock({ number, title, body }: { number: string; title: string; body: string }) { return <article className="feedback-block"><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>; }
-function AnalysisSection({ title, index, children }: { title: string; index: string; children: React.ReactNode }) { return <section className="analysis-section"><header><span>{index}</span><h2>{title}</h2></header>{children}</section>; }
-function BulletList({ items, tone }: { items: string[]; tone: "common" | "different" }) { return <ul className={`bullet-list ${tone}`}>{items.map((item) => <li key={item}>{tone === "common" ? <CheckCircle size={18} weight="fill" /> : <WarningCircle size={18} />}<span>{item}</span></li>)}</ul>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
 function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }

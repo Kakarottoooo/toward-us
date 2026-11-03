@@ -11,6 +11,7 @@ import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createSpaceRouter } from "../server/space-router.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { createPhotoRouter } from "../server/photo-store.mjs";
+import { archiveSpaceRecord } from "../server/space-domain.mjs";
 
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, ...patch });
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
@@ -170,7 +171,7 @@ test("every member has one private moments album and the couple one shared album
   assert.deepEqual(albums((await f.request("/spaces")).body.spaces), ["private", "shared"], "asking again creates nothing new");
   const shared = mine.body.spaces.find((space) => space.system === "moments" && space.visibility === "shared");
   assert.equal(theirs.body.spaces.find((space) => space.system === "moments" && space.visibility === "shared").id, shared.id, "both partners share the same album");
-  assert.equal((await f.request(`/spaces/${shared.id}/archive`, "POST", {})).status, 403);
+  await assert.rejects(f.store.transaction("test", (tx) => archiveSpaceRecord(tx, { userId: f.ids[0], collection: "spaces", id: shared.id })), { statusCode: 403 });
 });
 
 test("on the day, Pinky recalls the couple's shared moments from earlier years in Us once, never private ones", async (t) => {

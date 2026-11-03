@@ -35,11 +35,11 @@ export function createMemoryRouter({ store, emit = () => {} }) {
     emit(memory, "memory.updated", memory.visibility === "private" ? req.auth.user.id : null); res.json({ memory });
   });
 
-  for (const collection of ["memories", "checkins"]) router.delete(`/${collection}/:id`, async (req, res) => {
+  router.delete("/memories/:id", async (req, res) => {
     const deleted = await transact(req, async (tx, context) => {
-      const current = await visible(tx, collection, req.params.id, req, context); version(current, req);
+      const current = await visible(tx, "memories", req.params.id, req, context); version(current, req);
       if (current.ownerUserId !== req.auth.user.id || current.visibility !== "private") fail(req, 403, "只能删除自己的私人原文；已经分享的内容仍可被对方查看。", "Only your private original can be deleted; shared text remains visible to your partner.", "Solo puedes borrar tu original privado; tu pareja aún puede ver el texto compartido.");
-      await audit(tx, current, req.auth.user.id, `${current.kind}.deleted`); await tx.deleteRelationshipRecordForUser(collection, current.id, req.auth.user.id); return current;
+      await audit(tx, current, req.auth.user.id, `${current.kind}.deleted`); await tx.deleteRelationshipRecordForUser("memories", current.id, req.auth.user.id); return current;
     });
     emit(deleted, `${deleted.kind}.deleted`, req.auth.user.id); res.status(204).end();
   });
@@ -73,27 +73,25 @@ export function createMemoryRouter({ store, emit = () => {} }) {
     emit(checkin, "checkin.updated", userId); void recordUsage(store, { userId, relationshipId: checkin.relationshipId, action: "checkin_saved" }); res.status(201).json({ checkin });
   });
 
-  for (const collection of ["memories", "checkins"]) {
-    router.post(`/${collection}/:id/share-preview`, async (req, res) => {
-      const context = await requirePair(store, req);
-      const current = await visible(store, collection, req.params.id, req, context); requirePrivateOwner(current, req);
-      res.json({ preview: sharePreview(current, requiredText(req)) });
+  router.post("/memories/:id/share-preview", async (req, res) => {
+    const context = await requirePair(store, req);
+    const current = await visible(store, "memories", req.params.id, req, context); requirePrivateOwner(current, req);
+    res.json({ preview: sharePreview(current, requiredText(req)) });
+  });
+  router.post("/memories/:id/share", async (req, res) => {
+    const shared = await transact(req, async (tx, context) => {
+      if (!context) fail(req, 409, "邀请伴侣加入后，才能共同分享。", "Invite your partner before sharing together.", "Invita a tu pareja antes de compartir.");
+      const current = await visible(tx, "memories", req.params.id, req, context); requirePrivateOwner(current, req); version(current, req);
+      const text = requiredText(req); const preview = sharePreview(current, text);
+      if (req.body?.confirm !== true || req.body?.digest !== preview.digest) fail(req, 409, "请先预览并确认这段确切的分享文本。", "Preview and confirm this exact text before sharing.", "Previsualiza y confirma este texto exacto antes de compartirlo.");
+      const memberUserIds = context.members.map((member) => member.userId);
+      const existing = (await tx.listRelationshipRecordsForUser("memories", req.auth.user.id)).find((item) => item.relationshipId === context.relationship.id && item.shareDigest === preview.digest && item.ownerUserId === req.auth.user.id);
+      if (existing) return existing;
+      const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "none", approvalPolicy: "both", status: "pending_confirmation", kind: current.kind, text, memberUserIds, approvals: [], shareDigest: preview.digest, expiresAt: current.expiresAt || null, provenance: { source: "owner_confirmed_text", sourceType: current.provenance?.source || "member", createdByUserId: req.auth.user.id, createdAt: new Date().toISOString() } });
+      await tx.createRelationshipRecord("memories", record); await audit(tx, record, req.auth.user.id, "memory.shared"); return record;
     });
-    router.post(`/${collection}/:id/share`, async (req, res) => {
-      const shared = await transact(req, async (tx, context) => {
-        if (!context) fail(req, 409, "邀请伴侣加入后，才能共同分享。", "Invite your partner before sharing together.", "Invita a tu pareja antes de compartir.");
-        const current = await visible(tx, collection, req.params.id, req, context); requirePrivateOwner(current, req); version(current, req);
-        const text = requiredText(req); const preview = sharePreview(current, text);
-        if (req.body?.confirm !== true || req.body?.digest !== preview.digest) fail(req, 409, "请先预览并确认这段确切的分享文本。", "Preview and confirm this exact text before sharing.", "Previsualiza y confirma este texto exacto antes de compartirlo.");
-        const memberUserIds = context.members.map((member) => member.userId);
-        const existing = (await tx.listRelationshipRecordsForUser(collection, req.auth.user.id)).find((item) => item.relationshipId === context.relationship.id && item.shareDigest === preview.digest && item.ownerUserId === req.auth.user.id);
-        if (existing) return existing;
-        const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "none", approvalPolicy: collection === "memories" ? "both" : "owner", status: collection === "memories" ? "pending_confirmation" : "active", kind: current.kind, text, memberUserIds, approvals: [], shareDigest: preview.digest, expiresAt: current.expiresAt || null, provenance: { source: "owner_confirmed_text", sourceType: current.provenance?.source || "member", createdByUserId: req.auth.user.id, createdAt: new Date().toISOString() } });
-        await tx.createRelationshipRecord(collection, record); await audit(tx, record, req.auth.user.id, `${collection === "memories" ? "memory" : "checkin"}.shared`); return record;
-      });
-      emit(shared, `${collection === "memories" ? "memory" : "checkin"}.updated`); res.status(201).json({ [collection === "memories" ? "memory" : "checkin"]: shared });
-    });
-  }
+    emit(shared, "memory.updated"); res.status(201).json({ memory: shared });
+  });
 
   router.post("/memories/:id/approve", async (req, res) => {
     const memory = await transact(req, async (tx, context) => {
