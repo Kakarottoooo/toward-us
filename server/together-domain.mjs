@@ -106,7 +106,11 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (!saved.duplicate) emit(saved.conversation);
   if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   await ensureMomentSpaces(store, actorUserId);
-  const context = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
+  const membership = await store.getRelationshipContext(actorUserId);
+  const members = (membership?.members || []).map((member) => ({ id: member.userId, name: member.user?.name || "" }));
+  const built = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
+  // Each line says who wrote it, so the Agent answers the right person by name.
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : members.find((member) => member.id === item.actorUserId)?.name || "" })) };
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
@@ -120,10 +124,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
   if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
-    const membership = await store.getRelationshipContext(actorUserId);
-    const members = (membership?.members || []).map((member) => ({ id: member.userId, name: member.user?.name || "" }));
-    const named = { ...context, messages: context.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : members.find((member) => member.id === item.actorUserId)?.name || "" })) };
-    const mediation = await mediator.mediateTogether(named, members, language);
+    const mediation = await mediator.mediateTogether(context, members, language);
     if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
   }
   // A recap card is made after the reply, in the background (it takes a little while), and posted here when ready.
