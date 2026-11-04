@@ -199,9 +199,23 @@ export async function createFileStore(filePath) {
     getInvitation(code) { return state().invitations[code] ? { ...state().invitations[code] } : null; },
     async acceptInvitation(code, userId, acceptedAt) {
       const invitation = state().invitations[code];
-      if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId || state().memberships[userId]) return null;
+      if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId) return null;
       const relationship = state().relationships[invitation.relationshipId];
       if (!relationship || relationship.status !== "pending") return null;
+      // Someone who made an invite of their own and then accepts their partner's: their solo, still-pending space ends
+      // and they join. Their own private records come along, still private; anything else stays with the ended space.
+      const own = state().memberships[userId];
+      if (own) {
+        const solo = state().relationships[own.relationshipId];
+        if (solo?.status !== "pending" || Object.values(state().memberships).some((member) => member.relationshipId === solo.id && member.userId !== userId)) return null;
+        state().formerMemberships[solo.id] = [{ ...own }];
+        solo.status = "ended"; solo.updatedAt = acceptedAt;
+        for (const item of Object.values(state().invitations)) if (item.relationshipId === solo.id && !item.acceptedAt) item.expiresAt = acceptedAt;
+        delete state().memberships[userId];
+        for (const collection of GRAPH_COLLECTIONS) for (const record of Object.values(state().relationshipGraph[collection])) {
+          if (record.relationshipId === solo.id && record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) record.relationshipId = relationship.id;
+        }
+      }
       state().memberships[userId] = { userId, relationshipId: relationship.id, role: "B", joinedAt: acceptedAt };
       invitation.acceptedAt = acceptedAt;
       invitation.acceptedByUserId = userId;

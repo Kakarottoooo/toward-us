@@ -184,17 +184,18 @@ function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onBack,
 }) {
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get("invite")?.toUpperCase() || "");
   const [copied, setCopied] = useState(false); const keyboard = useKeyboard();
-  // Opened from a partner's invite link: accepting is the one thing to do. Creating an invite of their own here would put
-  // this account in a second, empty couple, and the partner's code could then no longer be accepted.
-  const [invited] = useState(() => !pairing && code.length === 8);
+  // Opened from a partner's invite link: accepting is the one thing to do, even for someone who already made an invite of
+  // their own (accepting ends their solo space on the server).
+  const [invited] = useState(() => pairing?.status !== "active" && code.length === 8 && code !== pairing?.invitation?.code);
   const createInvite = async () => { setBusy(true); setNotice(""); try { await api("/api/partner/invitations", { method: "POST" }); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
-  const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", location.pathname); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
+  // Joining is about the two of them: the conversation opens on Us (the channel is read once, then leaves the URL).
+  const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", `${location.pathname}?channel=us`); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
   const inviteUrl = pairing?.invitation ? `${location.origin}${location.pathname}?invite=${pairing.invitation.code}` : "";
   const copyInvite = async () => { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><button onClick={onLogout} aria-label={t.logout}><SignOut size={20} /></button><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
-    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{pairing ? t.waitingPartner : invited ? t.joinPartner : t.invitePartner}</h1><PauseMark /></div>
-      <button className="text-action" onClick={onBack}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button><p className="pairing-lead">{pairing ? t.waitingHint : invited ? t.joinHint : t.inviteHint}</p>
-      {!pairing ? <>{!invited && <><button className="primary-action" onClick={createInvite} disabled={busy}><LinkSimple size={20} />{t.createInvite}</button><div className="join-divider"><span>OR</span></div></>}
+    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{invited ? t.joinPartner : pairing ? t.waitingPartner : t.invitePartner}</h1><PauseMark /></div>
+      <button className="text-action" onClick={onBack}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button><p className="pairing-lead">{invited ? t.joinHint : pairing ? t.waitingHint : t.inviteHint}</p>
+      {invited || !pairing ? <>{!invited && <><button className="primary-action" onClick={createInvite} disabled={busy}><LinkSimple size={20} />{t.createInvite}</button><div className="join-divider"><span>OR</span></div></>}
         <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))} maxLength={8} data-testid="invite-code" /></label><button className={invited ? "primary-action" : "secondary-action"} onClick={accept} disabled={busy || code.length !== 8}>{t.acceptInvite}</button></> :
         <><div className="invite-code-panel"><span>{t.inviteCode}</span><strong>{pairing.invitation?.code}</strong><button onClick={copyInvite}><Copy size={18} />{copied ? t.copied : t.copyInvite}</button></div><div className="waiting-pair"><span>{user.name.slice(0, 1)}</span><i>＋</i><span>?</span></div><button className="secondary-action" onClick={onRefresh}>{localized(language, "检查是否已加入", "Check connection", "Comprobar conexión")}</button></>}
       {notice && <p className="form-notice" role="alert">{notice}</p>}

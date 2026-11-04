@@ -190,7 +190,8 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .pairing-screen { position: relative; overflow: hidden; }
 .pairing-screen .simple-header { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; }
 .pairing-columns { position: absolute; inset: 104px 0 0; pointer-events: none; overflow: hidden; }
-.pairing-columns i { position: absolute; display: block; width: 105px; height: 490px; background-image: url('/assets/brand/editorial-columns-background.png'); background-size: 393px 852px; background-repeat: no-repeat; }
+/* The red and blue bands stay in the side margins (narrower than the content padding), so no text sits on them. */
+.pairing-columns i { position: absolute; display: block; width: 48px; height: 490px; background-image: url('/assets/brand/editorial-columns-background.png'); background-size: 393px 852px; background-repeat: no-repeat; }
 .pairing-columns i:first-child { top: 0; left: 0; background-position: left -105px; }
 .pairing-columns i:last-child { right: 0; bottom: 0; background-position: right bottom; }
 .pairing-content { position: relative; z-index: 2; padding: 24px 66px calc(var(--mobile-safe-area-height) + 52px); text-align: center; }

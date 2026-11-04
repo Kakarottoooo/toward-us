@@ -181,7 +181,18 @@ export async function createPostgresStore(databaseUrl) {
         const invitation = mapInvitation((await pool.query("select * from invitations where code=$1 for update", [code])).rows[0]);
         const relationship = (await pool.query("select status from relationships where id=$1 for update", [initial.relationshipId])).rows[0];
         if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId || relationship?.status !== "pending") return null;
-        if ((await pool.query("select 1 from relationship_members where user_id=$1", [userId])).rowCount) return null;
+        // Someone who made an invite of their own and then accepts their partner's: their solo, still-pending space ends
+        // and they join. Their own private records come along, still private; anything else stays with the ended space.
+        const own = (await pool.query("select m.relationship_id, r.status, (select count(*) from relationship_members o where o.relationship_id=m.relationship_id)::int as members from relationship_members m join relationships r on r.id=m.relationship_id where m.user_id=$1", [userId])).rows[0];
+        if (own) {
+          if (own.status !== "pending" || own.members !== 1) return null;
+          const solo = own.relationship_id;
+          await pool.query("insert into relationship_former_members (relationship_id,user_id,role,joined_at) select relationship_id,user_id,role,joined_at from relationship_members where relationship_id=$1 on conflict do nothing", [solo]);
+          await pool.query("update relationships set status='ended',updated_at=$2 where id=$1", [solo, acceptedAt]);
+          await pool.query("update invitations set expires_at=$2 where relationship_id=$1 and accepted_at is null", [solo, acceptedAt]);
+          await pool.query("delete from relationship_members where relationship_id=$1", [solo]);
+          for (const collection of GRAPH_COLLECTIONS) await pool.query(`update ${graphTable(collection)} set relationship_id=$2,data=data || jsonb_build_object('relationshipId',$2::text) where relationship_id=$1 and owner_user_id=$3 and visibility in ('private','private_surprise')`, [solo, invitation.relationshipId, userId]);
+        }
         await pool.query("insert into relationship_members (relationship_id,user_id,role,joined_at) values ($1,$2,'B',$3)", [invitation.relationshipId,userId,acceptedAt]);
         await pool.query("update invitations set accepted_at=$2,accepted_by_user_id=$3 where code=$1", [code,acceptedAt,userId]);
         const changed = await pool.query("update relationships set status='active',updated_at=$2 where id=$1 and status='pending'", [invitation.relationshipId,acceptedAt]);

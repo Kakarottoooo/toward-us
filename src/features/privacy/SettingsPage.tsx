@@ -156,7 +156,8 @@ export function SettingsPage({ initialPage, user, relationshipId, partnerName, l
   };
 
   return <div className="paper-screen relationship-shell settings-screen">
-    <PageHeader language={language} title={titles[page]} onBack={page === "main" ? onBack : () => open("main")} />
+    {/* A page opened straight from the conversation (the character, from the tour) goes back there; others go back to Settings. */}
+    <PageHeader language={language} title={titles[page]} {...(page === "main" || page === initialPage ? { onBack } : { onBack: () => open("main"), backLabel: titles.main })} />
     <main className="relationship-main settings-main"><div className="settings-body" data-testid="settings-screen">
       {page === "main" ? main : sub[page]}
       {notice && !pending && <p className="settings-notice" role="status">{notice}</p>}
