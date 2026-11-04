@@ -1,0 +1,34 @@
+/* "还欠着什么": compact lines on the ivory surface; the actions sit right under each promise. */
+.promise-list { display: grid; gap: 10px; }
+.promise-empty { margin: 0; color: #6f6860; font-size: 15px; line-height: 1.6; }
+.promise-item { display: grid; gap: 4px; padding: 12px 14px; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.promise-item.is-kept { opacity: .78; }
+.promise-item.is-kept > strong { text-decoration: line-through; text-decoration-color: rgba(37,37,37,.35); }
+.promise-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #6f6860; font-size: 13px; font-weight: 600; }
+.promise-private { display: inline-flex; align-items: center; gap: 4px; color: var(--jian-blue); font-style: normal; font-weight: 600; }
+.promise-item > strong { color: var(--jian-ink); font-size: 16px; font-weight: 650; line-height: 1.45; }
+.promise-item > strong small { color: #6f6860; font-size: 14px; font-weight: 500; }
+.promise-item > q { color: #5d574f; font-size: 14px; line-height: 1.5; quotes: "“" "”"; }
+.promise-tags { display: flex; flex-wrap: wrap; gap: 6px 12px; color: #6f6860; font-size: 13px; }
+.promise-tags:empty { display: none; }
+.promise-tags span { display: inline-flex; align-items: center; gap: 4px; }
+.promise-tags .is-kept { color: var(--jian-green); font-weight: 600; }
+.promise-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.promise-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 1px solid rgba(37,37,37,.2); border-radius: 999px; background: transparent; color: var(--jian-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+/* Several lines share the page, so their main action stays calm rather than a row of solid buttons. */
+.promise-actions button.is-primary { border-color: transparent; background: var(--jian-blue-soft); color: var(--jian-blue); }
+.promise-share .promise-actions button.is-primary { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
+.promise-actions button:hover:not(:disabled):not(.is-primary) { background: #fff; }
+.promise-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.promise-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.promise-actions .promise-more { width: 40px; justify-content: center; margin-left: auto; padding: 0; border-color: transparent; color: #6f6860; }
+.promise-actions.is-more { margin-top: 0; padding-top: 8px; border-top: 1px solid rgba(37,37,37,.08); }
+.promise-share { display: grid; gap: 8px; }
+.promise-share small { color: #5d574f; font-size: 13px; line-height: 1.5; }
+.promise-share textarea { width: 100%; min-height: 64px; padding: 10px 12px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fff; color: var(--jian-ink); font: inherit; font-size: 15px; line-height: 1.5; resize: none; }
+/* In Us, Pinky's one gentle mention at a fresh start: a quiet full-width card, gone once someone starts typing. */
+.conversation-card.promise-nudge { padding: 14px 16px; background: rgba(251,247,239,.85); }
+.conversation-card.promise-nudge p { font-size: 15px; line-height: 1.6; }
+.conversation-card.promise-nudge q { display: block; margin-top: 4px; color: #6f6860; font-size: 14px; line-height: 1.5; quotes: "“" "”"; }
+.promise-nudge .card-actions { margin-top: 12px; gap: 8px; }
+.promise-nudge .card-actions button { min-height: 40px; padding: 0 14px; font-size: 14px; }

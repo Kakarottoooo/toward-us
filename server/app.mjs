@@ -37,6 +37,7 @@ import { createHandoffRouter } from "./handoff.mjs";
 import { createChatImportRouter } from "./chat-import.mjs";
 import { createVoiceCallRouter } from "./voice-call.mjs";
 import { createSuggestionsRouter } from "./suggestions-router.mjs";
+import { createPromiseKeeper, createPromisesRouter } from "./promises.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
@@ -458,7 +459,9 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   chatImportRouter.emitTogether = (conversation, actorUserId = null) => emit(conversation, "together.updated", null, actorUserId);
   app.use("/api", chatImportRouter);
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
-  const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter, activity });
+  // "还欠着什么": promises noticed in either conversation, in the background (11-03).
+  const promiseKeeper = createPromiseKeeper({ store, mediator, emit });
+  const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter, activity, promises: promiseKeeper });
   app.use("/api", assistantRouter);
   app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit, activity }));
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit, activity });
@@ -466,7 +469,8 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPrivacyRouter({ store, production, closeConnections, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
-  app.use("/api", createTogetherRouter({ store, mediator, emit, activity }));
+  app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper }));
+  app.use("/api", createPromisesRouter({ store, keeper: promiseKeeper, emit }));
   app.use("/api", createSpaceRouter({ store, emit }));
   app.use("/api", createPhotoRouter({ store }));
   app.use("/api", createHandoffRouter());

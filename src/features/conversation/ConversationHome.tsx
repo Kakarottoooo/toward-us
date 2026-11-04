@@ -16,6 +16,8 @@ import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import { CoupleMascot } from "../character/CoupleMascot";
 import { useCoupleCharacter } from "../character/character";
 import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking";
+import { PromiseNudge } from "../promises/PromiseNudge";
+import { promiseToMention, type PromiseItem } from "../promises/promises";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -72,6 +74,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const mascotShown = Boolean(mascot?.image && mascot.visible);
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
+  // At most one open promise Pinky brings up in Us, only where suggestions may show (11-03); the server picks which.
+  const [nudge, setNudge] = useState<PromiseItem | null>(null);
   // Suggestions are a fresh-start aid, not fixed chrome: they show at the end of a channel that is empty or has been quiet
   // for a while, or when asked for with the bulb, and fold away once the person starts typing or sends.
   const [summoned, setSummoned] = useState<Channel | null>(null);
@@ -431,7 +435,14 @@ ${text}` : text, target);
   const showIdeas = wantIdeas && !draft.trim() && !voice.listening && !!ideas[channel].length && !readOnly && !(channel === "us" && !paired);
   const dismissIdeas = () => { setSummoned(null); setDismissedAt((current) => ({ ...current, [channel]: Date.now() })); };
   useEffect(() => { if (draft.trim() && wantIdeas) dismissIdeas(); }, [Boolean(draft.trim())]);
-  useEffect(() => { if (showIdeas) endRef.current?.scrollIntoView({ block: "end" }); }, [showIdeas, ideas[channel].length]);
+  const showNudge = channel === "us" && paired && wantIdeas && !draft.trim() && !voice.listening && !readOnly && Boolean(nudge);
+  useEffect(() => { if (showIdeas || showNudge) endRef.current?.scrollIntoView({ block: "end" }); }, [showIdeas, showNudge, ideas[channel].length]);
+  useEffect(() => {
+    if (channel !== "us" || !paired || !wantIdeas) return;
+    let alive = true;
+    promiseToMention(language).then((item) => { if (alive) setNudge(item); }).catch(() => {});
+    return () => { alive = false; };
+  }, [channel, language, paired, wantIdeas]);
   // Fresh ideas only when they would be shown, so a busy conversation does not ask the model after every message.
   useEffect(() => {
     if ((channel === "us" && !paired) || !wantIdeas) return;
@@ -463,6 +474,7 @@ ${text}` : text, target);
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
+      {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=agreements")} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
     </main></MobileScroll></div>

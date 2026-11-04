@@ -23,7 +23,7 @@ const localTime = (value, timezone) => {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
 
-export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null, activity = null }) {
+export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null, activity = null, promises = null }) {
   const router = express.Router();
   const liveUser = async (db, userId, lock = false) => {
     const user = await (lock ? db.getUserForUpdate(userId) : db.getUserById(userId));
@@ -115,7 +115,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   // While a turn runs, this member alone can see which step Pinky is on (App, iMessage or call alike); it ends with the turn.
   const appendTurn = async (userId, sessionId, body, options = {}) => {
     const progress = activity ? activity.forMember(userId) : () => {};
-    try { return await runTurn(userId, sessionId, body, { ...options, progress }); } finally { progress(null); }
+    try {
+      const result = await runTurn(userId, sessionId, body, { ...options, progress });
+      // A promise said here stays this member's alone; it is noticed in the background once the chat goes quiet.
+      if (!result.duplicate) promises?.notePrivate(userId, sessionId);
+      return result;
+    } finally { progress(null); }
   };
   const runTurn = async (userId, sessionId, body, { channel = "app", progress }) => {
     const session = await owned(store, sessionId, userId);

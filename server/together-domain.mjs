@@ -37,6 +37,8 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
     openCommitments: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && OPEN_COMMITMENTS.has(item.status) && !item.archivedAt).map(({ id, agreementId, description, ownerType, status, dueAt }) => ({ id, agreementId, description, ownerType, status, dueAt })),
     pendingAgreement: pending ? agreement(pending) : null,
+    // Promises noticed in Us that are still owed ("还欠着什么"); a member's private ones never reach the shared Agent.
+    noticedPromises: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && item.origin === "conversation" && item.status === "noticed" && !item.archivedAt).slice(0, 20).map(({ id, description, whenText, ownerType }) => ({ id, description, when: whenText || "", ownerType })),
     authorizedMemories: userId ? buildMemoryContext(snapshot.memories || [], { userId, relationshipId, scope: "joint", query }).memories : [],
     spaces: (snapshot.spaces || []).filter((space) => space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt).slice(0, 30).map((space) => ({
       id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),

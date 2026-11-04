@@ -8,7 +8,7 @@ import {
 import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import {
-  buildJointDecisionContext, buildRelationshipHome, createRelationshipRecord,
+  buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
 } from "./relationship-domain.mjs";
 
@@ -211,7 +211,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   }));
   router.post("/commitments/:id/confirm", decisionTransaction(async (tx, req, context) => {
     const userId = req.auth.user.id;
-    const current = await tx.getRelationshipRecordForUser("commitments", req.params.id, userId);
+    const current = agreementCommitment(await tx.getRelationshipRecordForUser("commitments", req.params.id, userId), userId);
     if (!current) throw decisionError(404, "not_found");
     assertVersion(current, req.body?.version);
     const responsible = responsibilityIds(context, current.ownerType);
@@ -224,7 +224,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     return { record: commitment, event: "commitment.updated", body: { commitment } };
   }));
   router.patch("/commitments/:id", decisionTransaction(async (tx, req, context) => {
-    const current = await tx.getRelationshipRecordForUser("commitments", req.params.id, req.auth.user.id);
+    const current = agreementCommitment(await tx.getRelationshipRecordForUser("commitments", req.params.id, req.auth.user.id), req.auth.user.id);
     if (!current) throw decisionError(404, "not_found");
     assertVersion(current, req.body?.version);
     if (!["active", "awaiting_confirmations"].includes(current.status) || req.body?.confirmed !== true) throw decisionError(409, "confirm_commitment");
@@ -237,7 +237,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   }));
   router.post("/commitments/:id/complete", decisionTransaction(async (tx, req, context) => {
     const userId = req.auth.user.id;
-    const current = await tx.getRelationshipRecordForUser("commitments", req.params.id, userId);
+    const current = agreementCommitment(await tx.getRelationshipRecordForUser("commitments", req.params.id, userId), userId);
     if (!current) throw decisionError(404, "not_found");
     assertVersion(current, req.body?.version);
     const responsible = responsibilityIds(context, current.ownerType);
@@ -256,7 +256,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     return { record: commitment, event: "commitment.updated", body: { commitment, outcome } };
   }, "commitment_completed"));
   router.post("/commitments/:id/review", decisionTransaction(async (tx, req) => {
-    const commitment = await tx.getRelationshipRecordForUser("commitments", req.params.id, req.auth.user.id);
+    const commitment = agreementCommitment(await tx.getRelationshipRecordForUser("commitments", req.params.id, req.auth.user.id), req.auth.user.id);
     if (!commitment) throw decisionError(404, "not_found");
     assertVersion(commitment, req.body?.version);
     if (!["active", "completed", "renegotiation_requested"].includes(commitment.status)) throw decisionError(409, "commitment_not_active");
@@ -343,7 +343,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   async function announce(tx, agreement, userId, req, fallbackLanguage = null) { return (await announceAgreement(tx, { agreement, userId, language: req.body?.language || req.query?.language || fallbackLanguage })).conversation; }
   function decisionState(collection, status, event) {
     return decisionTransaction(async (tx, req) => {
-      const record = await tx.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id);
+      const raw = await tx.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id);
+      const record = collection === "commitments" ? agreementCommitment(raw, req.auth.user.id) : raw;
       if (!record) throw decisionError(404, "not_found");
       assertVersion(record, req.body?.version);
       if (["cancelled", "superseded", "archived"].includes(record.status)) throw decisionError(409, "agreement_not_editable");
@@ -468,6 +469,9 @@ const DECISION_ERRORS = {
   pairing_required: ["需要双方账号完成伴侣绑定。", "Both accounts must be paired first.", "Ambas cuentas deben vincularse primero."],
   already_revealed: ["你们俩都已回答，答案已经揭晓。", "You've both answered, so the answers are already revealed.", "Ya respondieron los dos, así que las respuestas ya se revelaron."],
 };
+// Only commitments made under an agreement go through these routes. A promise noticed in conversation has its own routes
+// (server/promises.mjs), and one kept privately for the partner must look exactly like one that does not exist (11-03).
+const agreementCommitment = (record, userId) => record && record.origin !== "conversation" && canViewRecord(record, userId) ? record : null;
 const PRIVATE_VISIBILITY = (record) => ["private", "private_surprise"].includes(record.visibility);
 const cleanDate = (value) => { const text = String(value || ""); const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? text : null; };
 const validIso = (value) => { const date = new Date(value || ""); return Number.isNaN(date.getTime()) ? null : date.toISOString(); };
