@@ -85,6 +85,24 @@ function AccountPrototype() {
     registerAppWorker();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
+  // The installed web app stays open for days: when it comes back to the front and the server runs a newer build,
+  // reload so fixes show up, unless something is being typed.
+  useEffect(() => {
+    let loaded = "";
+    const check = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const { commit } = await fetch("/api/health", { cache: "no-store" }).then((response) => response.json());
+        if (!commit) return;
+        if (!loaded) { loaded = commit; return; }
+        const typing = [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea, input:not([type=hidden]):not([type=file])")].some((field) => field.value.trim());
+        if (commit !== loaded && !typing) location.reload();
+      } catch { /* offline: try again next time */ }
+    };
+    void check();
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
+  }, []);
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
 
   const selectLanguage = (value: Language) => setLanguage(value);
