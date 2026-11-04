@@ -13,6 +13,7 @@
     "test:responsive": "playwright test tests/responsive-site.spec.ts",
     "test:demo": "playwright test --config=playwright.demo.config.ts",
     "test:relationship": "playwright test --config=playwright.relationship.config.ts",
+    "test:couple": "playwright test --config=playwright.couple.config.ts",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "npm run check:runtime",
     "dev": "vite",

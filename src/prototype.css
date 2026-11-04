@@ -188,6 +188,7 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .auth-switch { width: 100%; margin-top: 16px; border: 0; background: transparent; color: var(--jian-blue); font-size: 13px; cursor: pointer; }
 
 .pairing-screen { position: relative; overflow: hidden; }
+.pairing-screen .simple-header { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; }
 .pairing-columns { position: absolute; inset: 104px 0 0; pointer-events: none; overflow: hidden; }
 .pairing-columns i { position: absolute; display: block; width: 105px; height: 490px; background-image: url('/assets/brand/editorial-columns-background.png'); background-size: 393px 852px; background-repeat: no-repeat; }
 .pairing-columns i:first-child { top: 0; left: 0; background-position: left -105px; }

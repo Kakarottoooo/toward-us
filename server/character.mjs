@@ -46,7 +46,8 @@ export function characterView(record, userId) {
   };
 }
 
-export function createCharacterRouter({ store, maker = createCharacterMaker() }) {
+// `emit` tells both members' open Apps that the character changed, so it appears for the partner without a reload.
+export function createCharacterRouter({ store, maker = createCharacterMaker(), emit = () => {} }) {
   const router = express.Router();
   let queue = Promise.resolve(); // one making at a time on this computer: the GPU is shared with everything else
   router.use("/character", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "sign_in" }));
@@ -95,7 +96,8 @@ export function createCharacterRouter({ store, maker = createCharacterMaker() })
       }
     });
     res.status(202).json({ character: characterView(record, userId) });
-    queue = queue.then(() => make({ store, maker, id, userId, fileId, photo: join(folderFor(fileId), `photo.${TYPES[mime]}`) })).catch(() => {});
+    emit(record, "character.updated");
+    queue = queue.then(() => make({ store, maker, emit, id, userId, fileId, photo: join(folderFor(fileId), `photo.${TYPES[mime]}`) })).catch(() => {});
   });
 
   // Each member's own choice: hidden means gone from their screen, until they turn it back on in Settings.
@@ -126,10 +128,10 @@ export function createCharacterRouter({ store, maker = createCharacterMaker() })
 }
 
 /** One making, in the background: cut out (the still shows at once), then the motion. A newer photo makes this one moot. */
-async function make({ store, maker, id, userId, fileId, photo }) {
+async function make({ store, maker, emit, id, userId, fileId, photo }) {
   const folder = folderFor(fileId);
   // Writes only while this making is still the latest one; a member may have sent another photo meanwhile.
-  const update = (change) => store.updateRelationshipRecordForUser("characters", id, userId, (draft) => { if (draft.making?.fileId === fileId) { change(draft); draft.version += 1; } });
+  const update = async (change) => emit(await store.updateRelationshipRecordForUser("characters", id, userId, (draft) => { if (draft.making?.fileId === fileId) { change(draft); draft.version += 1; } }), "character.updated");
   let cut;
   try { cut = await maker.cutOut(photo, folder); } catch (error) { console.error(`Character cut-out failed (${error?.name || "Error"}).`); cut = "failed"; }
   await rm(photo, { force: true }); // the original photo is not kept, only the cut-out character
@@ -205,6 +207,13 @@ async function seedance(firstFrame, clip) {
 }
 
 export function createCharacterMaker() {
+  // CHARACTER_MAKER=fake, for end-to-end tests and local walk-throughs: the photo itself stands in for the cut-out and the
+  // motion, so the whole couple path runs without the GPU environment and without a paid Seedance call.
+  if (process.env.CHARACTER_MAKER === "fake") return {
+    available: () => true,
+    async cutOut(photo, folder) { await copyFile(photo, join(folder, "still.png")); return "ok"; },
+    async animate(still, folder) { await copyFile(still, join(folder, "motion.webp")); },
+  };
   return {
     available: () => process.env.CHARACTER_MAKER !== "off" && existsSync(PYTHON) && existsSync(PIPELINE),
     /** "ok" with still.png written, or "cut_off" / "no_subject"; throws when the step itself broke. */
