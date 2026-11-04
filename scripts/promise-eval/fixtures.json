@@ -1,0 +1,431 @@
+{
+  "about": "Invented couple chats for the promise-extraction eval (scripts/eval-promises.mjs). No real people's messages. `line` is the index of the message that holds the promise (a list means any of them is right). `what` lists keywords that must all appear in the extracted phrase (`a|b` = either). `when` lists acceptable times; [] means no time was stated, and \"\" inside a list means an empty time is also fine. `to` is who the promise is owed to (A->B, B->A, both->each other); the extractor implies it from `by`. `optional` items are judgment calls: finding them is not a false positive, missing them is not a miss. `traps` mark lines that look like promises but are not, so false positives can be named.",
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "zh-weekend-apartment",
+      "channel": "together",
+      "names": { "A": "小林", "B": "阿杰" },
+      "messages": [
+        { "from": "B", "text": "中介说那套两居室周六上午可以看" },
+        { "from": "A", "text": "我周六上午陪你去看房，下午再去宜家" },
+        { "from": "B", "text": "好嘞 爱你" },
+        { "from": "A", "text": "记得带上身份证" }
+      ],
+      "expected": [
+        { "line": 1, "by": "A", "to": "B", "what": ["看房"], "when": ["周六"], "kind": "plain" },
+        { "line": 1, "by": "A", "to": "B", "what": ["宜家"], "when": ["周六", "下午"], "optional": true }
+      ],
+      "traps": []
+    },
+    {
+      "id": "en-call-mom-tomorrow",
+      "channel": "together",
+      "names": { "A": "Sam", "B": "Jordan" },
+      "messages": [
+        { "from": "A", "text": "my mom keeps asking if we're coming for thanksgiving" },
+        { "from": "B", "text": "ugh sorry I owe her a call" },
+        { "from": "B", "text": "I'll call her tomorrow after work, promise" },
+        { "from": "A", "text": "thank youuu ❤️" }
+      ],
+      "expected": [
+        { "line": 2, "by": "B", "to": "A", "what": ["call"], "when": ["tomorrow"], "kind": "plain" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "zh-wishes-only",
+      "channel": "together",
+      "names": { "A": "小雨", "B": "阿城" },
+      "messages": [
+        { "from": "A", "text": "好想去冰岛看极光啊" },
+        { "from": "B", "text": "以后有钱了一定去" },
+        { "from": "A", "text": "哈哈哈 等我们发财" },
+        { "from": "B", "text": "要是能有个院子养只狗就好了" },
+        { "from": "A", "text": "想想就开心" }
+      ],
+      "expected": [],
+      "traps": [
+        { "line": 0, "kind": "wish" },
+        { "line": 1, "kind": "wish" },
+        { "line": 3, "kind": "wish" }
+      ]
+    },
+    {
+      "id": "en-sarcasm-then-real",
+      "channel": "together",
+      "names": { "A": "Riley", "B": "Casey" },
+      "messages": [
+        { "from": "A", "text": "you left the dishes AGAIN" },
+        { "from": "B", "text": "sorry sorry" },
+        { "from": "A", "text": "oh sure, and I'll just do every single dish for the rest of my life, no problem 🙃" },
+        { "from": "B", "text": "ok that's fair. I'll do them tonight" }
+      ],
+      "expected": [
+        { "line": 3, "by": "B", "to": "A", "what": ["dish|them"], "when": ["tonight"], "kind": "plain" }
+      ],
+      "traps": [
+        { "line": 2, "kind": "joke" }
+      ]
+    },
+    {
+      "id": "zh-already-kept",
+      "channel": "together",
+      "names": { "A": "小雨", "B": "阿城" },
+      "messages": [
+        { "from": "B", "text": "花收到了吗" },
+        { "from": "A", "text": "收到啦！好香" },
+        { "from": "B", "text": "上周说好给你买的，没忘吧😎" },
+        { "from": "A", "text": "嗯嗯 你最好了" },
+        { "from": "A", "text": "对了你昨天说的那个快递我帮你取回来了" }
+      ],
+      "expected": [],
+      "traps": [
+        { "line": 2, "kind": "done" },
+        { "line": 4, "kind": "done" }
+      ]
+    },
+    {
+      "id": "en-both-call-grandma",
+      "channel": "together",
+      "names": { "A": "Sam", "B": "Jordan" },
+      "messages": [
+        { "from": "A", "text": "grandma's surgery went fine btw" },
+        { "from": "B", "text": "oh thank god" },
+        { "from": "B", "text": "let's video call her together on Sunday" },
+        { "from": "A", "text": "yes let's do that, she'd love it" }
+      ],
+      "expected": [
+        { "line": [2, 3], "by": "both", "to": "each other", "what": ["call"], "when": ["sunday"], "kind": "both" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "zh-next-friday-pickup",
+      "channel": "together",
+      "names": { "A": "阿梅", "B": "大伟" },
+      "messages": [
+        { "from": "A", "text": "下周五我加班到九点 好烦" },
+        { "from": "B", "text": "那我下周五开车去公司接你" },
+        { "from": "A", "text": "真的吗！！" },
+        { "from": "B", "text": "真的 九点楼下见" }
+      ],
+      "expected": [
+        { "line": [1, 3], "by": "B", "to": "A", "what": ["接|见"], "when": ["下周五", "九点"], "kind": "plain" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "zh-conditional-disney",
+      "channel": "together",
+      "names": { "A": "小林", "B": "阿杰" },
+      "messages": [
+        { "from": "A", "text": "这周项目终于要上线了" },
+        { "from": "A", "text": "如果周四顺利上线，周六我就带你去迪士尼" },
+        { "from": "B", "text": "说话算话！" },
+        { "from": "A", "text": "算话 拉钩" }
+      ],
+      "expected": [
+        { "line": [1, 3], "by": "A", "to": "B", "what": ["迪士尼"], "when": ["周六"], "kind": "conditional" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "en-weak-maybe",
+      "channel": "together",
+      "names": { "A": "Riley", "B": "Casey" },
+      "messages": [
+        { "from": "B", "text": "there's a pottery class on saturdays" },
+        { "from": "A", "text": "maybe if I have time I could join you sometime" },
+        { "from": "B", "text": "no pressure haha" }
+      ],
+      "expected": [],
+      "traps": [
+        { "line": 1, "kind": "wish" }
+      ]
+    },
+    {
+      "id": "zh-cancelled-exhibition",
+      "channel": "together",
+      "names": { "A": "阿梅", "B": "大伟" },
+      "messages": [
+        { "from": "A", "text": "周六我陪你去看那个展" },
+        { "from": "B", "text": "好呀" },
+        { "from": "A", "text": "宝 对不起 周六临时要出差 展去不了了" },
+        { "from": "B", "text": "唉 好吧 那就算了" },
+        { "from": "A", "text": "抱歉抱歉" }
+      ],
+      "expected": [],
+      "traps": [
+        { "line": 0, "kind": "cancelled" },
+        { "line": 1, "kind": "cancelled" }
+      ]
+    },
+    {
+      "id": "en-rescheduled-dinner",
+      "channel": "together",
+      "names": { "A": "Mia", "B": "Theo" },
+      "messages": [
+        { "from": "B", "text": "dinner at Luca's still on for Thursday?" },
+        { "from": "A", "text": "ahh I have a late meeting thursday 😩" },
+        { "from": "A", "text": "can we move it to friday? I'll book a table for 7" },
+        { "from": "B", "text": "friday works" }
+      ],
+      "expected": [
+        { "line": 2, "by": "A", "to": "B", "what": ["book|table"], "when": ["friday", "7", ""], "kind": "rescheduled" },
+        { "line": [2, 3], "by": "both", "to": "each other", "what": ["dinner"], "when": ["friday"], "optional": true }
+      ],
+      "traps": [
+        { "line": 0, "kind": "cancelled" }
+      ]
+    },
+    {
+      "id": "en-long-buried-prescription",
+      "channel": "together",
+      "names": { "A": "Mia", "B": "Theo" },
+      "messages": [
+        { "from": "A", "text": "morning ☀️" },
+        { "from": "B", "text": "morning. slept like a rock" },
+        { "from": "A", "text": "lucky. the cat woke me up at 5 again" },
+        { "from": "B", "text": "she's a menace" },
+        { "from": "A", "text": "she knocked my glasses off the nightstand lol" },
+        { "from": "B", "text": "classic" },
+        { "from": "A", "text": "ok heading into the office, standup in 10" },
+        { "from": "B", "text": "good luck w/ the client thing" },
+        { "from": "A", "text": "thx 🙏" },
+        { "from": "B", "text": "btw did you see the email from the landlord" },
+        { "from": "A", "text": "about the boiler?" },
+        { "from": "B", "text": "yeah they're coming thursday between 9 and 1" },
+        { "from": "A", "text": "ugh of course a weekday" },
+        { "from": "B", "text": "I can work from home that day" },
+        { "from": "A", "text": "you're a lifesaver" },
+        { "from": "A", "text": "also my prescription is ready at walgreens" },
+        { "from": "A", "text": "I keep forgetting to grab it" },
+        { "from": "B", "text": "I'll pick it up on my way home tomorrow" },
+        { "from": "A", "text": "❤️❤️" },
+        { "from": "B", "text": "what do you want for dinner" },
+        { "from": "A", "text": "idk something not pasta" },
+        { "from": "B", "text": "thai?" },
+        { "from": "A", "text": "thai 👍" },
+        { "from": "B", "text": "we should get a plant for the living room" },
+        { "from": "A", "text": "we always say that and then kill it" },
+        { "from": "B", "text": "lmao fair" },
+        { "from": "A", "text": "ok client meeting now, ttyl" },
+        { "from": "B", "text": "💪" }
+      ],
+      "expected": [
+        { "line": 17, "by": "B", "to": "A", "what": ["pick"], "when": ["tomorrow"], "kind": "buried" },
+        { "line": 13, "by": "B", "to": "A", "what": ["home"], "when": ["thursday", ""], "optional": true }
+      ],
+      "traps": [
+        { "line": 23, "kind": "wish" }
+      ]
+    },
+    {
+      "id": "zh-long-buried-car-service",
+      "channel": "together",
+      "names": { "A": "阿梅", "B": "大伟" },
+      "messages": [
+        { "from": "B", "text": "起床没" },
+        { "from": "A", "text": "刚醒 头好痛" },
+        { "from": "B", "text": "昨晚喝多了吧" },
+        { "from": "A", "text": "别提了 再也不跟他们喝了" },
+        { "from": "B", "text": "哈哈哈 每次都这么说" },
+        { "from": "A", "text": "你明天几点下班？" },
+        { "from": "B", "text": "应该六点吧 怎么了" },
+        { "from": "A", "text": "没事 问问" },
+        { "from": "A", "text": "我答应我妈周末回去吃饭，你不用去，你不是要加班嘛" },
+        { "from": "B", "text": "对 周六还得去公司" },
+        { "from": "A", "text": "辛苦了" },
+        { "from": "B", "text": "对了你车是不是该保养了" },
+        { "from": "A", "text": "好像是 灯亮了好几天了" },
+        { "from": "B", "text": "那我下周一把你的车开去保养" },
+        { "from": "A", "text": "好 钥匙在玄关" },
+        { "from": "B", "text": "收到" },
+        { "from": "A", "text": "中午吃啥" },
+        { "from": "B", "text": "公司食堂 没得选" },
+        { "from": "A", "text": "我点了个麻辣烫" },
+        { "from": "B", "text": "又吃辣 胃不要了" },
+        { "from": "A", "text": "就一点点辣" },
+        { "from": "B", "text": "信你个鬼" },
+        { "from": "A", "text": "😝" },
+        { "from": "B", "text": "下午开会了 晚点聊" }
+      ],
+      "expected": [
+        { "line": 13, "by": "B", "to": "A", "what": ["保养"], "when": ["下周一"], "kind": "buried" }
+      ],
+      "traps": [
+        { "line": 3, "kind": "self-vow" },
+        { "line": 5, "kind": "question" },
+        { "line": 8, "kind": "third-party" },
+        { "line": 9, "kind": "third-party" }
+      ]
+    },
+    {
+      "id": "es-airport",
+      "channel": "together",
+      "names": { "A": "Lucía", "B": "Mateo" },
+      "messages": [
+        { "from": "B", "text": "mi vuelo sale el martes a las 6am 😭" },
+        { "from": "A", "text": "tranqui, yo te llevo al aeropuerto" },
+        { "from": "B", "text": "en serio? es súper temprano" },
+        { "from": "A", "text": "sí amor, el martes a las 4:30 paso por ti" }
+      ],
+      "expected": [
+        { "line": [1, 3], "by": "A", "to": "B", "what": ["aeropuerto|llev|paso"], "when": ["martes", "4:30"], "kind": "plain" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "es-en-paella",
+      "channel": "together",
+      "names": { "A": "Riley", "B": "Mateo" },
+      "messages": [
+        { "from": "A", "text": "babe I'm so tired of takeout" },
+        { "from": "B", "text": "te prometo que el sábado cocino yo, paella 🥘" },
+        { "from": "A", "text": "YESSS" }
+      ],
+      "expected": [
+        { "line": 1, "by": "B", "to": "A", "what": ["paella|cocin|cook"], "when": ["sabado"], "kind": "plain" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "zh-third-party-and-pinky",
+      "channel": "together",
+      "names": { "A": "小雨", "B": "阿城" },
+      "messages": [
+        { "from": "A", "text": "我答应我妈这周末回家吃饭" },
+        { "from": "B", "text": "好 那我周末自己在家打游戏" },
+        { "from": "A", "text": "@Pinky 周日提醒我们交房租" },
+        { "from": "Pinky", "text": "好的，周日上午提醒你们交房租。" },
+        { "from": "B", "text": "我周日下午去交，你别管了" }
+      ],
+      "expected": [
+        { "line": 4, "by": "B", "to": "A", "what": ["交|房租"], "when": ["周日"], "kind": "plain" }
+      ],
+      "traps": [
+        { "line": 0, "kind": "third-party" },
+        { "line": 1, "kind": "self-plan" },
+        { "line": 2, "kind": "pinky" },
+        { "line": 3, "kind": "pinky" }
+      ]
+    },
+    {
+      "id": "zh-accepted-request",
+      "channel": "together",
+      "names": { "A": "阿梅", "B": "大伟" },
+      "messages": [
+        { "from": "A", "text": "你明天能来车站接我吗？行李好多" },
+        { "from": "B", "text": "好呀，我六点到车站" },
+        { "from": "A", "text": "爱你！" }
+      ],
+      "expected": [
+        { "line": 1, "by": "B", "to": "A", "what": ["车站|接"], "when": ["明天", "六点"], "kind": "accepted-request" }
+      ],
+      "traps": [
+        { "line": 0, "kind": "question" }
+      ]
+    },
+    {
+      "id": "zh-two-promises-birthday",
+      "channel": "together",
+      "names": { "A": "小林", "B": "阿杰" },
+      "messages": [
+        { "from": "A", "text": "周六妈生日，我们怎么安排" },
+        { "from": "B", "text": "我来订餐厅" },
+        { "from": "A", "text": "那我负责买蛋糕" },
+        { "from": "B", "text": "我再顺便把礼物包好" },
+        { "from": "A", "text": "完美" }
+      ],
+      "expected": [
+        { "line": 1, "by": "B", "to": "A", "what": ["餐厅"], "when": ["周六", ""], "kind": "plain" },
+        { "line": 2, "by": "A", "to": "B", "what": ["蛋糕"], "when": ["周六", ""], "kind": "plain" },
+        { "line": 3, "by": "B", "to": "A", "what": ["礼物"], "when": ["周六", ""], "kind": "plain" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "zh-sarcasm-socks",
+      "channel": "together",
+      "names": { "A": "阿杰", "B": "小林" },
+      "messages": [
+        { "from": "B", "text": "你又把袜子扔沙发上了" },
+        { "from": "A", "text": "行行行，我以后天天给你洗袜子，满意了吧🙄" },
+        { "from": "B", "text": "你这什么态度" },
+        { "from": "A", "text": "好啦我错了 我现在就收" }
+      ],
+      "expected": [
+        { "line": 3, "by": "A", "to": "B", "what": ["收"], "when": ["现在", ""], "optional": true }
+      ],
+      "traps": [
+        { "line": 1, "kind": "joke" }
+      ]
+    },
+    {
+      "id": "zh-en-codeswitch-visa",
+      "channel": "together",
+      "names": { "A": "小雨", "B": "阿城" },
+      "messages": [
+        { "from": "B", "text": "visa 材料 deadline 是周三" },
+        { "from": "A", "text": "ok 那我 tonight 把材料 print 出来 然后明天寄" },
+        { "from": "B", "text": "好 thx" }
+      ],
+      "expected": [
+        { "line": 1, "by": "A", "to": "B", "what": ["材料|print|寄"], "when": ["tonight", "今晚", "明天"], "kind": "plain" },
+        { "line": 1, "by": "A", "to": "B", "what": ["寄|send|mail"], "when": ["明天", "tomorrow"], "optional": true }
+      ],
+      "traps": []
+    },
+    {
+      "id": "en-past-promise-renewed",
+      "channel": "together",
+      "names": { "A": "Riley", "B": "Casey" },
+      "messages": [
+        { "from": "B", "text": "you said you'd quit vaping by your birthday 👀" },
+        { "from": "A", "text": "I know I know" },
+        { "from": "A", "text": "ok for real this time. starting Monday, no more vaping" },
+        { "from": "B", "text": "I'm holding you to that" }
+      ],
+      "expected": [
+        { "line": 2, "by": "A", "to": "B", "what": ["vap"], "when": ["monday"], "kind": "plain" },
+        { "line": 0, "by": "A", "to": "B", "what": ["vap"], "when": ["birthday", ""], "optional": true }
+      ],
+      "traps": []
+    },
+    {
+      "id": "private-zh-hotpot-and-overtime",
+      "channel": "private",
+      "names": { "A": "小雨", "B": "阿城" },
+      "messages": [
+        { "from": "A", "text": "今天又跟阿城吵了一架" },
+        { "from": "Pinky", "text": "听起来挺累的，发生了什么？" },
+        { "from": "A", "text": "不过后来和好了，他说下周五带我去吃那家火锅赔罪" },
+        { "from": "Pinky", "text": "那挺好的。" },
+        { "from": "A", "text": "我也答应他这个月少加班，每天九点前回家" }
+      ],
+      "expected": [
+        { "line": 2, "by": "B", "to": "A", "what": ["火锅"], "when": ["下周五"], "kind": "reported" },
+        { "line": 4, "by": "A", "to": "B", "what": ["加班|回家"], "when": ["这个月", "九点"], "kind": "plain" }
+      ],
+      "traps": []
+    },
+    {
+      "id": "private-en-wishes",
+      "channel": "private",
+      "names": { "A": "Mia", "B": "Theo" },
+      "messages": [
+        { "from": "A", "text": "I wish Theo would plan a date for once" },
+        { "from": "Pinky", "text": "That sounds frustrating. What would a good date look like for you?" },
+        { "from": "A", "text": "idk maybe I should just plan something myself" },
+        { "from": "A", "text": "I might take him to that jazz bar sometime" }
+      ],
+      "expected": [],
+      "traps": [
+        { "line": 0, "kind": "wish" },
+        { "line": 2, "kind": "wish" },
+        { "line": 3, "kind": "wish" }
+      ]
+    }
+  ]
+}

@@ -20,7 +20,8 @@
     "prebuild": "npm run check:runtime",
     "build": "tsc && vite build && node scripts/prepare-sites-build.mjs",
     "start": "node server/index.mjs --production",
-    "test:app": "node --test tests/app-server.test.mjs tests/render-blueprint.test.mjs tests/lifecycle-store.test.mjs tests/personal-privacy.test.mjs tests/memory-lifecycle.test.mjs tests/reminder-delivery.test.mjs tests/decision-lifecycle.test.mjs tests/assistant-workflows.test.mjs tests/spaces.test.mjs tests/handoff.test.mjs tests/chat-import-parsers.test.mjs tests/chat-import.test.mjs tests/voice-call.test.mjs tests/holidays.test.mjs tests/together-days.test.mjs tests/couple-dates.test.mjs tests/promise-checks.test.mjs tests/password-reset.test.mjs tests/notify-preferences.test.mjs tests/character.test.mjs tests/agent-activity.test.mjs tests/promises.test.mjs tests/ai-budget.test.mjs",
+    "test:app": "node --test tests/app-server.test.mjs tests/render-blueprint.test.mjs tests/lifecycle-store.test.mjs tests/personal-privacy.test.mjs tests/memory-lifecycle.test.mjs tests/reminder-delivery.test.mjs tests/decision-lifecycle.test.mjs tests/assistant-workflows.test.mjs tests/spaces.test.mjs tests/handoff.test.mjs tests/chat-import-parsers.test.mjs tests/chat-import.test.mjs tests/voice-call.test.mjs tests/holidays.test.mjs tests/together-days.test.mjs tests/couple-dates.test.mjs tests/promise-checks.test.mjs tests/password-reset.test.mjs tests/notify-preferences.test.mjs tests/character.test.mjs tests/agent-activity.test.mjs tests/promises.test.mjs tests/promise-eval.test.mjs tests/ai-budget.test.mjs",
+    "eval:promises": "node scripts/eval-promises.mjs",
     "verify:deploy": "node scripts/verify-deployment.mjs",
     "test:postgres": "node --test tests/postgres-lifecycle.test.mjs",
     "feedback": "node server/feedback-export.mjs"
