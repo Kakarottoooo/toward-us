@@ -1,0 +1,14 @@
+/* Pinky at work (AgentWorking.tsx): three dots that rise in turn, a pill under the character and a typing bubble. */
+.agent-dots { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+.agent-dots i { display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--jian-blue); animation: agent-dot 1.2s ease-in-out infinite; }
+.agent-dots i:nth-child(2) { animation-delay: .15s; }
+.agent-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes agent-dot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* Under the floating character; it floats with it and lets taps through to the thread. */
+.agent-pill { display: inline-flex; align-items: center; gap: 7px; max-width: 220px; margin-top: 2px; padding: 4px 11px 4px 9px; border-radius: 999px; background: var(--jian-paper-bright); box-shadow: 0 0 0 1px rgba(37,37,37,.08); color: #4a4540; font-size: 14px; font-weight: 600; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.conversation-message.agent-typing p { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; padding: 8px 14px; border-radius: 18px 18px 18px 4px; background: var(--jian-paper-bright); box-shadow: 0 0 0 1px rgba(37,37,37,.06); color: #5d574f; font-size: 15px; line-height: 1.5; }
+.conversation-message.agent-typing p > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) { .agent-dots i { animation: none; opacity: .7; } }

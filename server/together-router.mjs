@@ -9,7 +9,7 @@ import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, recallOnThisDay } from "./together-domain.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
-export function createTogetherRouter({ store, mediator, emit = () => {} }) {
+export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null }) {
   const router = express.Router();
   router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
   const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
@@ -63,7 +63,9 @@ export function createTogetherRouter({ store, mediator, emit = () => {} }) {
     // Shared-device voice: both partners sit at one phone and pick who is speaking; the line is theirs, recorded on this phone.
     const partner = req.body?.speaker === "partner" ? initial.members.find((member) => member.userId !== userId) : null;
     if (req.body?.speaker === "partner" && !partner) throw decisionError(409, "pairing_required");
-    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
+    // Both of them see Pinky's current step while it answers in Us; it ends with the reply, or with the failure.
+    const progress = activity ? activity.forCouple(relationshipId) : () => {};
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
     if (!result.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message" });
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });

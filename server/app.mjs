@@ -30,6 +30,7 @@ import { createNativePush } from "./native-push.mjs";
 import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
+import { createAgentActivity, createAgentActivityRouter } from "./agent-activity.mjs";
 import { createSpaceRouter } from "./space-router.mjs";
 import { createPhotoRouter } from "./photo-store.mjs";
 import { createHandoffRouter } from "./handoff.mjs";
@@ -445,6 +446,9 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   } });
   const emit = (...args) => relationshipRouter.emitRecord?.(...args);
   emitTogether = emit;
+  // Pinky's live step while it answers; the event only tells open Apps in that couple (or that member) to look again.
+  const activity = createAgentActivity({ notify: ({ relationshipId, ownerUserId }) => { if (relationshipId) emit({ id: "agent-activity", relationshipId, version: Date.now() }, "agent.activity", ownerUserId); } });
+  app.use("/api", createAgentActivityRouter({ store, activity }));
   const closeConnections = (userIds) => {
     relationshipRouter.closeUserConnections?.(userIds);
   };
@@ -454,7 +458,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   chatImportRouter.emitTogether = (conversation, actorUserId = null) => emit(conversation, "together.updated", null, actorUserId);
   app.use("/api", chatImportRouter);
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
-  const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter });
+  const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter, activity });
   app.use("/api", assistantRouter);
   app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit }));
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit });
@@ -462,7 +466,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPrivacyRouter({ store, production, closeConnections, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
-  app.use("/api", createTogetherRouter({ store, mediator, emit }));
+  app.use("/api", createTogetherRouter({ store, mediator, emit, activity }));
   app.use("/api", createSpaceRouter({ store, emit }));
   app.use("/api", createPhotoRouter({ store }));
   app.use("/api", createHandoffRouter());
