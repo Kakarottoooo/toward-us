@@ -279,8 +279,12 @@ ${text}` : text, target);
   };
 
   const channelRef = useRef(channel); channelRef.current = channel;
+  // Voice input can also fill a daily-question answer: then what is heard goes into that card, not the composer.
+  const dictation = useRef<((text: string) => void) | null>(null);
+  const [dictating, setDictating] = useState("");
   const heard = async (text: string, itemId: string) => {
     if (STOP_VOICE.test(text.trim())) { voice.stop(); return null; }
+    if (dictation.current) { dictation.current(text); return null; }
     // In "Us" speech only fills the box: nothing reaches the partner until the member taps send.
     if (channelRef.current === "us") { if (talking.current.on) void sendShared(text, [], talking.current.speaker); else setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
     return sendPrivate(text, itemId, true);
@@ -297,9 +301,21 @@ ${text}` : text, target);
     onError: (message) => { realtime.stop(); if (browserSpeechAvailable()) { phoneSpeech.current = true; speech.start(); } else voiceUnavailable(message); },
   });
   const voice = { listening: realtime.listening || speech.listening, connecting: realtime.connecting, partial: speech.partial ? { text: speech.partial } : realtime.partial, stop: () => { realtime.stop(); speech.stop(); } };
+  const voiceActive = voice.listening || voice.connecting;
+  const wasActive = useRef(false);
+  useEffect(() => { if (wasActive.current && !voiceActive) { dictation.current = null; setDictating(""); } wasActive.current = voiceActive; }, [voiceActive]);
+  const dictate = (id: string, append: ((text: string) => void) | null) => {
+    keyboard.hide(); window.speechSynthesis?.cancel();
+    dictation.current = append; setDictating(append ? id : "");
+    if (!append) voice.stop(); else if (!voiceActive) void startVoice();
+  };
   const toggleVoice = async () => {
     keyboard.hide(); window.speechSynthesis?.cancel();
+    dictation.current = null; setDictating("");
     if (voice.listening || voice.connecting) { voice.stop(); return; }
+    await startVoice();
+  };
+  const startVoice = async () => {
     setNotice("");
     if (phoneSpeech.current) { speech.start(); return; }
     try { const active = await ensureSession(); await realtime.start(`/api/assistant/sessions/${active!.id}/realtime`); }
@@ -406,7 +422,7 @@ ${text}` : text, target);
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准 v${version}`, `Approve v${version}`, `Aprobar v${version}`)}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>)}
       </article>;
     }
-    if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000} askedAt={message.createdAt} onAnswer={(answer) => answerDaily(message.id, answer)} />;
+    if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000} askedAt={message.createdAt} listening={dictating === message.id && voiceActive} onVoice={(append) => dictate(message.id, append)} onAnswer={(answer) => answerDaily(message.id, answer)} />;
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {
@@ -500,7 +516,7 @@ ${text}` : text, target);
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
       {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {voice.listening && channel === "me" && <p className="conversation-listening">{t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}
-      {voice.listening && channel === "us" && <div className="together-voice" data-testid="together-voice">
+      {voice.listening && channel === "us" && !dictating && <div className="together-voice" data-testid="together-voice">
         <label className="together-switch"><input type="checkbox" checked={talkTogether} onChange={(event) => setTalkTogether(event.target.checked)} /><span>{t("一起说：每句直接发到“我们俩”", "Talk together: each sentence goes straight to Us", "Hablar juntos: cada frase va directo a Nosotros")}</span></label>
         {talkTogether ? <div className="together-speakers" role="group" aria-label={t("谁在说", "Who is speaking", "Quién habla")}><span>{t("谁在说", "Speaking", "Habla")}</span>{(["me", "partner"] as const).map((who) => <button key={who} type="button" className={speaker === who ? "active" : ""} aria-pressed={speaker === who} onClick={() => setSpeaker(who)}>{who === "me" ? user.name : partnerName}</button>)}</div>
           : <p>{t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.")}</p>}
