@@ -5,6 +5,7 @@ import { approveAgreement } from "../agreement-actions.mjs";
 import { announceAgreement, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, memberLanguage } from "../together-domain.mjs";
 import { sendblue as defaultSendblue } from "../sendblue.mjs";
 import { recordUsage } from "../usage.mjs";
+import { asAiUser, isAiLimit } from "../ai-budget.mjs";
 
 // The private iMessage entry point: a thin adapter over the member's own private assistant. Every rule (records, drafts,
 // share-confirm, usage) runs in assistant-router's domain functions; this file only maps a phone to a member and text to text.
@@ -157,13 +158,13 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
       }
     }
     try {
-      const { session: updated, duplicate } = await assistant.appendTurn(userId, session.id, { text, itemId: `imessage:${handle}` }, { channel: "imessage" });
+      const { session: updated, duplicate } = await asAiUser({ userId, language }, () => assistant.appendTurn(userId, session.id, { text, itemId: `imessage:${handle}` }, { channel: "imessage" }));
       if (duplicate) return "duplicate";
       await deliver(phone, render((await assistant.output(updated)).messages.at(-1), language));
       return "answered";
     } catch (error) {
       console.error("imessage_turn_failed", error?.statusCode || error?.code || error?.name || "error");
-      await deliver(phone, TEXT[language][error?.statusCode === 503 ? "busy" : error?.statusCode === 409 ? "changed" : "failed"]);
+      await deliver(phone, isAiLimit(error) ? error.message : TEXT[language][error?.statusCode === 503 ? "busy" : error?.statusCode === 409 ? "changed" : "failed"]);
       return "failed";
     }
   }
@@ -181,7 +182,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     try {
       // A partner looking at Us in the App sees Pinky working on the group's message too (the founder, 11-03).
       const progress = activity ? activity.forCouple(relationshipId) : () => {};
-      const turn = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated"), progress }).finally(() => progress(null));
+      const turn = await asAiUser({ userId, language }, () => continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated"), progress })).finally(() => progress(null));
       if (!turn.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message", channel: "imessage" });
       // The group has no "send for approval" button: a draft the member just asked for is posted as the card both approve.
       if (turn.reply && turn.conversation.draftAgreement?.messageId === turn.reply.id) {
@@ -218,6 +219,8 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     } catch (error) {
       // An ended relationship or a raced version stays silent: the group simply sees nothing happen.
       console.error("imessage_group_turn_failed", error?.code || error?.statusCode || error?.name || "error");
+      // Today's AI limit is the one failure the group is told about; their own messages still went through.
+      if (isAiLimit(error)) await deliverGroup(relationshipId, context.relationship.imessageGroupId, error.message);
       return "failed";
     }
   }

@@ -7,6 +7,7 @@ import { ImportFormatError, parseChatExport, parsePastedText } from "./chat-impo
 import { canViewRecord, createRelationshipRecord } from "./relationship-domain.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { photoFile, visiblePhoto } from "./photo-store.mjs";
+import { asAiUser, isAiLimit } from "./ai-budget.mjs";
 
 // Chat-history import: a member brings years of messages with their partner from another app so Pinky can help them see
 // their patterns. Guarantees live here; reading and interpreting is the model's job.
@@ -234,9 +235,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
 
   function start(record) {
     if (jobs.has(record.id)) return;
-    const job = analyze(record).catch(async (error) => {
+    // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
+    const job = asAiUser({ userId: record.ownerUserId, language: record.language }, () => analyze(record)).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
-      await update(record, record.ownerUserId, (draft) => { draft.status = "failed"; draft.error = "analysis_failed"; }).catch(() => {});
+      await update(record, record.ownerUserId, (draft) => { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; }).catch(() => {});
+      if (isAiLimit(error)) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
     }).finally(() => jobs.delete(record.id));
     jobs.set(record.id, job);
   }
@@ -254,9 +257,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const worker = async () => {
       while (next < chunks.length) {
         const index = next++;
-        notes[index] = await mediator.structured({ name: "chat_history_part", schema: chunkSchema, instructions: chunkInstructions(names, record.language), input: chunks[index], maxOutputTokens: 2500 })
-          .catch(() => mediator.structured({ name: "chat_history_part", schema: chunkSchema, instructions: chunkInstructions(names, record.language), input: chunks[index], maxOutputTokens: 2500 }))
-          .catch(() => null);
+        // One retry for a failed part; at today's limit the whole import stops instead of reading only a few parts.
+        const part = () => mediator.structured({ name: "chat_history_part", schema: chunkSchema, instructions: chunkInstructions(names, record.language), input: chunks[index], maxOutputTokens: 2500 });
+        notes[index] = await part().catch((error) => { if (isAiLimit(error)) throw error; return part(); }).catch((error) => { if (isAiLimit(error)) throw error; return null; });
         done += 1;
         await update(record, record.ownerUserId, (draft) => { draft.progress = { done, total: chunks.length + 1 }; }).catch(() => {});
       }

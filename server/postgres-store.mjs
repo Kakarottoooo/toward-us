@@ -12,8 +12,10 @@ const GRAPH_TABLES = Object.freeze({
   outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
   consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations", nativePushDevices: "native_push_devices",
   spaces: "relationship_spaces", spaceItems: "relationship_space_items", photos: "relationship_photos", chatImports: "relationship_chat_imports", feedback: "product_feedback",
-  characters: "relationship_characters",
+  characters: "relationship_characters", aiUsage: "ai_usage",
 });
+
+const METERING = new Set(["productEvents", "aiUsage"]);
 
 export async function createPostgresStore(databaseUrl) {
   const rawPool = new Pool({ connectionString: databaseUrl, max: Number(process.env.DB_POOL_SIZE || 5), ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false } });
@@ -297,8 +299,8 @@ export async function createPostgresStore(databaseUrl) {
       return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);
     },
     async relationshipSnapshotForUser(userId) {
-      // Usage events are write-only metering rows; keeping them out of every snapshot stops hot paths from loading them.
-      const entries = (await mapCollections(async (collection) => collection === "productEvents" ? null : [collection, await store.listRelationshipRecordsForUser(collection, userId)])).filter(Boolean);
+      // Usage events and AI call counters are metering rows; keeping them out of every snapshot stops hot paths from loading them.
+      const entries = (await mapCollections(async (collection) => METERING.has(collection) ? null : [collection, await store.listRelationshipRecordsForUser(collection, userId)])).filter(Boolean);
       return Object.fromEntries(entries);
     },
   };
