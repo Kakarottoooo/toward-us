@@ -53,8 +53,16 @@ test("a couple goes from invite to a shared conversation and character", async (
   await expect(pairing).not.toContainText(CJK);
   await expectLanguagesReachable(pageB);
   await pageB.screenshot({ path: testInfo.outputPath("b-join-en.png") });
+  // Even if B had already started an invite of their own (say, from the drawer) before using A's link, A's link still works.
+  expect((await b.request.post("/api/partner/invitations", { data: {} })).status()).toBe(201);
+  await pageB.goto(`/?invite=${code}`);
+  await expect(pairing.getByRole("heading", { name: "Join your partner" })).toBeVisible();
+  await expect(pairing.getByTestId("invite-code")).toHaveValue(code);
   await pairing.getByRole("button", { name: "Accept invite" }).click();
   await expect(pageB.getByTestId("conversation-screen")).toBeVisible();
+  // Joining opens on Us, not on B's private channel; the channel does not stay in the address.
+  await expect(pageB.getByRole("tab", { name: /^Us\b/ })).toHaveAttribute("aria-selected", "true");
+  await expect.poll(() => new URL(pageB.url()).search).toBe("");
 
   // The two accounts are now one couple, for both of them.
   const meA = await getJson(a.request, "/api/auth/me"), meB = await getJson(b.request, "/api/auth/me");
@@ -65,6 +73,15 @@ test("a couple goes from invite to a shared conversation and character", async (
   // 4. A's Us opens by itself once B has joined, as the invite promised: no "check connection" tap.
   await expect(pageA.getByTestId("conversation-invite")).toHaveCount(0);
   await expect(pageA.getByPlaceholder("发给你们俩…")).toBeVisible();
+  // A took the tour before B joined, so "make your character" had no button then; it comes now, once, and the button works.
+  const offer = pageA.getByTestId("onboarding");
+  await expect(offer).toContainText("做你们的角色");
+  await offer.getByTestId("onboarding-action").click(); // "现在就做"
+  await expect(pageA.getByTestId("character-maker")).toBeVisible();
+  // The back button says where it goes: straight back to the conversation it came from.
+  await pageA.getByRole("button", { name: "对话" }).click();
+  await expect(pageA.getByPlaceholder("发给你们俩…")).toBeVisible();
+  await expect(pageA.getByTestId("onboarding")).toHaveCount(0);
 
   // 5. B makes the couple's character from the tour's last card.
   await expect(pageB.getByTestId("onboarding")).toBeVisible();
@@ -73,13 +90,13 @@ test("a couple goes from invite to a shared conversation and character", async (
   await pageB.getByTestId("character-file").setInputFiles(PET_PHOTO);
   await pageB.getByTestId("character-share").click();
   await expect(pageB.getByTestId("character-maker").getByRole("status")).toHaveText("Done. It floats at the top of your conversation for both of you.");
-  await pageB.getByRole("button", { name: "Chat" }).click(); // the character page, then Settings
   await pageB.getByRole("button", { name: "Chat" }).click();
 
   // 6. Their first words in Us reach each other, Pinky answers when called, and the character floats above for both.
-  await pageB.getByRole("tab", { name: /^Us\b/ }).click();
-  await sendInUs(pageB, "Message both of you…", "B_SHARED_HELLO I'm here, finally joined!");
-  await expect(pageA.getByText("B_SHARED_HELLO I'm here, finally joined!")).toBeVisible();
+  await expect(pageB.getByRole("tab", { name: /^Us\b/ })).toHaveAttribute("aria-selected", "true");
+  await sendInUs(pageB, "Message both of you…", "B_SHARED_HELLO Pinky, I'm here, finally joined!");
+  await expect(pageA.getByText("B_SHARED_HELLO Pinky, I'm here, finally joined!")).toBeVisible();
+  await expect(pageB.getByText("I'm here. I can only see the 1 message you shared in this conversation, 0 active agreements and 0 open commitments.", { exact: false })).toBeVisible();
   await sendInUs(pageA, "发给你们俩…", "A_SHARED_REPLY 欢迎！Pinky 你好");
   await expect(pageB.getByText("A_SHARED_REPLY 欢迎！Pinky 你好")).toBeVisible();
   await expect.poll(async () => (await getJson(a.request, "/api/together")).conversation.messages.filter((message: { role: string }) => message.role === "agent").length).toBeGreaterThan(0);

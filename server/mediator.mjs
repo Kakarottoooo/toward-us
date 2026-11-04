@@ -412,7 +412,8 @@ function localTogetherTurn(context, language) {
     };
   }
   const active = (context.activeAgreements || []).length, open = (context.openCommitments || []).length;
-  return { ...pick(`我在。我只看得到你们在这段共同对话里的 ${members.length} 条消息、${active} 份生效中的约定和 ${open} 项进行中的承诺。想把什么定下来，就说“帮我们定下来”。`, `I'm here. I can only see the ${members.length} messages you shared in this conversation, ${active} active agreements and ${open} open commitments. When you want to settle something, ask me to settle it.`, `Aquí estoy. Solo veo los ${members.length} mensajes que compartieron en esta conversación, ${active} acuerdos vigentes y ${open} compromisos abiertos. Cuando quieran dejar algo acordado, pídanmelo.`), draftAgreement: null };
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  return { ...pick(`我在。我只看得到你们在这段共同对话里的 ${members.length} 条消息、${active} 份生效中的约定和 ${open} 项进行中的承诺。想把什么定下来，就说“帮我们定下来”。`, `I'm here. I can only see the ${count(members.length, "message", "messages")} you shared in this conversation, ${count(active, "active agreement", "active agreements")} and ${count(open, "open commitment", "open commitments")}. When you want to settle something, ask me to settle it.`, `Aquí estoy. Solo veo ${count(members.length, "mensaje que compartieron", "mensajes que compartieron")} en esta conversación, ${count(active, "acuerdo vigente", "acuerdos vigentes")} y ${count(open, "compromiso abierto", "compromisos abiertos")}. Cuando quieran dejar algo acordado, pídanmelo.`), draftAgreement: null };
 }
 
 const privateAgentSchema = {

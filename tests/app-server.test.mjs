@@ -15,6 +15,20 @@ let store;
 let counter = 0;
 let lastDecisionContext = null;
 
+test("Pinky's fixed reply in Us counts in singular and plural in every language", async () => {
+  const saved = { AI_PROVIDER: process.env.AI_PROVIDER, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY };
+  delete process.env.AI_PROVIDER; delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const local = createMediator({ apiKey: "" });
+    const one = { messages: [{ role: "member", text: "Pinky hi" }], activeAgreements: [{}], openCommitments: [{}] };
+    const two = { messages: [{ role: "member", text: "hi" }, { role: "member", text: "Pinky hi" }], activeAgreements: [], openCommitments: [{}, {}] };
+    assert.match((await local.continueTogether(one, "en")).i18n.en, /see the 1 message you shared in this conversation, 1 active agreement and 1 open commitment\./);
+    assert.match((await local.continueTogether(two, "en")).i18n.en, /see the 2 messages you shared in this conversation, 0 active agreements and 2 open commitments\./);
+    assert.match((await local.continueTogether(one, "es")).i18n.es, /Solo veo 1 mensaje que compartieron en esta conversación, 1 acuerdo vigente y 1 compromiso abierto\./);
+    assert.match((await local.continueTogether(two, "es")).i18n.es, /Solo veo 2 mensajes que compartieron en esta conversación, 0 acuerdos vigentes y 2 compromisos abiertos\./);
+  } finally { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+});
+
 test("shared AI follow-up is rendered as clean public prose", () => {
   assert.equal(
     sanitizeFollowUp('可以这样说： **“我愿意先听你说完。”**\n\nsafety.level：0'),
@@ -79,6 +93,32 @@ test("registration uses an HttpOnly cookie and partner invitations bind exactly 
   const accepted = await request("/api/partner/accept", { method: "POST", cookie: bob.cookie, body: { code: invitation.pairing.invitation.code } });
   assert.equal(accepted.pairing.status, "active");
   assert.deepEqual(accepted.pairing.members.map((member) => member.name), ["Alice", "Bob"]);
+});
+
+test("someone who made their own invite can still accept their partner's; their solo space ends and their private notes stay theirs", async () => {
+  const alice = await register("Alice");
+  const bob = await register("Bob");
+  const carol = await register("Carol");
+  const aliceInvite = await request("/api/partner/invitations", { method: "POST", cookie: alice.cookie, expectedStatus: 201 });
+  const bobInvite = await request("/api/partner/invitations", { method: "POST", cookie: bob.cookie, expectedStatus: 201 });
+  await request("/api/memories", { method: "POST", cookie: bob.cookie, body: { text: "BOB_SOLO_PRIVATE", allowPrivateAI: false, source: { type: "member" } }, expectedStatus: 201 });
+
+  const accepted = await request("/api/partner/accept", { method: "POST", cookie: bob.cookie, body: { code: aliceInvite.pairing.invitation.code } });
+  assert.equal(accepted.pairing.status, "active");
+  assert.equal(accepted.pairing.id, aliceInvite.pairing.id);
+  assert.deepEqual(accepted.pairing.members.map((member) => member.name), ["Alice", "Bob"]);
+
+  // Bob's own invite died with his solo space: nobody can join it any more.
+  await request("/api/partner/accept", { method: "POST", cookie: carol.cookie, body: { code: bobInvite.pairing.invitation.code }, expectedStatus: 409 });
+  // His private note is still his, and only his.
+  assert.ok(JSON.stringify(await request("/api/memories", { cookie: bob.cookie })).includes("BOB_SOLO_PRIVATE"));
+  assert.ok(!JSON.stringify(await request("/api/memories", { cookie: alice.cookie })).includes("BOB_SOLO_PRIVATE"));
+  assert.ok(!JSON.stringify(await request("/api/relationship/home", { cookie: alice.cookie })).includes("BOB_SOLO_PRIVATE"));
+
+  // A member of an active couple still cannot be pulled into another one.
+  const carolInvite = await request("/api/partner/invitations", { method: "POST", cookie: carol.cookie, expectedStatus: 201 });
+  await request("/api/partner/accept", { method: "POST", cookie: bob.cookie, body: { code: carolInvite.pairing.invitation.code }, expectedStatus: 409 });
+  assert.equal((await request("/api/auth/me", { cookie: bob.cookie })).pairing.id, aliceInvite.pairing.id);
 });
 
 test("logout revokes the server session", async () => {

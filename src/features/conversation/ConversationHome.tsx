@@ -11,7 +11,7 @@ import { importAction, importPastedChat, isChatFile, listImports, looksLikePaste
 import { CallPanel, CallRecord } from "../call/CallPanel";
 import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
-import { OnboardingTour, tourSeen } from "./OnboardingTour";
+import { OnboardingTour, characterOwed, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import { CoupleMascot } from "../character/CoupleMascot";
 import { useCoupleCharacter } from "../character/character";
@@ -70,7 +70,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // The couple's own character, shared by both; it floats under the top row once one of them has made it.
-  const { character: mascot, refresh: refreshMascot } = useCoupleCharacter(paired);
+  const { character: mascot, refresh: refreshMascot, loaded: mascotLoaded } = useCoupleCharacter(paired);
+  // Whoever took the tour before their partner joined never saw "make your character" with a button: once paired, and while
+  // the couple has no character yet, that card comes once on its own.
+  const [offerCharacter, setOfferCharacter] = useState(false);
+  useEffect(() => { if (paired && !touring && mascotLoaded && !mascot && characterOwed(user.id)) setOfferCharacter(true); }, [paired, touring, mascotLoaded, mascot, user.id]);
   const mascotShown = Boolean(mascot?.image && mascot.visible);
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
@@ -162,7 +166,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   }, [waitingMe, watchUs, checkActivity]);
   useEffect(() => { if (!waitingMe) { activityAsked.current.me++; setActivity((current) => ({ ...current, me: null })); } }, [waitingMe]);
   useEffect(() => { if (!waitingUs && paired) void checkActivity("us"); }, [waitingUs, paired, checkActivity]);
-  useEffect(() => { if (new URLSearchParams(location.search).has("say")) { window.history.replaceState(null, "", location.pathname); composerRef.current?.querySelector("textarea")?.focus(); } }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.has("say") || params.has("channel")) window.history.replaceState(null, "", location.pathname);
+    if (params.has("say")) composerRef.current?.querySelector("textarea")?.focus();
+  }, []);
   useEffect(() => { try { localStorage.setItem(channelKey, channel); } catch { /* Channel memory is a convenience. */ } }, [channel, channelKey]);
   // When Us was last looked at on this device, so "Us" can show a dot for what the partner or Pinky said since.
   const seenKey = `toward-us:us-seen:${user.id}`;
@@ -510,14 +518,16 @@ ${text}` : text, target);
         </div>}
     </footer>}
     {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
+    {offerCharacter && !touring && !mascot && <OnboardingTour characterOnly language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 
 /** The top of every page opened from the drawer: the way back to the conversation and the page title, nothing else. */
-export function PageHeader({ language, title, onBack }: { language: Language; title: string; onBack: () => void }) {
-  return <header className="page-header"><button className="page-back" onClick={onBack} data-testid="back-to-conversation"><ArrowLeft size={20} />{localized(language, "对话", "Chat", "Chat")}</button><h1>{title}</h1></header>;
+// The back button names where it goes: the conversation, unless a page returns to another page (`backLabel`).
+export function PageHeader({ language, title, onBack, backLabel }: { language: Language; title: string; onBack: () => void; backLabel?: string }) {
+  return <header className="page-header"><button className="page-back" onClick={onBack} data-testid="back-to-conversation"><ArrowLeft size={20} />{backLabel || localized(language, "对话", "Chat", "Chat")}</button><h1>{title}</h1></header>;
 }
 
 type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number; onClick: () => void };
