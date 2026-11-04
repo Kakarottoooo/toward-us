@@ -13,6 +13,8 @@ import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
 import { OnboardingTour, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
+import { CoupleMascot } from "../character/CoupleMascot";
+import { useCoupleCharacter } from "../character/character";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -33,7 +35,7 @@ const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",
  * the couple's together conversation). Every rule lives on the server; this screen only renders and forwards explicit taps. */
-export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: () => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: (page?: "character") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -64,6 +66,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [touring, setTouring] = useState(() => !tourSeen(user.id));
+  // The couple's own character, shared by both; it floats under the top row once one of them has made it.
+  const { character: mascot } = useCoupleCharacter(paired);
+  const mascotShown = Boolean(mascot?.image && mascot.visible);
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
   // Suggestions are a fresh-start aid, not fixed chrome: they show at the end of a channel that is empty or has been quiet
@@ -414,7 +419,7 @@ ${text}` : text, target);
     return () => { alive = false; };
   }, [channel, language, lastSeen, paired, wantIdeas]);
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
-  return <div className="paper-screen conversation-home" data-testid="conversation-screen">
+  return <div className={`paper-screen conversation-home ${mascotShown ? "has-mascot" : ""}`} data-testid="conversation-screen">
     <header className="conversation-header">
       {/* One row: menu, the two channels, and a live voice call with Pinky (privately in Just me, for everyone in the room in Us). */}
       <div className="conversation-topline">
@@ -425,6 +430,7 @@ ${text}` : text, target);
         </div>
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
+      <CoupleMascot character={mascot} />
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
       {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
@@ -460,7 +466,7 @@ ${text}` : text, target);
           <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
         </div>}
     </footer>}
-    {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onDone={() => setTouring(false)} />}
+    {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;

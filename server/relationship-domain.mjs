@@ -7,12 +7,13 @@ export const GRAPH_COLLECTIONS = Object.freeze([
   "proposals", "evaluations", "agreements", "approvals", "commitments", "outcomes",
   "outcomeResponses", "notifications", "consentEvents", "productEvents",
   "memories", "checkins", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings",
-  "togetherConversations", "nativePushDevices", "spaces", "spaceItems", "photos", "chatImports", "feedback",
+  "togetherConversations", "nativePushDevices", "spaces", "spaceItems", "photos", "chatImports", "feedback", "characters",
 ]);
 
 export const PERSONAL_COLLECTIONS = new Set(["privateAgentThreads", "memories", "checkins", "reminders", "notifications", "consentEvents", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings", "productEvents", "nativePushDevices", "spaces", "spaceItems", "photos", "chatImports", "feedback"]);
-// chatImports are read through /api/imports, so the (large) analyses stay out of every home payload.
-const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "chatImports", "feedback"]);
+// chatImports are read through /api/imports, so the (large) analyses stay out of every home payload; the couple's
+// character is read through /api/character, which projects each member's own show/hide choice.
+const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "chatImports", "feedback", "characters"]);
 
 export function assertRecordScope(collection, record) {
   if (!record.ownerUserId || !record.createdByUserId) throw new Error("A record requires an owner and a creator.");

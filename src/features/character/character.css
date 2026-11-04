@@ -1,0 +1,32 @@
+/* The couple's character over the conversation. It hangs from the middle of the top row and floats over the top of the
+ * thread, which scrolls under it; taps go through to the messages. Never a box, band, circle crop or shadow behind it,
+ * and nothing between it and the screen may clip it (the founder, 11-03). */
+.couple-mascot { position: absolute; top: calc(100% - 6px); left: 50%; z-index: 5; transform: translateX(-50%); overflow: visible; pointer-events: none; }
+.couple-mascot img { display: block; width: auto; max-width: 150px; height: 84px; object-fit: contain; object-position: center bottom; border-radius: 0; background: transparent; box-shadow: none; filter: none; user-select: none; -webkit-user-drag: none; }
+
+/* The maker card (Settings → Our character, and from the welcome tour). */
+.character-maker { display: grid; gap: 14px; padding: 16px; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.character-maker > header { display: flex; align-items: flex-start; gap: 12px; }
+.character-maker-icon { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: #fbe4da; color: #c2412f; }
+.character-maker h3 { margin: 0 0 3px; color: var(--jian-ink); font-size: 18px; font-weight: 700; line-height: 1.3; }
+.character-maker header p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.5; }
+.character-tips { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.character-tips li { display: flex; align-items: center; gap: 10px; color: #4a4540; font-size: 15px; line-height: 1.4; }
+.character-tips svg { flex: 0 0 auto; color: var(--jian-blue); }
+.character-confirm, .character-result { display: grid; justify-items: center; gap: 10px; padding: 12px; border-radius: 14px; background: rgba(37,37,37,.04); }
+.character-confirm img { display: block; max-width: 100%; max-height: 220px; border-radius: 12px; object-fit: contain; }
+/* The made character in its own shape, sized by height like on the conversation screen. */
+.character-result img { display: block; width: auto; max-width: 150px; height: 84px; object-fit: contain; object-position: center bottom; }
+.character-placeholder { display: block; width: 64px; height: 84px; border-radius: 18px; background: rgba(37,37,37,.06); animation: character-pulse 1.4s ease-in-out infinite; }
+.character-confirm p, .character-result p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.5; text-align: center; }
+.character-dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--jian-blue); vertical-align: middle; animation: character-pulse 1.2s ease-in-out infinite; }
+@keyframes character-pulse { 50% { opacity: .35; } }
+.character-note { margin: 0; color: #5f5952; font-size: 15px; line-height: 1.5; }
+.character-note.is-error { color: #b23a2a; }
+.character-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.character-actions button { flex: 1 1 140px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; padding: 0 16px; border: 0; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; }
+.character-primary { background: var(--jian-ink); color: #fff; }
+.character-secondary { background: rgba(37,37,37,.07); color: var(--jian-ink); }
+.character-actions button:disabled { opacity: .45; cursor: default; }
+.character-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .character-placeholder, .character-dot { animation: none; } }
