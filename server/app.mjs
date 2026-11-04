@@ -43,6 +43,7 @@ import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
+import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const LANGUAGES = new Set(["zh", "en", "es"]);
@@ -53,8 +54,10 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator, production = false, memoryContext = buildMemoryContext, reminderService, email }) {
+export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email }) {
   const app = express();
+  // Every model call below is counted and capped per person and couple per day (server/ai-budget.mjs).
+  const mediator = guardMediator(rawMediator, { store });
   const eventClients = new Map();
   // The scheduler tick announces in the shared conversation; the realtime emitter only exists once the routers are built below.
   let emitTogether = () => {};
@@ -145,6 +148,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
     try { req.auth = await authenticateRequest(store, req); next(); }
     catch (error) { next(error); }
   });
+  app.use(aiUserMiddleware);
 
   app.post("/api/auth/register", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
@@ -499,7 +503,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
 
   app.use((error, _req, res, _next) => {
     if (res.headersSent) return;
-    res.status(error?.statusCode || 500).json({ error: error?.statusCode ? error.message : "服务器暂时无法完成这个请求。" });
+    res.status(error?.statusCode || 500).json({ error: error?.statusCode ? error.message : "服务器暂时无法完成这个请求。", ...(error?.code === AI_LIMIT ? { code: AI_LIMIT } : {}) });
   });
 
   return app;

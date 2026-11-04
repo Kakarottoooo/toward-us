@@ -9,6 +9,7 @@ import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { ensureTogetherConversation } from "../server/together-domain.mjs";
 import { createCoupleRituals } from "../server/couple-rituals.mjs";
 import { createApiApp } from "../server/app.mjs";
+import { aiUsageReport, guardMediator } from "../server/ai-budget.mjs";
 
 // Web push (installed web app, no App Store) next to App push: every together notification and every daily question,
 // celebration, shared date and due promise reaches both partners once, at a sensible local hour. Senders are fakes.
@@ -191,6 +192,20 @@ test("the daily question and a celebration card start at a sensible local hour a
   clock.now = new Date("2099-12-02T12:25:00Z");
   assert.equal((await fresh()).started, 1); await settle();
   await new Promise((done) => setTimeout(done, 50)); // tomorrow's question is prepared in the background
+});
+
+test("model calls made on the tick go through the cost guard and count in the couple's background pool", async (t) => {
+  const clock = { now: new Date("2099-12-01T12:05:00Z") }; // 20:05 in Shanghai
+  const { store, service, a, relationshipId, pending, settle } = await couple(t, { clock });
+  await service.updateNotify(a, { messages: true, timezone: "Asia/Shanghai" });
+  await service.registerNativeDevice(a, { token: "fcm-token-alex-0001", platform: "android" });
+  const mediator = guardMediator({ aiReady: true, model: "test", structured: async () => ({ question: "What made you smile today?" }) }, { store, now: () => clock.now });
+  const rituals = createCoupleRituals({ store, mediator, reachable: (userId) => service.reachable(userId), emit: (conversation) => { pending.push(service.notifyTogether(conversation)); }, now: () => clock.now });
+  assert.equal((await rituals()).started, 1); await settle();
+  await new Promise((done) => setTimeout(done, 100)); // tomorrow's question is prepared in the background, also guarded
+  const [usage] = await aiUsageReport(store, { now: clock.now });
+  assert.equal(usage.relationshipId, relationshipId, "counted for the couple, not the anonymous demo allowance");
+  assert.equal(usage.features.daily_question, 2, "today's question and tomorrow's prepared one");
 });
 
 test("a couple nobody can be pushed to, or whose time zone is unknown, is left to whoever opens Us", async (t) => {

@@ -2,6 +2,7 @@ import { askDailyQuestion, DAILY } from "./daily-question.mjs";
 import { celebrationOn, composeStory, occasionLabel } from "./story.mjs";
 import { memberLanguage } from "./together-domain.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
+import { asAiUser } from "./ai-budget.mjs";
 
 // The daily question and the celebration card (100 days, anniversaries) used to start only when one partner opened Us, so a
 // couple who did not open the App that day was never told by push. The maintenance tick (every 5 minutes) now starts them at a
@@ -40,6 +41,12 @@ export function createCoupleRituals({ store, mediator, reachable, emit = () => {
     const { day, hour } = localDayHour(current, zone);
     if (hour < CELEBRATION_HOUR || hour >= LAST_HOUR) return 0;
     const userId = ids[0], language = await memberLanguage(store, userId), publish = (updated) => emit(updated);
+    // Nobody's request is running on the tick: name the couple, so the guarded mediator counts these calls (and tomorrow's
+    // question, prepared after posting) in this couple's background pool, not the anonymous demo allowance.
+    return asAiUser({ userId, language }, () => startRituals({ relationshipId, userId, language, publish, day, hour, conversation }));
+  }
+
+  async function startRituals({ relationshipId, userId, language, publish, day, hour, conversation }) {
     let started = 0;
     const since = (await store.listRelationshipRecordsForUser("milestones", userId)).find((item) => item.relationshipId === relationshipId && item.type === "relationship_started" && !item.archivedAt)?.date;
     const occasion = celebrationOn(since, day);

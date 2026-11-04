@@ -308,7 +308,7 @@ export async function createFileStore(filePath) {
     async listRecordsForJob(collection) { assertCollection(collection); return Object.values(state().relationshipGraph[collection]).map((record) => structuredClone(record)); },
     async relationshipSnapshotForUser(userId) {
       const relationshipId = state().memberships[userId]?.relationshipId;
-      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => collection !== "productEvents").map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map((record) => structuredClone(record))]));
+      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map((record) => structuredClone(record))]));
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,
