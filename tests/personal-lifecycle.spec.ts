@@ -9,7 +9,7 @@ test("an unpaired person sees their memories, schedules a reminder and reaches s
   await page.goto("/");
   // A first visit opens a short tour; it ends with the last card and does not come back.
   await expect(page.getByTestId("onboarding")).toBeVisible();
-  for (let step = 0; step < 3; step += 1) await page.getByTestId("onboarding-next").click();
+  for (let step = 0; step < 4; step += 1) await page.getByTestId("onboarding-next").click();
   await expect(page.getByTestId("onboarding")).toHaveCount(0);
   await page.reload(); await page.getByTestId("conversation-screen").waitFor();
   await expect(page.getByTestId("onboarding")).toHaveCount(0);

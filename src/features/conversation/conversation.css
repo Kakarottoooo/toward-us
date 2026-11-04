@@ -1,6 +1,8 @@
 /* Conversation-first home: one continuous ivory surface, header and composer float on it without hard dividers. */
 .conversation-home { position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--jian-paper); color: var(--jian-ink); }
-.conversation-header { flex: 0 0 auto; width: min(100%, 760px); margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 16px 6px; }
+.conversation-header { position: relative; z-index: 4; flex: 0 0 auto; width: min(100%, 760px); margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 16px 6px; }
+/* The couple's character floats below the top row (character.css); at the top of the thread nothing starts under it. */
+.conversation-home.has-mascot .conversation-thread { padding-top: 84px; }
 .conversation-topline { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 44px; }
 .conversation-menu { display: inline-grid; place-items: center; width: 44px; height: 44px; margin-left: -6px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .conversation-menu:hover { background: rgba(37,37,37,.06); }
