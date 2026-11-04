@@ -83,6 +83,21 @@ export function scoreFixture(fixture, predictions) {
 }
 
 const ratio = (part, whole) => whole ? part / whole : null;
+const squash = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+/** Why each raw model answer the app did not keep was dropped: `raw` items carry `line` (-1 = unknown messageId). */
+export function droppedReasons(fixture, raw = [], predictions = []) {
+  const kept = predictions.map((item) => item.line), reasons = [];
+  for (const item of raw) {
+    const message = fixture.messages[item.line];
+    const reason = !message ? "dropped:bad_message_id" : !squash(item.quote) ? "dropped:empty_quote"
+      : message.from === "Pinky" ? "dropped:not_partner_line" : !squash(message.text).includes(squash(item.quote).replace(/^["“「'‘]+|["”」'’]+$/g, "")) ? "dropped:quote_not_in_line" : null;
+    if (reason) { reasons.push(reason); continue; }
+    const index = kept.indexOf(item.line);
+    if (index >= 0) kept.splice(index, 1); else reasons.push("dropped:duplicate");
+  }
+  return reasons;
+}
 
 /** Totals over every fixture. `runs` is [{ fixture, predictions, raw?, error? }]. */
 export function scoreRun(runs) {
@@ -100,6 +115,7 @@ export function scoreRun(runs) {
     for (const miss of item.misses) count(miss.error);
     if (item.error) count("model_error");
   }
+  for (const run of runs) for (const reason of droppedReasons(run.fixture, run.raw, run.predictions)) count(reason);
   // What the model said that the app did not keep (quote not in the line, or a repeat): invisible to anyone.
   const dropped = runs.reduce((total, run) => total + Math.max(0, (run.raw?.length || 0) - (run.predictions?.length || 0)), 0);
   return {
