@@ -197,8 +197,10 @@
 .onboarding-secondary { background: rgba(37,37,37,.07); color: var(--jian-ink); }
 .daily-card { border-color: rgba(198,62,48,.28); }
 .daily-card.is-past { border-color: rgba(37,37,37,.12); }
-.daily-input { margin-top: 12px; padding: 4px 8px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fff; }
-.daily-input textarea { width: 100%; min-height: 52px; padding: 8px 4px; resize: none; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 16px; line-height: 1.6; }
+.daily-input { display: flex; align-items: flex-end; gap: 4px; margin-top: 12px; padding: 4px 4px 4px 8px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fff; }
+.daily-mic { flex: 0 0 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--jian-ink); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.daily-mic.listening { background: var(--jian-red); color: #fff; }
+.daily-input textarea { flex: 1; min-width: 0; width: 100%; min-height: 52px; padding: 8px 4px; resize: none; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 16px; line-height: 1.6; }
 .daily-input:focus-within { border-color: var(--jian-blue); }
 .daily-mine { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(37,37,37,.05); }
 .daily-answers { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
