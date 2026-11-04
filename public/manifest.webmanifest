@@ -1,14 +1,18 @@
 {
+  "id": "/",
   "name": "Pinky",
   "short_name": "Pinky",
+  "description": "A private relationship agent for two.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f4efe6",
   "theme_color": "#f4efe6",
   "icons": [
-    { "src": "/assets/brand/pinky-icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/assets/brand/pinky-icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "/assets/brand/pinky-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/assets/brand/pinky-icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/brand/pinky-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/brand/pinky-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/brand/pinky-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/assets/brand/pinky-icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
   ]
 }

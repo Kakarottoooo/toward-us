@@ -18,6 +18,12 @@ export function celebrationOn(since, today) {
   return null;
 }
 
+/** How a celebration is named to the model, in the couple's language. */
+export function occasionLabel(occasion, language) {
+  if (occasion.kind === "anniversary") return language === "en" ? `${occasion.years}-year anniversary` : language === "es" ? `${occasion.years}.º aniversario` : `${occasion.years} 周年`;
+  return language === "en" ? `day ${occasion.day} together` : language === "es" ? `el día ${occasion.day} juntos` : `在一起第 ${occasion.day} 天`;
+}
+
 /** The last full week, Monday to Sunday, that ended before today in the member's own calendar: its weekly recap. */
 export function lastWeek(today) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today || "")) return null;

@@ -1,11 +1,36 @@
-// This worker receives notifications only. It deliberately has no fetch/cache handler.
+// Pinky's installed web app: notifications, plus an offline page. It never caches the app, an API response or anything
+// private: the only cached file is the static /offline.html, shown when a page navigation finds no network.
+const SHELL = "pinky-shell-v1";
+const OFFLINE = "/offline.html";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(SHELL).then((cache) => cache.add(new Request(OFFLINE, { cache: "reload" }))).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    for (const key of await caches.keys()) if (key !== SHELL) await caches.delete(key);
+    await self.clients.claim();
+  })());
+});
+
+// Page navigations go to the network as usual; only when that fails is the offline page shown. Nothing is written to a cache.
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET" || request.mode !== "navigate") return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  event.respondWith(fetch(request).catch(async () => (await caches.match(OFFLINE, { cacheName: SHELL })) || Response.error()));
+});
+
 self.addEventListener("push", (event) => {
-  let payload;
-  try { payload = event.data?.json(); } catch { return; }
-  if (!payload || typeof payload.body !== "string") return;
+  let payload = null;
+  try { payload = event.data?.json(); } catch { payload = null; }
+  // Every push must show something (Safari revokes a subscription that receives silent pushes); the body is always vague.
+  const body = typeof payload?.body === "string" ? payload.body.slice(0, 160) : "Pinky";
   event.waitUntil(self.registration.showNotification("Pinky", {
-    body: payload.body.slice(0, 160), tag: String(payload.tag || "toward-us-reminder").slice(0, 64),
-    data: { url: safeDestination(payload.url) }, renotify: false,
+    body, tag: String(payload?.tag || "toward-us-reminder").slice(0, 64), icon: "/assets/brand/pinky-icon-192.png",
+    data: { url: safeDestination(payload?.url) }, renotify: false,
   }));
 });
 
@@ -20,10 +45,13 @@ self.addEventListener("notificationclick", (event) => {
   })());
 });
 
+// Only in-app paths the server sends: a reminder view, or "/?channel=us" for news in Us.
 function safeDestination(value) {
   if (typeof value !== "string" || !value.startsWith("/?")) return "/?view=reminders";
   const url = new URL(value, self.location.origin);
-  if (url.origin !== self.location.origin || url.pathname !== "/" || !["reminders", "decide", "plans", "checkins"].includes(url.searchParams.get("view"))) return "/?view=reminders";
+  if (url.origin !== self.location.origin || url.pathname !== "/") return "/?view=reminders";
+  if (url.searchParams.get("channel") === "us") return "/?channel=us";
+  if (!["reminders", "decide", "plans", "checkins"].includes(url.searchParams.get("view"))) return "/?view=reminders";
   const allowed = new URLSearchParams({ view: url.searchParams.get("view") });
   for (const name of ["issue", "outcome", "milestone", "reminder"]) {
     const id = url.searchParams.get(name);

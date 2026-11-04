@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4efe6" />
+    <title>Pinky</title>
+    <style>
+      :root { color-scheme: light; }
+      html, body { margin: 0; height: 100%; background: #f4efe6; color: #252525; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", Roboto, sans-serif; }
+      main { min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 32px 24px; text-align: center; }
+      h1 { margin: 6px 0 0; font-size: 22px; font-weight: 650; }
+      p { margin: 0; max-width: 320px; font-size: 17px; line-height: 1.5; color: #5d5852; }
+      button { margin-top: 10px; min-height: 48px; padding: 0 28px; border: 0; border-radius: 24px; background: #252525; color: #fff; font: inherit; font-size: 17px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">现在连不上网络</h1>
+      <p id="body">Pinky 需要网络才能打开你们的对话。联网后再试一次。</p>
+      <button id="retry" type="button" onclick="location.reload()">再试一次</button>
+    </main>
+    <script>
+      (function () {
+        var copy = {
+          en: ["You're offline", "Pinky needs a connection to open your conversations. Try again once you're back online.", "Try again", "en"],
+          es: ["Sin conexión", "Pinky necesita conexión para abrir sus conversaciones. Vuelve a intentarlo cuando tengas internet.", "Reintentar", "es"],
+        };
+        var saved = null;
+        try { saved = localStorage.getItem("toward-us.language"); } catch (error) { saved = null; }
+        var language = saved || (navigator.language || "").slice(0, 2);
+        var text = copy[language];
+        if (!text) return;
+        document.documentElement.lang = text[3];
+        document.getElementById("title").textContent = text[0];
+        document.getElementById("body").textContent = text[1];
+        document.getElementById("retry").textContent = text[2];
+      })();
+    </script>
+  </body>
+</html>
