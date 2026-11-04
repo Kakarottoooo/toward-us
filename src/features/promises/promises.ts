@@ -4,7 +4,7 @@ import { jsonBody, relationshipApi } from "../relationship/api";
 // "还欠着什么" (11-03): promises Pinky noticed in the two conversations. The server decides who sees which one; a partner's
 // private promise never reaches this phone.
 export type PromiseItem = {
-  id: string; version: number; description: string; when: string; by: "me" | "partner" | "both"; shared: boolean;
+  id: string; version: number; description: string; when: string; by: "me" | "partner" | "both"; shared: boolean; fromPrivate: boolean;
   status: "open" | "kept"; later: boolean; quote: string | null; saidBy: "me" | "partner" | null; saidAt: string; keptAt: string | null;
   agreement: { id: string; version: number; status: string } | null; shareText?: string;
 };
@@ -17,6 +17,8 @@ export const actOnPromise = (item: PromiseItem, action: PromiseAction, language:
 
 /** "You promised: …" / "Blair promised: …" / "You both agreed: …", in the reader's language. */
 export function promiseLead(item: PromiseItem, partnerName: string, language: Language) {
+  // A promise shared from a private chat is already in its owner's confirmed words ("I promise you: …").
+  if (item.fromPrivate) return item.description;
   const what = item.when ? `${item.description}${language === "zh" ? `（${item.when}）` : ` (${item.when})`}` : item.description;
   if (item.by === "me") return localized(language, `你答应过：${what}`, `You promised: ${what}`, `Prometiste: ${what}`);
   if (item.by === "partner") return localized(language, `${partnerName} 答应过：${what}`, `${partnerName} promised: ${what}`, `${partnerName} prometió: ${what}`);

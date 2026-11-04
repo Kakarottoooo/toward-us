@@ -33,7 +33,7 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
   return <div className="agreements-page">
     {notice && <p className="space-error" role="alert">{notice}</p>}
     {/* What the two of them promised each other in conversation comes first: it is what Pinky follows up on (11-03). */}
-    <PromiseList language={language} partnerName={partnerName} onChanged={onChanged} />
+    <PromiseList language={language} partnerName={partnerName} refreshKey={payload} onChanged={onChanged} />
     {reviews.map((item) => <button key={item.id} className="agreement-review" onClick={() => onReview(item.id)}><ClockCounterClockwise size={20} />{t("该复盘了：", "Time to review: ", "Hora de revisar: ")}{item.title}</button>)}
     {!groups.length && !reviews.length && <p className="space-empty">{t("还没有约定。在“我们俩”里叫 Pinky 帮你们把一件事定下来，两人都批准同一版本后就会出现在这里。", "No agreements yet. Ask Pinky in Us to help you settle something; once you both approve the same version it appears here.", "Aún no hay acuerdos. Pídele a Pinky en Nosotros que les ayude a acordar algo; cuando los dos aprueben la misma versión aparecerá aquí.")}</p>}
     {groups.map((group) => <section key={group.key}><h2 className="space-subhead">{group.title}</h2>

@@ -26,9 +26,9 @@
 .promise-share { display: grid; gap: 8px; }
 .promise-share small { color: #5d574f; font-size: 13px; line-height: 1.5; }
 .promise-share textarea { width: 100%; min-height: 64px; padding: 10px 12px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fff; color: var(--jian-ink); font: inherit; font-size: 15px; line-height: 1.5; resize: none; }
-/* In Us, Pinky's one gentle mention at a fresh start: a quiet card in Pinky's row, gone once someone starts typing. */
-.promise-nudge .conversation-card { padding: 14px 16px; background: rgba(251,247,239,.85); }
-.promise-nudge .conversation-card p { font-size: 15px; line-height: 1.6; }
-.promise-nudge .conversation-card q { display: block; margin-top: 4px; color: #6f6860; font-size: 14px; line-height: 1.5; quotes: "“" "”"; }
+/* In Us, Pinky's one gentle mention at a fresh start: a quiet full-width card, gone once someone starts typing. */
+.conversation-card.promise-nudge { padding: 14px 16px; background: rgba(251,247,239,.85); }
+.conversation-card.promise-nudge p { font-size: 15px; line-height: 1.6; }
+.conversation-card.promise-nudge q { display: block; margin-top: 4px; color: #6f6860; font-size: 14px; line-height: 1.5; quotes: "“" "”"; }
 .promise-nudge .card-actions { margin-top: 12px; gap: 8px; }
 .promise-nudge .card-actions button { min-height: 40px; padding: 0 14px; font-size: 14px; }

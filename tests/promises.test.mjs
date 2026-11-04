@@ -128,6 +128,16 @@ test("a promise from a private chat stays its owner's through every API until th
   assert.ok(!JSON.stringify(seen).includes("SECRET_REASON") && !JSON.stringify(await call("/relationship/home", b)).includes("SECRET_REASON"));
   const relay = (await conversation(relationshipId, b.user.id)).messages.at(-1);
   assert.equal(relay.kind, "relay"); assert.equal(relay.actorUserId, a.user.id); assert.equal(relay.text, "I promise you: no more late Thursdays");
+  // Only the words A confirmed reach Blair and the shared Agent, never the model's paraphrase of the private chat.
+  assert.equal(seen.promises[0].description, "I promise you: no more late Thursdays"); assert.equal(seen.promises[0].when, ""); assert.equal(seen.promises[0].fromPrivate, true);
+  const paraphrase = (value) => /working late|Thursdays/.test(JSON.stringify(value).replace(/no more late Thursdays/g, ""));
+  assert.ok(!paraphrase(seen), "not in the partner's list");
+  assert.ok(!paraphrase(await call("/relationship/home", b)), "not in the partner's graph");
+  const together = buildTogetherContext(await store.relationshipSnapshotForUser(b.user.id), relationshipId, { userId: b.user.id });
+  assert.deepEqual(together.noticedPromises.map((item) => [item.description, item.when]), [["I promise you: no more late Thursdays", ""]]);
+  assert.ok(!paraphrase(together), "not in what the shared Agent reads");
+  const stored = await store.getRelationshipRecordForUser("commitments", promise.id, b.user.id);
+  assert.ok(!paraphrase(stored), "the shared record itself keeps nothing of the private wording");
 });
 
 test("a shared promise becomes an agreement only when both approve the same version", async () => {
@@ -179,4 +189,42 @@ test("Pinky brings up at most one shared promise per fresh start, and not again 
   const [gone] = (await call("/promises", a)).promises;
   await call(`/promises/${gone.id}/dismiss`, a, { version: gone.version });
   assert.equal((await call("/promises", a)).promises.length, 1);
+});
+
+test("answering Pinky's mention with done or not now never brings up another one in the same window", async () => {
+  const { a, relationshipId } = await pair();
+  await say(a, "I'll fix the bike. I'll plan the trip. I'll call mom.");
+  const [line] = (await conversation(relationshipId, a.user.id)).messages;
+  await scanTogether({ store, mediator: fakeModel(() => ["fix the bike", "plan the trip", "call mom"].map((what) => ({ messageId: line.id, quote: `I'll ${what}`, by: "A", what, when: "" }))), relationshipId, userId: a.user.id });
+  const minute = 60_000, start = Date.now() + 2 * 86_400_000;
+  const first = await promiseToMention(store, { userId: a.user.id, relationshipId, now: start });
+  // Tapping the lightbulb, switching channels or changing language asks the server again; it must stay quiet.
+  await call(`/promises/${first.id}/later`, a, { version: first.version });
+  assert.equal(await promiseToMention(store, { userId: a.user.id, relationshipId, now: start + minute }), null, "not now: no other promise instead");
+  const [other] = (await call("/promises", a)).promises.filter((item) => !item.later);
+  await call(`/promises/${other.id}/done`, a, { version: other.version });
+  assert.equal(await promiseToMention(store, { userId: a.user.id, relationshipId, now: start + 2 * minute }), null, "done: still quiet");
+  assert.equal(await promiseToMention(store, { userId: a.user.id, relationshipId, now: start + 19 * 3_600_000 }), null, "quiet for most of a day");
+  assert.ok(await promiseToMention(store, { userId: a.user.id, relationshipId, now: start + 21 * 3_600_000 }), "then one again");
+});
+
+test("a long backlog in Us is read to the end in batches, never skipped", async () => {
+  const { a, b, relationshipId } = await pair();
+  await say(a, "Hi.");
+  const model = fakeModel((input) => input.messages.filter((item) => item.isNew && /I'll/.test(item.text)).map((item) => ({ messageId: item.id, quote: item.text, by: "B", what: item.text.slice(5), when: "" })));
+  await scanTogether({ store, mediator: model, relationshipId, userId: a.user.id });
+  // 45 lines arrive without the App (say, in the iMessage group); the oldest one holds a promise.
+  const at = Date.now();
+  await store.transaction(`relationship:${relationshipId}`, (tx) => tx.updateRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, a.user.id, (draft) => {
+    for (let index = 0; index < 45; index += 1) draft.messages.push({ id: `backlog-${index}`, role: "member", kind: "text", actorUserId: b.user.id, text: index === 0 ? "I'll water the plants" : index === 44 ? "I'll wash the car" : `line ${index}`, createdAt: new Date(at + index).toISOString(), refs: [] });
+  }));
+  const first = await scanTogether({ store, mediator: model, relationshipId, userId: a.user.id });
+  assert.equal(first.more, true, "lines are left for the next look");
+  assert.deepEqual(model.seen.at(-1).messages.filter((item) => item.isNew).map((item) => item.id), Array.from({ length: 40 }, (_, index) => `backlog-${index}`));
+  assert.deepEqual(first.map((item) => item.description), ["water the plants"]);
+  assert.equal((await conversation(relationshipId, a.user.id)).promiseScan.messageId, "backlog-39", "the cursor stops at the last line read");
+  const second = await scanTogether({ store, mediator: model, relationshipId, userId: a.user.id });
+  assert.equal(second.more, undefined);
+  assert.deepEqual(model.seen.at(-1).messages.filter((item) => item.isNew).map((item) => item.id), ["backlog-40", "backlog-41", "backlog-42", "backlog-43", "backlog-44"]);
+  assert.deepEqual(second.map((item) => item.description), ["wash the car"]);
 });

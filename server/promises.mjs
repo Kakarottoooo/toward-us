@@ -67,13 +67,18 @@ async function keepFindings(tx, { relationshipId, userId, visibility, ownerUserI
   return created;
 }
 
+// The very first look reads only the latest lines, so an old history is not sent all at once. After that every new line
+// is read, oldest first, a batch at a time: `more` says lines are left, and the cursor stops at the last line read.
 const freshLines = (messages, cursor, eligible) => {
   const index = cursor?.messageId ? messages.findIndex((item) => item.id === cursor.messageId) : -1;
   const after = index >= 0 ? messages.slice(index + 1) : cursor?.at ? messages.filter((item) => item.createdAt > cursor.at) : messages;
-  const fresh = after.filter(eligible).slice(-SCAN_LIMIT);
+  const pending = after.filter(eligible);
+  const more = Boolean(cursor) && pending.length > SCAN_LIMIT;
+  const fresh = cursor ? pending.slice(0, SCAN_LIMIT) : pending.slice(-SCAN_LIMIT);
   const start = fresh.length ? messages.indexOf(fresh[0]) : -1;
-  return { fresh, before: start > 0 ? messages.slice(Math.max(0, start - SCAN_CONTEXT), start).filter((item) => item.text) : [] };
+  return { fresh, more, last: more ? fresh.at(-1) : messages.at(-1), before: start > 0 ? messages.slice(Math.max(0, start - SCAN_CONTEXT), start).filter((item) => item.text) : [] };
 };
+const withMore = (created, more) => more ? Object.assign(created, { more: true }) : created;
 
 /** Reads the new lines of Us since the last look and keeps the promises in them as shared. Background work; never throws
  * to the caller's request. Returns the created records. */
@@ -83,8 +88,7 @@ export async function scanTogether({ store, mediator, relationshipId, userId }) 
   if (!activePair(context, relationshipId)) return [];
   const conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
   const messages = conversation?.messages || [];
-  const { fresh, before } = freshLines(messages, conversation?.promiseScan, (item) => item.role === "member" && item.kind === "text" && Boolean(squash(item.text)));
-  const last = messages.at(-1);
+  const { fresh, more, last, before } = freshLines(messages, conversation?.promiseScan, (item) => item.role === "member" && item.kind === "text" && Boolean(squash(item.text)));
   if (!last || (!fresh.length && conversation.promiseScan?.messageId === last.id)) return [];
   const label = (item) => item.role === "agent" ? "Pinky" : context.members.find((member) => member.userId === item.actorUserId)?.role || "?";
   let findings = [];
@@ -99,7 +103,7 @@ export async function scanTogether({ store, mediator, relationshipId, userId }) 
     const created = await keepFindings(tx, { relationshipId, userId, visibility: "shared", ownerUserId: null, findings, evidence: { channel: "together" } });
     // The cursor is internal bookkeeping: no version bump, so nobody's turn in Us ever conflicts with it.
     await tx.updateRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId, (draft) => { draft.promiseScan = { messageId: last.id, at: last.createdAt }; });
-    return created;
+    return withMore(created, more);
   });
 }
 
@@ -111,8 +115,7 @@ export async function scanPrivate({ store, mediator, userId, sessionId }) {
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
   if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
   const messages = session.messages || [];
-  const { fresh, before } = freshLines(messages, session.promiseScan, (item) => item.role === "user" && !item.call && Boolean(squash(item.text)));
-  const last = messages.at(-1);
+  const { fresh, more, last, before } = freshLines(messages, session.promiseScan, (item) => item.role === "user" && !item.call && Boolean(squash(item.text)));
   if (!last || (!fresh.length && session.promiseScan?.messageId === last.id)) return [];
   const relationshipId = context.relationship.id, me = context.members.find((member) => member.userId === userId), partner = context.members.find((member) => member.userId !== userId);
   let findings = [];
@@ -127,7 +130,7 @@ export async function scanPrivate({ store, mediator, userId, sessionId }) {
     const created = await keepFindings(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, findings, evidence: { channel: "private", sessionId } });
     // No version bump: the member's next turn checks the session version and must never fail because of this.
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => { draft.promiseScan = { messageId: last.id, at: last.createdAt }; });
-    return created;
+    return withMore(created, more);
   });
 }
 
@@ -137,7 +140,12 @@ export function createPromiseKeeper({ store, mediator, delayMs = 20_000, emit = 
   const run = async (name, task) => {
     if (running.has(name)) { running.set(name, true); return; }
     running.set(name, false);
-    try { for (const record of await task()) emit(record, "commitment.updated", record.visibility === "private" ? record.ownerUserId : null); }
+    try {
+      const created = await task();
+      for (const record of created) emit(record, "commitment.updated", record.visibility === "private" ? record.ownerUserId : null);
+      // A backlog (say, a long stretch in the iMessage group) is read to the end, one batch after another.
+      if (created.more) running.set(name, true);
+    }
     catch (error) { console.error("Promise scan failed:", error?.message || error); }
     finally { const again = running.get(name); running.delete(name); if (again) schedule(name, task); }
   };
@@ -170,7 +178,7 @@ export function projectPromise(record, { userId, members, agreements = [], langu
   const mine = record.visibility === "private";
   return {
     id: record.id, version: record.version, description: record.description, when: record.whenText || "", by,
-    shared: !mine, status: record.status === KEPT ? "kept" : "open", later: Boolean(record.snoozedUntil && Date.parse(record.snoozedUntil) > now),
+    shared: !mine, fromPrivate: Boolean(record.evidence?.sharedFromPrivate), status: record.status === KEPT ? "kept" : "open", later: Boolean(record.snoozedUntil && Date.parse(record.snoozedUntil) > now),
     quote: record.evidence?.quote || null, saidBy: record.evidence?.quote ? (record.ownerUserId === userId ? "me" : "partner") : null, saidAt: record.evidence?.saidAt || record.createdAt,
     keptAt: record.keptAt || null, agreement: agreement ? { id: agreement.id, version: agreement.version, status: agreement.status } : null,
     ...(mine ? { shareText: shareText(record, by, language) } : {}),
@@ -182,12 +190,12 @@ const listed = (record, now) => record.status === OPEN || (record.status === KEP
 /** The single shared promise Pinky may mention at this fresh start of Us, if any; marks it as mentioned. */
 export async function promiseToMention(store, { userId, relationshipId, now = Date.now() }) {
   return store.transaction(`relationship:${relationshipId}`, async (tx) => {
-    const open = (await tx.listRelationshipRecordsForUser("commitments", userId)).filter((item) => isConversationPromise(item) && item.relationshipId === relationshipId && item.visibility === "shared" && item.status === OPEN && !item.archivedAt && !(item.snoozedUntil && Date.parse(item.snoozedUntil) > now));
+    const shared = (await tx.listRelationshipRecordsForUser("commitments", userId)).filter((item) => isConversationPromise(item) && item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt);
+    const open = shared.filter((item) => item.status === OPEN && !(item.snoozedUntil && Date.parse(item.snoozedUntil) > now));
     const since = (item) => item.mentionedAt ? now - Date.parse(item.mentionedAt) : Infinity;
-    // Within one fresh start the same promise stays; after it, Pinky keeps quiet for most of a day.
-    const held = open.find((item) => since(item) < NUDGE_HOLD);
-    if (held) return held;
-    if (open.some((item) => since(item) < NUDGE_QUIET)) return null;
+    // Within one fresh start the same promise stays while it is still owed; after it, Pinky keeps quiet for most of a day.
+    // Any recent mention counts, even of one since marked done or not now: answering Pinky never earns the next one (11-03).
+    if (shared.some((item) => since(item) < NUDGE_QUIET)) return open.find((item) => since(item) < NUDGE_HOLD) || null;
     const next = open.filter((item) => since(item) >= NUDGE_AGAIN && now - Date.parse(item.createdAt) >= NUDGE_AGE).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (!next) return null;
     return tx.updateRelationshipRecordForUser("commitments", next.id, userId, (draft) => { draft.mentionedAt = new Date(now).toISOString(); });
@@ -258,7 +266,8 @@ export function createPromisesRouter({ store, keeper = null, emit = () => {} }) 
     await audit(tx, updated, userId, "commitment.dismissed"); return { record: updated };
   }));
 
-  // A private promise reaches the partner only when its owner confirms the exact words; the private quote stays behind.
+  // A private promise reaches the partner only when its owner confirms the exact words; the private quote stays behind,
+  // and so do the model's own wording and time from the private chat: the confirmed words replace them (11-03).
   router.post("/promises/:id/share", act(async (tx, { record, userId, context, req }) => {
     if (record.visibility !== "private" || record.ownerUserId !== userId) throw decisionError(404, "not_found");
     if (req.body?.confirm !== true) throw decisionError(400, "confirm_draft");
@@ -266,6 +275,7 @@ export function createPromisesRouter({ store, keeper = null, emit = () => {} }) 
     const text = clean(req.body?.text, 600) || shareText(record, by, language(req));
     const updated = await update(tx, record, userId, (draft) => {
       draft.visibility = "shared"; draft.aiAccessScope = "joint"; draft.sharedAt = new Date().toISOString(); draft.sharedText = text;
+      draft.description = text; draft.whenText = "";
       draft.evidence = { channel: "private", sharedFromPrivate: true, saidAt: draft.evidence?.saidAt || draft.createdAt };
     });
     await audit(tx, updated, userId, "commitment.shared");

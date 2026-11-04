@@ -12,8 +12,8 @@ export function PromiseNudge({ item, partnerName, language, onSettled, onOpenAll
     setBusy(true); setError("");
     try { await actOnPromise(item, action, language); onSettled(); } catch (caught) { setError((caught as Error).message); } finally { setBusy(false); }
   };
-  return <div className="us-row from-agent promise-nudge" data-testid="promise-nudge"><i className="us-avatar is-pinky" aria-hidden="true">P</i>
-    <article className="conversation-card">
+  // Full width like the other cards in Us (daily question, agreements), not indented in Pinky's message row.
+  return <article className="conversation-card promise-nudge" data-testid="promise-nudge">
       <header><Handshake size={16} />{t("还欠着什么", "Promises to keep", "Promesas pendientes")}</header>
       <p>{promiseLead(item, partnerName, language)}{t("。做到了吗？", ". Done yet?", ". ¿Ya está?")}</p>
       {item.quote && <q>{item.quote}</q>}
@@ -23,6 +23,5 @@ export function PromiseNudge({ item, partnerName, language, onSettled, onOpenAll
         <button disabled={busy} onClick={() => void act("later")}>{t("先不提", "Not now", "Ahora no")}</button>
         <button disabled={busy} onClick={onOpenAll}>{t("全部", "See all", "Ver todas")}<ArrowRight size={15} /></button>
       </div>
-    </article>
-  </div>;
+    </article>;
 }

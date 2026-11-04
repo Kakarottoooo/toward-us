@@ -6,14 +6,15 @@ import { actOnPromise, listPromises, type PromiseAction, type PromiseItem } from
 import "./promises.css";
 
 /** "还欠着什么": a compact list of what the two of them promised each other, with done / not now right on each line. */
-export function PromiseList({ language, partnerName, onChanged }: { language: Language; partnerName: string; onChanged?: () => void | Promise<void> }) {
+export function PromiseList({ language, partnerName, refreshKey, onChanged }: { language: Language; partnerName: string; refreshKey?: unknown; onChanged?: () => void | Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [items, setItems] = useState<PromiseItem[] | null>(null);
   const [busy, setBusy] = useState(""); const [notice, setNotice] = useState("");
   const [more, setMore] = useState(""); const [sharing, setSharing] = useState<{ id: string; text: string } | null>(null);
   const load = useCallback(async () => { try { setItems(await listPromises(language)); } catch (error) { setNotice((error as Error).message); setItems([]); } }, [language]);
-  useEffect(() => { void load(); }, [load]);
+  // Reloaded with the page's own refresh (each relationship event), so a partner's "done" never leaves a stale version here.
+  useEffect(() => { void load(); }, [load, refreshKey]);
   const act = async (item: PromiseItem, action: PromiseAction, extra: Record<string, unknown> = {}) => {
     keyboard.hide(); setBusy(item.id); setNotice("");
     try { await actOnPromise(item, action, language, extra); setMore(""); setSharing(null); await load(); if (action === "agreement" || action === "share") await onChanged?.(); }
