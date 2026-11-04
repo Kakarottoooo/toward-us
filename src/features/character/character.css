@@ -1,7 +1,7 @@
 /* The couple's character over the conversation. It hangs from the middle of the top row and floats over the top of the
  * thread, which scrolls under it; taps go through to the messages. Never a box, band, circle crop or shadow behind it,
  * and nothing between it and the screen may clip it (the founder, 11-03). */
-.couple-mascot { position: absolute; top: calc(100% - 6px); left: 50%; z-index: 5; transform: translateX(-50%); overflow: visible; pointer-events: none; }
+.couple-mascot { position: absolute; top: calc(100% - 6px); left: 50%; z-index: 5; display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); overflow: visible; pointer-events: none; }
 .couple-mascot img { display: block; width: auto; max-width: 150px; height: 84px; object-fit: contain; object-position: center bottom; border-radius: 0; background: transparent; box-shadow: none; filter: none; user-select: none; -webkit-user-drag: none; }
 
 /* The maker card (Settings → Our character, and from the welcome tour). */

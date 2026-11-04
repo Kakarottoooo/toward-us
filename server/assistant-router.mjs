@@ -23,7 +23,7 @@ const localTime = (value, timezone) => {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
 
-export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null }) {
+export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null, activity = null }) {
   const router = express.Router();
   const liveUser = async (db, userId, lock = false) => {
     const user = await (lock ? db.getUserForUpdate(userId) : db.getUserById(userId));
@@ -112,7 +112,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     ...(kind === "plan" ? { date: record.draft?.date } : {}),
   });
   // One private turn, shared by the App routes and the iMessage adapter. Returns the raw session and whether `itemId` was already handled.
-  const appendTurn = async (userId, sessionId, body, { channel = "app" } = {}) => {
+  // While a turn runs, this member alone can see which step Pinky is on (App, iMessage or call alike); it ends with the turn.
+  const appendTurn = async (userId, sessionId, body, options = {}) => {
+    const progress = activity ? activity.forMember(userId) : () => {};
+    try { return await runTurn(userId, sessionId, body, { ...options, progress }); } finally { progress(null); }
+  };
+  const runTurn = async (userId, sessionId, body, { channel = "app", progress }) => {
     const session = await owned(store, sessionId, userId);
     const text = clean(body?.text, 2000); const itemId = clean(body?.itemId, 120);
     const photoIds = Array.isArray(body?.photoIds) ? [...new Set(body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
@@ -137,6 +142,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     let plan;
+    progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, session.language); }
     catch { throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
     plan = normalizeAssistantTurn(plan);
@@ -144,10 +150,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
     const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports).slice(0, 3);
     if (searches.length) {
+      const web = searches.find((action) => action.kind === "web_search");
+      progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
       const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
         : { query: action.query, findings: await mediator.lookup(action.query, session.language).catch(() => "No results: the search failed.") }));
+      progress("writing");
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, session.language)); }
       catch { throw fail(503, say(session.language, "助手暂时不可用，没有执行任何操作。请稍后重试。", "The assistant is unavailable. Nothing was changed. Try again soon.", "El asistente no está disponible. No se cambió nada. Inténtalo pronto.")); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
@@ -158,6 +167,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
     }
     plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "chat_import"].includes(action.kind)) };
+    if (plan.actions.length) progress(plan.actions.every((action) => action.operation === "query") ? "checking_records" : "acting");
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);

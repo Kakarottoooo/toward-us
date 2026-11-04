@@ -15,6 +15,7 @@ import { OnboardingTour, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import { CoupleMascot } from "../character/CoupleMascot";
 import { useCoupleCharacter } from "../character/character";
+import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -121,6 +122,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     events.addEventListener("relationship", (event) => { try {
       const { eventType, objectId } = JSON.parse((event as MessageEvent).data);
       if (/^(together|agreement)/.test(eventType)) void loadTogether();
+      // Pinky started, moved on or finished a step in Us, possibly for the partner's question.
+      if (eventType === "agent.activity") void checkActivity("us");
       // A question Pinky asked privately on behalf of Us: refresh this conversation and mark "Just me" if it is not in view.
       if (eventType === "assistant.updated" && (!sessionRef.current || sessionRef.current.id === objectId)) { void relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(objectId)}`).then((result) => { current(result.session); store(result.session.id); if (channelRef.current !== "me") setUnreadMe(true); }).catch(() => {}); }
     } catch { /* Ignore malformed events. */ } });
@@ -128,6 +131,24 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     return () => events.close();
   }, [paired, loadTogether]);
   useEffect(() => { setNotice(""); }, [language]);
+  // Which step Pinky is on while it answers: asked every moment while this phone waits for a reply or Us shows a step, and on
+  // each nudge from Us. Only the newest answer per channel counts, so a slow, older one cannot bring back an ended step.
+  const [activity, setActivity] = useState<Record<Channel, AgentActivity>>({ me: null, us: null });
+  const activityAsked = useRef<Record<Channel, number>>({ me: 0, us: 0 });
+  const checkActivity = useCallback(async (target: Channel) => {
+    const asked = ++activityAsked.current[target];
+    try { const result = await relationshipApi<{ activity: AgentActivity }>(`/api/agent/activity?channel=${target}`); if (asked === activityAsked.current[target]) setActivity((current) => ({ ...current, [target]: result.activity })); }
+    catch { /* The bubble keeps its last words; the reply ends it. */ }
+  }, []);
+  const waitingMe = pending.me > 0, waitingUs = agentWorking > 0, watchUs = paired && (waitingUs || Boolean(activity.us));
+  useEffect(() => {
+    if (!waitingMe && !watchUs) return;
+    const look = () => { if (waitingMe) void checkActivity("me"); if (watchUs) void checkActivity("us"); };
+    look(); const timer = window.setInterval(look, 800);
+    return () => window.clearInterval(timer);
+  }, [waitingMe, watchUs, checkActivity]);
+  useEffect(() => { if (!waitingMe) { activityAsked.current.me++; setActivity((current) => ({ ...current, me: null })); } }, [waitingMe]);
+  useEffect(() => { if (!waitingUs && paired) void checkActivity("us"); }, [waitingUs, paired, checkActivity]);
   useEffect(() => { if (new URLSearchParams(location.search).has("say")) { window.history.replaceState(null, "", location.pathname); composerRef.current?.querySelector("textarea")?.focus(); } }, []);
   useEffect(() => { try { localStorage.setItem(channelKey, channel); } catch { /* Channel memory is a convenience. */ } }, [channel, channelKey]);
   // When Us was last looked at on this device, so "Us" can show a dot for what the partner or Pinky said since.
@@ -418,8 +439,10 @@ ${text}` : text, target);
     relationshipApi<{ suggestions: string[] }>(`/api/suggestions?channel=${channel}&language=${language}`).then((result) => { if (alive) setIdeas((current) => ({ ...current, [channel]: result.suggestions })); }).catch(() => {});
     return () => { alive = false; };
   }, [channel, language, lastSeen, paired, wantIdeas]);
+  // In Just me only this phone's own wait counts; in Us also a reply Pinky is preparing for the partner.
+  const working: AgentActivity = channel === "me" ? (waitingMe ? activity.me || { step: "thinking" } : null) : paired ? activity.us || (waitingUs ? { step: "thinking" } : null) : null;
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
-  return <div className={`paper-screen conversation-home ${mascotShown ? "has-mascot" : ""}`} data-testid="conversation-screen">
+  return <div className={`paper-screen conversation-home ${mascotShown ? "has-mascot" : ""} ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen">
     <header className="conversation-header">
       {/* One row: menu, the two channels, and a live voice call with Pinky (privately in Just me, for everyone in the room in Us). */}
       <div className="conversation-topline">
@@ -430,7 +453,7 @@ ${text}` : text, target);
         </div>
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      <CoupleMascot character={mascot} />
+      <CoupleMascot character={mascot} status={working && <AgentStatusPill activity={working} language={language} />} />
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
       {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
@@ -439,8 +462,7 @@ ${text}` : text, target);
         </>}
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
-      {pending.me > 0 && channel === "me" && <p className="conversation-status" role="status">{t("正在想…", "Thinking…", "Pensando…")}</p>}
-      {agentWorking > 0 && channel === "us" && <p className="conversation-status" role="status">{t("Pinky 正在想…", "Pinky is thinking…", "Pinky está pensando…")}</p>}
+      {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
     </main></MobileScroll></div>

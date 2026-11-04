@@ -93,7 +93,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {}, progress = () => {} }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
@@ -107,6 +107,8 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
   if (!saved.duplicate) emit(saved.conversation);
   if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
+  progress("thinking");
   await ensureMomentSpaces(store, actorUserId);
   const membership = await store.getRelationshipContext(actorUserId);
   const members = (membership?.members || []).map((member) => ({ id: member.userId, name: member.user?.name || "" }));
@@ -118,15 +120,19 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
   if (searches.length) {
+    const web = searches.find((action) => action.kind === "web_search");
+    progress(web ? "searching_web" : "searching_chats", web?.text || null);
     const sharedImport = async (id) => (await store.relationshipSnapshotForUser(actorUserId)).chatImports?.find((item) => item.id === id && item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt);
     const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
       ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
       : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));
+    progress("writing");
     turn = await mediator.continueTogether({ ...context, webSearch: true, lookups }, language);
   }
   turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
   if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
+    progress("mediating");
     const mediation = await mediator.mediateTogether(context, members, language);
     if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
   }
@@ -145,6 +151,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   });
   // Actions and reply land together or not at all; if an action cannot be applied, say so instead of claiming it.
   const asked = [];
+  if (turn.actions.length || turn.draftAgreement) progress("acting");
   let replied;
   try { replied = await reply(turn); }
   catch (error) {
