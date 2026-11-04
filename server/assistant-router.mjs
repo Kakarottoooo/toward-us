@@ -9,6 +9,7 @@ import { appendTogetherMessage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
+import { isAiLimit } from "./ai-budget.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
 const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date, share.photoId || null])).digest("hex");
@@ -149,7 +150,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     let plan;
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, session.language); }
-    catch { throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
+    catch (error) { if (isAiLimit(error)) throw error; throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
     plan = normalizeAssistantTurn(plan);
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
@@ -163,7 +164,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         : { query: action.query, findings: await mediator.lookup(action.query, session.language).catch(() => "No results: the search failed.") }));
       progress("writing");
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, session.language)); }
-      catch { throw fail(503, say(session.language, "助手暂时不可用，没有执行任何操作。请稍后重试。", "The assistant is unavailable. Nothing was changed. Try again soon.", "El asistente no está disponible. No se cambió nada. Inténtalo pronto.")); }
+      catch (error) { if (isAiLimit(error)) throw error; throw fail(503, say(session.language, "助手暂时不可用，没有执行任何操作。请稍后重试。", "The assistant is unavailable. Nothing was changed. Try again soon.", "El asistente no está disponible. No se cambió nada. Inténtalo pronto.")); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     }
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.

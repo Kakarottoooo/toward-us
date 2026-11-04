@@ -1,6 +1,7 @@
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { internalBearerStatus } from "./reminder-router.mjs";
+import { AI_CAPS, aiUsageReport } from "./ai-budget.mjs";
 
 // Content-free usage records. A record is only {userId, relationshipId|null, action, channel, createdAt}: never text, titles,
 // object ids or phone numbers. It is owner-private (not in any projection, export or partner view) and read only by the
@@ -60,6 +61,16 @@ export function createUsageRouter({ store, internalSecret = () => "" }) {
     if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "weeks must be a positive integer.", code: "invalid_weeks" });
     res.setHeader("Cache-Control", "no-store");
     try { res.json(await weeklyUsage(store, { weeks: Math.min(requested, 12) })); } catch (error) { next(error); }
+  });
+  // Model calls per day, per couple (or unpaired person) and per feature, with the caps in force: for tuning AI_CAPS.
+  router.get("/api/internal/ai-usage", async (req, res, next) => {
+    const status = internalBearerStatus(req, internalSecret());
+    if (status === 503) return res.status(503).json({ error: "Usage reporting is not configured." });
+    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    const requested = req.query.days === undefined ? 3 : Number(req.query.days);
+    if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "days must be a positive integer.", code: "invalid_days" });
+    res.setHeader("Cache-Control", "no-store");
+    try { res.json({ caps: AI_CAPS, rows: await aiUsageReport(store, { days: Math.min(requested, 31) }) }); } catch (error) { next(error); }
   });
   return router;
 }
