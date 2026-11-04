@@ -9,6 +9,7 @@ import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { createAgentActivity, createAgentActivityRouter } from "../server/agent-activity.mjs";
+import { createVoiceCallRouter } from "../server/voice-call.mjs";
 
 // Pinky's live step while it answers (the founder, 11-03): seen by the asker in Just me, by both partners in Us, never by anyone else.
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, ...patch });
@@ -28,7 +29,10 @@ async function fixture(t, mediator) {
   const nudges = [];
   const activity = createAgentActivity({ notify: (audience) => nudges.push(audience) });
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
-  app.use("/api", createAssistantRouter({ store, mediator: { createRealtimeSession: async () => "v=0\r\n", ...mediator }, reminderService: createReminderService({ store }), activity }));
+  const assistant = createAssistantRouter({ store, mediator: { createRealtimeSession: async () => "v=0\r\n", ...mediator }, reminderService: createReminderService({ store }), activity });
+  app.use("/api", assistant);
+  const provider = { configured: true, async start() { return { providerId: "live_1", sdp: "v=0\r\nanswer" }; }, async hangup() {} };
+  app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistant.assistant, provider, activity }));
   app.use("/api", createTogetherRouter({ store, mediator, activity }));
   app.use("/api", createAgentActivityRouter({ store, activity }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
@@ -87,6 +91,8 @@ test("in Us both partners see Pinky's steps, an outsider does not, and nothing s
   });
   const quiet = await f.request("/together/messages", "POST", { text: "see you at seven", itemId: randomUUID(), language: "en" });
   assert.equal(quiet.status, 201); assert.equal(await f.seen("us", f.ids[0]), null);
+  // An ordinary line between partners never wakes the couple's open Apps to look for a step.
+  assert.equal(f.nudges.length, 0);
   const turn = f.request("/together/messages", "POST", { text: "Pinky, help us with this", itemId: randomUUID(), language: "en" });
   await f.until("us", f.ids[0], "thinking");
   assert.equal((await f.seen("us", f.ids[1])).step, "thinking");
@@ -102,6 +108,20 @@ test("in Us both partners see Pinky's steps, an outsider does not, and nothing s
   assert.equal(await f.seen("us", f.ids[1]), null);
   // Every change nudged the couple's open Apps, for both members (no single owner).
   assert.ok(f.nudges.length >= 3 && f.nudges.every((audience) => audience.relationshipId === f.relationshipId && audience.ownerUserId === null));
+});
+
+test("a turn in an Us voice call shows its step to both partners and ends with the spoken answer", async (t) => {
+  const thinking = gate();
+  const f = await fixture(t, { continueTogether: async () => { await thinking.promise; return { reply: "I added it.", draftAgreement: null, actions: [] }; } });
+  const started = await f.request("/voice/start", "POST", { sdp: "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n", requestId: randomUUID().replace(/-/g, ""), language: "en", channel: "us" });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const turn = f.request("/voice/turn", "POST", { id: started.body.id, turnId: "d1", text: "add sunscreen to our list" });
+  await f.until("us", f.ids[1], "thinking");
+  assert.equal(await f.seen("us", f.ids[2]), null);
+  thinking.open();
+  const done = await turn; assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.spoken, "I added it.");
+  assert.equal(await f.seen("us", f.ids[0]), null);
 });
 
 test("activity keeps the newest of overlapping turns, ignores unknown steps and forgets abandoned ones", () => {

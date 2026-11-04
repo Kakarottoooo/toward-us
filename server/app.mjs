@@ -460,8 +460,8 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
   const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter, activity });
   app.use("/api", assistantRouter);
-  app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit }));
-  imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit });
+  app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit, activity }));
+  imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit, activity });
   app.use(imessage.router);
   app.use("/api", createPrivacyRouter({ store, production, closeConnections, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));

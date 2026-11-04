@@ -65,7 +65,7 @@ const activeCouple = (context) => context?.relationship.status === "active" && c
 // The approval request the group last saw for an agreement: its "awaiting approvals" card.
 const approvalCard = (conversation, agreementId) => conversation.messages.findLast((item) => item.kind === "agreement_card" && item.handle?.startsWith(`agreement:${agreementId}:v`) && item.handle.endsWith(":awaiting_approvals"));
 
-export function createIMessageChannel({ store, assistant, mediator, sendblue = defaultSendblue, emit = () => {} }) {
+export function createIMessageChannel({ store, assistant, mediator, sendblue = defaultSendblue, emit = () => {}, activity = null }) {
   // Handles, SMS days and link sends are remembered in memory; private turns are also deduplicated durably by their itemId.
   const seen = new Map();
   const claim = (key, ttl) => {
@@ -179,7 +179,9 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     if (!text) return "empty";
     const relationshipId = context.relationship.id, language = await memberLanguage(store, userId);
     try {
-      const turn = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated") });
+      // A partner looking at Us in the App sees Pinky working on the group's message too (the founder, 11-03).
+      const progress = activity ? activity.forCouple(relationshipId) : () => {};
+      const turn = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated"), progress }).finally(() => progress(null));
       if (!turn.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message", channel: "imessage" });
       // The group has no "send for approval" button: a draft the member just asked for is posted as the card both approve.
       if (turn.reply && turn.conversation.draftAgreement?.messageId === turn.reply.id) {

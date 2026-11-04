@@ -24,7 +24,7 @@ function Dots() {
 
 /** The pill under the character: the step only, short enough to sit under it at phone width. */
 export function AgentStatusPill({ activity, language }: { activity: NonNullable<AgentActivity>; language: Language }) {
-  return <span className="agent-pill" data-testid="agent-pill"><Dots />{agentStepLabel(activity.step, language)}</span>;
+  return <span className="agent-pill" data-testid="agent-pill"><Dots /><span>{agentStepLabel(activity.step, language)}</span></span>;
 }
 
 /** Pinky's typing bubble at the end of the thread; in Us it sits in Pinky's row with its avatar, like its replies. */

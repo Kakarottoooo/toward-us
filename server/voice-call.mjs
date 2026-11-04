@@ -69,7 +69,7 @@ export function openAiLive(apiKey = process.env.OPENAI_API_KEY) {
   };
 }
 
-export function createVoiceCallRouter({ store, mediator, assistant, provider = openAiLive(), emit = () => {}, clock = () => Date.now() }) {
+export function createVoiceCallRouter({ store, mediator, assistant, provider = openAiLive(), emit = () => {}, clock = () => Date.now(), activity = null }) {
   const router = express.Router();
   const calls = new Map(), usage = new Map();
   router.use("/voice", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
@@ -141,7 +141,9 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
         return { reply, spoken: reply.slice(0, 450) };
       }
       // Pinky speaks in Us only when called, so the request is addressed to it; it is marked as recorded on this phone.
-      const result = await continueTogetherTurn({ store, mediator, relationshipId: call.relationshipId, actorUserId: call.userId, recordedByUserId: null, text: `Pinky, ${text}`, source: "voice", handle: `voice:${call.id}:${turnId}`, language: call.language, emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId) });
+      // Both of them see the step in Us while Pinky prepares the spoken answer, as for a typed one (the founder, 11-03).
+      const progress = activity ? activity.forCouple(call.relationshipId) : () => {};
+      const result = await continueTogetherTurn({ store, mediator, relationshipId: call.relationshipId, actorUserId: call.userId, recordedByUserId: null, text: `Pinky, ${text}`, source: "voice", handle: `voice:${call.id}:${turnId}`, language: call.language, emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
       const reply = result.reply?.text || "";
       return { reply, spoken: reply.slice(0, 450) };
     };

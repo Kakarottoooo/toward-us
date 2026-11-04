@@ -21,12 +21,14 @@ export function createAgentActivity({ now = () => Date.now(), staleMs = 120_000,
   };
   /** One turn's progress reporter: `progress(step, detail?)` moves it on; `progress(null)` ends it. Unknown steps are ignored. */
   const track = (key, audience) => {
-    const token = randomUUID(); let ended = false;
+    const token = randomUUID(); let ended = false, started = false;
     return (step, detail = null) => {
       if (ended) return;
       const entries = live.get(key) || new Map();
-      if (step === null) { ended = true; entries.delete(token); if (!entries.size) live.delete(key); notify(audience); return; }
+      // A turn that never called Pinky (an ordinary line between partners) ends silently: there is nothing to clear.
+      if (step === null) { ended = true; if (!started) return; entries.delete(token); if (!entries.size) live.delete(key); notify(audience); return; }
       if (!AGENT_STEPS.has(step)) return;
+      started = true;
       const previous = entries.get(token);
       entries.set(token, { step, detail: typeof detail === "string" && detail.trim() ? detail.trim().slice(0, DETAIL_LIMIT) : null, startedAt: previous?.startedAt || now(), updatedAt: now() });
       live.set(key, entries); notify(audience);
