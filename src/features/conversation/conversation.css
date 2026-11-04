@@ -67,7 +67,7 @@
 .conversation-input { display: flex; align-items: flex-end; gap: 4px; padding: 5px; border: 1px solid rgba(37,37,37,.2); border-radius: 24px; background: var(--jian-paper-bright); box-shadow: 0 6px 22px rgba(44,36,27,.08); }
 .conversation-input:focus-within { border-color: var(--jian-blue); }
 .conversation-input textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 132px; padding: 10px 4px 10px 8px; resize: none; border: 0; outline: 0; background: transparent; color: var(--jian-ink); font: inherit; font-size: 16px; line-height: 1.5; field-sizing: content; }
-.conversation-input textarea::placeholder { color: #6b645c; }
+.conversation-input textarea::placeholder { color: #6b645c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conversation-input button { flex: 0 0 40px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .conversation-input .conversation-send { background: var(--jian-blue); color: #fff; }
 .conversation-input .conversation-send:disabled { background: #b9b2a8; cursor: not-allowed; }
@@ -194,6 +194,7 @@
 .onboarding-next { background: var(--jian-ink); color: #fff; }
 .onboarding-secondary { background: rgba(37,37,37,.07); color: var(--jian-ink); }
 .daily-card { border-color: rgba(198,62,48,.28); }
+.daily-card.is-past { border-color: rgba(37,37,37,.12); }
 .daily-input { margin-top: 12px; padding: 4px 8px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fff; }
 .daily-input textarea { width: 100%; min-height: 52px; padding: 8px 4px; resize: none; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 16px; line-height: 1.6; }
 .daily-input:focus-within { border-color: var(--jian-blue); }
