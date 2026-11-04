@@ -306,3 +306,13 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .recovery-content .account-recovery > p { margin: 0 0 24px; color: var(--jian-muted); font-size: 14px; line-height: 1.6; }
 .recovery-content .account-recovery form { display: grid; gap: 18px; }
 .recovery-content .account-recovery form > button { justify-self: stretch; }
+
+/* Install Pinky on the Home Screen: a once-only sheet (src/features/reminders/InstallHint.tsx). */
+.install-hint { display: grid; gap: 14px; padding: 4px 0 8px; color: var(--jian-ink); }
+.install-hint p { margin: 0; color: #4a4540; font-size: 16px; line-height: 1.6; }
+.install-hint ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-size: 16px; line-height: 1.5; }
+.install-hint-actions { display: grid; gap: 6px; margin-top: 4px; }
+.install-hint-actions button { min-height: 50px; border: 0; border-radius: 14px; font: inherit; font-size: 16px; font-weight: 650; cursor: pointer; }
+.install-hint-primary { background: var(--jian-blue); color: #fff; }
+.install-hint-secondary { background: transparent; color: #5f5952; }
+.install-hint-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }

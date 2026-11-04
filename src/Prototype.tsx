@@ -12,6 +12,8 @@ import { ConversationHome, PageHeader } from "./features/conversation/Conversati
 import { SpacePage } from "./features/spaces/SpacePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
+import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
+import { InstallHint } from "./features/reminders/InstallHint";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import "./relationship.css";
 import "./controls.css";
@@ -74,9 +76,10 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); }
+      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); }
     }).catch(() => {});
     listenNativePushTaps();
+    registerAppWorker();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
@@ -93,14 +96,14 @@ function AccountPrototype() {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
     setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("conversation");
   };
-  const logout = async () => { keyboard.hide(); await disableNativePush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setScreen("home"); };
+  const logout = async () => { keyboard.hide(); await disableNativePush(); await disableWebPush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setScreen("home"); };
 
   const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
   const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
   const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
-  if (screen === "conversation" && user) return <ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} />;
+  if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
   if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
   if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;

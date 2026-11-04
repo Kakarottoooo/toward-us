@@ -113,15 +113,15 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       if (announcedReminders >= 100) break;
       const milestone = await store.getRelationshipRecordForUser("milestones", reminder.milestoneId, reminder.ownerUserId);
       if (!milestone || !canViewRecord(milestone, reminder.ownerUserId) || milestone.withdrawnAt || !JOINT.has(milestone.visibility)) continue;
-      const due = jointReminderDue(milestone, reminder.minutesBefore, current);
-      if (!due || reminder.announcedAt?.[due.dueAt]) continue;
+      const due = jointReminderDue(milestone, reminder.minutesBefore, current, await memberTimezone(store, reminder.ownerUserId));
+      if (!due || alreadyAnnounced(reminder, due.dueAt)) continue;
       announcedReminders += 1;
       const i18n = togetherI18n((language) => say(language, `到点提醒：「${milestone.title}」（${due.occursOn}）。`, `Reminder: "${milestone.title}" (${due.occursOn}).`, `Recordatorio: "${milestone.title}" (${due.occursOn}).`));
       // The occurrence is stamped on the reminder in the same transaction as the post: the handle alone only dedupes against
       // the last 200 messages, while a due occurrence stays in the 7-day window. No version bump: it is bookkeeping, not an edit.
       await post(reminder.relationshipId, reminder.ownerUserId, async (tx, language) => {
         const fresh = await tx.getRelationshipRecordForUser("reminders", reminder.id, reminder.ownerUserId);
-        if (!fresh || fresh.announcedAt?.[due.dueAt]) return null;
+        if (!fresh || alreadyAnnounced(fresh, due.dueAt)) return null;
         const result = await announceInTogether(tx, {
           relationshipId: reminder.relationshipId, userId: reminder.ownerUserId, kind: "reminder", handle: `reminder:${reminder.id}:${due.dueAt}`,
           refs: [{ type: "milestone", id: milestone.id, version: milestone.version }, { type: "reminder", id: reminder.id }],
@@ -170,6 +170,13 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   return {
     internalSecret,
     getSettings: settings,
+    /** Whether a together nudge could reach this member at all (an App phone, or a browser they connected and kept on). */
+    async reachable(userId) {
+      const preference = await preferences(store, userId);
+      if (preference?.enabled === false) return false;
+      if (nativeOn && (await owned(store, "nativePushDevices", userId)).some((item) => active(item) && item.token)) return true;
+      return pushOn && Boolean(preference?.enabled) && active(preference) && (await owned(store, "pushSubscriptions", userId)).some((item) => active(item) && item.subscription);
+    },
     async updateNotify(userId, input) {
       const notify = Object.fromEntries(Object.keys(NOTIFY_DEFAULTS).filter((key) => typeof input?.[key] === "boolean").map((key) => [key, input[key]]));
       if (!Object.keys(notify).length) throw fail("Choose what to be notified about.");
@@ -249,10 +256,11 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       });
     },
     // Every published "我们俩" change (member messages, relays, Agent replies, cards, due/review announcements) passes here.
-    // New messages since the last call nudge the members who did not write them, vaguely, when the couple has no live iMessage
+    // New messages since the last call nudge the members who did not write them (App phones and installed web apps alike),
+    // vaguely, when the couple has no live iMessage
     // group to carry them. `actorUserId` is the member who triggered an Agent card, so they are not nudged about their own action.
     async notifyTogether(conversation, actorUserId = null) {
-      if (!nativeOn || !conversation?.relationshipId || !Array.isArray(conversation.messages)) return { sent: 0 };
+      if ((!nativeOn && !pushOn) || !conversation?.relationshipId || !Array.isArray(conversation.messages)) return { sent: 0 };
       const cursor = togetherCursors.get(conversation.id) || { since: startedAt, ids: new Set() };
       const fresh = conversation.messages.filter((item) => item.createdAt > cursor.since || (item.createdAt === cursor.since && !cursor.ids.has(item.id)));
       if (!fresh.length) return { sent: 0 };
@@ -422,25 +430,46 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     },
   };
 
-  // One member's phones, at most once per 10 minutes; respects "turn off all reminder notifications"; best effort, never retried.
+  // One member's phones and installed web apps, at most once per 10 minutes across both; respects "turn off all reminder
+  // notifications" (and, for browsers, their explicit opt-in, as for personal reminders); best effort, never retried.
   async function nudge(userId, partnerWrote, surprise = false) {
-    const devices = await store.transaction(LOCK, async (db) => {
-      if ((await preferences(db, userId))?.enabled === false) return [];
-      const current = now(), mine = (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token);
-      const last = mine.map((item) => item.togetherNotifiedAt || "").sort().at(-1);
-      if (!mine.length || (last && current.getTime() - new Date(last).getTime() < TOGETHER_NOTIFY_MS)) return [];
+    const { phones, browsers } = await store.transaction(LOCK, async (db) => {
+      const preference = await preferences(db, userId), none = { phones: [], browsers: [] };
+      if (preference?.enabled === false) return none;
+      const current = now();
+      const phones = nativeOn ? (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token) : [];
+      const browsers = pushOn && preference?.enabled && active(preference) ? (await owned(db, "pushSubscriptions", userId)).filter((item) => active(item) && item.subscription) : [];
+      const targets = [...phones.map((device) => ["nativePushDevices", device]), ...browsers.map((device) => ["pushSubscriptions", device])];
+      const last = targets.map(([, device]) => device.togetherNotifiedAt || "").sort().at(-1);
+      if (!targets.length || (last && current.getTime() - new Date(last).getTime() < TOGETHER_NOTIFY_MS)) return none;
       // Bookkeeping stamp, no version bump: it must not conflict with a concurrent re-registration.
-      for (const device of mine) await db.updateRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId, (draft) => { draft.togetherNotifiedAt = iso(current); });
-      return mine;
+      for (const [collection, device] of targets) await db.updateRelationshipRecordForUser(collection, device.id, device.ownerUserId, (draft) => { draft.togetherNotifiedAt = iso(current); });
+      return { phones, browsers };
     });
-    const language = devices.length ? await memberLanguage(store, userId) : "zh";
+    const language = phones.length || browsers.length ? await memberLanguage(store, userId) : "zh";
     const body = surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
-    for (const device of devices) {
+    for (const device of phones) {
       try { await sendNative(device.token, { title: "Pinky", body, url: "/?channel=us" }); sent += 1; }
       catch (error) {
         console.error("together native push failed", error?.code || "error");
         if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });
+      }
+    }
+    // One tag and topic per member: a newer nudge replaces an unread one instead of piling up on the lock screen.
+    for (const device of browsers) {
+      try {
+        const receipt = await sendPush(device.subscription, { title: "Pinky", body, url: "/?channel=us", tag: "pinky-us" }, { dedupeKey: `together:${userId}` });
+        if (Number.isInteger(receipt?.statusCode) && receipt.statusCode >= 200 && receipt.statusCode < 300) sent += 1;
+      } catch (error) {
+        console.error("together web push failed", error?.code || error?.statusCode || "error");
+        // A browser the push service no longer knows is disconnected, like an expired reminder subscription.
+        if ([404, 410].includes(error?.statusCode)) await store.transaction(LOCK, async (db) => {
+          const fresh = await db.getRelationshipRecordForUser("pushSubscriptions", device.id, device.ownerUserId);
+          if (!active(fresh) || fresh.subscription?.endpoint !== device.subscription.endpoint) return;
+          await update(db, "pushSubscriptions", fresh, { status: "revoked", subscription: null });
+          await cancelJobs(db, fresh.ownerUserId, (job) => job.subscriptionId === fresh.id);
+        });
       }
     }
     return sent;
@@ -468,15 +497,37 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
 }
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
-// A joint milestone reminder is due `minutesBefore` ahead of the milestone's (yearly: nearest) occurrence; ignore ones that went stale.
-function jointReminderDue(milestone, minutesBefore, current) {
+// A joint milestone reminder is due `minutesBefore` ahead of the milestone's (yearly: nearest) occurrence; ignore ones that went
+// stale. The occurrence is 09:00 on that day in the owner's time zone, so "the day before" lands at 09:00 the day before and
+// "on the day" at 09:00 on the day (it used to be 12:00 UTC: 04:00 in California). With no known time zone it stays 12:00 UTC.
+const JOINT_LOCAL_TIME = "09:00";
+function jointReminderDue(milestone, minutesBefore, current, timeZone = null) {
   const source = new Date(`${milestone.date}T12:00:00.000Z`);
   if (Number.isNaN(source.getTime())) return null;
   const years = milestone.recurringRule === "yearly" ? [-1, 0, 1].map((offset) => current.getUTCFullYear() + offset) : [source.getUTCFullYear()];
-  const occurrences = years.map((year) => Date.UTC(year, source.getUTCMonth(), source.getUTCDate(), 12));
+  const occurrences = years.map((year) => {
+    const noon = Date.UTC(year, source.getUTCMonth(), source.getUTCDate(), 12), day = iso(noon).slice(0, 10);
+    if (!timeZone) return { at: noon, day };
+    try { return { at: Date.parse(localDateTimeToInstant(`${day}T${JOINT_LOCAL_TIME}`, timeZone, "forward")), day }; } catch { return { at: noon, day }; }
+  });
   const offset = (Number.isFinite(minutesBefore) ? minutesBefore : 1440) * 60_000;
-  const due = occurrences.map((at) => ({ at, dueAt: at - offset })).filter((item) => item.dueAt <= current.getTime() && current.getTime() - item.dueAt <= ANNOUNCE_WINDOW_MS).sort((a, b) => b.dueAt - a.dueAt)[0];
-  return due ? { dueAt: iso(due.dueAt), occursOn: iso(due.at).slice(0, 10) } : null;
+  const due = occurrences.map((item) => ({ ...item, dueAt: item.at - offset })).filter((item) => item.dueAt <= current.getTime() && current.getTime() - item.dueAt <= ANNOUNCE_WINDOW_MS).sort((a, b) => b.dueAt - a.dueAt)[0];
+  return due ? { dueAt: iso(due.dueAt), occursOn: due.day } : null;
+}
+// Stamps are keyed by due instant. Before 11-04 that instant was 12:00 UTC; the local-time instant of the same occurrence is
+// within a day of it, so an occurrence stamped either way is never announced twice.
+function alreadyAnnounced(reminder, dueAt) {
+  const due = Date.parse(dueAt);
+  return Object.keys(reminder.announcedAt || {}).some((key) => Math.abs(Date.parse(key) - due) < 36 * 3_600_000);
+}
+/** A member's own time zone, if the App ever learned it: their notification settings, else their private chat's. "UTC" counts
+ * as unknown, since that is also what a missing zone is stored as. */
+export async function memberTimezone(db, userId) {
+  const valid = (zone) => { if (typeof zone !== "string" || !zone || zone === "UTC") return null; try { dateFormatter(zone); return zone; } catch { return null; } };
+  const preference = (await db.listRelationshipRecordsForUser("deliveryPreferences", userId)).find((item) => item.ownerUserId === userId && !item.archivedAt);
+  if (valid(preference?.timezone)) return preference.timezone;
+  const sessions = (await db.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((item) => item.ownerUserId === userId && item.intentType === "assistant" && !item.archivedAt && valid(item.timezone));
+  return sessions.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0]?.timezone || null;
 }
 function reminderInput(input, current) {
   const timezone = input.timezone || "UTC";

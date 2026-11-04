@@ -25,6 +25,7 @@ import { createPhoneRouter } from "./phone-identity.mjs";
 import { createReminderRouter } from "./reminder-router.mjs";
 import { createUsageRouter } from "./usage.mjs";
 import { createReminderService } from "./reminder-service.mjs";
+import { createCoupleRituals } from "./couple-rituals.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createNativePush } from "./native-push.mjs";
 import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
@@ -65,8 +66,11 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   const nativePush = reminderService ? null : createNativePush();
   const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null, sendNative: nativePush?.configured ? nativePush.send : null, groupsEnabled: () => sendblue.groupsEnabled() });
 
+  // Daily question and celebration cards at a sensible local hour, so they reach both partners by push (not with an injected
+  // test service: those tests drive delivery themselves).
+  const rituals = reminderService ? null : createCoupleRituals({ store, mediator, reachable: (userId) => reminders.reachable(userId), emit: (conversation) => emitTogether(conversation, "together.updated") });
   const runDue = reminders.runDue.bind(reminders);
-  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); return result; };
+  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); return result; };
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
