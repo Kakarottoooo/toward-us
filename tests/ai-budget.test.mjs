@@ -204,6 +204,8 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     const invitation = await call("/partner/invitations", a, {});
     await call("/partner/accept", b, { code: invitation.body.pairing.invitation.code });
     const say = (text) => call("/together/messages", a, { text, itemId: randomUUID(), language: "en" });
+    // Temporary measurement-friendly free defaults (11-04) until the founder tunes them from the ops report.
+    assert.deepEqual(AI_CAPS.free, { person: 60, couple: 100, background: 80, chatImport: 65, features: { composer_suggestions: 15 } });
     for (let i = 0; i < AI_CAPS.free.person; i += 1) assert.equal((await say(`@Pinky idea ${i}?`)).status, 201);
     const capped = await say("@Pinky one more idea?");
     assert.equal(capped.status, 429);
