@@ -70,7 +70,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // The couple's own character, shared by both; it floats under the top row once one of them has made it.
-  const { character: mascot } = useCoupleCharacter(paired);
+  const { character: mascot, refresh: refreshMascot } = useCoupleCharacter(paired);
   const mascotShown = Boolean(mascot?.image && mascot.visible);
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
@@ -126,6 +126,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     events.addEventListener("relationship", (event) => { try {
       const { eventType, objectId } = JSON.parse((event as MessageEvent).data);
       if (/^(together|agreement)/.test(eventType)) void loadTogether();
+      // The partner made (or is making) the couple's character: show it here too.
+      if (eventType === "character.updated") void refreshMascot();
       // Pinky started, moved on or finished a step in Us, possibly for the partner's question.
       if (eventType === "agent.activity") void checkActivity("us");
       // A question Pinky asked privately on behalf of Us: refresh this conversation and mark "Just me" if it is not in view.
@@ -133,7 +135,14 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     } catch { /* Ignore malformed events. */ } });
     events.addEventListener("access-ended", () => { events.close(); accessChanged.current(); });
     return () => events.close();
-  }, [paired, loadTogether]);
+  }, [paired, loadTogether, refreshMascot]);
+  // While the invite waits, look every few seconds, so Us opens by itself once the partner joins (as the invite says).
+  const refreshPairing = useRef(onRefreshPairing); refreshPairing.current = onRefreshPairing;
+  useEffect(() => {
+    if (pairing?.status !== "pending") return;
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refreshPairing.current().catch(() => {}); }, 4000);
+    return () => window.clearInterval(timer);
+  }, [pairing?.status]);
   useEffect(() => { setNotice(""); }, [language]);
   // Which step Pinky is on while it answers: asked every moment while this phone waits for a reply or Us shows a step, and on
   // each nudge from Us. Only the newest answer per channel counts, so a slow, older one cannot bring back an ended step.

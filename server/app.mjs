@@ -476,7 +476,7 @@ export function createApiApp({ store, mediator, production = false, memoryContex
   app.use("/api", createHandoffRouter());
   app.use("/api", createSuggestionsRouter({ store, mediator }));
   app.use("/api", createFeedbackRouter({ store, mediator }));
-  app.use("/api", createCharacterRouter({ store }));
+  app.use("/api", createCharacterRouter({ store, emit }));
   app.use("/api", relationshipRouter);
 
   function broadcastDemoRoom(code) {

@@ -30,6 +30,7 @@ const copy = {
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
     waitingHint: "邀请已发出。对方用自己的账号接受后，你们才会共享调解与复盘。", acceptInvite: "接受邀请",
     inviteCode: "八位邀请码", logout: "退出登录",
+    joinPartner: "加入伴侣", joinHint: "TA 邀请你一起用 Pinky。接受后，你们俩共同的对话“我们俩”就会打开。",
   },
   en: {
     homeLine: "Beyond the argument, we choose each other.", start: "Begin", homeFooter: "Pause · Listen · Repair", back: "Back",
@@ -39,6 +40,7 @@ const copy = {
     createInvite: "Create partner invite", copyInvite: "Copy invite link", copied: "Copied", waitingPartner: "Waiting for your partner",
     waitingHint: "They must accept with their own account before mediation and reviews are shared.", acceptInvite: "Accept invite",
     inviteCode: "Eight-character code", logout: "Sign out",
+    joinPartner: "Join your partner", joinHint: "Your partner invited you to Pinky. Accept to open Us, the conversation the two of you share.",
   },
   es: {
     homeLine: "Más allá de la discusión, nos elegimos.", start: "Comenzar", homeFooter: "Pausar · Escuchar · Reparar", back: "Volver",
@@ -48,6 +50,7 @@ const copy = {
     createInvite: "Crear invitación", copyInvite: "Copiar enlace", copied: "Copiado", waitingPartner: "Esperando a tu pareja",
     waitingHint: "Debe aceptar con su propia cuenta antes de compartir mediaciones y revisiones.", acceptInvite: "Aceptar invitación",
     inviteCode: "Código de ocho caracteres", logout: "Cerrar sesión",
+    joinPartner: "Únete a tu pareja", joinHint: "Tu pareja te invitó a Pinky. Acepta para abrir Nosotros, la conversación que comparten.",
   },
 };
 
@@ -147,13 +150,14 @@ function AuthScreen({ language, onLanguage, onBack, onAuth, onRecover, notice, s
   language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => void;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  // Someone arriving from an invite link is almost always new: they start on sign-up, with sign-in one tap away.
+  const [mode, setMode] = useState<"login" | "register">(() => new URLSearchParams(location.search).has("invite") ? "register" : "login");
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const keyboard = useKeyboard();
   const submit = async () => {
     keyboard.hide(); setBusy(true); setNotice("");
     try { onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify({ name, email, password }) })); }
-    catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
+    catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); }
   };
   return <MobileScroll className="paper-screen auth-screen" data-testid="auth-screen">
     <header className="editorial-top"><button onClick={onBack} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
@@ -177,15 +181,18 @@ function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onBack,
 }) {
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get("invite")?.toUpperCase() || "");
   const [copied, setCopied] = useState(false); const keyboard = useKeyboard();
-  const createInvite = async () => { setBusy(true); setNotice(""); try { await api("/api/partner/invitations", { method: "POST" }); await onRefresh(); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); } };
-  const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", location.pathname); await onRefresh(); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); } };
+  // Opened from a partner's invite link: accepting is the one thing to do. Creating an invite of their own here would put
+  // this account in a second, empty couple, and the partner's code could then no longer be accepted.
+  const [invited] = useState(() => !pairing && code.length === 8);
+  const createInvite = async () => { setBusy(true); setNotice(""); try { await api("/api/partner/invitations", { method: "POST" }); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
+  const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", location.pathname); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
   const inviteUrl = pairing?.invitation ? `${location.origin}${location.pathname}?invite=${pairing.invitation.code}` : "";
   const copyInvite = async () => { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><button onClick={onLogout} aria-label={t.logout}><SignOut size={20} /></button><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
-    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{pairing ? t.waitingPartner : t.invitePartner}</h1><PauseMark /></div>
-      <button className="text-action" onClick={onBack}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button><p className="pairing-lead">{pairing ? t.waitingHint : t.inviteHint}</p>
-      {!pairing ? <><button className="primary-action" onClick={createInvite} disabled={busy}><LinkSimple size={20} />{t.createInvite}</button><div className="join-divider"><span>OR</span></div>
-        <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))} maxLength={8} data-testid="invite-code" /></label><button className="secondary-action" onClick={accept} disabled={busy || code.length !== 8}>{t.acceptInvite}</button></> :
+    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{pairing ? t.waitingPartner : invited ? t.joinPartner : t.invitePartner}</h1><PauseMark /></div>
+      <button className="text-action" onClick={onBack}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button><p className="pairing-lead">{pairing ? t.waitingHint : invited ? t.joinHint : t.inviteHint}</p>
+      {!pairing ? <>{!invited && <><button className="primary-action" onClick={createInvite} disabled={busy}><LinkSimple size={20} />{t.createInvite}</button><div className="join-divider"><span>OR</span></div></>}
+        <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))} maxLength={8} data-testid="invite-code" /></label><button className={invited ? "primary-action" : "secondary-action"} onClick={accept} disabled={busy || code.length !== 8}>{t.acceptInvite}</button></> :
         <><div className="invite-code-panel"><span>{t.inviteCode}</span><strong>{pairing.invitation?.code}</strong><button onClick={copyInvite}><Copy size={18} />{copied ? t.copied : t.copyInvite}</button></div><div className="waiting-pair"><span>{user.name.slice(0, 1)}</span><i>＋</i><span>?</span></div><button className="secondary-action" onClick={onRefresh}>{localized(language, "检查是否已加入", "Check connection", "Comprobar conexión")}</button></>}
       {notice && <p className="form-notice" role="alert">{notice}</p>}
     </main></MobileScroll>;
@@ -198,4 +205,16 @@ function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i 
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
 function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+// The server words account errors in Chinese; English and Spanish screens show their own words instead.
+const ACCOUNT_ERRORS: Record<string, [en: string, es: string]> = {
+  "请输入有效邮箱。": ["Enter a valid email address.", "Introduce un correo electrónico válido."],
+  "密码需要 10–128 个字符。": ["Passwords need 10 to 128 characters.", "La contraseña necesita entre 10 y 128 caracteres."],
+  "这个邮箱已经注册。": ["This email is already registered. Sign in instead.", "Este correo ya está registrado. Inicia sesión."],
+  "尝试次数过多，请稍后再试。": ["Too many attempts. Try again later.", "Demasiados intentos. Inténtalo más tarde."],
+  "邮箱或密码不正确。": ["The email or password is not correct.", "El correo o la contraseña no son correctos."],
+  "请先登录。": ["Sign in first.", "Inicia sesión primero."],
+  "当前账号已经属于一个共同空间。": ["This account already belongs to a shared space.", "Esta cuenta ya pertenece a un espacio compartido."],
+  "邀请无效、已过期，或当前账号已经绑定伴侣。": ["This invite is not valid or has expired, or this account is already linked to a partner.", "La invitación no es válida o ha caducado, o esta cuenta ya está vinculada a una pareja."],
+};
+function accountError(message: string, language: Language) { const known = ACCOUNT_ERRORS[message]; return known ? localized(language, message, known[0], known[1]) : message; }
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload; }

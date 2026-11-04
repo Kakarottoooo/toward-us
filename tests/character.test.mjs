@@ -36,7 +36,8 @@ async function fixture(t) {
     animate: (_still, folder) => new Promise((done, failed) => steps.push(async () => { if (plan.motion) { await writeFile(join(folder, "motion.webp"), WEBP); done(); } else failed(new Error("no motion")); })),
   };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
-  app.use("/api", createCharacterRouter({ store, maker }));
+  const events = [];
+  app.use("/api", createCharacterRouter({ store, maker, emit: (record, eventType) => events.push({ eventType, relationshipId: record.relationshipId, state: record.making?.state }) }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
   t.after(async () => { await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
@@ -53,7 +54,7 @@ async function fixture(t) {
     for (let i = 0; i < 200; i += 1) { const seen = await character(userId); if (settled(seen)) return seen; await sleep(10); }
     throw new Error("The making did not move on.");
   };
-  return { store, plan, relationshipId, ids: { a, b, c, d, e }, directory, upload, character, file, display, advance };
+  return { store, plan, relationshipId, ids: { a, b, c, d, e }, directory, upload, character, file, display, advance, events };
 }
 
 test("the couple's character is made in the background and shown only to its two members", async (t) => {
@@ -129,4 +130,14 @@ test("hiding the character is each member's own choice", async (t) => {
   assert.equal((await character(b)).visible, true, "the partner still sees it");
   assert.equal((await display(a, true)).visible, true);
   assert.equal(await display(e, false), undefined, "someone without a partner has no character to hide");
+});
+
+test("each step of the making tells the couple's open Apps, so the partner sees the character without reloading", async (t) => {
+  const { relationshipId, ids: { a }, upload, advance, events } = await fixture(t);
+  await upload(a);
+  assert.deepEqual(events, [{ eventType: "character.updated", relationshipId, state: "cutting" }]);
+  await advance(a, (seen) => seen.making?.state === "moving");
+  await advance(a, (seen) => seen.making === null);
+  assert.deepEqual(events.map((event) => event.state), ["cutting", "moving", "done"]);
+  assert.ok(events.every((event) => event.eventType === "character.updated" && event.relationshipId === relationshipId), "only this couple is told");
 });
