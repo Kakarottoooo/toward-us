@@ -123,17 +123,28 @@ test("concurrent completion and reviews are idempotent and cannot cross relation
 test("discussion drafts are editable, never approve themselves, and changed agreements reject stale approval", async () => {
   const { a, b, issue, agreement } = await activate(await agreementFixture());
   for (const text of ["month", "AI unavailable"]) await store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: issue.relationshipId, userId: a.user.id, visibility: "jointly_confirmed", aiAccessScope: "joint", text, memberUserIds: [a.user.id, b.user.id], approvals: [a, b].map(actor => ({ userId: actor.user.id, version: 1 })) }));
+  // No model: Pinky says so and drafts nothing; the person's raw words never become terms.
   const { issue: discussed } = await call(`/issues/${issue.id}/messages`, a, { text: "Please change visits to once a month", language: "en", itemId: "same-turn" });
-  assert.equal(discussed.discussionDraft.sourceRefs.length, 4, "Two summaries and two current memory grants are pinned to the draft");
+  assert.equal(discussed.discussionDraft, undefined);
+  assert.equal(discussed.discussion.at(-1).source, "local");
+  assert.match(discussed.discussion.at(-1).text, /AI is unavailable right now\. Nothing was drafted/);
   const unchanged = (await call(`/issues/${issue.id}`, b)).agreements[0];
   assert.equal(unchanged.version, agreement.version);
   assert.equal(unchanged.status, "active");
-  assert.equal(discussed.discussionDraft.source, "local");
-  assert.match(discussed.discussion.at(-1).text, /AI is unavailable/);
   assert.equal(JSON.stringify(discussed.discussion).includes("NEVER_SHARE_"), false);
   const repeat = await call(`/issues/${issue.id}/transcripts`, a, { text: "Please change visits to once a month", itemId: "same-turn" });
   assert.equal(repeat.issue.version, discussed.version);
-  const body = { version: discussed.version, draftId: discussed.discussionDraft.id, confirmed: true, title: "Monthly visits", summary: "Try once per month", terms: ["First Sunday of each month, for one hour"], unresolvedPoints: ["Choose a location together"] };
+  // With the model, the draft is pinned to what it read and stays editable.
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: a.user }; next(); });
+  app.use(createRelationshipRouter({ store, mediator, decisionAgent: { async discuss() { return { source: "openai", reply: "Here is a draft to review.", draft: { title: "Monthly visits", summary: "Once a month", terms: ["Visit once a month"], unresolvedPoints: [] } }; } } }));
+  const isolated = app.listen(0, "127.0.0.1"); await new Promise(resolve => isolated.once("listening", resolve));
+  const drafted = await fetch(`http://127.0.0.1:${isolated.address().port}/issues/${issue.id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "Please change visits to once a month", language: "en" }) }).then((response) => response.json());
+  await new Promise(resolve => isolated.close(resolve));
+  const prepared = drafted.issue;
+  assert.equal(prepared.discussionDraft.sourceRefs.length, 4, "Two summaries and two current memory grants are pinned to the draft");
+  assert.equal(prepared.discussionDraft.source, "openai");
+  assert.equal((await call(`/issues/${issue.id}`, b)).agreements[0].version, agreement.version, "a draft changes nothing by itself");
+  const body = { version: prepared.version, draftId: prepared.discussionDraft.id, confirmed: true, title: "Monthly visits", summary: "Try once per month", terms: ["First Sunday of each month, for one hour"], unresolvedPoints: ["Choose a location together"] };
   const { agreement: revised } = await call(`/issues/${issue.id}/discussion-draft/confirm`, a, body);
   assert.equal(revised.status, "awaiting_approvals");
   assert.equal(revised.version, agreement.version + 1);
@@ -202,6 +213,19 @@ test("model output stays a draft and Responses explicitly disables provider stat
   assert.equal(result.source, "openai");
   assert.equal(result.draft.status, undefined);
   assert.equal(result.draft.approvals, undefined);
+});
+
+test("a discussion turn waits at most 45 s without retries, and a failed model drafts nothing from the raw words", async () => {
+  let options;
+  const agent = createDecisionAgent({ client: { responses: { async create(_request, requestOptions) { options = requestOptions; throw new Error("timed out"); } } } });
+  const context = { issue: { title: "Visits" }, confirmedSummaries: [], agreement: { title: "Visits", summary: "Weekly", terms: ["Every Sunday"], unresolvedPoints: [] }, messages: [{ role: "user", text: "RAW_WORDS make it monthly" }] };
+  const result = await agent.discuss(context, "zh");
+  assert.deepEqual(options, { timeout: 45_000, maxRetries: 0 });
+  assert.equal(result.source, "local");
+  assert.equal(result.draft, null);
+  assert.match(result.reply, /AI 暂时不可用，这次没有起草任何内容/);
+  assert.equal(JSON.stringify(result).includes("RAW_WORDS"), false);
+  assert.equal((await createDecisionAgent({ client: null }).discuss(context, "es")).draft, null);
 });
 
 test("concurrent voice turns preserve both people's words and deduplicate retransmission", async () => {

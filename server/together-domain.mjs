@@ -39,9 +39,22 @@ export function writtenLanguage(texts, fallback) {
   return recent === undefined ? fallback : coupleLanguage([recent], fallback);
 }
 
-export function shouldAgentSpeak(message, { agentLastMessageId = null } = {}) {
+// Pinky's check-in on an agreement ("这周做到了吗？回复我说说看") asks both of them. For a while after it, each member's first
+// message in Us is their answer to it, so a plain reply reaches Pinky without @-mentioning it; after that, Pinky waits to be
+// called again. Only Pinky's own agreement check-ins open such a window; outcome reviews are answered privately.
+const CHECK_IN_REPLY_MS = 12 * 3_600_000;
+const isCheckIn = (item) => item?.role === "agent" && item.kind === "review" && (item.refs || []).some((ref) => ref.type === "agreement");
+/** The check-in a member's next message answers: the latest one, asked within the window, that they have not written after. */
+export function openCheckIn(messages, actorUserId, now = Date.now()) {
+  const index = messages.findLastIndex(isCheckIn);
+  if (index < 0 || !actorUserId || now - Date.parse(messages[index].createdAt) > CHECK_IN_REPLY_MS) return null;
+  return messages.slice(index + 1).some((item) => item.role === "member" && item.actorUserId === actorUserId) ? null : messages[index];
+}
+
+/** `repliedTo` is the message `message.replyTo` points at: Pinky answers a reply to its last message or to a check-in. */
+export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null } = {}) {
   if (!message || message.role !== "member") return false;
-  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId);
+  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo));
 }
 
 /** Reads only the shared conversation, shared agreements/commitments and jointly approved memories. Never private threads,
@@ -88,7 +101,8 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null }) {
+// `answersCheckIn`: a member's turn without a `replyTo` of its own answers an open check-in (see openCheckIn).
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, answersCheckIn = false }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -96,9 +110,10 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   const key = clean(handle, 200) || null;
   const duplicate = key && conversation.messages.find((item) => item.handle === key);
   if (duplicate) return { conversation, message: duplicate, duplicate: true };
+  const repliesTo = replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : answersCheckIn && actorUserId ? openCheckIn(conversation.messages, actorUserId)?.id || null : null;
   const message = {
     id: randomUUID(), role: actorUserId ? "member" : "agent", actorUserId: actorUserId || null, source, kind, text: body,
-    refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : null, createdAt: new Date().toISOString(),
+    refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: repliesTo, createdAt: new Date().toISOString(),
     ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
     ...(photoIds.length ? { photoIds: photoIds.slice(0, 6) } : {}),
     ...(recordedByUserId && recordedByUserId !== actorUserId ? { recordedByUserId } : {}),
@@ -181,13 +196,14 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
     return action(tx);
   });
-  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId }));
+  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, answersCheckIn: true }));
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
   const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;
   const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
   if (!saved.duplicate) emit(saved.conversation);
-  if (!shouldAgentSpeak(message, { agentLastMessageId }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  const repliedTo = message.replyTo ? messages.find((item) => item.id === message.replyTo) || null : null;
+  if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
   progress("thinking");
   // Pinky answers in the language the couple writes in Us, whatever interface language the device that sent this is set to.
@@ -198,7 +214,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const built = buildTogetherContext(await store.relationshipSnapshotForUser(actorUserId), relationshipId, { userId: actorUserId, query: message.text });
   // Each line says who wrote it, so the Agent answers the right person by name.
   const name = (id) => members.find((member) => member.id === id)?.name || "";
-  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })) };
+  // Each open commitment says whose it is, so an answer to a check-in is recorded against the writer's own part only.
+  const owner = (ownerType) => ownerType === "both" ? "both" : (membership?.members || []).find((member) => ownerType === `member_${String(member.role).toLowerCase()}`)?.user?.name || "";
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })) };
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
@@ -291,6 +309,28 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
         });
         asked.push({ id: updated.id, version: updated.version, ownerUserId: member.userId, relationshipId });
       }
+      continue;
+    }
+    if (action.kind === "commitment") {
+      // An answer to a check-in records the writer's own part only, never their partner's: each principal speaks for themselves.
+      const current = await tx.getRelationshipRecordForUser("commitments", action.targetId || "", userId);
+      if (!current || current.relationshipId !== relationshipId || current.visibility !== "shared" || current.archivedAt || !OPEN_COMMITMENTS.has(current.status) || typeof action.done !== "boolean") throw decisionError(404, "not_found");
+      const members = (await tx.getRelationshipContext(userId))?.members || [];
+      const responsible = members.filter((member) => current.ownerType === "both" || current.ownerType === `member_${String(member.role).toLowerCase()}`).map((member) => member.userId);
+      if (!responsible.includes(userId)) throw decisionError(403, "responsible_only");
+      const at = new Date().toISOString(), note = clean(action.text, 800);
+      const record = await tx.updateRelationshipRecordForUser("commitments", current.id, userId, (draft) => {
+        draft.checkIns = [...(draft.checkIns || []), { userId, kept: action.done, note, at }].slice(-20);
+        // A one-off commitment the writer kept is done for them (done for good once everyone responsible kept it); a standing
+        // rule without a due date ("every Wednesday") stays in force and only keeps the check-in.
+        if (action.done && draft.dueAt && draft.status === "active" && !(draft.completedBy || []).includes(userId)) {
+          draft.completedBy = [...(draft.completedBy || []), userId];
+          draft.completionEvidenceByUser = { ...(draft.completionEvidenceByUser || {}), [userId]: note };
+          if (responsible.every((id) => draft.completedBy.includes(id))) { draft.status = "completed"; draft.completedAt = at; }
+        }
+      });
+      await audit(tx, record, userId, action.done ? "commitment.check_in_kept" : "commitment.check_in_missed");
+      refs.push({ type: "commitment", id: record.id, version: record.version, title: record.description });
       continue;
     }
     if (action.kind === "milestone") {

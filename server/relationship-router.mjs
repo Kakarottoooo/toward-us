@@ -389,12 +389,16 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       if (JSON.stringify(fresh.confirmedSummaries) !== JSON.stringify(context.confirmedSummaries) || JSON.stringify(fresh.authorizedMemories) !== JSON.stringify(context.authorizedMemories) || JSON.stringify(fresh.agreement) !== JSON.stringify(context.agreement)) {
         return tx.updateRelationshipRecordForUser("issues", issue.id, userId, (draft) => { draft.discussion = [...draft.discussion, { id: randomUUID(), role: "assistant", source: "local", text: DECISION_ERRORS.context_changed[language === "en" ? 1 : language === "es" ? 2 : 0], createdAt: new Date().toISOString() }]; draft.version += 1; });
       }
-      const draft = { ...result.draft, id: randomUUID(), agreementId: context.agreement?.id || null, agreementVersion: context.agreement?.version || null, source: result.source, createdAt: new Date().toISOString(), confirmedAt: null, sourceRefs: [...context.confirmedSummaries, ...context.authorizedMemories].map((summary) => ({ id: summary.id, version: summary.version })) };
+      const sourceRefs = [...context.confirmedSummaries, ...context.authorizedMemories].map((summary) => ({ id: summary.id, version: summary.version }));
+      // No draft when the model was unavailable: the reply says so, and any earlier draft stays as it was.
+      const draft = result.draft ? { ...result.draft, id: randomUUID(), agreementId: context.agreement?.id || null, agreementVersion: context.agreement?.version || null, source: result.source, createdAt: new Date().toISOString(), confirmedAt: null, sourceRefs } : null;
       const record = await tx.updateRelationshipRecordForUser("issues", issue.id, userId, (next) => {
-        next.discussion = [...(next.discussion || []), { id: randomUUID(), role: "assistant", text: result.reply, source: result.source, createdAt: new Date().toISOString(), sourceRefs: draft.sourceRefs, draftId: draft.id }].slice(-80);
-        next.discussionDraft = draft; next.discussionLanguage = language; next.version += 1;
+        next.discussion = [...(next.discussion || []), { id: randomUUID(), role: "assistant", text: result.reply, source: result.source, createdAt: new Date().toISOString(), sourceRefs, draftId: draft?.id || null }].slice(-80);
+        if (draft) next.discussionDraft = draft;
+        next.discussionLanguage = language; next.version += 1;
       });
-      await audit(tx, record, userId, "issue.discussion_draft_prepared"); return record;
+      if (draft) await audit(tx, record, userId, "issue.discussion_draft_prepared");
+      return record;
     });
     emit(updated, "issue.updated"); res.json({ issue: projectRecord(updated, userId) });
   }

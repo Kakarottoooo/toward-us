@@ -58,7 +58,13 @@ test("two people can report a worse attempt, keep one review private and approve
   await discussion.getByPlaceholder("For example: This was exhausting. Could we try once a month?").fill("Could we try once a month instead? Keep each visit to one hour.");
   await discussion.getByRole("button", { name: "Send to shared conversation", exact: true }).click();
   await expect(discussion.getByText("Local draft (AI unavailable)", { exact: true })).toBeVisible();
-  const editor = discussion.locator(".decision-editor");
+  // Without the model nothing is drafted from the raw words: the two revise the terms themselves.
+  await expect(discussion.getByText(/AI is unavailable right now\. Nothing was drafted/)).toBeVisible();
+  await expect(discussion.locator(".decision-draft")).toHaveCount(0);
+  const agreementCard = pageA.locator(".decision-agreement");
+  await agreementCard.getByText("Revise, reject or withdraw acceptance").click();
+  await agreementCard.getByRole("button", { name: "Edit terms", exact: true }).click();
+  const editor = agreementCard.locator(".decision-editor");
   await editor.getByRole("textbox", { name: "Agreement title", exact: true }).fill("Monthly visit");
   await editor.getByRole("textbox", { name: "Shared summary", exact: true }).fill("Try one hour once per month");
   await editor.getByRole("textbox", { name: "Concrete terms (one per line)", exact: true }).fill("First Sunday of each month\nEach visit lasts at most one hour");
