@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 import { createPhoneLink, normalizePhone } from "../phone-identity.mjs";
 import { approveAgreement } from "../agreement-actions.mjs";
+import { followThroughAgreement } from "../agreement-followup.mjs";
 import { announceAgreement, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, memberLanguage } from "../together-domain.mjs";
 import { sendblue as defaultSendblue } from "../sendblue.mjs";
 import { recordUsage } from "../usage.mjs";
@@ -215,6 +216,8 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
       if (result.stale) { await deliverGroup(relationshipId, context.relationship.imessageGroupId, TEXT[language].stale(result.stale)); return "stale"; }
       emit(result.agreement, "agreement.updated"); if (result.conversation) emit(result.conversation, "together.updated", null, userId);
       void recordUsage(store, { userId, relationshipId, action: "agreement_approved", channel: "imessage" });
+      // Both approved: the commitments, reminders and check-in follow (the group sees Pinky's note through the mirror).
+      if (result.agreement.status === "active") await asAiUser({ userId, language }, () => followThroughAgreement({ store, mediator, agreementId: result.agreement.id, userId, language, emit })).catch((error) => console.error("agreement_followup_failed", error?.code || error?.message || "error"));
       return "approved";
     } catch (error) {
       // An ended relationship or a raced version stays silent: the group simply sees nothing happen.

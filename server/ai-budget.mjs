@@ -30,7 +30,7 @@ const FEATURES = {
   private_agent: "interactive", perspective_summary: "interactive", decision_options: "interactive",
   demo_analysis: "interactive", demo_answer: "interactive", transcription: "interactive", realtime_voice: "interactive",
   couple_promises: "background", daily_question: "background", daily_reaction: "background", composer_suggestions: "background",
-  couple_recap: "background", feedback_triage: "background",
+  couple_recap: "background", feedback_triage: "background", agreement_commitments: "background",
   chat_history_part: "chat_import", chat_history_report: "chat_import", chat_screenshots: "chat_import",
 };
 export const featureKind = (feature) => FEATURES[feature] || "interactive";

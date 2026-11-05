@@ -30,7 +30,7 @@ type Session = { id: string; language: Language; timezone: string; version: numb
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string };
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
-type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
+type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
 const AGENT_CALL = /\bpinky\b|@agent/i;
@@ -47,6 +47,12 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [session, setSession] = useState<Session | null>(null);
   const [together, setTogether] = useState<Together | null>(null);
   const [approved, setApproved] = useState<string[]>([]);
+  // Pages of earlier Us messages the member asked for, kept apart from the live working set. `anchor` is the working set's
+  // first message when the first page was fetched: if the working set moves on (older lines archived), the pages are dropped
+  // rather than shown with a gap.
+  const [older, setOlder] = useState<{ anchor: string; messages: SharedMessage[]; more: boolean } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderRef = useRef<HTMLDivElement>(null);
   // A page can hand a starting sentence back ("Add to …: "); it lands in that channel's box once, then leaves the URL.
   const [drafts, setDrafts] = useState<Record<Channel, string>>(() => { const params = new URLSearchParams(location.search); const say = (params.get("say") || "").slice(0, 300); return { me: params.get("channel") !== "us" ? say : "", us: params.get("channel") === "us" ? say : "" }; });
   const [askAgent, setAskAgent] = useState(false);
@@ -121,6 +127,20 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
       }
     } catch (error) { setNotice(errorText(error as ApiError)); }
   }, [paired, language, user.id]);
+  const firstUsId = together?.conversation.messages[0]?.id;
+  useEffect(() => { if (older && older.anchor !== firstUsId) setOlder(null); }, [firstUsId]);
+  // After a page lands above, keep the line the member was looking at where it was instead of jumping to the top.
+  useEffect(() => { if (older) olderRef.current?.scrollIntoView({ block: "start" }); }, [older?.messages.length]);
+  // "更早的消息": the server keeps everything that moved out of the working set; each tap brings the previous page in.
+  const loadOlder = async () => {
+    const before = (older?.messages[0] || together?.conversation.messages[0])?.id;
+    if (!before || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await relationshipApi<{ messages: SharedMessage[]; more: boolean }>(`/api/together/history?before=${encodeURIComponent(before)}&limit=50`);
+      setOlder((current) => ({ anchor: current?.anchor || firstUsId || "", messages: [...page.messages, ...(current?.messages || [])], more: page.more }));
+    } catch (error) { setNotice(errorText(error as ApiError)); } finally { setLoadingOlder(false); }
+  };
 
   useEffect(() => { void ensureSession(false).catch(() => {}); }, [user.id]);
   useEffect(() => { void loadTogether(); }, [loadTogether]);
@@ -460,7 +480,9 @@ ${text}` : text, target);
   const privateMessages = session?.messages || [];
   // An import is reported twice (received, then read); its live card shows only on the latest of those messages.
   const importAt = new Map(privateMessages.flatMap((message, index) => (message.cards || []).filter((card) => card.kind === "chat_import").map((card) => [card.id, index] as const)));
-  const sharedMessages = together?.conversation.messages || [];
+  // Earlier pages sit above the live working set; one list keeps the group-chat run detection working across the seam.
+  const olderMessages = older?.messages || [], sharedMessages = [...olderMessages, ...(together?.conversation.messages || [])];
+  const hasOlder = Boolean(paired && together) && (older ? older.more : (together?.conversation.archived?.messages || 0) > 0);
   const lastSeen = channel === "me" ? privateMessages.at(-1)?.id || "" : sharedMessages.at(-1)?.id || "";
   const lastAt = Date.parse((channel === "me" ? privateMessages.at(-1)?.createdAt : sharedMessages.at(-1)?.createdAt) || "") || 0;
   const QUIET = 4 * 3_600_000;
@@ -501,7 +523,9 @@ ${text}` : text, target);
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
       {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
-        !paired ? invite : <>{!sharedMessages.length && usEmpty}{sharedMessages.map(sharedMessage)}
+        !paired ? invite : <>{!sharedMessages.length && usEmpty}
+          {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()} data-testid="earlier-messages">{loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
+          {sharedMessages.slice(0, olderMessages.length).map(sharedMessage)}<div ref={olderRef} className="conversation-seam" aria-hidden="true" />{sharedMessages.slice(olderMessages.length).map((message, index) => sharedMessage(message, index + olderMessages.length))}
           {draftCard && <article className="conversation-card draft-card" data-testid="agreement-draft"><header><ChatCircleDots size={16} />{t("Pinky 起草的约定", "Agreement drafted by Pinky", "Acuerdo redactado por Pinky")}</header><strong>{draftCard.title}</strong><p>{draftCard.summary}</p><ol>{draftCard.terms.map((term) => <li key={term}>{term}</li>)}</ol>{!!draftCard.unresolvedPoints?.length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{draftCard.unresolvedPoints.map((point, index) => <li key={index}>{point}</li>)}</ul></div>}<small>{t("发出后，你们俩都要批准同一版本才生效。", "Once sent, it takes effect only when both of you approve the same version.", "Una vez enviado, solo entra en vigor cuando ambos aprueben la misma versión.")}</small><div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void draftAgreement()}>{t("发给你们俩批准", "Send for both to approve", "Enviar para que ambos aprueben")}</button></div></article>}
         </>}
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}

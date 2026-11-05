@@ -49,6 +49,10 @@
 .partner-card { border-color: rgba(7,61,185,.3); }
 .agreement-card.is-live { border-color: rgba(7,61,185,.45); box-shadow: 0 6px 18px rgba(7,61,185,.08); }
 .notice-card { background: rgba(251,247,239,.7); }
+/* "更早的消息": one quiet pill at the top of Us; the seam marks where fetched pages end and the live working set begins. */
+.conversation-earlier { align-self: center; min-height: 40px; padding: 0 18px; border: 1px solid rgba(37,37,37,.14); border-radius: 999px; background: #fffdf8; color: #5d574f; font-size: 14px; font-weight: 600; cursor: pointer; }
+.conversation-earlier:disabled { opacity: .6; cursor: default; }
+.conversation-seam { height: 0; margin-top: -14px; }
 .card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .card-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 16px; border: 1px solid rgba(37,37,37,.26); border-radius: 999px; background: transparent; color: var(--jian-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
 .card-actions .card-primary { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }

@@ -3,6 +3,8 @@
 .agreements-page section { display: grid; gap: 10px; }
 .agreement-item { display: grid; gap: 10px; padding: 16px; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
 .agreement-item.is-waiting { box-shadow: inset 3px 0 0 var(--jian-blue), 0 1px 0 rgba(37,37,37,.06); }
+.agreement-item.is-changing { box-shadow: inset 3px 0 0 var(--jian-red), 0 1px 0 rgba(37,37,37,.06); }
+.agreement-item .agreement-change { padding: 10px 12px; border-radius: 10px; background: var(--jian-red-soft); color: var(--jian-ink); font-size: 15px; line-height: 1.55; }
 .agreement-item.is-past { opacity: .75; }
 .agreement-item header { display: grid; gap: 3px; }
 .agreement-item header strong { color: var(--jian-ink); font-size: 17px; font-weight: 650; line-height: 1.4; }

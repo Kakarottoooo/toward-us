@@ -60,6 +60,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     if (collection && targetId) {
       const record = await db.getRelationshipRecordForUser(collection, targetId, reminder.ownerUserId);
       if (!record || !canViewRecord(record, reminder.ownerUserId) || record.withdrawnAt || ["archived", "revoked", "withdrawn"].includes(record.status)) return false;
+      // A commitment that was completed, superseded or sent back for renegotiation no longer needs its due-date reminder.
+      if (target?.kind === "commitment" && record.status !== "active") return false;
     }
     return true;
   };
@@ -162,6 +164,23 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           text: i18n[language], i18n,
         });
         await tx.updateRelationshipRecordForUser("commitments", commitment.id, userId, (draft) => { draft.dueAnnouncedAt = iso(current); });
+        return result;
+      });
+    }
+    // An agreement's check-in ("这周做到了吗？"): when its review date comes, Pinky asks both in Us, once per approved version
+    // (agreement-followup sets `reviewAt` a week after the agreement took effect unless the two chose a date themselves).
+    for (const agreement of (await store.listRecordsForJob("agreements")).filter((item) => item.relationshipId && JOINT.has(item.visibility) && item.status === "active" && item.reviewAt && !item.reviewAnnouncedAt && !item.archivedAt && !item.withdrawnAt && new Date(item.reviewAt) <= current).slice(0, 100)) {
+      const userId = agreement.createdByUserId;
+      await post(agreement.relationshipId, userId, async (tx, language) => {
+        const fresh = await tx.getRelationshipRecordForUser("agreements", agreement.id, userId);
+        if (!fresh || fresh.status !== "active" || fresh.version !== agreement.version || fresh.reviewAnnouncedAt) return null;
+        const i18n = togetherI18n((item) => say(item, `到了约定「${fresh.title}」的复盘时间：这周做到了吗？回复我说说看。`, `Time to check in on "${fresh.title}": did you keep it this week? Reply and tell me.`, `Es hora de revisar "${fresh.title}": ¿lo cumplieron esta semana? Respóndanme y cuéntenme.`));
+        const result = await announceInTogether(tx, {
+          relationshipId: agreement.relationshipId, userId, kind: "review", handle: `agreement-review:${agreement.id}:v${fresh.version}`, refs: [{ type: "agreement", id: agreement.id, version: fresh.version }],
+          text: i18n[language], i18n,
+        });
+        // Stamped without a version bump, like the other announcements: approving or changing it must never hit stale_version.
+        await tx.updateRelationshipRecordForUser("agreements", agreement.id, userId, (draft) => { draft.reviewAnnouncedAt = iso(current); });
         return result;
       });
     }
@@ -538,7 +557,7 @@ function reminderInput(input, current) {
   if (!title) throw fail("Give this reminder a name.");
   return { title, dueAt, timezone, localTime: input.localDateTime.slice(11), frequency: input.frequency || "once" };
 }
-function targetCollection(kind) { return { issue: "issues", milestone: "milestones", outcome: "outcomes", checkin: "checkins" }[kind]; }
+function targetCollection(kind) { return { issue: "issues", milestone: "milestones", outcome: "outcomes", checkin: "checkins", commitment: "commitments" }[kind]; }
 async function validateTarget(store, userId, target) {
   if (["reminders", "plans", "checkins"].includes(target?.kind) && !target.id) return null;
   const collection = targetCollection(target?.kind);
@@ -551,7 +570,7 @@ async function validateTarget(store, userId, target) {
 function reminderText(reminder, language) { return say(language, `提醒：「${reminder.title}」`, `Reminder: "${reminder.title}"`, `Recordatorio: "${reminder.title}"`); }
 function reminderPayload(reminder, language, key) {
   const target = reminder.target;
-  const url = target?.kind === "issue" ? `/?view=decide&issue=${encodeURIComponent(target.id)}` : target?.kind === "outcome" ? `/?view=decide&outcome=${encodeURIComponent(target.id)}` : target?.kind === "milestone" || reminder.milestoneId ? `/?view=plans&milestone=${encodeURIComponent(target?.id || reminder.milestoneId)}` : target?.kind === "checkin" || target?.kind === "checkins" ? "/?view=checkins" : target?.kind === "plans" ? "/?view=plans" : `/?view=reminders&reminder=${encodeURIComponent(reminder.id)}`;
+  const url = target?.kind === "issue" ? `/?view=decide&issue=${encodeURIComponent(target.id)}` : target?.kind === "outcome" ? `/?view=decide&outcome=${encodeURIComponent(target.id)}` : target?.kind === "commitment" ? "/?view=agreements" : target?.kind === "milestone" || reminder.milestoneId ? `/?view=plans&milestone=${encodeURIComponent(target?.id || reminder.milestoneId)}` : target?.kind === "checkin" || target?.kind === "checkins" ? "/?view=checkins" : target?.kind === "plans" ? "/?view=plans" : `/?view=reminders&reminder=${encodeURIComponent(reminder.id)}`;
   return { title: "Pinky", body: language === "en" ? "You have a reminder. Open Pinky when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Pinky cuando quieras." : "你有一条提醒，方便时打开 Pinky 查看。", url, tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
 }
 
