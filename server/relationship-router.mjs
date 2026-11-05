@@ -6,6 +6,7 @@ import {
   agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
 } from "./agreement-actions.mjs";
 import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
+import { followThroughAgreement } from "./agreement-followup.mjs";
 import { recordUsage } from "./usage.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
@@ -142,7 +143,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   }));
   router.post("/agreements/:id/approve", decisionTransaction(async (tx, req, context) => {
     const { agreement, approvedCount, requiredCount } = await approveAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, context });
-    return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount }, conversation: agreement.status === "active" ? await announce(tx, agreement, req.auth.user.id, req) : null };
+    return { record: agreement, event: "agreement.updated", body: { agreement, approvedCount, requiredCount }, conversation: agreement.status === "active" ? await announce(tx, agreement, req.auth.user.id, req) : null, followUp: agreement.status === "active" ? agreement.id : null };
   }, "agreement_approved"));
   router.post("/agreements/:id/reject", decisionTransaction(async (tx, req) => {
     const { agreement } = await rejectAgreement(tx, { agreementId: req.params.id, version: req.body?.version, userId: req.auth.user.id, reason: req.body?.reason });
@@ -336,6 +337,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
       if (result.record) emit(result.record, result.event);
       if (result.conversation) emit(result.conversation, "together.updated", null, req.auth.user.id);
       if (usage && result.record) void recordUsage(store, { userId: req.auth.user.id, relationshipId: initial.relationship.id, action: usage });
+      // An agreement both approved gets its follow-through (agreement-followup decides whether it is one it handles) before the reply.
+      if (result.followUp) await followThroughAgreement({ store, mediator, agreementId: result.followUp, userId: req.auth.user.id, language: req.body?.language || req.query?.language || null, emit }).catch((error) => console.error("agreement_followup_failed", error?.code || error?.message || "error"));
       res.status(result.status || 200).json(result.body);
     };
   }

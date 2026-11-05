@@ -6,7 +6,8 @@ import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
-import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, recallOnThisDay } from "./together-domain.mjs";
+import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
+import { followThroughAgreement } from "./agreement-followup.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null, promises = null }) {
@@ -55,6 +56,14 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
   });
 
+  // "更早的消息": a page of what came before the message `before` (the oldest one the App holds), from the working set and
+  // then the archive; readable after the relationship ended, like the conversation itself.
+  router.get("/together/history", async (req, res) => {
+    const userId = req.auth.user.id, context = await pairing(req);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.limit || ""), 10) || 50));
+    res.json(await olderTogetherMessages(store, { relationshipId: context.relationship.id, userId, before: clean(String(req.query?.before || ""), 80), limit }));
+  });
+
   router.post("/together/messages", async (req, res) => {
     const userId = req.auth.user.id, text = clean(req.body?.text, 2000), itemId = clean(req.body?.itemId, 120);
     const photoIds = Array.isArray(req.body?.photoIds) ? [...new Set(req.body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
@@ -86,7 +95,9 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
   });
 
   // `announce` decides which outcomes the Agent posts as a card: the agreement becoming active, or a change request (new version).
-  const decide = (action, event, announce = () => false, usage = null) => async (req, res) => {
+  // `followUp`: an agreement both approved gets its commitments, reminders and check-in before the reply, so the page the
+  // member lands on already shows them; a failure there is logged and never undoes the approval.
+  const decide = (action, event, announce = () => false, usage = null, followUp = false) => async (req, res) => {
     const userId = req.auth.user.id;
     const { conversation, ...result } = await transaction(req, async (tx, context) => {
       const done = await action(tx, { agreementId: req.params.id, version: req.body?.version, userId, reason: req.body?.reason, context });
@@ -94,9 +105,10 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     });
     emit(result.agreement, event); if (conversation) emit(conversation, "together.updated", null, userId);
     if (usage) void recordUsage(store, { userId, relationshipId: result.agreement.relationshipId, action: usage });
+    if (followUp && result.agreement.status === "active") await followThroughAgreement({ store, mediator, agreementId: result.agreement.id, userId, language: hint(req), emit }).catch((error) => console.error("agreement_followup_failed", error?.code || error?.message || "error"));
     res.json(result);
   };
-  router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active", "agreement_approved"));
+  router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active", "agreement_approved", true));
   router.post("/together/agreements/:id/reject", decide(rejectAgreement, "agreement.rejected"));
   router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested", () => true));
 

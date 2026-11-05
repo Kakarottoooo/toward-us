@@ -24,12 +24,21 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
   };
   const groups = [
     { key: "waiting", title: t("等你们批准", "Waiting for approval", "Esperando aprobación"), items: agreements.filter((item) => item.status === "awaiting_approvals") },
+    // A version someone asked to change stays in view, with who asked and why, until a new version goes out for approval.
+    { key: "changing", title: t("有人要求修改", "Change requested", "Cambio solicitado"), items: agreements.filter((item) => item.status === "draft") },
     { key: "active", title: t("生效中", "In effect", "En vigor"), items: agreements.filter((item) => item.status === "active") },
     { key: "past", title: t("以前的", "Earlier", "Anteriores"), items: agreements.filter((item) => !["awaiting_approvals", "active", "draft"].includes(item.status)) },
   ].filter((group) => group.items.length);
   const reviews = payload.home.pending.filter((item) => item.type === "outcome_review");
-  const status = (agreement: GraphRecord) => agreement.status === "awaiting_approvals" ? (approvedByMe(agreement) ? t("你已批准，等 TA 批准", "You approved; waiting for your partner", "Ya aprobaste; esperando a tu pareja") : t("等你批准这一版", "Waiting for your approval of this version", "Espera tu aprobación de esta versión")) : agreement.status === "active" ? t("你们俩都批准了", "Both of you approved", "Los dos lo aprobaron") : agreement.status === "renegotiation_requested" ? t("有人想重新商量", "Someone asked to revisit it", "Alguien pidió revisarlo") : t("已结束", "Closed", "Cerrado");
+  const status = (agreement: GraphRecord) => agreement.status === "awaiting_approvals" ? (approvedByMe(agreement) ? t("你已批准，等 TA 批准", "You approved; waiting for your partner", "Ya aprobaste; esperando a tu pareja") : t("等你批准这一版", "Waiting for your approval of this version", "Espera tu aprobación de esta versión")) : agreement.status === "active" ? t("你们俩都批准了", "Both of you approved", "Los dos lo aprobaron") : agreement.status === "draft" ? t("等新版本：在“我们俩”里让 Pinky 重新起草，两人再批准", "Waiting for a new version: ask Pinky in Us to redraft it, then both approve", "Esperando una nueva versión: pídele a Pinky en Nosotros que lo redacte y aprueben los dos") : agreement.status === "renegotiation_requested" ? t("有人想重新商量", "Someone asked to revisit it", "Alguien pidió revisarlo") : t("已结束", "Closed", "Cerrado");
   const partnerName = payload.relationship.members.find((member) => member.id !== userId)?.name || t("TA", "Your partner", "Tu pareja");
+  // Who asked for the change and why, in their own words; the server keeps both on the shared agreement.
+  const changeNote = (agreement: GraphRecord) => {
+    if (agreement.status !== "draft") return null;
+    const who = payload.relationship.members.find((member) => member.id === agreement.changedByUserId)?.name || "", why = String(agreement.changeReason || "").trim();
+    if (!who && !why) return null;
+    return why ? t(`${who || "有人"} 想改：${why}`, `${who || "Someone"} wants a change: ${why}`, `${who || "Alguien"} quiere cambiar: ${why}`) : t(`${who} 想改这一版`, `${who} asked for a change`, `${who} pidió un cambio`);
+  };
   return <div className="agreements-page">
     {notice && <p className="space-error" role="alert">{notice}</p>}
     {/* What the two of them promised each other in conversation comes first: it is what Pinky follows up on (11-03). */}
@@ -41,6 +50,7 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
         const terms = strings(agreement.terms), open = strings(agreement.unresolvedPoints), mine = commitments.filter((item) => item.agreementId === agreement.id && !item.archivedAt);
         return <article key={agreement.id} className={`agreement-item is-${group.key}`}>
           <header><strong>{String(agreement.title || "")}</strong><small>{t(`第 ${agreement.version} 版`, `Version ${agreement.version}`, `Versión ${agreement.version}`)} · {new Date(agreement.updatedAt).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" })}</small></header>
+          {changeNote(agreement) && <p className="agreement-change" data-testid="agreement-change">{changeNote(agreement)}</p>}
           {!!agreement.summary && agreement.summary !== terms.join(" / ") && agreement.summary !== agreement.title && <p>{String(agreement.summary)}</p>}
           {!!terms.length && <ol>{terms.map((term, index) => <li key={index}>{term}</li>)}</ol>}
           {!!open.length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{open.map((point, index) => <li key={index}>{point}</li>)}</ul></div>}

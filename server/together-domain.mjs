@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
-import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { createRelationshipRecord, hideUnrevealedAnswers } from "./relationship-domain.mjs";
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
@@ -13,9 +13,13 @@ const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
 const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
-const MESSAGE_LIMIT = 200;
+// The conversation record carries at most MESSAGE_LIMIT messages (the working set every read and prompt sees). What falls off
+// the front is not lost: it moves, KEEP_AFTER_ARCHIVE at a time, into archive chunks of up to ARCHIVE_CHUNK messages each,
+// which /together/history and the daily question read on demand.
+const MESSAGE_LIMIT = 200, KEEP_AFTER_ARCHIVE = 150, ARCHIVE_CHUNK = 200;
 const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotiation_requested"]);
 const togetherId = (relationshipId) => `together:${relationshipId}`;
+const archiveId = (relationshipId, seq) => `${togetherId(relationshipId)}:archive:${seq}`;
 
 /** Which script a text clearly leans to: "zh", "latin" (English or Spanish), or null when it is too short to tell. */
 const leaning = (text) => {
@@ -102,12 +106,69 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     ...(kind === "call" && call ? { call } : {}),
     ...(kind === "story" && story ? { story } : {}),
   };
-  const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
-    draft.messages = [...(draft.messages || []), message].slice(-MESSAGE_LIMIT);
+  const appended = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
+    draft.messages = [...(draft.messages || []), message];
     if (message.role === "agent") draft.agentLastMessageId = message.id;
     draft.version += 1;
   });
+  const updated = appended.messages.length > MESSAGE_LIMIT ? await archiveOldestMessages(tx, appended, userId) : appended;
   return { conversation: updated, message, duplicate: false };
+}
+
+/** Moves the oldest messages of an over-full working set into the newest archive chunk (or a new one), in the caller's
+ * transaction, so the two writes land together. Chunks are shared records of the couple, like the conversation itself. */
+async function archiveOldestMessages(tx, conversation, userId) {
+  const { relationshipId } = conversation, moving = conversation.messages.slice(0, conversation.messages.length - KEEP_AFTER_ARCHIVE);
+  const chunks = conversation.archived?.chunks || 0;
+  const latest = chunks ? await tx.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, chunks), userId) : null;
+  let seq = chunks;
+  if (latest && latest.messages.length + moving.length <= ARCHIVE_CHUNK) {
+    await tx.updateRelationshipRecordForUser("togetherArchives", latest.id, userId, (draft) => { draft.messages = [...draft.messages, ...moving]; draft.lastAt = moving.at(-1).createdAt; });
+  } else {
+    seq += 1;
+    const chunk = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", provenanceSource: "system", conversationId: conversation.id, seq, messages: moving, firstAt: moving[0].createdAt, lastAt: moving.at(-1).createdAt });
+    chunk.id = archiveId(relationshipId, seq);
+    await tx.createRelationshipRecord("togetherArchives", chunk);
+  }
+  // Bookkeeping, no version bump: nobody's turn in Us conflicts with the archive moving underneath it.
+  return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
+    draft.messages = draft.messages.slice(moving.length);
+    draft.archived = { chunks: seq, messages: (draft.archived?.messages || 0) + moving.length };
+  });
+}
+
+/** Up to `limit` messages older than the message `before` (an id the reader already has), oldest first, with `more` when
+ * older ones remain. The working set is searched first, then each archive chunk from the newest down; a page may span
+ * several. Answers to a daily question are hidden exactly as in the live conversation. */
+export async function olderTogetherMessages(store, { relationshipId, userId, before, limit = 50 }) {
+  const conversation = await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
+  if (!conversation || !before) return { messages: [], more: false };
+  const chunks = conversation.archived?.chunks || 0, page = [];
+  let seq = chunks + 1, list = conversation.messages || [], end = list.findIndex((item) => item.id === before), found = end >= 0;
+  while (true) {
+    if (end >= 0) {
+      const take = list.slice(Math.max(0, end - (limit - page.length)), end);
+      page.unshift(...take); end -= take.length;
+      if (page.length >= limit) return { messages: hideUnrevealedAnswers({ messages: page }, userId).messages, more: end > 0 || seq > 1 };
+    }
+    if (seq <= 1) return { messages: hideUnrevealedAnswers({ messages: page }, userId).messages, more: false };
+    seq -= 1; list = (await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId))?.messages || [];
+    // Once `before` was found, every older chunk is read from its end; until then each chunk is searched for it.
+    end = found ? list.length : list.findIndex((item) => item.id === before); found = found || end >= 0;
+  }
+}
+
+/** The daily questions asked so far, oldest first: those still in the working set, then as many archive chunks back as it
+ * takes to reach `limit`, so a question is never repeated just because the conversation moved past it. */
+export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120 }) {
+  const conversation = await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
+  if (!conversation) return [];
+  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question").map((item) => item.text);
+  let found = asked(conversation.messages);
+  for (let seq = conversation.archived?.chunks || 0; seq >= 1 && found.length < limit; seq -= 1) {
+    found = [...asked((await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId))?.messages), ...found];
+  }
+  return found.slice(-limit);
 }
 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
@@ -297,24 +358,27 @@ export async function memberLanguage(tx, userId, hint = null) {
 }
 
 const CARD_COPY = {
-  zh: { title: (t, v) => `约定「${t}」v${v}`, plain: (v) => `约定 v${v}`, awaiting_approvals: "等你们两人批准同一版本", active: "已生效", draft: "有人要求修改，等待新版本", open: "待定：" },
-  en: { title: (t, v) => `Agreement "${t}" v${v}`, plain: (v) => `Agreement v${v}`, awaiting_approvals: "waiting for both of you to approve this version", active: "now active", draft: "a change was requested; waiting for a new version", open: "Still open: " },
-  es: { title: (t, v) => `Acuerdo "${t}" v${v}`, plain: (v) => `Acuerdo v${v}`, awaiting_approvals: "esperando que ambos aprueben esta versión", active: "ya está activo", draft: "se pidió un cambio; esperando una nueva versión", open: "Pendiente: " },
+  zh: { title: (t, v) => `约定「${t}」v${v}`, plain: (v) => `约定 v${v}`, awaiting_approvals: "等你们两人批准同一版本", active: "已生效", draft: "有人要求修改，等待新版本", open: "待定：", change: (who, why) => why ? `${who || "有人"} 想改：${why}` : `${who || "有人"} 想改这一版` },
+  en: { title: (t, v) => `Agreement "${t}" v${v}`, plain: (v) => `Agreement v${v}`, awaiting_approvals: "waiting for both of you to approve this version", active: "now active", draft: "a change was requested; waiting for a new version", open: "Still open: ", change: (who, why) => why ? `${who || "Someone"} wants a change: ${why}` : `${who || "Someone"} asked for a change` },
+  es: { title: (t, v) => `Acuerdo "${t}" v${v}`, plain: (v) => `Acuerdo v${v}`, awaiting_approvals: "esperando que ambos aprueben esta versión", active: "ya está activo", draft: "se pidió un cambio; esperando una nueva versión", open: "Pendiente: ", change: (who, why) => why ? `${who || "Alguien"} quiere cambiar: ${why}` : `${who || "Alguien"} pidió un cambio` },
 };
-// The status line comes first so the 4000-character message cap can only ever trim trailing terms.
-export function agreementCardText(agreement, language = "zh") {
+// The status line comes first so the 4000-character message cap can only ever trim trailing terms. A change request says
+// who asked and why (`changedBy` is that member's name) right under it, so the card never leaves the other partner guessing.
+export function agreementCardText(agreement, language = "zh", { changedBy = "" } = {}) {
   const copy = CARD_COPY[language] || CARD_COPY.zh, status = copy[agreement.status] || copy.awaiting_approvals;
   // Title and summary are dropped when they only repeat the terms, so a card never shows the same words three times.
   const terms = agreement.terms || [], heading = agreement.title && agreement.title !== terms[0] ? copy.title(agreement.title, agreement.version) : copy.plain(agreement.version);
   const summary = agreement.summary && agreement.summary !== terms.join(" / ") && agreement.summary !== agreement.title ? agreement.summary : null;
-  const lines = [`${heading}${language === "zh" ? "，" : ", "}${status}`, summary, ...terms.map((term, index) => `${index + 1}. ${term}`)];
+  const change = agreement.status === "draft" && (changedBy || agreement.changeReason) ? copy.change(changedBy, clean(agreement.changeReason, 1200)) : null;
+  const lines = [`${heading}${language === "zh" ? "，" : ", "}${status}`, change, summary, ...terms.map((term, index) => `${index + 1}. ${term}`)];
   if (agreement.unresolvedPoints?.length) lines.push(`${copy.open}${agreement.unresolvedPoints.join("; ")}`);
   return lines.filter(Boolean).join("\n");
 }
 
 /** Posts the agreement card for the agreement's current version and status (new, changed, change requested, active). */
 export async function announceAgreement(tx, { agreement, userId, language = null, source = "app" }) {
-  const i18n = togetherI18n((item) => agreementCardText(agreement, item));
+  const changedBy = agreement.status === "draft" && agreement.changedByUserId ? (await tx.getRelationshipContext(userId))?.members.find((member) => member.userId === agreement.changedByUserId)?.user?.name || "" : "";
+  const i18n = togetherI18n((item) => agreementCardText(agreement, item, { changedBy }));
   return announceInTogether(tx, {
     relationshipId: agreement.relationshipId, userId, source, kind: "agreement_card", text: i18n[await memberLanguage(tx, userId, language)], i18n,
     refs: [{ type: "agreement", id: agreement.id, version: agreement.version }], handle: `agreement:${agreement.id}:v${agreement.version}:${agreement.status}`,
