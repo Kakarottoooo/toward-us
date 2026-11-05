@@ -13,6 +13,14 @@ const FALLBACK = {
   es: ["¿Cuándo fue la última vez que te sentiste cuidado por tu pareja?", "Adivina: ¿cuál fue el momento más feliz de tu pareja esta semana?", "Si mañana estuviera libre, ¿qué te gustaría más hacer juntos?", "¿Qué pequeño hábito de tu pareja te encanta en secreto?", "¿Qué cosa reciente quieres agradecerle a tu pareja y aún no lo has hecho?", "Adivina: ¿quién quería ser tu pareja de niño?", "De todo lo que hicieron juntos este año, ¿qué te gustaría repetir?"],
 };
 const outputLanguage = (language) => language === "en" ? "English" : language === "es" ? "Spanish" : "Simplified Chinese";
+/** Both partners read the same question, so it follows the language they actually write to each other in Us; the opener's
+ * interface language only decides when their texts do not clearly lean one way (or between English and Spanish). */
+function coupleLanguage(texts, fallback) {
+  const all = texts.join(" "), han = (all.match(/\p{Script=Han}/gu) || []).length, latin = (all.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+  if (han >= 4 && han * 2 >= latin) return "zh";
+  if (fallback === "zh" && latin >= 12 && han * 4 < latin) return "en";
+  return fallback;
+}
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const questionSchema = object({ question: { type: "string" } });
 const reactionSchema = object({ reply: { type: "string" } });
@@ -56,6 +64,7 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
     const last = messages.filter((message) => message.kind === DAILY).at(-1);
     if (last && Date.now() - Date.parse(last.createdAt) < 20 * 3_600_000) return false;
     const material = questionMaterial(snapshot, relationshipId, today);
+    language = coupleLanguage(material.recentConversation, language);
     // Normally the question was made the day before, so it appears the moment Us opens.
     const prepared = snapshot.togetherConversations?.find((item) => item.relationshipId === relationshipId)?.preparedDaily;
     let question = prepared && prepared.language === language && Date.now() - Date.parse(prepared.at) < 48 * 3_600_000 && !material.previousQuestions.includes(prepared.question) ? prepared.question : "";
@@ -119,8 +128,9 @@ async function reactToAnswers({ store, mediator, relationshipId, userId, questio
   try {
     if (!mediator?.structured) return;
     const name = (id) => members.find((member) => member.userId === id)?.user?.name || "";
-    const input = JSON.stringify({ question: question.text, answers: Object.entries(question.answers).map(([id, item]) => ({ from: name(id), text: item.text })) });
-    const reply = clean((await mediator.structured({ name: "daily_reaction", schema: reactionSchema, instructions: reactionInstructions(language), input, maxOutputTokens: 300 })).reply, 600);
+    const answers = Object.entries(question.answers).map(([id, item]) => ({ from: name(id), text: item.text }));
+    const input = JSON.stringify({ question: question.text, answers });
+    const reply = clean((await mediator.structured({ name: "daily_reaction", schema: reactionSchema, instructions: reactionInstructions(coupleLanguage([question.text, ...answers.map((item) => item.text)], language)), input, maxOutputTokens: 300 })).reply, 600);
     if (!reply) return;
     const result = await store.transaction(`relationship:${relationshipId}`, (tx) => appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: reply, replyTo: question.id, handle: `daily-reaction:${question.id}` }));
     if (!result.duplicate) emit(result.conversation);

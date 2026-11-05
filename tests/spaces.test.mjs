@@ -244,6 +244,24 @@ test("weekly recap: the first open after a week ends makes one card from that we
   assert.equal((await stories()).length, 1, "one card per week, whoever opens Us");
 });
 
+test("daily question follows the language the couple writes in Us, not the opener's interface language", async (t) => {
+  const asked = {};
+  const f = await fixture(t, {
+    shared: () => ({ reply: "好的", draftAgreement: null, actions: [] }),
+    structured: ({ name, instructions }) => { asked[name] = instructions; return name === "daily_question" ? { question: "今天什么时候最想见到 TA？" } : { reply: "你们都想到了对方。" }; },
+  });
+  const [a, b] = f.ids;
+  for (const [userId, text] of [[a, "这周末要不要回我爸妈家吃饭？"], [b, "我这周有点累，想周六在家休息"]]) await f.request("/together/messages", "POST", { text, itemId: randomUUID(), language: "en" }, userId);
+  const open = async (userId) => (await f.request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation.messages;
+  let question = null;
+  for (let i = 0; i < 50 && !question; i += 1) { question = (await open(a)).find((message) => message.kind === "daily_question"); if (!question) await new Promise((r) => setTimeout(r, 40)); }
+  assert.match(asked.daily_question, /in Simplified Chinese/, "a Chinese-speaking couple gets a Chinese question even with an English interface");
+  for (const [userId, text] of [[a, "你做的早饭"], [b, "你下班前的拥抱"]]) await f.request(`/together/daily/${question.id}/answer`, "POST", { text, language: "en" }, userId);
+  let reaction = null;
+  for (let i = 0; i < 50 && !reaction; i += 1) { reaction = (await open(a)).find((message) => message.replyTo === question.id && message.role === "agent"); if (!reaction) await new Promise((r) => setTimeout(r, 40)); }
+  assert.match(asked.daily_reaction, /In Simplified Chinese/);
+});
+
 test("daily question: one a day for both; each answer stays hidden from the partner and the model until both answered", async (t) => {
   let context = null;
   const f = await fixture(t, {
