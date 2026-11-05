@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-// The two-person first run (tests/couple-onboarding.spec.ts) against a throwaway local server: its own data file under
+// Two-person runs (tests/couple-onboarding.spec.ts, tests/conversation-pages.spec.ts) against a throwaway local server: its own data file under
 // work/, no secrets file, no AI keys (Pinky answers with its fixed local copy) and the stand-in character maker, so the
 // whole path runs offline and never reaches a paid model, email, SMS or push service.
 const port = 5196;
@@ -8,7 +8,7 @@ const run = `work/couple-onboarding/${Date.now()}`;
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["**/couple-onboarding.spec.ts"],
+  testMatch: ["**/couple-onboarding.spec.ts", "**/conversation-pages.spec.ts"],
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 15_000 },

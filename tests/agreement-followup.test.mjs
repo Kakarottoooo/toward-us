@@ -9,6 +9,7 @@ import { createReminderService } from "../server/reminder-service.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { followThroughAgreement, verifyPlan } from "../server/agreement-followup.mjs";
+import { openCheckIn } from "../server/together-domain.mjs";
 
 // "说到做到" (founder, 11-01): an agreement both approve in Us turns into commitments, reminders and a check-in.
 const DAY = 86_400_000;
@@ -123,6 +124,71 @@ test("without a model every term binds both, and agreements from the full decisi
   await f.approve(formal, f.a); assert.equal((await f.approve(formal, f.b)).status, "active");
   assert.equal((await f.store.listRelationshipRecordsForUser("commitments", f.a)).length, 2, "nothing added for it");
   assert.equal((await f.store.getRelationshipRecordForUser("agreements", formal.id, f.a)).followedUp, undefined);
+});
+
+test("a plain answer to the check-in reaches Pinky, which records only the writer's own part of the commitments", async (t) => {
+  const f = await fixture(t, { structured: () => ({ commitments: [{ termIndex: 0, description: "cook dinner", by: "A", dueDate: date(3) }, { termIndex: 1, description: "walk on Wednesdays", by: "both", dueDate: "" }] }) });
+  const agreement = await f.draft({ title: "Evenings", summary: "Dinner and walks", terms: [`Alex cooks dinner on ${date(3)}`, "We walk every Wednesday"] });
+  await f.approve(agreement, f.a); await f.approve(agreement, f.b);
+  const [cook, walk] = (await f.store.listRelationshipRecordsForUser("commitments", f.a)).sort((x, y) => x.id.localeCompare(y.id));
+  f.advance(Date.now() + 7 * DAY + 60_000); await f.service.runDue();
+  const checkIn = (await f.conversation()).messages.at(-1);
+  assert.equal(checkIn.kind, "review");
+  // The model answers whoever wrote last: Alex says both are done, Blair then claims Alex's dinner for themself.
+  const seen = [];
+  f.mediator.continueTogether = async (context) => {
+    seen.push(context); const last = context.messages.at(-1);
+    if (last.text === "Yes! I cooked on time and we walked") return { reply: "Lovely, Alex. Blair, how did it go for you?", draftAgreement: null, actions: [{ kind: "commitment", operation: "update", targetId: cook.id, done: true, text: "cooked on time" }, { kind: "commitment", operation: "update", targetId: walk.id, done: true, text: "we walked" }] };
+    if (last.text === "I cooked dinner too") return { reply: "Noted.", draftAgreement: null, actions: [{ kind: "commitment", operation: "update", targetId: cook.id, done: true, text: "cooked" }] };
+    return { reply: "ok", draftAgreement: null, actions: [] };
+  };
+  const send = async (userId, text) => { const result = await f.request("/together/messages", "POST", { text, language: "en", itemId: randomUUID() }, userId); assert.equal(result.status, 201, JSON.stringify(result.body)); return result.body; };
+  // 1. Alex answers without @-mentioning Pinky: it counts as a reply to the check-in, and Pinky answers.
+  const first = await send(f.a, "Yes! I cooked on time and we walked");
+  assert.equal(first.message.replyTo, checkIn.id); assert.equal(first.reply?.replyTo, first.message.id);
+  assert.equal(seen.length, 1);
+  assert.deepEqual(seen[0].openCommitments.map((item) => [item.id, item.owner]), [[cook.id, "Alex"], [walk.id, "both"]], "the model sees whose part each commitment is");
+  const cookNow = await f.store.getRelationshipRecordForUser("commitments", cook.id, f.b), walkNow = await f.store.getRelationshipRecordForUser("commitments", walk.id, f.b);
+  assert.equal(cookNow.status, "completed", "Alex's one-off commitment is done"); assert.deepEqual(cookNow.completedBy, [f.a]);
+  assert.equal(walkNow.status, "active", "a standing rule stays in force"); assert.deepEqual(walkNow.completedBy, []);
+  assert.deepEqual(walkNow.checkIns.map((item) => [item.userId, item.kept, item.note]), [[f.a, true, "we walked"]]);
+  assert.ok(first.reply.refs.some((ref) => ref.type === "commitment" && ref.id === cook.id));
+  // 2. Blair's first message after the check-in is an answer too; trying to record Alex's part changes nothing.
+  const reopened = await f.store.updateRelationshipRecordForUser("commitments", cook.id, f.a, (draft) => { draft.status = "active"; draft.completedBy = []; });
+  const second = await send(f.b, "I cooked dinner too");
+  assert.equal(second.message.replyTo, checkIn.id); assert.equal(seen.length, 2);
+  assert.match(second.reply.text, /couldn't do that, and nothing was changed/);
+  assert.deepEqual((await f.store.getRelationshipRecordForUser("commitments", cook.id, f.a)).completedBy, reopened.completedBy);
+  // 3. After each has answered once, Pinky waits to be called again.
+  const third = await send(f.a, "see you tonight");
+  assert.equal(third.message.replyTo, null); assert.equal(third.reply, null); assert.equal(seen.length, 2);
+});
+
+test("a check-in stays open to each member's first message for twelve hours, and only agreement check-ins open it", () => {
+  const at = Date.parse("2026-11-05T10:00:00.000Z"), hour = 3_600_000;
+  const checkIn = { id: "c", role: "agent", kind: "review", refs: [{ type: "agreement", id: "x", version: 1 }], createdAt: new Date(at).toISOString() };
+  assert.equal(openCheckIn([checkIn], "a", at + 11 * hour)?.id, "c");
+  assert.equal(openCheckIn([checkIn], "a", at + 13 * hour), null, "too late");
+  assert.equal(openCheckIn([checkIn, { id: "m", role: "member", actorUserId: "a", createdAt: checkIn.createdAt }], "a", at + hour), null, "already answered");
+  assert.equal(openCheckIn([checkIn, { id: "m", role: "member", actorUserId: "b", createdAt: checkIn.createdAt }], "a", at + hour)?.id, "c", "the partner's answer leaves it open for this member");
+  assert.equal(openCheckIn([{ ...checkIn, refs: [{ type: "outcome", id: "o" }] }], "a", at + hour), null, "an outcome review is answered privately");
+});
+
+test("the note in Us names due and check-in days in the members' own time zone, not the UTC date", async (t) => {
+  const f = await fixture(t, { structured: () => ({ commitments: [{ termIndex: 0, description: "book the table", by: "A", dueDate: date(3) }] }) });
+  // Alex is in Auckland (UTC+13 in November), where 09:00 on the due day is still the previous day in UTC.
+  await f.service.updateNotify(f.a, { messages: true, timezone: "Pacific/Auckland" });
+  const agreement = await f.draft({ title: "Anniversary", summary: "Dinner out", terms: ["Alex books the table"] });
+  // A check-in the two chose themselves, at 15:00 UTC: already the next morning in Auckland.
+  const reviewAt = `${date(8)}T15:00:00.000Z`;
+  await f.store.updateRelationshipRecordForUser("agreements", agreement.id, f.a, (draft) => { draft.reviewAt = reviewAt; });
+  await f.approve(agreement, f.b); await f.approve(agreement, f.a);
+  const [commitment] = await f.store.listRelationshipRecordsForUser("commitments", f.a);
+  assert.equal(commitment.dueAt.slice(0, 10), date(2), "stored as an instant: the UTC date is a day earlier");
+  const note = (await f.conversation()).messages.at(-1);
+  assert.ok(note.i18n.en.includes(`1. Alex: book the table (by ${date(3)})`), note.i18n.en);
+  assert.ok(note.i18n.en.includes(`check in here on ${date(9)}.`), note.i18n.en);
+  assert.ok(note.i18n.zh.includes(`（${date(3)} 前）`) && note.i18n.zh.includes(`${date(9)} 我在这里问问`), note.i18n.zh);
 });
 
 test("a plan is kept only where it points at a real term, names who, and dates nothing in the past", () => {

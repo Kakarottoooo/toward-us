@@ -336,7 +336,7 @@ const togetherTurnSchema = {
     actions: { type: "array", maxItems: 6, items: { type: "object", additionalProperties: false,
       required: ["kind", "operation", "targetId", "spaceId", "title", "text", "date", "layout", "done", "recurringRule", "remindDaysBefore", "photoId", "localDateTime"],
       properties: {
-        kind: { type: "string", enum: ["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap"] }, operation: { type: "string", enum: ["create", "update", "archive"] },
+        kind: { type: "string", enum: ["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment"] }, operation: { type: "string", enum: ["create", "update", "archive"] },
         targetId: { type: ["string", "null"] }, spaceId: { type: ["string", "null"] }, title: { type: ["string", "null"] }, text: { type: ["string", "null"] },
         date: { type: ["string", "null"] }, layout: { type: ["string", "null"], enum: ["list", "checklist", "timeline", "gallery", "notes", null] },
         done: { type: ["boolean", "null"] }, recurringRule: { type: ["string", "null"], enum: ["once", "yearly", null] }, remindDaysBefore: { type: ["integer", "null"] }, photoId: { type: ["string", "null"] }, localDateTime: { type: ["string", "null"] },
@@ -347,10 +347,11 @@ const togetherTurnSchema = {
   },
 };
 
-const TOGETHER_KINDS = new Set(["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap"]), TOGETHER_OPERATIONS = new Set(["create", "update", "archive"]);
+const TOGETHER_KINDS = new Set(["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment"]), TOGETHER_OPERATIONS = new Set(["create", "update", "archive"]);
 function sanitizeTogetherActions(actions) {
   const text = (value, limit) => typeof value === "string" ? value.trim().slice(0, limit) : null;
-  const id = (value) => typeof value === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(value) ? value : null;
+  // Agreement commitments have ids like "commitment:<agreement>:v1:0".
+  const id = (value) => typeof value === "string" && /^[a-zA-Z0-9:-]{1,80}$/.test(value) ? value : null;
   return (Array.isArray(actions) ? actions : []).filter((action) => action && TOGETHER_KINDS.has(action.kind) && TOGETHER_OPERATIONS.has(action.operation)).slice(0, 6).map((action) => ({
     kind: action.kind, operation: action.operation, targetId: id(action.targetId), spaceId: id(action.spaceId), title: text(action.title, 160), text: text(action.text, 2000),
     date: typeof action.date === "string" && (action.kind === "chat_search" ? /^\d{4}-\d{2}(-\d{2})?$/ : /^\d{4}-\d{2}-\d{2}$/).test(action.date) ? action.date : null, layout: ["list", "checklist", "timeline", "gallery", "notes"].includes(action.layout) ? action.layout : null,
@@ -394,6 +395,7 @@ ${ACT_FOR_YOU}
 - mediate (operation create, no fields): when they ask you to help them work through a conflict, argument or hurt that happened in this conversation, or they want you to look at what just went wrong between them. Your reply may stay short; a separate step writes the shared reflection here and private feedback to each of them.
 - chat_search (operation create, targetId = an id from chatHistory, text = literal words to find or null, date = YYYY-MM or YYYY-MM-DD or null): chatHistory holds analyses of the couple's past chat history that BOTH of them approved putting here. Use them to help both understand their patterns, fairly and without taking sides; when they ask what exactly was said or what happened on a day, search, and you will be called again with the matching messages in context.lookups. Quote briefly.
 - The day they got together (started dating): milestone with that date, recurringRule yearly, title as they call it, and text exactly "together_since". It sets the day their "together for N days" counter starts from and replaces any earlier one; use it only for that day.
+- commitment (operation update, targetId = an id from openCommitments, done = true when the person who wrote the latest message says they kept it, false when they say they did not, text = what they said, briefly): when one of them answers your check-in on an agreement ("did you keep it this week?") or tells you how one of their commitments went. Record only the writer's own part: one action per commitment their answer covers, only where its owner is the writer or "both"; never for their partner, who answers for themselves. Reply warmly in a sentence or two without judging or scoring; if the partner has not answered yet, invite them to.
 - milestone: a shared date or anniversary (title, date YYYY-MM-DD, recurringRule yearly for anniversaries and birthdays, else once). When they want to be reminded, set remindDaysBefore (0 = on the day, 1 = the day before, 7 = a week before); you will then post the reminder here when it is due. Otherwise null.
 Act only on the latest message that called you; earlier requests were already handled. When one of them asks you to keep, add, list or remember something together, do it; when nobody asked, offer it in a sentence instead of creating it. Your reply says briefly and naturally what you did, without filler such as "nothing else changed", and never promises anything you did not do: a date without remindDaysBefore sends no reminder. Use actions:[] otherwise. Today is ${new Date().toISOString().slice(0, 10)}.`;
 }

@@ -46,6 +46,8 @@ async function planCommitments({ mediator, agreement, members, today }) {
 // 09:00 on that day in the member's time zone, the hour joint reminders use; noon UTC if the zone is unusable.
 const instantOn = (date, zone) => { try { return localDateTimeToInstant(`${date}T${LOCAL_TIME}`, zone, "forward"); } catch { return `${date}T12:00:00.000Z`; } };
 const dayBefore = (date) => new Date(Date.parse(`${date}T12:00:00Z`) - DAY).toISOString().slice(0, 10);
+// The calendar day an instant falls on in that zone: near midnight the UTC date is a day off for UTC+8 (or UTC-5).
+const localDay = (instant, zone) => { try { return new Date(instant).toLocaleDateString("en-CA", { timeZone: zone }); } catch { return new Date(instant).toISOString().slice(0, 10); } };
 
 /** A private reminder for one responsible member: the morning before the due day, or the due morning when that is already
  * past; none once the due day itself has gone. Shaped like a reminder they made themselves, delivered by reminder-service. */
@@ -57,13 +59,13 @@ function reminderFor({ member, commitment, dueDate, zone, now }) {
   return record;
 }
 
-/** Pinky's note in Us: what each of them will do, and when it will ask. Only shared material: names, terms, dates. */
-function followUpText(language, { agreement, commitments, members, reviewAt, reminded }) {
+/** Pinky's note in Us: what each of them will do, and when it will ask. Only shared material: names, terms, dates. Days are
+ * already local: `dueDays[i]` is commitment i's due day in its responsible member's zone, `reviewDay` the approver's. */
+function followUpText(language, { agreement, commitments, members, dueDays, reviewDay: day, reminded }) {
   const who = (ownerType) => ownerType === "both" ? say(language, "你们俩", "both of you", "los dos") : members.find((member) => `member_${member.role.toLowerCase()}` === ownerType)?.name || say(language, "TA", "partner", "pareja");
-  const by = (dueAt) => dueAt ? say(language, `（${dueAt.slice(0, 10)} 前）`, ` (by ${dueAt.slice(0, 10)})`, ` (antes del ${dueAt.slice(0, 10)})`) : "";
-  const lines = commitments.map((item, index) => `${index + 1}. ${who(item.ownerType)}${language === "zh" ? "：" : ": "}${item.description}${by(item.dueAt)}`);
+  const by = (day) => day ? say(language, `（${day} 前）`, ` (by ${day})`, ` (antes del ${day})`) : "";
+  const lines = commitments.map((item, index) => `${index + 1}. ${who(item.ownerType)}${language === "zh" ? "：" : ": "}${item.description}${by(dueDays[index])}`);
   const head = say(language, `约定「${agreement.title}」已生效，我记下了要做到的事：`, `"${agreement.title}" is now in effect. I noted what each of you will do:`, `"${agreement.title}" ya está en vigor. Anoté lo que hará cada uno:`);
-  const day = reviewAt.slice(0, 10);
   const tail = reminded ? say(language, `到期前一天我会单独提醒负责的人；${day} 我在这里问问做得怎么样。`, `I'll remind whoever is responsible the day before each due date, and check in here on ${day}.`, `Recordaré a quien corresponda el día antes de cada fecha, y el ${day} preguntaré aquí cómo va.`)
     : say(language, `${day} 我在这里问问做得怎么样。`, `I'll check in here on ${day} to see how it went.`, `El ${day} preguntaré aquí cómo va.`);
   return [head, ...lines, tail].join("\n");
@@ -92,7 +94,7 @@ export async function followThroughAgreement({ store, mediator, agreementId, use
     for (const old of (await tx.listRelationshipRecordsForUser("commitments", userId)).filter((item) => item.agreementId === fresh.id && item.agreementVersion !== fresh.version && !item.archivedAt && item.origin !== "conversation")) {
       await tx.updateRelationshipRecordForUser("commitments", old.id, userId, (draft) => { draft.status = "superseded"; draft.archivedAt = now.toISOString(); draft.version += 1; });
     }
-    const commitments = [], reminders = [];
+    const commitments = [], reminders = [], dueDays = [];
     for (const [index, item] of plan.commitments.entries()) {
       const responsible = members.filter((member) => item.by === "both" || member.role === item.by);
       const ownerType = item.by === "both" ? "both" : `member_${item.by.toLowerCase()}`;
@@ -101,7 +103,7 @@ export async function followThroughAgreement({ store, mediator, agreementId, use
       const record = createRelationshipRecord({ relationshipId: fresh.relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: ownerType === "both" ? "both" : "owner", status: "active", provenanceSource: "agent", agreementId: fresh.id, agreementVersion: fresh.version, ownerType, description: item.description, term: fresh.terms[item.termIndex], termIndex: item.termIndex, dueAt, reviewAt: dueAt && dueAt > reviewAt ? dueAt : reviewAt, recurrence: "none", completionEvidence: null, completedAt: null, completedBy: [], confirmedBy: responsible.map((member) => member.id), reviewRequired: true });
       record.id = `commitment:${fresh.id}:v${fresh.version}:${index}`;
       await tx.createRelationshipRecord("commitments", record); await audit(tx, record, userId, "commitment.created");
-      commitments.push(record);
+      commitments.push(record); dueDays.push(dueAt ? localDay(dueAt, zone) : "");
       if (!dueAt) continue;
       for (const member of responsible) {
         const reminder = reminderFor({ member, commitment: record, dueDate: item.dueDate, zone: zones[member.id] || zone, now });
@@ -112,7 +114,8 @@ export async function followThroughAgreement({ store, mediator, agreementId, use
     const updated = await tx.updateRelationshipRecordForUser("agreements", fresh.id, userId, (draft) => { draft.reviewAt = reviewAt; draft.followedUp = { version: fresh.version, at: now.toISOString(), source: plan.source, commitmentIds: commitments.map((item) => item.id) }; });
     let conversation = null;
     if (commitments.length) {
-      const i18n = togetherI18n((item) => followUpText(item, { agreement: updated, commitments, members, reviewAt, reminded: reminders.length > 0 }));
+      const reviewDay = localDay(reviewAt, zones[userId] || "UTC");
+      const i18n = togetherI18n((item) => followUpText(item, { agreement: updated, commitments, members, dueDays, reviewDay, reminded: reminders.length > 0 }));
       const posted = await appendTogetherMessage(tx, { relationshipId: fresh.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: i18n[await memberLanguage(tx, userId, language)], i18n, refs: [{ type: "agreement", id: fresh.id, version: fresh.version }, ...commitments.map((item) => ({ type: "commitment", id: item.id, version: item.version }))], handle: `agreement-followup:${fresh.id}:v${fresh.version}` });
       conversation = posted.duplicate ? null : posted.conversation;
     }
