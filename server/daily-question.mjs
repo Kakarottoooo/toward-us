@@ -1,4 +1,4 @@
-import { appendTogetherMessage, previousDailyQuestions } from "./together-domain.mjs";
+import { appendTogetherMessage, coupleLanguage, previousDailyQuestions } from "./together-domain.mjs";
 import { clean, decisionError } from "./agreement-actions.mjs";
 import { MOMENTS } from "./space-domain.mjs";
 
@@ -13,14 +13,6 @@ const FALLBACK = {
   es: ["¿Cuándo fue la última vez que te sentiste cuidado por tu pareja?", "Adivina: ¿cuál fue el momento más feliz de tu pareja esta semana?", "Si mañana estuviera libre, ¿qué te gustaría más hacer juntos?", "¿Qué pequeño hábito de tu pareja te encanta en secreto?", "¿Qué cosa reciente quieres agradecerle a tu pareja y aún no lo has hecho?", "Adivina: ¿quién quería ser tu pareja de niño?", "De todo lo que hicieron juntos este año, ¿qué te gustaría repetir?"],
 };
 const outputLanguage = (language) => language === "en" ? "English" : language === "es" ? "Spanish" : "Simplified Chinese";
-/** Both partners read the same question, so it follows the language they actually write to each other in Us; the opener's
- * interface language only decides when their texts do not clearly lean one way (or between English and Spanish). */
-function coupleLanguage(texts, fallback) {
-  const all = texts.join(" "), han = (all.match(/\p{Script=Han}/gu) || []).length, latin = (all.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-  if (han >= 4 && han * 2 >= latin) return "zh";
-  if (fallback === "zh" && latin >= 12 && han * 4 < latin) return "en";
-  return fallback;
-}
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const questionSchema = object({ question: { type: "string" } });
 const reactionSchema = object({ reply: { type: "string" } });

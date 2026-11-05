@@ -10,6 +10,7 @@ import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createPrivateAgentRouter } from "../server/private-agent-router.mjs";
 import { createMemoryRouter } from "../server/memory-router.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
+import { assistantInstructions } from "../server/assistant-agent.mjs";
 
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, ...patch });
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
@@ -52,6 +53,23 @@ test("spoken reminder creation, continuation and cancellation update one durable
   response = await f.turn("cancel it"); assert.equal(response.status, 200); assert.equal(response.body.session.messages.at(-1).cards[0].status, "paused");
   const saved = await f.reminderService.listReminders(f.ids[0]); assert.equal(saved.length, 1); assert.equal(saved[0].status, "paused");
   const restarted = await createFileStore(f.storePath); assert.equal((await restarted.getRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0])).messages.length, 6);
+});
+
+test("the private Pinky answers in the language the member writes in, and says plainly when the model is down", async (t) => {
+  // The session was opened from an English interface (the founder's account), but the member writes Chinese.
+  const f = await fixture(t, (context) => { if (/fail|出错/.test(context.messages.at(-1).text)) throw new Error("model down"); return { reply: "ok", actions: [] }; });
+  const language = () => f.calls.at(-1)[1];
+  assert.equal((await f.turn("帮我记一下，周五晚上八点要给妈妈打电话")).status, 200); assert.equal(language(), "zh");
+  assert.equal((await f.turn("ok")).status, 200); assert.equal(language(), "zh", "a short acknowledgement keeps the language of the last clear message");
+  assert.equal((await f.turn("Remind me on Friday at eight to call my mother")).status, 200); assert.equal(language(), "en");
+  // The hard-to-say draft for the partner follows the same language as the reply.
+  assert.match(assistantInstructions("zh"), /partner would read, written in Simplified Chinese/);
+  assert.match(assistantInstructions("es"), /Reply in Spanish\./);
+  // A failed model: a plain, current message in that language; nothing about forms that no longer exist.
+  let failed = await f.turn("fail"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky is unavailable right now. Nothing was changed; please try again later.");
+  failed = await f.turn("刚才出错了，再试一次吧"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky 暂时不可用，什么都没有改动。请稍后再试。");
+  assert.ok(!/表单|forms|formularios/.test(JSON.stringify(failed.body)));
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.length, 6, "a failed turn saves nothing");
 });
 
 test("private check-ins, memories and plan drafts use canonical records without granting AI or sharing", async (t) => {

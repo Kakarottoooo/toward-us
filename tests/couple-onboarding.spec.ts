@@ -96,7 +96,7 @@ test("a couple goes from invite to a shared conversation and character", async (
   await expect(pageB.getByRole("tab", { name: /^Us\b/ })).toHaveAttribute("aria-selected", "true");
   await sendInUs(pageB, "Write to both…", "B_SHARED_HELLO Pinky, I'm here, finally joined!");
   await expect(pageA.getByText("B_SHARED_HELLO Pinky, I'm here, finally joined!")).toBeVisible();
-  await expect(pageB.getByText("I'm here. I can only see the 1 message you shared in this conversation, 0 active agreements and 0 open commitments.", { exact: false })).toBeVisible();
+  await expect(pageB.getByText("Pinky is unavailable right now. Please try again later.", { exact: false })).toBeVisible();
   await sendInUs(pageA, "发给你们俩…", "A_SHARED_REPLY 欢迎！Pinky 你好");
   await expect(pageB.getByText("A_SHARED_REPLY 欢迎！Pinky 你好")).toBeVisible();
   await expect.poll(async () => (await getJson(a.request, "/api/together")).conversation.messages.filter((message: { role: string }) => message.role === "agent").length).toBeGreaterThan(0);

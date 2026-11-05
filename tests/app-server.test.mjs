@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
 import { createMediator, sanitizeFollowUp } from "../server/mediator.mjs";
+import { createAnthropicClient } from "../server/anthropic-client.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord, nextOccurrence, publicRelationshipEvent } from "../server/relationship-domain.mjs";
 
@@ -15,18 +16,60 @@ let store;
 let counter = 0;
 let lastDecisionContext = null;
 
-test("Pinky's fixed reply in Us counts in singular and plural in every language", async () => {
-  const saved = { AI_PROVIDER: process.env.AI_PROVIDER, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY };
-  delete process.env.AI_PROVIDER; delete process.env.ANTHROPIC_API_KEY;
-  try {
+// The provider is chosen from the environment; these tests pin it so the founder's dogfood setting cannot leak in.
+const withProvider = async (env, run) => {
+  const keys = ["AI_PROVIDER", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"], saved = Object.fromEntries(keys.map((key) => [key, process.env[key]])), realFetch = globalThis.fetch;
+  for (const key of keys) delete process.env[key];
+  Object.assign(process.env, env);
+  try { await run(); } finally { globalThis.fetch = realFetch; for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
+};
+const header = (init, name) => typeof init.headers?.get === "function" ? init.headers.get(name) : init.headers?.[name] ?? init.headers?.[name.toLowerCase()];
+
+test("without the model Pinky only says it is unavailable, in every language, and never drafts an agreement from the couple's words", async () => {
+  await withProvider({}, async () => {
     const local = createMediator({ apiKey: "" });
-    const one = { messages: [{ role: "member", text: "Pinky hi" }], activeAgreements: [{}], openCommitments: [{}] };
-    const two = { messages: [{ role: "member", text: "hi" }, { role: "member", text: "Pinky hi" }], activeAgreements: [], openCommitments: [{}, {}] };
-    assert.match((await local.continueTogether(one, "en")).i18n.en, /see the 1 message you shared in this conversation, 1 active agreement and 1 open commitment\./);
-    assert.match((await local.continueTogether(two, "en")).i18n.en, /see the 2 messages you shared in this conversation, 0 active agreements and 2 open commitments\./);
-    assert.match((await local.continueTogether(one, "es")).i18n.es, /Solo veo 1 mensaje que compartieron en esta conversación, 1 acuerdo vigente y 1 compromiso abierto\./);
-    assert.match((await local.continueTogether(two, "es")).i18n.es, /Solo veo 2 mensajes que compartieron en esta conversación, 0 acuerdos vigentes y 2 compromisos abiertos\./);
-  } finally { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    // The exact shape that once became agreement v1: a question as the title and two raw chat lines as its terms.
+    const asked = { messages: [{ role: "member", text: "周末要不要去看房？" }, { role: "member", text: "我周六要加班" }, { role: "member", text: "Pinky，帮我们定下来" }], activeAgreements: [], openCommitments: [], pendingAgreement: null };
+    const turn = await local.continueTogether(asked, "zh");
+    assert.deepEqual([turn.draftAgreement, turn.actions, turn.source], [null, [], "local"]);
+    assert.equal(turn.reply, "Pinky 暂时不可用，稍后再试。");
+    assert.deepEqual(Object.keys(turn.i18n).sort(), ["en", "es", "zh"]);
+    assert.equal((await local.continueTogether(asked, "en")).reply, turn.i18n.en);
+    assert.match((await local.continueTogether(asked, "es")).reply, /^Pinky no está disponible/);
+  });
+  // The model fails (here: the network): the same plain copy, no draft, and no silent retries that keep the couple waiting.
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    let attempts = 0;
+    globalThis.fetch = async () => { attempts += 1; throw new Error("connection reset"); };
+    const failing = createMediator({ apiKey: "test-key" });
+    const turn = await failing.continueTogether({ messages: [{ role: "member", text: "Pinky，帮我们定下来" }], activeAgreements: [], openCommitments: [], pendingAgreement: null }, "zh");
+    assert.deepEqual([turn.draftAgreement, turn.actions, turn.source, turn.reply, attempts], [null, [], "local", "Pinky 暂时不可用，稍后再试。", 1]);
+    await assert.rejects(failing.planAssistantTurn({ messages: [] }, "en"), /Connection error/i, "the private assistant reports the failure to its router, which answers with its own plain copy");
+    assert.equal(attempts, 2);
+  });
+});
+
+test("a person waits at most about 45 seconds for a reply; only background work may take minutes", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    const seen = [];
+    globalThis.fetch = async (_url, init) => {
+      seen.push(header(init, "X-Stainless-Timeout"));
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "ok", draftAgreement: null, actions: [], shared: "", feedback: [], question: "q" }) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const mediator = createMediator({ apiKey: "test-key" });
+    await mediator.planAssistantTurn({ messages: [] }, "en");
+    await mediator.continueTogether({ messages: [] }, "en");
+    await mediator.mediateTogether({ messages: [] }, [], "en");
+    await mediator.structured({ name: "daily_question", schema: { type: "object", properties: {} }, instructions: "x", input: "{}" });
+    assert.deepEqual(seen, ["45", "45", "45", "300"]);
+  });
+  // Claude through the API honours the caller's limit instead of stretching every call to a minute or more.
+  await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
+    globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true }));
+    const started = Date.now();
+    await assert.rejects(createAnthropicClient().responses.create({ model: "m", input: "hi" }, { timeout: 25, maxRetries: 0 }), /timed out/i);
+    assert.ok(Date.now() - started < 5_000, "a 25 ms limit is not rounded up to the client's minute");
+  });
 });
 
 test("shared AI follow-up is rendered as clean public prose", () => {
