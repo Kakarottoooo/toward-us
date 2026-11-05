@@ -5,7 +5,7 @@ import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
 import { handoffUrl, isCalendar } from "./handoff.mjs";
-import { appendTogetherMessage } from "./together-domain.mjs";
+import { appendTogetherMessage, writtenLanguage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
@@ -147,10 +147,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
+    // Pinky answers in the language this member writes in, not the interface language the conversation was opened with.
+    const language = writtenLanguage(context.messages.filter((item) => item.role === "user").map((item) => item.text), session.language);
+    const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan;
     progress("thinking");
-    try { plan = await mediator.planAssistantTurn(context, session.language); }
-    catch (error) { if (isAiLimit(error)) throw error; throw fail(503, say(session.language, "语音助手暂时不可用，没有执行任何操作。请稍后重试或使用原来的表单。", "The assistant is unavailable. Nothing was changed. Retry or use the existing forms.", "El asistente no está disponible. No se cambió nada. Reinténtalo o usa los formularios.")); }
+    try { plan = await mediator.planAssistantTurn(context, language); }
+    catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     plan = normalizeAssistantTurn(plan);
     if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
@@ -161,10 +164,10 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
       const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
-        : { query: action.query, findings: await mediator.lookup(action.query, session.language).catch(() => "No results: the search failed.") }));
+        : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
       progress("writing");
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, session.language)); }
-      catch (error) { if (isAiLimit(error)) throw error; throw fail(503, say(session.language, "助手暂时不可用，没有执行任何操作。请稍后重试。", "The assistant is unavailable. Nothing was changed. Try again soon.", "El asistente no está disponible. No se cambió nada. Inténtalo pronto.")); }
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
+      catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     }
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
