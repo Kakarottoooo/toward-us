@@ -12,6 +12,7 @@ import { createSpaceRouter } from "../server/space-router.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { createPhotoRouter } from "../server/photo-store.mjs";
 import { archiveSpaceRecord } from "../server/space-domain.mjs";
+import { writtenLanguage } from "../server/together-domain.mjs";
 
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, ...patch });
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
@@ -260,6 +261,24 @@ test("daily question follows the language the couple writes in Us, not the opene
   let reaction = null;
   for (let i = 0; i < 50 && !reaction; i += 1) { reaction = (await open(a)).find((message) => message.replyTo === question.id && message.role === "agent"); if (!reaction) await new Promise((r) => setTimeout(r, 40)); }
   assert.match(asked.daily_reaction, /In Simplified Chinese/);
+});
+
+test("Pinky answers in Us in the language the couple writes, not the interface language of whoever called it", async (t) => {
+  assert.deepEqual([writtenLanguage(["这周末回我爸妈家吃饭吗", "ok"], "en"), writtenLanguage(["hi"], "es"), writtenLanguage(["Let us meet at eight tonight"], "zh"), writtenLanguage([], "zh")], ["zh", "es", "en", "zh"]);
+  const replied = [], mediated = [];
+  const f = await fixture(t, {
+    shared: (context, language) => { replied.push(language); return /看看|help/.test(context.messages.at(-1).text) ? { reply: "", draftAgreement: null, actions: [together({ kind: "mediate" })] } : { reply: "好的", draftAgreement: null, actions: [] }; },
+    mediate: (_context, members, language) => { mediated.push(language); return { shared: "你们都想被听见。", feedback: members.map((member) => ({ memberId: member.id, text: "x" })) }; },
+  });
+  const [a, b] = f.ids;
+  // Both phones are set to English; the couple argues in Chinese and calls Pinky in Chinese.
+  await f.request("/together/messages", "POST", { text: "你从来不听我说话", itemId: randomUUID(), language: "en" }, b);
+  const sent = await f.request("/together/messages", "POST", { text: "Pinky，帮我们看看刚才怎么了", itemId: randomUUID(), language: "en" }, a);
+  assert.equal(sent.body.reply.text, "你们都想被听见。");
+  assert.deepEqual([replied, mediated], [["zh"], ["zh"]]);
+  // A clearly English line gets an English answer again.
+  await f.request("/together/messages", "POST", { text: "Pinky, thanks for that", itemId: randomUUID(), language: "en" }, a);
+  assert.deepEqual(replied, ["zh", "en"]);
 });
 
 test("daily question: one a day for both; each answer stays hidden from the partner and the model until both answered", async (t) => {
