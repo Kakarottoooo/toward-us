@@ -43,7 +43,7 @@ export function UpcomingPage({ language, userId = "", milestones = [], reminders
   const meetDays = meetup ? daysUntil(String(meetup.date), today) : null;
   return <div className="feature-stack">
     {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${meetDays} days to go`, `Faltan ${meetDays} días`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
-    {cycle.view && <CycleCard language={language} view={cycle.view} onChanged={cycle.reload} />}
+    {cycle.view && <CycleCard language={language} view={cycle.view} onChanged={cycle.reload} showEmpty={new URLSearchParams(location.search).get("focus") === "cycle"} />}
     {onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
     <UpcomingYear language={language} entries={entries} onAsk={onAsk} counted={meetup?.id} />
     <details className="upcoming-manage"><summary>{t("管理我的提醒和通知", "Manage my reminders and notifications", "Gestionar mis recordatorios y avisos")}</summary><RemindersPanel language={language} onChanged={onChanged} compose={false} /></details>

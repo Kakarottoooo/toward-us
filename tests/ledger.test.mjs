@@ -44,6 +44,10 @@ test("共同记账: in Us it is kept at once, from Just me only after confirming
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
   assert.equal((await ledgerContext(store, ids[0])).exists, false, "no ledger until it is needed");
+  // Opened from the drawer before any expense: made then, and the same one every time and for both.
+  const opened = (await request("/ledger", "POST", { language: "zh" })).body.id;
+  assert.equal((await request("/ledger", "POST", { language: "zh" }, ids[1])).body.id, opened);
+  assert.equal((await request("/ledger", "POST", {}, ids[2])).status, 409, "not without a partner");
 
   // Us: Mia says she paid for dinner; Pinky keeps it at once, in a ledger made on first use.
   usTurn = { reply: "记下了。", draftAgreement: null, actions: [usAction({ title: "晚饭", amount: 320, currency: "CNY", paidBy: "writer", split: "half" })] };
@@ -51,6 +55,7 @@ test("共同记账: in Us it is kept at once, from Just me only after confirming
   assert.equal(said.status, 201, JSON.stringify(said.body));
   const reply = said.body.conversation.messages.at(-1);
   const ledgerRef = reply.refs.find((ref) => ref.system === "ledger");
+  assert.equal(ledgerRef.id, opened, "expenses go into the ledger opened from the drawer");
   assert.ok(ledgerRef, "the reply links to the ledger");
   let view = (await request(`/ledger/${ledgerRef.id}`)).body.ledger;
   assert.equal(view.title, "我们的账本");

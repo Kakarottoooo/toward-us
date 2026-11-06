@@ -109,6 +109,14 @@ export async function ledgerView(db, userId, ledgerId) {
 export function createLedgerRouter({ store, emit = () => {} }) {
   const router = express.Router();
   router.use("/ledger", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  // From the drawer: the couple's ledger, made now if they have none yet, so it can be found before the first expense.
+  router.post("/ledger", async (req, res) => {
+    const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);
+    if (!activePair(context)) throw fail(409, "Connect with your partner first.");
+    const language = ["en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    const ledger = await store.transaction(`relationship:${context.relationship.id}`, (tx) => ensureLedger(tx, { userId, relationshipId: context.relationship.id, language }));
+    res.json({ id: ledger.id });
+  });
   router.get("/ledger/:id", async (req, res) => { res.json({ ledger: await ledgerView(store, req.auth.user.id, req.params.id) }); });
   router.post("/ledger/:id/settle", async (req, res) => {
     const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);

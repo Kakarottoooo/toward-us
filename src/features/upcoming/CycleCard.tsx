@@ -10,16 +10,22 @@ export const loadCycle = () => relationshipApi<CycleView>(`/api/cycle?timezone=$
 
 /** 经期 (founder 11-06) on the owner's own Coming up: where they are and the next estimate, only for them. "让 TA 知道" is their
  * choice and gives the partner nothing but "这几天多照顾你一点". For the partner, only that gentle note, when it applies. */
-export function CycleCard({ language, view, onChanged }: { language: Language; view: CycleView; onChanged: () => void }) {
+export function CycleCard({ language, view, onChanged, showEmpty = false }: { language: Language; view: CycleView; onChanged: () => void; showEmpty?: boolean }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [busy, setBusy] = useState(false), [confirming, setConfirming] = useState(""), [error, setError] = useState("");
   const partner = view.partnerName || t("TA", "your partner", "tu pareja");
   const day = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(languageTag(language), { month: "long", day: "numeric", timeZone: "UTC" });
   const run = async (action: () => Promise<unknown>) => { setBusy(true); setError(""); try { await action(); onChanged(); } catch (caught) { setError((caught as Error).message); } finally { setBusy(false); } };
   const care = view.care && <section className="cycle-care" data-testid="care-note"><Heart size={18} weight="fill" />{t(`这几天多照顾 ${view.care.name} 一点`, `Be extra caring with ${view.care.name} these days`, `Cuida un poco más a ${view.care.name} estos días`)}</section>;
-  if (!view.mine) return care || null;
+  // Opened from the drawer before anything is logged: say how to start, and start it in one tap (in Just me).
+  if (!view.mine) return showEmpty ? <>{care}<section className="cycle-card" data-testid="cycle-card" ref={(node) => node?.scrollIntoView({ block: "start" })}>
+    <small className="cycle-private"><LockKey size={13} />{t("只有你能看到", "Only you can see this", "Solo tú lo ves")}</small>
+    <strong><Drop size={20} weight="fill" />{t("经期记录", "Period tracking", "Registro del periodo")}</strong>
+    <p>{t("来了或结束的时候，在“只有我”里跟 Pinky 说一声就行（“姨妈来了”“结束了”）。记过两三次后，这里会算出下次大概几号。TA 什么都看不到，除非你自己打开“让 TA 知道”。", "When it starts or ends, just tell Pinky in Just me. After a couple of times it estimates the next one here. Your partner sees nothing unless you turn on \"let them know\".", "Cuando empiece o termine, díselo a Pinky en Solo yo. Tras un par de veces estimará el próximo aquí. Tu pareja no ve nada salvo que actives \"que lo sepa\".")}</p>
+    <span className="cycle-actions"><button type="button" className="cycle-start" onClick={() => location.assign(`/?channel=me&say=${encodeURIComponent(t("我今天来月经了", "My period started today", "Hoy me vino el periodo"))}`)} data-testid="cycle-start">{t("今天来了，记一笔", "It started today", "Hoy empezó")}</button></span>
+  </section></> : care || null;
   const { prediction, logs, sharing } = view.mine;
-  return <>{care}<section className="cycle-card" data-testid="cycle-card">
+  return <>{care}<section className="cycle-card" data-testid="cycle-card" ref={(node) => { if (showEmpty) node?.scrollIntoView({ block: "start" }); }}>
     <small className="cycle-private"><LockKey size={13} />{t("只有你能看到", "Only you can see this", "Solo tú lo ves")}</small>
     <strong><Drop size={20} weight="fill" />{prediction.inPeriod ? t(`经期第 ${prediction.inPeriod} 天`, `Day ${prediction.inPeriod} of your period`, `Día ${prediction.inPeriod} de tu periodo`) : prediction.daysUntil === 0 ? t("预计今天开始", "Expected to start today", "Se espera que empiece hoy") : t(`下次预计 ${day(prediction.nextStart)} · 还有 ${prediction.daysUntil} 天`, `Next expected ${day(prediction.nextStart)} · in ${prediction.daysUntil} days`, `Próximo previsto ${day(prediction.nextStart)} · en ${prediction.daysUntil} días`)}</strong>
     <p>{prediction.learned ? t(`按你最近 ${prediction.learned + 1} 次记录，周期约 ${prediction.cycle} 天，每次约 ${prediction.length} 天。只是估算。`, `From your last ${prediction.learned + 1} logs: about ${prediction.cycle} days apart, ${prediction.length} days long. Just an estimate.`, `Según tus últimos ${prediction.learned + 1} registros: unos ${prediction.cycle} días entre uno y otro, ${prediction.length} de duración. Es una estimación.`) : t(`先按 ${prediction.cycle} 天一个周期估算，多记几次会更准。来了或结束时跟 Pinky 说一声就行。`, `Estimated on a ${prediction.cycle}-day cycle for now; it gets better as you log. Just tell Pinky when it starts or ends.`, `Por ahora se estima un ciclo de ${prediction.cycle} días; mejora con más registros. Solo dile a Pinky cuándo empieza o termina.`)}</p>
