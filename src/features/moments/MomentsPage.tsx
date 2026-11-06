@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChatCircleDots, LockKey, MagnifyingGlass, Trash, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
+import { Carousel } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
 import { IdeasSection } from "./IdeasSection";
@@ -15,16 +16,18 @@ type Item = { id: string; title: string; text: string; date: string | null; phot
 type Album = { id: string; system?: string; visibility: string; items: Item[] };
 type Checkin = { id: string; text: string; mood?: string | null; createdAt: string; ownerUserId: string; visibility: string };
 type Filter = "all" | "us" | "me";
-type Mode = "featured" | "years" | "map" | "all";
+type Scale = "years" | "months" | "all";
 type Focus = { title: string; detail?: string; moments: Moment[] };
 
-/** Moments: the couple's memory album and each member's own. Opens on stories Pinky found, zooms by year and month, filters
- * by topic, shows a map, and keeps the full timeline one tap away. Things are added by telling Pinky. */
+/** Moments: the couple's memory album and each member's own, in three layers (founder 11-05): stories Pinky found, places
+ * (a door to the map), and by time (years, months, everything). Things are added by telling Pinky. */
 export function MomentsPage({ language, userId, paired, milestones = [], onAsk }: { language: Language; userId: string; paired: boolean; milestones?: Milestone[]; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [moments, setMoments] = useState<Moment[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [mode, setMode] = useState<Mode>("featured");
+  // How the time layer is shown; until someone picks, several years open on years and a short album on everything.
+  const [when, setWhen] = useState<Scale | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [openYear, setOpenYear] = useState("");
   const [confirming, setConfirming] = useState(""); const [error, setError] = useState("");
@@ -100,13 +103,26 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     <span className="memory-story-text"><small>{story.kind === "trip" ? t("旅行", "Trip", "Viaje") : story.kind === "holiday" ? t("每年的节日", "Every year", "Cada año") : story.kind === "anniversary" ? t("纪念日", "Special day", "Día especial") : story.kind === "first" ? t("第一次", "First time", "Primera vez") : t("年度回忆", "Year", "Año")} · {story.detail}</small><strong>{story.title}</strong></span>
   </button>;
 
+  const mapLabels = { globe: t("地球", "Globe", "Globo"), flat: t("平面", "Flat", "Plano"), loading: t("正在打开地图…", "Opening the map…", "Abriendo el mapa…"), failed: t("地图没加载出来，稍后再试。", "The map didn't load. Try again later.", "El mapa no cargó. Inténtalo más tarde.") };
+  const count = (n: number) => t(`${n} 段`, `${n} memories`, `${n} recuerdos`);
+  const openPlace = (place: Place) => go({ title: place.title, detail: count(place.moments.length), moments: place.moments });
+
   if (focus) return <div className="moments-page" data-testid="moments-focus">
-    <button type="button" className="moments-back" onClick={() => setFocus(null)}><ArrowLeft size={18} />{t("回忆", "Memories", "Recuerdos")}</button>
+    <button type="button" className="moments-back" onClick={() => setFocus(null)}><ArrowLeft size={18} />{mapOpen ? t("地图", "Map", "Mapa") : t("回忆", "Memories", "Recuerdos")}</button>
     <header className="moments-focus-head"><h2>{focus.title}</h2>{focus.detail && <small>{focus.detail}</small>}</header>
     {timeline(focus.moments)}
   </div>;
 
-  const featured: Story[] = [...stories.trips.slice(0, 4), ...stories.days, ...stories.holidays, ...years.slice(0, 2).map((year) => ({ id: `year:${year.year}`, kind: "year" as const, title: t(`我们的 ${year.year}`, `Our ${year.year}`, `Nuestro ${year.year}`), detail: t(`${year.moments.length} 段`, `${year.moments.length} memories`, `${year.moments.length} recuerdos`), moments: year.moments, cover: year.cover })), ...stories.firsts.slice(0, 4)];
+  // The map is its own page, entered from "where we've been", so the only switch on Memories is about time (founder 11-05).
+  if (mapOpen) return <div className="moments-page" data-testid="moments-map">
+    <button type="button" className="moments-back" onClick={() => setMapOpen(false)}><ArrowLeft size={18} />{t("回忆", "Memories", "Recuerdos")}</button>
+    <header className="moments-focus-head"><h2>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</h2><small>{t(`一起去过 ${places.length} 个地方`, `${places.length} places together`, `${places.length} lugares juntos`)}</small></header>
+    <Suspense fallback={<p className="moments-note">{mapLabels.loading}</p>}>
+      <MemoriesMap places={places} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} labels={mapLabels} onOpen={openPlace} />
+    </Suspense>
+  </div>;
+
+  const featured: Story[] = [...stories.trips.slice(0, 4), ...stories.days, ...stories.holidays, ...years.slice(0, 2).map((year) => ({ id: `year:${year.year}`, kind: "year" as const, title: t(`我们的 ${year.year}`, `Our ${year.year}`, `Nuestro ${year.year}`), detail: count(year.moments.length), moments: year.moments, cover: year.cover })), ...stories.firsts.slice(0, 4)];
   const topics: Array<{ id: string; label: string; moments: Moment[] }> = [
     { id: "trips", label: t("旅行", "Trips", "Viajes"), moments: [...new Set(stories.trips.flatMap((story) => story.moments))] },
     { id: "holidays", label: t("节日", "Holidays", "Fiestas"), moments: [...new Set(stories.holidays.flatMap((story) => story.moments))] },
@@ -114,54 +130,65 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     { id: "ideas", label: t("100 件小事", "100 little things", "100 cosas"), moments: all.filter((moment) => moment.idea) },
   ].filter((topic) => topic.moments.length);
   const year = years.find((item) => item.year === openYear);
-  const modes: Array<[Mode, string]> = [["featured", t("精选", "Featured", "Destacados")], ["years", t("年", "Years", "Años")], ["map", t("地图", "Map", "Mapa")], ["all", t("全部", "All", "Todo")]];
+  const scale = when || (years.length > 1 ? "years" : "all");
+  const scales: Array<[Scale, string]> = [["years", t("年", "Years", "Años")], ["months", t("月", "Months", "Meses")], ["all", t("全部", "All", "Todo")]];
+  const monthCard = (yearKey: string, month: string, list: Moment[]) => <button key={`${yearKey}-${month}`} type="button" disabled={!list.length} onClick={() => go({ title: `${yearKey} · ${monthName(month)}`, detail: count(list.length), moments: [...list].sort((a, b) => b.date.localeCompare(a.date)) })}>
+    {photo(list.find((moment) => moment.photos.length)?.photos[0] || null, "month-cover")}<span><strong>{monthName(month)}</strong>{!!list.length && <small>{list.length}</small>}</span>
+  </button>;
 
   return <div className="moments-page" data-testid="moments-page">
-    <div className="moments-modes">
-      <div className="moments-tabs" role="tablist" aria-label={t("怎么看回忆", "How to browse", "Cómo ver")}>{modes.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value} className={mode === value ? "active" : ""} onClick={() => { setMode(value); setOpenYear(""); }}>{label}</button>)}</div>
-      <button type="button" className="moments-find" onClick={find} aria-label={t("问 Pinky 找回忆", "Ask Pinky to find a memory", "Pide a Pinky un recuerdo")}><MagnifyingGlass size={18} /></button>
-    </div>
     {error && <p className="space-error" role="alert">{error}</p>}
 
-    {mode === "featured" && <>
-      {!!onThisDay.length && <button type="button" className="moments-onthisday" onClick={() => go({ title: t("往年的今天", "On this day", "Un día como hoy"), moments: onThisDay })}><small>{t("往年的今天", "On this day", "Un día como hoy")}</small>{onThisDay.slice(0, 2).map((moment) => <div key={moment.key}>{moment.photos[0] && <img loading="lazy" src={`/api/photos/${encodeURIComponent(moment.photos[0])}`} alt="" draggable={false} />}<span><strong>{moment.title || moment.text}</strong><small>{day(moment.date, true)}</small></span></div>)}</button>}
-      {!!featured.length && <section className="memory-stories" aria-label={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")}>{featured.map(card)}</section>}
-      {!!topics.length && <div className="moments-topics" role="group" aria-label={t("按主题看", "By topic", "Por tema")}>
-        {topics.map((topic) => <button key={topic.id} type="button" onClick={() => go({ title: topic.label, detail: t(`${topic.moments.length} 段`, `${topic.moments.length} memories`, `${topic.moments.length} recuerdos`), moments: [...topic.moments].sort((a, b) => b.date.localeCompare(a.date)) })}>{topic.label}</button>)}
-        {places.slice(0, 8).map((place) => <button key={`${place.title}${place.lat}`} type="button" onClick={() => go({ title: place.title, detail: t(`${place.moments.length} 段`, `${place.moments.length} memories`, `${place.moments.length} recuerdos`), moments: place.moments })}>{place.title}</button>)}
-      </div>}
-      {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
-      {paired && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />}
-      {!!visible.length && <section className="moments-recent"><h2>{t("最近", "Recent", "Recientes")}</h2></section>}
-      {!!visible.length && timeline(visible.slice(0, 5))}
-      {visible.length > 5 && <button type="button" className="moments-more" onClick={() => setMode("all")}>{t(`看全部 ${visible.length} 段`, `See all ${visible.length}`, `Ver los ${visible.length}`)}</button>}
-      {moments && !all.length && <section className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Pinky 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Pinky in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Pinky en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></section>}
-    </>}
+    {/* 1 · What Pinky found: stories to swipe through, and topics. */}
+    {(!!featured.length || !!onThisDay.length) && <section className="moments-layer">
+      <div className="moments-layer-head"><h2>{t("Pinky 找到的", "Pinky found", "Pinky encontró")}</h2><button type="button" className="moments-find" onClick={find} aria-label={t("问 Pinky 找回忆", "Ask Pinky to find a memory", "Pide a Pinky un recuerdo")}><MagnifyingGlass size={18} /></button></div>
+      <Carousel ariaLabel={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="memory-stories" contentClassName="memory-stories-track">
+        {!!onThisDay.length && <button type="button" className="memory-story is-onthisday" onClick={() => go({ title: t("往年的今天", "On this day", "Un día como hoy"), moments: onThisDay })} data-testid="story-onthisday">
+          {photo(onThisDay.find((moment) => moment.photos.length)?.photos[0] || null, "memory-story-cover")}
+          <span className="memory-story-text"><small>{t("往年的今天", "On this day", "Un día como hoy")} · {day(onThisDay[0].date, true)}</small><strong>{onThisDay[0].title || onThisDay[0].text}</strong></span>
+        </button>}
+        {featured.map(card)}
+      </Carousel>
+      {!!topics.length && <div className="moments-topics" role="group" aria-label={t("按主题看", "By topic", "Por tema")}>{topics.map((topic) => <button key={topic.id} type="button" onClick={() => go({ title: topic.label, detail: count(topic.moments.length), moments: [...topic.moments].sort((a, b) => b.date.localeCompare(a.date)) })}>{topic.label}</button>)}</div>}
+    </section>}
 
-    {mode === "years" && !year && <section className="year-grid">{years.map((item) => <button key={item.year} type="button" onClick={() => setOpenYear(item.year)} data-testid={`year-${item.year}`}>
-      {photo(item.cover, "year-cover")}
-      <span><strong>{item.year}</strong><small>{t(`${item.moments.length} 段`, `${item.moments.length} memories`, `${item.moments.length} recuerdos`)}{item.places.length ? ` · ${item.places.slice(0, 3).join(t("、", ", ", ", "))}` : ""}</small></span>
-    </button>)}</section>}
-    {mode === "years" && year && <>
-      <button type="button" className="moments-back" onClick={() => setOpenYear("")}><ArrowLeft size={18} />{t("所有年份", "All years", "Todos los años")}</button>
-      <header className="moments-focus-head"><h2>{year.year}</h2><small>{t(`${year.moments.length} 段回忆`, `${year.moments.length} memories`, `${year.moments.length} recuerdos`)}{year.places.length ? ` · ${year.places.slice(0, 5).join(t("、", ", ", ", "))}` : ""}</small></header>
-      <section className="month-grid">{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")).map((month) => {
-        const list = year.months.get(month) || [];
-        return <button key={month} type="button" disabled={!list.length} onClick={() => go({ title: `${year.year} · ${monthName(month)}`, detail: t(`${list.length} 段`, `${list.length} memories`, `${list.length} recuerdos`), moments: [...list].sort((a, b) => b.date.localeCompare(a.date)) })}>
-          {photo(list.find((moment) => moment.photos.length)?.photos[0] || null, "month-cover")}<span><strong>{monthName(month)}</strong>{!!list.length && <small>{list.length}</small>}</span>
-        </button>;
-      })}</section>
-    </>}
+    {/* 2 · Places: one door to the map, and the places they go back to. */}
+    {!!places.length && <section className="moments-layer">
+      <div className="moments-layer-head"><h2>{t("地点", "Places", "Lugares")}</h2></div>
+      <button type="button" className="moments-footprints" onClick={() => { setMapOpen(true); window.scrollTo?.({ top: 0 }); }} data-testid="open-map">
+        <span className="moments-footprints-photos" aria-hidden="true">{places.slice(0, 3).map((place) => <span key={`${place.title}${place.lat}`}>{photo(place.cover, "moments-footprints-photo")}</span>)}</span>
+        <span className="moments-footprints-text"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`去过 ${places.length} 个地方 · 打开地图`, `${places.length} places · Open the map`, `${places.length} lugares · Abrir el mapa`)}</small></span>
+      </button>
+      <div className="moments-topics" role="group" aria-label={t("常去的地方", "Places you go back to", "Lugares a los que vuelven")}>{places.slice(0, 8).map((place) => <button key={`${place.title}${place.lat}`} type="button" onClick={() => openPlace(place)}>{place.title}</button>)}</div>
+    </section>}
 
-    {mode === "map" && (places.length ? <Suspense fallback={<p className="moments-note">{t("正在打开地图…", "Opening the map…", "Abriendo el mapa…")}</p>}>
-      <MemoriesMap places={places} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} labels={{ globe: t("地球", "Globe", "Globo"), flat: t("平面", "Flat", "Plano"), loading: t("正在打开地图…", "Opening the map…", "Abriendo el mapa…"), failed: t("地图没加载出来，稍后再试。", "The map didn't load. Try again later.", "El mapa no cargó. Inténtalo más tarde.") }} onOpen={(place: Place) => go({ title: place.title, detail: t(`${place.moments.length} 段`, `${place.moments.length} memories`, `${place.moments.length} recuerdos`), moments: place.moments })} />
-      <p className="moments-note">{t(`你们一起去过 ${places.length} 个地方。点照片看那里的回忆。`, `${places.length} places you've been together. Tap a photo to see its memories.`, `${places.length} lugares donde han estado juntos. Toca una foto para ver sus recuerdos.`)}</p>
-    </Suspense> : <section className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></section>)}
+    {/* 3 · By time: the only switch on the page, and it is all time. */}
+    <section className="moments-layer">
+      <div className="moments-layer-head"><h2>{t("按时间看", "By time", "Por fecha")}</h2></div>
+      <div className="moments-tabs" role="tablist" aria-label={t("按时间看", "By time", "Por fecha")}>{scales.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={scale === value} className={scale === value ? "active" : ""} onClick={() => { setWhen(value); setOpenYear(""); }}>{label}</button>)}</div>
 
-    {mode === "all" && <>
-      {paired && <div className="moments-filter" role="group" aria-label={t("显示哪些回忆", "Which moments", "Qué recuerdos")}>{(["all", "us", "me"] as Filter[]).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? t("全部", "All", "Todos") : value === "us" ? t("我们俩的", "Ours", "Nuestros") : t("只有我", "Just me", "Solo yo")}</button>)}</div>}
-      {timeline(visible)}
-    </>}
+      {scale === "years" && !year && <div className="year-grid">{years.map((item) => <button key={item.year} type="button" onClick={() => setOpenYear(item.year)} data-testid={`year-${item.year}`}>
+        {photo(item.cover, "year-cover")}
+        <span><strong>{item.year}</strong><small>{count(item.moments.length)}{item.places.length ? ` · ${item.places.slice(0, 3).join(t("、", ", ", ", "))}` : ""}</small></span>
+      </button>)}</div>}
+      {scale === "years" && year && <>
+        <button type="button" className="moments-back" onClick={() => setOpenYear("")}><ArrowLeft size={18} />{t("所有年份", "All years", "Todos los años")}</button>
+        <header className="moments-focus-head"><h2>{year.year}</h2><small>{count(year.moments.length)}{year.places.length ? ` · ${year.places.slice(0, 5).join(t("、", ", ", ", "))}` : ""}</small></header>
+        <div className="month-grid">{Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")).map((month) => monthCard(year.year, month, year.months.get(month) || []))}</div>
+      </>}
+      {scale === "months" && years.map((item) => <div key={item.year} className="moments-months">
+        <h3>{item.year}</h3>
+        <div className="month-grid">{[...item.months.keys()].sort((a, b) => b.localeCompare(a)).map((month) => monthCard(item.year, month, item.months.get(month) || []))}</div>
+      </div>)}
+      {scale === "all" && <>
+        {paired && <div className="moments-filter" role="group" aria-label={t("显示哪些回忆", "Which moments", "Qué recuerdos")}>{(["all", "us", "me"] as Filter[]).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? t("全部", "All", "Todos") : value === "us" ? t("我们俩的", "Ours", "Nuestros") : t("只有我", "Just me", "Solo yo")}</button>)}</div>}
+        {timeline(visible)}
+      </>}
+      {moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Pinky 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Pinky in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Pinky en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
+    </section>
+
+    {paired && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />}
+    {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
     <button type="button" className="space-ask" onClick={ask}><ChatCircleDots size={20} weight="fill" />{t("跟 Pinky 说一个回忆", "Tell Pinky a memory", "Cuéntale un recuerdo a Pinky")}</button>
   </div>;
 }
