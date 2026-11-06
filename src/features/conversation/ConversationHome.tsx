@@ -191,7 +191,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.has("say") || params.has("channel")) window.history.replaceState(null, "", location.pathname);
-    if (params.has("say")) composerRef.current?.querySelector("textarea")?.focus();
+    // A prefill from another page (Memories' Add / Find) waits for a tap on a phone: focusing while the page is still
+    // changing opened the iPhone keyboard over the input (11-06). A computer with a mouse gets the cursor right away.
+    if (params.has("say") && window.matchMedia?.("(pointer: fine)").matches) composerRef.current?.querySelector("textarea")?.focus();
   }, []);
   useEffect(() => { try { localStorage.setItem(channelKey, channel); } catch { /* Channel memory is a convenience. */ } }, [channel, channelKey]);
   // When Us was last looked at on this device, so "Us" can show a dot for what the partner or Pinky said since.
