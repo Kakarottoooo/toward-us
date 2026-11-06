@@ -77,7 +77,7 @@ function addPhotos(source: (plugin: Plugin) => Promise<Asset[]>, language: Langu
     try {
       const assets = (await source(plugin)).map((asset) => ({ id: asset.id, takenAt: asset.takenAt, day: asset.day, lat: asset.lat ?? null, lon: asset.lon ?? null }));
       const locale = language === "en" ? "en_US" : language === "es" ? "es_ES" : "zh_CN";
-      for (let round = 0; round < 200; round += 1) {
+      rounds: for (let round = 0; round < 200; round += 1) {
         const plan = await json<Plan>("/api/photo-memories/plan", { assets });
         report({ made: plan.made, remaining: plan.remaining });
         if (!plan.events.length) break;
@@ -87,7 +87,8 @@ function addPhotos(source: (plugin: Plugin) => Promise<Asset[]>, language: Langu
           const photoIds: string[] = [];
           for (const id of event.assets) { try { photoIds.push(await upload((await plugin.thumbnail({ id, size: 1280 })).data)); } catch { /* A photo iCloud cannot fetch now is skipped. */ } }
           // A memory whose photos could not be fetched is left for the next run.
-          if (photoIds.length) { await json("/api/photo-memories/events", { key: event.key, day: event.day, place, photoIds, count: event.count, language }); madeThisRound += 1; report({ made: last.made + 1, remaining: Math.max(0, last.remaining - 1) }); }
+          // Paused: today's allowance for album memories is used; the rest follow on a later sync.
+          if (photoIds.length) { if ((await json<{ paused?: boolean }>("/api/photo-memories/events", { key: event.key, day: event.day, place, photoIds, count: event.count, language })).paused) break rounds; madeThisRound += 1; report({ made: last.made + 1, remaining: Math.max(0, last.remaining - 1) }); }
         }
         // Nothing could be fetched this round (offline, iCloud busy): stop instead of asking for the same memories again.
         if (!madeThisRound) break;

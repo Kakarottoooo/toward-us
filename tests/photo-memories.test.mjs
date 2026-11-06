@@ -70,6 +70,14 @@ test("the phone gets the next memories to make; each is made once, in the shared
   const after = (await (await fetch(url("/spaces"), { headers: { "x-user": ids[1] } })).json()).spaces.find((space) => space.id === album.id).items;
   assert.equal(after.filter((item) => item.photoEvent === "2023-01-01|-").length, 1);
   assert.match(told[0].text, /connected an iPhone album/);
+
+  // Out of today's allowance: nothing is made (it would keep no words forever), and the same memory is asked for next time.
+  mediator.structured = async () => { throw Object.assign(new Error("limit"), { code: "ai_daily_limit" }); };
+  const later = [photo("d", "2026-01-01", "10:00")];
+  const waiting = (await post("/photo-memories/plan", { assets: later })).body.events[0];
+  const paused = await post("/photo-memories/events", { key: waiting.key, day: waiting.day, place: "", photoIds: [await upload("shared")], language: "en" });
+  assert.deepEqual([paused.status, paused.body], [200, { paused: true }]);
+  assert.equal((await post("/photo-memories/plan", { assets: later })).body.remaining, 1);
 });
 
 test("a photo can be fetched small for bubbles and walls, made once and kept", async (t) => {

@@ -11,12 +11,13 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 // interactive: calls the person waits for (Pinky's turns, searches, voice); counted per person and per couple.
 // background: work nobody waits for (promises, daily question, suggestions, recaps, triage); one pool per couple (per person
 //   while unpaired). chat_import: one history import is up to ~61 calls on the cheaper model, so it has its own per-person pool.
-// features: extra per-person caps for single features inside their pool.
+// features: extra per-person caps for single features inside their pool. photo_memory is one call per album memory, so a big
+//   album would otherwise use the whole couple pool in a day (games, translations); the rest of the album follows tomorrow.
 // TEMPORARY (11-04): the free values are deliberately generous so live beta couples (all on free, AI_PAID_USERS unset) are
 // never cut off mid-mediation while we measure. The founder sets the real caps after 2–3 days of /api/internal/ai-usage.
 export const AI_CAPS = Object.freeze({
-  free: { person: 60, couple: 100, background: 80, chatImport: 65, features: { composer_suggestions: 15 } },
-  paid: { person: 100, couple: 160, background: 120, chatImport: 200, features: { composer_suggestions: 30 } },
+  free: { person: 60, couple: 100, background: 80, chatImport: 65, features: { composer_suggestions: 15, photo_memory: 24 } },
+  paid: { person: 100, couple: 160, background: 120, chatImport: 200, features: { composer_suggestions: 30, photo_memory: 36 } },
 });
 // Signed-out calls (the public demo room) share one in-memory allowance per server per day.
 export const ANONYMOUS_DAILY_CAP = 60;
