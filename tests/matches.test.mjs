@@ -11,7 +11,7 @@ import { fiveFrom } from "../server/matches/gomoku.mjs";
 import { drawGuess, sameWord, WORDS } from "../server/matches/draw-guess.mjs";
 import { projectGraph } from "../server/relationship-domain.mjs";
 
-async function couple(t, { online = () => false } = {}) {
+async function couple(t, { online = () => false, mediator = null } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "matches-"));
   const store = await createFileStore(join(directory, "store.json"));
@@ -22,7 +22,7 @@ async function couple(t, { online = () => false } = {}) {
   await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
   const notices = [], events = [];
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
-  app.use("/api", createMatchRouter({ store, emit: (record, type) => events.push(type), notify: async (userId, message) => { notices.push({ userId, ...message }); }, online }));
+  app.use("/api", createMatchRouter({ store, mediator, petDelay: 0, emit: (record, type) => events.push(type), notify: async (userId, message) => { notices.push({ userId, ...message }); }, online }));
   app.use("/api", createTogetherRouter({ store, mediator: {} }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
@@ -150,4 +150,73 @@ test("游戏: only the couple's own games, and unknown games are refused", async
   assert.equal((await request(`/matches/${randomUUID()}`)).status, 404);
   const stranger = await request("/matches", "GET", null, randomUUID());
   assert.equal(stranger.status, 409);
+});
+
+const until = async (check) => { for (let index = 0; index < 100; index += 1) { const value = await check(); if (value) return value; await new Promise((r) => setTimeout(r, 20)); } throw new Error("timed out"); };
+
+test("小家伙: plays gomoku back right away, only for the one playing, outside the couple's stats", async (t) => {
+  const { ids, request, notices } = await couple(t);
+  const started = await request("/matches", "POST", { game: "gomoku", with: "pet" });
+  assert.equal(started.status, 201);
+  const { match } = started.body;
+  assert.deepEqual(match.players, [ids[0], "pet"]);
+  const reply = (await request(`/matches/${match.id}/actions`, "POST", { type: "move", x: 7, y: 7 })).body.match;
+  assert.equal(reply.state.moves.length, 2, "its move comes back with mine");
+  assert.equal(reply.turn, ids[0]);
+  // Block an open three: black 7,7 7,8 7,9 → it must answer at an end.
+  await request(`/matches/${match.id}/actions`, "POST", { type: "move", x: 7, y: 8 });
+  const third = (await request(`/matches/${match.id}/actions`, "POST", { type: "move", x: 7, y: 9 })).body.match;
+  const [px, py] = third.state.moves.at(-1);
+  assert.ok(px === 7 && [6, 10, 5, 11].includes(py), `blocks the three (played ${px},${py})`);
+
+  assert.equal(notices.length, 0, "nobody is pushed");
+  const mia = (await request("/matches", "GET", null, ids[1])).body;
+  assert.equal(mia.matches.length, 0, "Mia doesn't see it");
+  assert.equal((await request(`/matches/${match.id}`, "GET", null, ids[1])).status, 404);
+  assert.equal((await request(`/matches/${match.id}/actions`, "POST", { type: "resign" }, ids[1])).status, 404);
+  const us = (await request("/together?language=zh", "GET", null, ids[1])).body.conversation;
+  assert.equal(us.messages.filter((message) => message.kind === "match_invite").length, 0, "no card in Us");
+
+  // A game with the partner is separate from the one with the pet.
+  const withMia = (await request("/matches", "POST", { game: "gomoku" })).body.match;
+  assert.notEqual(withMia.id, match.id);
+  await request(`/matches/${match.id}/actions`, "POST", { type: "resign" });
+  const hall = (await request("/matches")).body;
+  assert.equal(hall.stats.gomoku.played, 0); assert.equal(hall.petStats.gomoku.played, 1);
+  assert.equal(hall.petStats.gomoku.wins.pet, 1);
+});
+
+test("小家伙: guesses my drawing from its kind, then draws its own word for me", async (t) => {
+  const calls = [];
+  const mediator = { structured: async ({ name, input }) => {
+    calls.push(name);
+    const data = JSON.parse(input);
+    if (name === "pet_guess") { assert.ok(data.drawing.startsWith("stroke 1")); return { guesses: [data.candidates[1], data.candidates[0], "not a word"] }; }
+    if (name === "pet_draw") return { strokes: [{ color: 0, points: [100, 100, 900, 100, 900, 900] }, { color: 2, points: [500, 500, 520, 520] }] };
+    throw new Error(name);
+  } };
+  const { ids, request } = await couple(t, { mediator });
+  const { match } = (await request("/matches", "POST", { game: "draw", with: "pet", language: "zh" })).body;
+  const mine = match.state.rounds[0];
+  assert.equal(mine.drawer, ids[0]); assert.ok(mine.word.zh);
+  await request(`/matches/${match.id}/actions`, "POST", { type: "draw", strokes: [{ c: 0, w: 1, p: [10, 10, 500, 500] }], language: "zh" });
+  const after = await until(async () => { const state = (await request(`/matches/${match.id}`)).body.match; return state.turn === ids[0] ? state : null; });
+  const [guessed, drawn] = after.state.rounds.slice(-2);
+  assert.ok(guessed.guesses.length >= 1 && guessed.guesses.length <= 3);
+  assert.ok(guessed.guesses.every((item) => !item.text.includes("not a word")), "only real candidates");
+  assert.ok(["guessed", "missed"].includes(guessed.outcome));
+  assert.equal(drawn.drawer, "pet"); assert.equal(drawn.strokes.length, 2, "it drew");
+  assert.equal(drawn.word, null, "and I don't see its word");
+  assert.deepEqual(calls, ["pet_guess", "pet_draw"]);
+});
+
+test("小家伙: without a model it still guesses, and passes its turn to draw", async (t) => {
+  const { ids, request } = await couple(t, { mediator: null });
+  const { match } = (await request("/matches", "POST", { game: "draw", with: "pet" })).body;
+  await request(`/matches/${match.id}/actions`, "POST", { type: "draw", strokes: [{ c: 0, w: 1, p: [10, 10, 500, 500] }] });
+  const after = await until(async () => { const state = (await request(`/matches/${match.id}`)).body.match; return state.turn === ids[0] && state.state.rounds.length >= 3 ? state : null; });
+  const rounds = after.state.rounds;
+  assert.ok(rounds[0].guesses.length >= 1);
+  assert.equal(rounds[1].outcome, "skipped");
+  assert.equal(rounds[2].drawer, ids[0], "my turn to draw again");
 });

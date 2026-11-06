@@ -490,7 +490,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
-  app.use("/api", createMatchRouter({ store, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message), online: (userId) => relationshipRouter.isOnline?.(userId) }));
+  app.use("/api", createMatchRouter({ store, mediator, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message), online: (userId) => relationshipRouter.isOnline?.(userId) }));
   app.use("/api", createProfileRouter({ store, emit }));
   app.use("/api", createCycleRouter({ store, emit }));
   app.use("/api", createDiscoverRouter({ store }));
