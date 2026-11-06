@@ -10,7 +10,7 @@ import { announceAgreement, appendTogetherMessage, buildTogetherContext, continu
 import { followThroughAgreement } from "./agreement-followup.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
-export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null, promises = null }) {
+export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null, promises = null, profile = null }) {
   const router = express.Router();
   router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
   const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
@@ -47,7 +47,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       // partner is pushed about it.
       void askDailyQuestion({ store, mediator, relationshipId, userId, language: lang, today, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
       // Promises said in Us through iMessage or a call are noticed here, a little after Us is opened.
-      promises?.noteTogether(relationshipId, userId);
+      promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId);
     }
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);
@@ -91,7 +91,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     // Both of them see Pinky's current step while it answers in Us; it ends with the reply, or with the failure.
     const progress = activity ? activity.forCouple(relationshipId) : () => {};
     const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
-    if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); promises?.noteTogether(relationshipId, userId); }
+    if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId); }
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });
 

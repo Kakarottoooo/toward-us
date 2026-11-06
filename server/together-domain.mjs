@@ -74,6 +74,8 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
     openCommitments: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && OPEN_COMMITMENTS.has(item.status) && !item.archivedAt).map(({ id, agreementId, description, ownerType, status, dueAt }) => ({ id, agreementId, description, ownerType, status, dueAt })),
     pendingAgreement: pending ? agreement(pending) : null,
     // Promises noticed in Us that are still owed ("还欠着什么"); a member's private ones never reach the shared Agent.
+    // 喜好档案: only facts both of them can see (said together in Us, or one shared about themselves); never private notes.
+    sharedProfile: (snapshot.memories || []).filter((item) => item.kind === "profile" && item.relationshipId === relationshipId && item.visibility === "shared" && item.status === "active" && !item.archivedAt).slice(0, 80).map(({ subjectUserId, category, text }) => ({ about: subjectUserId || null, category, fact: text })),
     noticedPromises: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && item.origin === "conversation" && item.status === "noticed" && !item.archivedAt).slice(0, 20).map(({ id, description, whenText, ownerType }) => ({ id, description, when: whenText || "", ownerType })),
     authorizedMemories: userId ? buildMemoryContext(snapshot.memories || [], { userId, relationshipId, scope: "joint", query }).memories : [],
     spaces: (snapshot.spaces || []).filter((space) => space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt).slice(0, 30).map((space) => ({
@@ -217,7 +219,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const name = (id) => members.find((member) => member.id === id)?.name || "";
   // Each open commitment says whose it is, so an answer to a check-in is recorded against the writer's own part only.
   const owner = (ownerType) => ownerType === "both" ? "both" : (membership?.members || []).find((member) => ownerType === `member_${String(member.role).toLowerCase()}`)?.user?.name || "";
-  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })) };
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })) };
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);

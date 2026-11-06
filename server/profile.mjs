@@ -1,0 +1,284 @@
+import express from "express";
+import { createHash, randomUUID } from "node:crypto";
+import { createRelationshipRecord } from "./relationship-domain.mjs";
+
+// 喜好档案 (founder 11-06): Pinky's long-term memory of each partner and of the two of them: what they like and dislike,
+// what they wish for, their habits and traits, the people and days that matter. It is kept automatically from their
+// conversations (founder: "自动记，事后可见") and every fact stays visible, editable and removable. Each person's notes are
+// their own (founder: "各自私有，可挑着分享"): what Ziwei tells Pinky privately about himself or about Mia stays Ziwei's alone;
+// he may share a line about himself with Mia; what they both said in Us belongs to both. Facts live in the existing
+// memories collection (kind "profile"), so export, retention and deletion already cover them.
+export const CATEGORIES = ["food", "likes", "dislikes", "wishes", "traits", "people", "other"];
+export const PROFILE_KIND = "profile";
+const SCAN_LIMIT = 40, SCAN_CONTEXT = 6, KNOWN_LIMIT = 150, CONTEXT_LIMIT = 80;
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+const squash = (value) => String(value || "").replace(/\s+/g, " ").trim();
+const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit);
+const key = (value) => squash(value).toLowerCase().replace(/[\s。.!！,，、;；:："“”'‘’「」]/g, "");
+const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
+const schema = object({ facts: { type: "array", maxItems: 10, items: object({ messageId: { type: "string" }, quote: { type: "string" }, subject: { type: "string", enum: ["A", "B", "both"] }, category: { type: "string", enum: CATEGORIES }, fact: { type: "string" }, replaces: { type: "string" } }) } });
+const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
+export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
+const live = (record) => isProfileFact(record) && record.status === "active" && !record.archivedAt && !record.deletedAt;
+/** A fact this member may see: their own private ones, and shared ones of their current couple. */
+const visibleTo = (record, userId, relationshipId) => live(record) && (record.visibility === "private" ? record.ownerUserId === userId : Boolean(relationshipId) && record.relationshipId === relationshipId && (record.memberUserIds || []).includes(userId));
+
+function instructions({ a, b, privateChat }) {
+  return `You keep a long-term profile of two partners for Pinky, a couple's app, so Pinky understands them better over time. A is ${a || "the first partner"}, B is ${b || "the second partner"}.
+${privateChat ? "This is A's private chat with Pinky; only A's own lines count. A may tell you things about B." : "This is the couple's shared chat; Pinky's lines never count."}
+Keep lasting facts that help to know a person or the couple later. Categories: food (food and drink they love or avoid, allergies, diet); likes (hobbies, music, films, places, styles, what makes them happy); dislikes (what annoys or hurts them, sore spots, boundaries); wishes (things they want, gift ideas, places they want to go, sizes); traits (personality, habits and routines, how they like to be cared for or comforted, how they handle conflict); people (family, friends, pets, birthdays and dates that matter to them); other (work, studies, where they live, other lasting facts). For both: how the two of them work best together, their rituals and lessons ("we talk after ten quiet minutes").
+Not kept: today's mood or events, one-off plans or picks for right now, promises, jokes or sarcasm, guesses ("maybe he likes…"), facts about other people that say nothing about A or B, and anything already in known unless it changed.
+Look only at messages with isNew true; the others are context. For each fact give messageId, copied exactly from the id of the very message the quote is in; quote, copied exactly from that message's text, unchanged and contiguous (the shortest part that states the fact), never paraphrased or translated; subject, whom it is about (A, B or both); category; fact, a short phrase without the person's name, in the language of the quote ("不吃香菜", "loves rainy-day films", "生日是 3 月 5 日", "吵架后需要先安静一会儿"); replaces, the id of the fact in known that this one updates or contradicts (they started eating cilantro), else "".
+Be selective: only clear, lasting things the speaker means. Most lines hold none; then return facts: [].`;
+}
+
+/** Keeps only findings whose quote really is in a new line that counts. */
+export function verifyFacts(found, lines, counts) {
+  const kept = [];
+  for (const item of Array.isArray(found) ? found : []) {
+    const line = lines.find((entry) => entry.id === item?.messageId);
+    const quote = clean(String(item?.quote || "").replace(/^["“「'‘]+|["”」'’]+$/g, ""), 300), fact = clean(item?.fact, 160);
+    if (!line || !counts(line) || quote.length < 2 || !fact || !squash(line.text).includes(quote)) continue;
+    if (!["A", "B", "both"].includes(item.subject) || !CATEGORIES.includes(item.category)) continue;
+    kept.push({ line, quote, fact, subject: item.subject, category: item.category, replaces: clean(item.replaces, 80) });
+  }
+  return kept;
+}
+
+// The first look reads only the latest lines; after that every new line is read, a batch at a time (as promises do).
+const freshLines = (messages, cursor, eligible) => {
+  const index = cursor?.messageId ? messages.findIndex((item) => item.id === cursor.messageId) : -1;
+  const after = index >= 0 ? messages.slice(index + 1) : cursor?.at ? messages.filter((item) => item.createdAt > cursor.at) : messages;
+  const pending = after.filter(eligible);
+  const more = Boolean(cursor) && pending.length > SCAN_LIMIT;
+  const fresh = cursor ? pending.slice(0, SCAN_LIMIT) : pending.slice(-SCAN_LIMIT);
+  const start = fresh.length ? messages.indexOf(fresh[0]) : -1;
+  return { fresh, more, last: more ? fresh.at(-1) : messages.at(-1), before: start > 0 ? messages.slice(Math.max(0, start - SCAN_CONTEXT), start).filter((item) => item.text) : [] };
+};
+
+/** Writes verified facts in one scope (a member's private notes, or the couple's shared ones). Returns what changed. */
+async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, memberUserIds, subjectOf, findings, channel, sessionId = null }) {
+  const scoped = (await tx.listRelationshipRecordsForUser("memories", userId)).filter((item) => live(item) && item.relationshipId === relationshipId && item.visibility === visibility && (visibility === "shared" || item.ownerUserId === ownerUserId));
+  const changed = [];
+  for (const found of findings) {
+    const subjectUserId = subjectOf(found.subject);
+    const evidence = { channel, ...(sessionId ? { sessionId } : {}), messageId: found.line.id, quote: found.quote, saidAt: found.line.createdAt };
+    const target = found.replaces && scoped.find((item) => item.id === found.replaces);
+    if (target) {
+      if (key(target.text) === key(found.fact)) continue;
+      const updated = await tx.updateRelationshipRecordForUser("memories", target.id, userId, (draft) => { draft.text = found.fact; draft.category = found.category; draft.evidence = evidence; draft.previousText = target.text; draft.version += 1; draft.updatedAt = new Date().toISOString(); });
+      if (updated) { Object.assign(target, updated); changed.push(updated); }
+      continue;
+    }
+    if (scoped.some((item) => (item.subjectUserId || null) === subjectUserId && key(item.text) === key(found.fact))) continue;
+    const speaker = visibility === "shared" ? found.line.actorUserId : ownerUserId;
+    const record = createRelationshipRecord({
+      relationshipId, userId: speaker, ownerUserId: speaker, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", status: "active", provenanceSource: "agent",
+      kind: PROFILE_KIND, subjectUserId, category: found.category, text: found.fact, evidence, approvals: [], ...(memberUserIds ? { memberUserIds } : {}),
+    });
+    await tx.createRelationshipRecord("memories", record);
+    scoped.push(record); changed.push(record);
+  }
+  return changed;
+}
+
+const knownFor = (records, userId, relationshipId, label) => records.filter((item) => visibleTo(item, userId, relationshipId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, KNOWN_LIMIT).map((item) => ({ id: item.id, subject: label(item.subjectUserId || null), fact: item.text }));
+
+/** Reads one member's new private lines and keeps what they reveal, privately for that member. */
+export async function scanPrivateProfile({ store, mediator, userId, sessionId }) {
+  if (!mediator?.structured) return [];
+  const context = await store.getRelationshipContext(userId);
+  if (!activePair(context)) return [];
+  const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
+  if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
+  const messages = session.messages || [];
+  const { fresh, more, last, before } = freshLines(messages, session.profileScan, (item) => item.role === "user" && !item.call && Boolean(squash(item.text)));
+  if (!last || (!fresh.length && session.profileScan?.messageId === last.id)) return [];
+  const relationshipId = context.relationship.id, me = context.members.find((member) => member.userId === userId), partner = context.members.find((member) => member.userId !== userId);
+  let findings = [];
+  if (fresh.length) {
+    const label = (subjectUserId) => subjectUserId === userId ? "A" : subjectUserId === partner.userId ? "B" : "both";
+    const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
+    const input = { known, messages: [...before.map((item) => ({ id: item.id, from: item.role === "user" ? "A" : "Pinky", text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: "A", text: String(item.text).slice(0, 1200), isNew: true }))] };
+    const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: me?.user?.name || "", b: partner?.user?.name || "", privateChat: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
+    findings = verifyFacts(result?.facts, fresh, () => true);
+  }
+  return store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    if (!activePair(await tx.getRelationshipContext(userId), relationshipId)) return [];
+    const changed = await keepFacts(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partner.userId : null, findings, channel: "private", sessionId });
+    // No version bump: the member's next turn checks the session version and must never fail because of this.
+    await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
+      draft.profileScan = { messageId: last.id, at: last.createdAt };
+      // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
+      if (changed.length) draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: partner?.user?.name || "" }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+    });
+    return Object.assign(changed, { more, sessionId });
+  });
+}
+
+/** Reads the new lines of Us and keeps what they reveal as shared facts that belong to both. */
+export async function scanTogetherProfile({ store, mediator, relationshipId, userId }) {
+  if (!mediator?.structured) return [];
+  const context = await store.getRelationshipContext(userId);
+  if (!activePair(context, relationshipId)) return [];
+  const conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
+  const messages = conversation?.messages || [];
+  const { fresh, more, last, before } = freshLines(messages, conversation?.profileScan, (item) => item.role === "member" && item.kind === "text" && Boolean(squash(item.text)));
+  if (!last || (!fresh.length && conversation.profileScan?.messageId === last.id)) return [];
+  const byRole = (role) => context.members.find((member) => member.role === role);
+  let findings = [];
+  if (fresh.length) {
+    const from = (item) => item.role === "agent" ? "Pinky" : context.members.find((member) => member.userId === item.actorUserId)?.role || "?";
+    const label = (subjectUserId) => subjectUserId ? context.members.find((member) => member.userId === subjectUserId)?.role || "both" : "both";
+    const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label).filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index);
+    const input = { known, messages: [...before.map((item) => ({ id: item.id, from: from(item), text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: from(item), text: String(item.text).slice(0, 1200), isNew: true }))] };
+    const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: byRole("A")?.user?.name || "", b: byRole("B")?.user?.name || "", privateChat: false }), input: JSON.stringify(input), maxOutputTokens: 900 });
+    findings = verifyFacts(result?.facts, fresh, (line) => context.members.some((member) => member.userId === line.actorUserId));
+  }
+  return store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    const current = await tx.getRelationshipContext(userId);
+    if (!activePair(current, relationshipId)) return [];
+    const changed = await keepFacts(tx, { relationshipId, userId, visibility: "shared", ownerUserId: null, memberUserIds: current.members.map((member) => member.userId), subjectOf: (subject) => subject === "both" ? null : byRole(subject)?.userId || null, findings, channel: "together" });
+    await tx.updateRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId, (draft) => { draft.profileScan = { messageId: last.id, at: last.createdAt }; });
+    return Object.assign(changed, { more });
+  });
+}
+
+function notedText(language, facts, { userId, partnerName }) {
+  const who = (fact) => fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes");
+  const list = facts.slice(0, 3).map((fact) => say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`)).join(say(language, "；", "; ", "; "));
+  // Pinky's own reply may already say it will remember; this line says where it went, so it never just repeats it.
+  return say(language, `已记进「关于我们」：${list}`, `Kept in About us: ${list}`, `Guardado en Sobre nosotros: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
+}
+
+/** What Pinky knows, for this member's own conversations: their notes and what is shared with them. */
+export async function profileContext(store, userId) {
+  const context = await store.getRelationshipContext(userId);
+  const relationshipId = activePair(context) ? context.relationship.id : null;
+  const partner = relationshipId ? context.members.find((member) => member.userId !== userId) : null;
+  const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, relationshipId) || (item.kind === "memory" && item.visibility === "private" && item.ownerUserId === userId && item.aiAccessScope === "private" && item.status === "active" && !item.archivedAt));
+  const line = (item) => ({ id: item.id, version: item.version, category: item.category || "other", fact: item.text, ...(item.visibility !== "private" ? { from: item.evidence?.channel === "together" ? "said together in Us" : "they shared it with you" } : {}) });
+  const pick = (test) => records.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CONTEXT_LIMIT).map(line);
+  return {
+    me: pick((item) => isProfileFact(item) && item.subjectUserId === userId),
+    partner: partner ? pick((item) => isProfileFact(item) && item.subjectUserId === partner.userId) : [],
+    us: pick((item) => !isProfileFact(item) || !item.subjectUserId),
+  };
+}
+
+/** One fact as this member sees it. */
+export function projectFact(record, userId) {
+  const mine = record.visibility === "private";
+  return {
+    id: record.id, version: record.version, text: record.text, category: record.category, subject: record.subjectUserId === userId ? "me" : record.subjectUserId ? "partner" : "us",
+    source: mine ? "mine" : record.evidence?.channel === "together" ? "together" : record.ownerUserId === userId ? "i_shared" : "partner_shared",
+    quote: mine || record.evidence?.channel === "together" ? record.evidence?.quote || null : null, sharedAt: record.sharedAt || null, updatedAt: record.updatedAt,
+  };
+}
+
+const shareDigest = (record) => createHash("sha256").update(JSON.stringify([record.id, record.version, record.text])).digest("hex");
+
+/** 关于我们: see, correct, remove and share what Pinky keeps about each of them. */
+export function createProfileRouter({ store, emit = () => {} }) {
+  const router = express.Router();
+  const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
+  const language = (req) => ["en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : "zh";
+  router.use("/profile", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  const scope = async (db, userId) => { const context = await db.getRelationshipContext(userId); return activePair(context) ? context : null; };
+  const find = async (db, req) => {
+    const context = await scope(db, req.auth.user.id);
+    const record = await db.getRelationshipRecordForUser("memories", req.params.id, req.auth.user.id);
+    if (!visibleTo(record, req.auth.user.id, context?.relationship.id || null)) throw fail(404, say(language(req), "没有找到这一条。", "This was not found.", "No se encontró."));
+    if (req.body?.expectedVersion !== record.version) throw fail(409, say(language(req), "这一条刚刚变了，请刷新再试。", "This just changed. Refresh and try again.", "Esto acaba de cambiar. Actualiza e inténtalo de nuevo."));
+    return { record, context };
+  };
+  const lock = async (req) => { const context = await scope(store, req.auth.user.id); return context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`; };
+  const changed = (record) => emit(record, "profile.updated", record.visibility === "private" ? record.ownerUserId : null);
+
+  router.get("/profile", async (req, res) => {
+    const userId = req.auth.user.id, context = await scope(store, userId);
+    const facts = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, context?.relationship.id || null)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => projectFact(item, userId));
+    res.json({ facts, partnerName: context?.members.find((member) => member.userId !== userId)?.user?.name || null });
+  });
+
+  router.patch("/profile/:id", async (req, res) => {
+    const text = clean(req.body?.text, 160);
+    if (!text) throw fail(400, say(language(req), "写一句吧。", "Write something.", "Escribe algo."));
+    const record = await store.transaction(await lock(req), async (tx) => {
+      const { record: current } = await find(tx, req);
+      if (current.visibility !== "private") throw fail(403, say(language(req), "一起说过或对方分享的，只能删掉，不能改。", "Things said together or shared with you can be removed, not edited.", "Lo dicho juntos o compartido contigo se puede quitar, no editar."));
+      return tx.updateRelationshipRecordForUser("memories", current.id, req.auth.user.id, (draft) => { draft.text = text; if (CATEGORIES.includes(req.body?.category)) draft.category = req.body.category; draft.provenance = { ...draft.provenance, correctedByUserId: req.auth.user.id, correctedAt: new Date().toISOString() }; draft.version += 1; });
+    });
+    changed(record); res.json({ fact: projectFact(record, req.auth.user.id) });
+  });
+
+  // Remove: a private note is deleted; a shared one is archived for both (either may remove what was said in Us; only the
+  // person who shared a line about themselves may take it back).
+  router.delete("/profile/:id", async (req, res) => {
+    const userId = req.auth.user.id;
+    const record = await store.transaction(await lock(req), async (tx) => {
+      const { record: current } = await find(tx, req);
+      if (current.visibility === "private") { await tx.deleteRelationshipRecordForUser("memories", current.id, userId); if (current.sharedCopyId) await archive(tx, current.sharedCopyId, userId); return current; }
+      if (current.evidence?.channel !== "together" && current.ownerUserId !== userId) throw fail(403, say(language(req), "这是 TA 分享给你的，只有 TA 能收回。", "Your partner shared this; only they can take it back.", "Tu pareja lo compartió; solo esa persona puede retirarlo."));
+      const archived = await archive(tx, current.id, userId);
+      if (current.sourceId) await tx.updateRelationshipRecordForUser("memories", current.sourceId, userId, (draft) => { draft.sharedCopyId = null; draft.sharedAt = null; });
+      return archived;
+    });
+    changed(record); res.status(204).end();
+  });
+  const archive = (tx, id, userId) => tx.updateRelationshipRecordForUser("memories", id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.aiAccessScope = "none"; draft.version += 1; });
+
+  // Share a line about yourself with your partner. The exact words are shown first and the digest must match them.
+  router.post("/profile/:id/share", async (req, res) => {
+    const userId = req.auth.user.id;
+    const shared = await store.transaction(await lock(req), async (tx) => {
+      const { record: current, context } = await find(tx, req);
+      if (!context) throw fail(409, say(language(req), "和 TA 连接后才能分享。", "Connect with your partner first.", "Conéctate primero con tu pareja."));
+      if (current.visibility !== "private" || current.subjectUserId !== userId) throw fail(403, say(language(req), "只能分享关于你自己的。", "You can only share things about yourself.", "Solo puedes compartir lo que es sobre ti."));
+      if (req.body?.confirm !== true || req.body?.digest !== shareDigest(current)) throw fail(409, say(language(req), "请先确认要分享的这句话。", "Confirm the exact words first.", "Confirma primero las palabras exactas."));
+      if (current.sharedCopyId) { const copy = await tx.getRelationshipRecordForUser("memories", current.sharedCopyId, userId); if (live(copy)) return copy; }
+      const copy = createRelationshipRecord({ relationshipId: context.relationship.id, userId, visibility: "shared", aiAccessScope: "joint", status: "active", kind: PROFILE_KIND, subjectUserId: userId, category: current.category, text: current.text, memberUserIds: context.members.map((member) => member.userId), approvals: [], sourceId: current.id, sharedAt: new Date().toISOString(), evidence: { channel: "shared" } });
+      await tx.createRelationshipRecord("memories", copy);
+      await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: context.relationship.id, userId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: copy.id, objectType: PROFILE_KIND, eventType: "profile.shared", sourceVersion: current.version }));
+      await tx.updateRelationshipRecordForUser("memories", current.id, userId, (draft) => { draft.sharedCopyId = copy.id; draft.sharedAt = copy.sharedAt; });
+      return copy;
+    });
+    changed(shared); res.status(201).json({ fact: projectFact(shared, userId) });
+  });
+  router.get("/profile/:id/share-preview", async (req, res) => {
+    const record = await store.getRelationshipRecordForUser("memories", req.params.id, req.auth.user.id);
+    if (!live(record) || record.visibility !== "private" || record.ownerUserId !== req.auth.user.id) throw fail(404, "Not found.");
+    res.json({ text: record.text, digest: shareDigest(record), version: record.version });
+  });
+  return router;
+}
+
+/** Looks a little after a conversation goes quiet, so a burst of lines costs one model call. */
+export function createProfileKeeper({ store, mediator, delayMs = 20_000, emit = () => {} }) {
+  const timers = new Map(), running = new Map();
+  const run = async (name, task) => {
+    if (running.has(name)) { running.set(name, true); return; }
+    running.set(name, false);
+    try {
+      const changed = await task();
+      for (const record of changed) emit(record, "profile.updated", record.visibility === "private" ? record.ownerUserId : null);
+      if (changed.sessionId && changed.length) {
+        const context = await store.getRelationshipContext(changed[0].ownerUserId);
+        if (context?.relationship) emit({ id: changed.sessionId, relationshipId: context.relationship.id }, "assistant.updated", changed[0].ownerUserId);
+      }
+      if (changed.more) running.set(name, true);
+    }
+    catch (error) { console.error("Profile scan failed:", error?.message || error); }
+    finally { const again = running.get(name); running.delete(name); if (again) schedule(name, task); }
+  };
+  const schedule = (name, task) => {
+    clearTimeout(timers.get(name));
+    const timer = setTimeout(() => { timers.delete(name); void run(name, task); }, delayMs); timer.unref?.();
+    timers.set(name, timer);
+  };
+  return {
+    noteTogether: (relationshipId, userId) => schedule(`together:${relationshipId}`, () => scanTogetherProfile({ store, mediator, relationshipId, userId })),
+    notePrivate: (userId, sessionId) => schedule(`private:${sessionId}`, () => scanPrivateProfile({ store, mediator, userId, sessionId })),
+    close: () => { for (const timer of timers.values()) clearTimeout(timer); timers.clear(); },
+  };
+}

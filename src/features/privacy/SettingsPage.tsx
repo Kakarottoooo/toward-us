@@ -4,6 +4,7 @@ import { languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { PageHeader } from "../conversation/ConversationHome";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
+import { ProfilePage } from "../profile/ProfilePage";
 import { NotificationSettings } from "./NotificationSettings";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { CharacterMaker } from "../character/CharacterMaker";
@@ -13,8 +14,8 @@ import "./settings.css";
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character";
-type SettingsProps = { initialPage?: "character"; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
+type Page = "main" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character";
+type SettingsProps = { initialPage?: "character" | "profile"; onAsk?: (text: string) => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 function downloadFile(contents: string, filename: string, type: string) {
@@ -31,7 +32,7 @@ function Row({ icon, tone = "blue", label, value, onClick, danger = false, testI
 const Group = ({ title, note, children }: { title?: string; note?: string; children: ReactNode }) => <section className="settings-group">{title && <h2>{title}</h2>}<div className="settings-card">{children}</div>{note && <p className="settings-note">{note}</p>}</section>;
 
 /** Settings: account, language, privacy and data, each one row deep; every irreversible step is confirmed in a sheet with the password. */
-export function SettingsPage({ initialPage, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
+export function SettingsPage({ initialPage, onAsk, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [page, setPage] = useState<Page>(initialPage || "main");
@@ -85,13 +86,16 @@ export function SettingsPage({ initialPage, user, relationshipId, partnerName, l
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
+  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
 
   const main = <>
     <section className="settings-profile">
       <span className="settings-avatar" aria-hidden="true">{(user.name || "?").trim().slice(0, 1).toUpperCase()}</span>
       <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${partnerName} 连接`, `Connected with ${partnerName}`, `Conectado con ${partnerName}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
+    <Group>
+      <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
+    </Group>
     <Group title={t("通用", "General", "General")}>
       <Row icon={<Translate size={18} weight="bold" />} label={t("语言", "Language", "Idioma")}>
         <span className="settings-segmented" role="group" aria-label={t("选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{LANGUAGES.map((item) => <button key={item} type="button" className={language === item ? "active" : ""} aria-pressed={language === item} onClick={() => onLanguage(item)}>{item.toUpperCase()}</button>)}</span>
@@ -130,6 +134,7 @@ export function SettingsPage({ initialPage, user, relationshipId, partnerName, l
     [t("删除账号后", "After deleting your account", "Después de borrar la cuenta"), t("你在“我们俩”里说过的话会留给对方。", "What you wrote in Us stays for your partner.", "Lo que escribiste en Nosotros queda para tu pareja.")],
   ];
   const sub: Record<Exclude<Page, "main">, ReactNode> = {
+    profile: <ProfilePage language={language} onAsk={onAsk} />,
     notifications: <NotificationSettings language={language} />,
     character: <>
       <CharacterMaker language={language} paired={Boolean(relationshipId)} character={character} onChange={setCharacter} />

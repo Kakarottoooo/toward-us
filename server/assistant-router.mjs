@@ -1,3 +1,4 @@
+import { profileContext } from "./profile.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { openingDay, sealLetter } from "./letters.mjs";
 import express from "express";
@@ -25,7 +26,7 @@ const localTime = (value, timezone) => {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
 
-export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null, activity = null, promises = null }) {
+export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null, activity = null, promises = null, profile = null }) {
   const router = express.Router();
   const liveUser = async (db, userId, lock = false) => {
     const user = await (lock ? db.getUserForUpdate(userId) : db.getUserById(userId));
@@ -40,7 +41,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
-      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.call ? { call: message.call } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.kind === "noted" ? { kind: "noted" } : {}), ...(message.call ? { call: message.call } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
@@ -120,7 +121,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     try {
       const result = await runTurn(userId, sessionId, body, { ...options, progress });
       // A promise said here stays this member's alone; it is noticed in the background once the chat goes quiet.
-      if (!result.duplicate) promises?.notePrivate(userId, sessionId);
+      if (!result.duplicate) { promises?.notePrivate(userId, sessionId); profile?.notePrivate(userId, sessionId); }
       return result;
     } finally { progress(null); }
   };
@@ -145,6 +146,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
       openPromises: await openPromises(store, userId, session).catch(() => []),
+      profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
@@ -292,7 +294,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
             const text = values.text === null ? current?.text : clean(values.text, 2000);
             if (!text) throw fail(400, "Say what you would like to save.");
             if (values.mood !== null && !["low", "mixed", "okay", "good"].includes(values.mood)) throw fail(400, "Invalid check-in mood.");
-            patch = { text, kind: action.kind, aiAccessScope: "none", approvals: [], ...(action.kind === "checkin" ? { mood: values.mood ?? current?.mood ?? null } : {}) };
+            patch = { text, kind: current?.kind === "profile" ? "profile" : action.kind, aiAccessScope: current?.kind === "profile" ? current.aiAccessScope : "none", approvals: [], ...(action.kind === "checkin" ? { mood: values.mood ?? current?.mood ?? null } : {}) };
           }
           if (current) record = await tx.updateRelationshipRecordForUser(collection, current.id, userId, (draft) => {
             if (draft.version !== action.expectedVersion || draft.visibility !== "private" || draft.ownerUserId !== userId || draft.archivedAt || draft.status === "closed") throw fail(409, "The record changed. Ask again with the current version.");
