@@ -1,9 +1,3 @@
-/* The couple's character over the conversation. It hangs from the middle of the top row and floats over the top of the
- * thread, which scrolls under it; taps go through to the messages. Never a box, band, circle crop or shadow behind it,
- * and nothing between it and the screen may clip it (the founder, 11-03). */
-.couple-mascot { position: absolute; top: calc(100% - 6px); left: 50%; z-index: 5; display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); overflow: visible; pointer-events: none; }
-.couple-mascot img { display: block; width: auto; max-width: 150px; height: 84px; object-fit: contain; object-position: center bottom; border-radius: 0; background: transparent; box-shadow: none; filter: none; user-select: none; -webkit-user-drag: none; }
-
 /* The maker card (Settings → Our character, and from the welcome tour). */
 .character-maker { display: grid; gap: 14px; padding: 16px; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
 .character-maker > header { display: flex; align-items: flex-start; gap: 12px; }
@@ -30,26 +24,70 @@
 .character-actions button:disabled { opacity: .45; cursor: default; }
 .character-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .character-placeholder, .character-dot { animation: none; } }
-/* 一起养的小家伙: the pill under the top of Us and its sheet. */
-.pet-pill { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 10px; border: 0; border-radius: 999px; background: rgba(226,168,77,.18); color: #8a5a12; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.pet-pill em { font-style: normal; font-weight: 600; color: #a2394f; }
-.pet-pill.is-sleepy { background: rgba(37,37,37,.07); color: #6f6a63; }
-.pet-pill:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-.pet-sheet { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-bottom: 12px; text-align: center; }
-.pet-portrait { display: grid; place-items: center; width: 120px; height: 120px; color: #c9913a; }
-.pet-portrait img { max-width: 120px; max-height: 120px; object-fit: contain; }
-.pet-portrait.is-sleepy { opacity: .7; }
-.pet-level { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 26px; font-weight: 800; }
-.pet-level small { color: #7a736a; font-size: 13px; font-weight: 600; }
-.pet-progress { width: 100%; max-width: 280px; height: 8px; overflow: hidden; border-radius: 999px; background: rgba(37,37,37,.08); }
-.pet-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #e2a84d, #d6708c); }
-.pet-mood { margin: 0; color: #5f5952; font-size: 15px; }
-.pet-pat { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 24px; border: 0; border-radius: 999px; background: var(--jian-ink); color: var(--jian-paper-bright); font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
-.pet-pat:disabled { background: rgba(37,37,37,.12); color: #6f6a63; cursor: default; }
-.pet-partner { color: #7a736a; font-size: 13px; }
-.pet-make { min-height: 40px; padding: 0 16px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: transparent; color: var(--jian-ink); font: inherit; font-size: 14px; cursor: pointer; }
-.pet-how { width: 100%; text-align: left; }
-.pet-how h3 { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; color: #7a736a; font-size: 13px; }
+/* 小家伙 (11-06). In the chat it is small and off to one side, never across the top: the character stands on the screen by
+ * itself (no box, circle crop or shadow behind it, as on 11-03), with Lv under its feet and a dot until you pet it today. */
+.floating-pet { position: absolute; right: 6px; z-index: 6; display: flex; flex-direction: column; align-items: center; width: 72px; padding: 0; border: 0; background: transparent; color: #8a5a12; font: inherit; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity .18s ease, transform .18s ease; }
+.floating-pet.is-left { right: auto; left: 6px; }
+.floating-pet.is-dragging { cursor: grabbing; transition: none; }
+.floating-pet.is-away { opacity: 0; pointer-events: none; transform: scale(.8); }
+.floating-pet:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; border-radius: 12px; }
+.floating-pet-figure { display: grid; place-items: end center; width: 72px; height: 64px; }
+.floating-pet-figure img { display: block; max-width: 72px; max-height: 64px; object-fit: contain; object-position: center bottom; background: transparent; box-shadow: none; -webkit-user-drag: none; pointer-events: none; }
+.floating-pet-figure > svg { width: 44px; height: 44px; padding: 8px; border-radius: 50%; background: rgba(226,168,77,.2); color: #c9913a; box-sizing: content-box; }
+.floating-pet small { margin-top: 1px; padding: 0 7px; border-radius: 999px; background: rgba(255,250,242,.86); font-size: 11px; font-weight: 800; line-height: 17px; }
+.floating-pet-dot { position: absolute; top: 4px; right: 10px; width: 10px; height: 10px; border: 2px solid var(--jian-paper); border-radius: 50%; background: #e0566f; }
+.floating-pet-z { position: absolute; top: -6px; left: 8px; color: #8a837a; font-size: 14px; font-style: italic; animation: pet-doze 2.4s ease-in-out infinite; }
+.floating-pet.is-happy .floating-pet-figure { animation: pet-sway 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
+.floating-pet.is-sleepy .floating-pet-figure { filter: saturate(.55); opacity: .85; }
+@keyframes pet-sway { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
+@keyframes pet-doze { 0%, 100% { opacity: .2; transform: translateY(2px); } 50% { opacity: 1; transform: translateY(-4px); } }
+
+/* Its room: a warm stage over the whole conversation, like Douyin's 精灵空间 but quieter. */
+.pet-room { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: radial-gradient(120% 70% at 30% 0%, #fff8ec 0%, #f4e6d2 55%, #e9d3b6 100%); color: var(--jian-ink); animation: pet-room-in .22s ease-out; }
+@keyframes pet-room-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.pet-room-top { position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; padding: max(12px, env(safe-area-inset-top)) 14px 6px; }
+.pet-room-pair { display: inline-flex; align-items: center; margin-right: auto; padding: 5px 14px 5px 5px; border-radius: 999px; background: rgba(255,255,255,.55); }
+.pet-room-pair i { display: grid; place-items: center; width: 32px; height: 32px; border: 2px solid #fff8ec; border-radius: 50%; background: #e7c9a3; color: #6d4a1f; font-size: 14px; font-style: normal; font-weight: 800; }
+.pet-room-pair i + i { margin-left: -9px; background: #e9b4bf; color: #7d2f42; }
+.pet-room-pair span { display: flex; flex-direction: column; margin-left: 8px; line-height: 1.1; }
+.pet-room-pair b { color: #c2415e; font-size: 17px; }
+.pet-room-pair small { color: #7a6a58; font-size: 11px; }
+.pet-room-icon { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.55); color: var(--jian-ink); cursor: pointer; }
+.pet-room-icon:focus-visible, .pet-room-menu button:focus-visible, .pet-bubble:focus-visible, .pet-figure:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.pet-room-menu { position: absolute; top: calc(100% + 2px); right: 14px; display: flex; flex-direction: column; min-width: 200px; overflow: hidden; border-radius: 14px; background: var(--jian-paper-bright); box-shadow: 0 10px 30px rgba(37,30,26,.18); }
+.pet-room-menu button { min-height: 48px; padding: 0 16px; border: 0; border-bottom: 1px solid rgba(37,37,37,.06); background: transparent; color: var(--jian-ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.pet-room-menu button:last-child { border-bottom: 0; }
+.pet-room-menu button:hover { background: rgba(37,37,37,.04); }
+.pet-room-scroll { flex: 1 1 auto; min-height: 0; }
+.pet-room-body { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 20px calc(32px + env(safe-area-inset-bottom)); text-align: center; }
+.pet-stage { position: relative; display: grid; place-items: end center; width: 100%; height: 300px; }
+.pet-figure { position: relative; z-index: 1; display: grid; place-items: end center; width: 220px; height: 230px; margin-bottom: 26px; padding: 0; border: 0; background: transparent; color: #c9913a; cursor: pointer; }
+.pet-figure img { max-width: 220px; max-height: 230px; object-fit: contain; object-position: center bottom; background: transparent; box-shadow: none; -webkit-user-drag: none; }
+.pet-figure.is-hop { animation: pet-hop .5s cubic-bezier(.3,.7,.4,1.4); }
+@keyframes pet-hop { 0%, 100% { transform: none; } 40% { transform: translateY(-18px) scale(1.04); } }
+.pet-room.is-happy .pet-figure:not(.is-hop) { animation: pet-sway 3.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.pet-room.is-sleepy .pet-figure { filter: saturate(.6); }
+.pet-rug { position: absolute; bottom: 8px; left: 50%; width: 260px; height: 46px; border-radius: 50%; background: radial-gradient(closest-side, #fffaf3 0%, #fbf3e8 70%, rgba(251,243,232,0) 100%); transform: translateX(-50%); }
+.pet-room-stream { position: relative; flex: 1 1 auto; min-height: 0; }
+.pet-bubble { position: absolute; top: 40px; left: 6px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; animation: pet-float 3s ease-in-out infinite; }
+.pet-bubble-ball { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 70px; height: 70px; border-radius: 50%; background: rgba(255,255,255,.6); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.9), 0 6px 18px rgba(196,140,90,.18); color: #e0566f; }
+.pet-bubble-ball b { margin-top: -2px; color: #8a5a12; font-size: 14px; }
+.pet-bubble small { color: #6f5b45; font-size: 13px; font-weight: 600; }
+.pet-bubble.is-done { animation: none; opacity: .7; }
+.pet-bubble.is-done .pet-bubble-ball { color: #b3a594; }
+@keyframes pet-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+.pet-name { margin-top: -4px; font-size: 19px; font-weight: 800; }
+.pet-level-bar { position: relative; display: flex; align-items: center; width: 100%; max-width: 260px; height: 26px; border-radius: 999px; background: rgba(255,255,255,.6); }
+.pet-level-badge { position: relative; z-index: 2; display: grid; place-items: center; height: 26px; padding: 0 9px; border-radius: 999px; background: linear-gradient(135deg, #f08a5d, #d6708c); color: #fff; font-size: 13px; font-weight: 800; }
+.pet-level-fill { position: absolute; top: 0; bottom: 0; left: 0; min-width: 26px; border-radius: 999px; background: linear-gradient(90deg, rgba(240,138,93,.55), rgba(214,112,140,.55)); }
+.pet-level-bar small { position: relative; z-index: 1; margin: 0 auto; color: #5f4a33; font-size: 13px; font-weight: 700; }
+.pet-mood { margin: 6px 0 0; color: #5f5952; font-size: 16px; }
+.pet-partner { color: #7a6a58; font-size: 14px; }
+.pet-make { min-height: 44px; padding: 0 18px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: rgba(255,255,255,.5); color: var(--jian-ink); font: inherit; font-size: 15px; cursor: pointer; }
+.pet-how { width: 100%; max-width: 420px; margin-top: 10px; padding: 6px 16px 10px; border-radius: 16px; background: rgba(255,255,255,.55); text-align: left; scroll-margin-top: 12px; }
+.pet-how h3 { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; color: #7a6a58; font-size: 14px; }
 .pet-how ul { margin: 0; padding: 0; list-style: none; }
-.pet-how li { display: flex; justify-content: space-between; min-height: 34px; align-items: center; border-bottom: 1px solid rgba(37,37,37,.06); font-size: 14px; }
+.pet-how li { display: flex; justify-content: space-between; align-items: center; min-height: 38px; border-bottom: 1px solid rgba(37,37,37,.06); font-size: 15px; }
+.pet-how li:last-child { border-bottom: 0; }
 .pet-how b { color: #a2394f; }
+@media (prefers-reduced-motion: reduce) { .floating-pet-figure, .floating-pet-z, .pet-figure, .pet-bubble, .pet-room { animation: none !important; } }

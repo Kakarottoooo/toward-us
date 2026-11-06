@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { GameController, Receipt, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { PawPrint, GameController, Receipt, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, Handshake, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -16,8 +16,7 @@ import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import { GameCard, type GameAnswers, type GameRound } from "./GameCard";
 import { DistanceBar } from "./DistanceBar";
 import { DiscoveryCard, type DiscoverKey } from "./DiscoveryCard";
-import { PetPill, type PetView } from "../character/PetPanel";
-import { CoupleMascot } from "../character/CoupleMascot";
+import { FloatingPet, PetRoom, petHiddenKey, type PetView } from "../character/PetPanel";
 import { useCoupleCharacter } from "../character/character";
 import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking";
 import { PromiseNudge } from "../promises/PromiseNudge";
@@ -88,7 +87,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // the couple has no character yet, that card comes once on its own.
   const [offerCharacter, setOfferCharacter] = useState(false);
   useEffect(() => { if (paired && !touring && mascotLoaded && !mascot && characterOwed(user.id)) setOfferCharacter(true); }, [paired, touring, mascotLoaded, mascot, user.id]);
-  const mascotShown = Boolean(mascot?.image && mascot.visible);
+  // 小家伙 (11-06): floats at the side of the chat; its room opens over the conversation. It can be tucked away from the room.
+  const [petRoom, setPetRoom] = useState(false);
+  const [petHidden, setPetHidden] = useState(() => { try { return localStorage.getItem(petHiddenKey(user.id)) === "1"; } catch { return false; } });
+  const hidePet = (hidden: boolean) => { setPetHidden(hidden); try { if (hidden) localStorage.setItem(petHiddenKey(user.id), "1"); else localStorage.removeItem(petHiddenKey(user.id)); } catch { /* private mode */ } };
+  const openPetRoom = () => { keyboard.hide(); setPetRoom(true); };
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
   // At most one open promise Pinky brings up in Us, only where suggestions may show (11-03); the server picks which.
@@ -562,7 +565,7 @@ ${text}` : text, target);
   // In Just me only this phone's own wait counts; in Us also a reply Pinky is preparing for the partner.
   const working: AgentActivity = channel === "me" ? (waitingMe ? activity.me || { step: "thinking" } : null) : paired ? activity.us || (waitingUs ? { step: "thinking" } : null) : null;
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
-  return <div className={`paper-screen conversation-home ${mascotShown ? "has-mascot" : ""} ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen">
+  return <div className={`paper-screen conversation-home ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen">
     {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
       {/* One row: menu, the two channels, and a live voice call with Pinky (privately in Just me, for everyone in the room in Us). */}
@@ -575,8 +578,8 @@ ${text}` : text, target);
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} extra={together.pet ? <PetPill language={language} pet={together.pet} character={mascot} partnerName={partner.name || t("TA", "your partner", "tu pareja")} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { keyboard.hide(); onPrivacy("character"); }} /> : null} /> : null; })()}
-      <CoupleMascot character={mascot} status={working && <AgentStatusPill activity={working} language={language} />} />
+      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
+      {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
       {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "noted" ? <button key={message.id} type="button" className="conversation-noted" onClick={() => { keyboard.hide(); onPrivacy("profile"); }} data-testid="profile-noted"><Heart size={14} weight="fill" /><span>{message.text}</span></button> : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
@@ -618,7 +621,9 @@ ${text}` : text, target);
     {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
     {offerCharacter && !touring && !mascot && <OnboardingTour characterOnly language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); switchChannel("us"); void playAgain(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {paired && together?.pet && !petHidden && !petRoom && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
+    {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onClose={() => setPetRoom(false)} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); switchChannel("us"); void playAgain(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 
@@ -630,7 +635,7 @@ export function PageHeader({ language, title, onBack, backLabel }: { language: L
 
 type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number; onClick: () => void };
 /** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
-function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
+function ConversationDrawer({ user, paired, language, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [home, setHome] = useState<{ pending: number; since: string | null } | null>(null);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
@@ -658,6 +663,7 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
       { key: "profile", icon: <UserCircle size={22} />, label: t("关于我们", "About us", "Sobre nosotros"), onClick: onProfile },
       { key: "ledger", icon: <Receipt size={22} />, label: t("我们的账本", "Our ledger", "Nuestras cuentas"), onClick: () => { void relationshipApi<{ id: string }>("/api/ledger", { method: "POST", body: JSON.stringify({ language }) }).then((result) => onOpen(`/?view=space&space=${encodeURIComponent(result.id)}`)).catch(() => {}); } },
       { key: "games", icon: <GameController size={22} />, label: t("小游戏", "Little games", "Juegos"), onClick: onGame },
+      ...(onPet ? [{ key: "pet", icon: <PawPrint size={22} />, label: t("小家伙", "Little one", "Pequeño"), onClick: onPet }] : []),
     ] : []),
   ];
   const cycleRow: DrawerItem = { key: "cycle", icon: <Drop size={22} />, label: t("经期记录", "Period", "Periodo"), onClick: () => onOpen(`/?view=${paired ? "upcoming" : "reminders"}&focus=cycle`) };
