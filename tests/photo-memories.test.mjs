@@ -37,7 +37,7 @@ test("the phone gets the next memories to make; each is made once, in the shared
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
-  const mediator = { structured: async () => ({ title: "Santa Monica", text: "A slow day by the sea, you two." }) };
+  const mediator = { structured: async () => { await new Promise((r) => setTimeout(r, 50)); return { title: "Santa Monica", text: "A slow day by the sea, you two." }; } };
   const app = express(); app.use(express.json({ limit: "5mb" })); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"], name: "Ana" } }; next(); });
   const memories = createPhotoMemoryRouter({ store, mediator });
   const told = []; memories.emitTogether = (conversation) => told.push(conversation.messages.at(-1));
@@ -64,5 +64,10 @@ test("the phone gets the next memories to make; each is made once, in the shared
   const next = (await post("/photo-memories/plan", { assets })).body.events[0];
   await post("/photo-memories/events", { key: next.key, day: next.day, place: "", photoIds: [await upload("shared")], language: "en" });
   assert.equal(told.length, 1, "the partner is told about the album once");
+  // Two requests for one memory at once (the words take a while to write) still make it once.
+  const twice = await Promise.all([1, 2].map(async () => post("/photo-memories/events", { key: "2023-01-01|-", day: "2023-01-01", place: "", photoIds: [await upload("shared")], language: "en" })));
+  assert.deepEqual(twice.map((result) => result.body.duplicate === true).sort(), [false, true]);
+  const after = (await (await fetch(url("/spaces"), { headers: { "x-user": ids[1] } })).json()).spaces.find((space) => space.id === album.id).items;
+  assert.equal(after.filter((item) => item.photoEvent === "2023-01-01|-").length, 1);
   assert.match(told[0].text, /connected an iPhone album/);
 });

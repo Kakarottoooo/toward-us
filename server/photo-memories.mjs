@@ -51,7 +51,11 @@ export function groupPhotoEvents(assets) {
 }
 
 const memorySchema = { type: "object", additionalProperties: false, required: ["title", "text"], properties: { title: { type: "string" }, text: { type: "string" } } };
-const memoryInstructions = (language) => `You title one memory in a couple's shared photo album and add one or two warm sentences. You only know the date, the place and how many photos they took; you cannot see the photos. Never invent what happened, who was there or how anyone felt beyond what a day out together at that place implies. Title: at most 14 characters in Chinese or 6 words otherwise, usually the place or the occasion. Write in ${language === "en" ? "English" : language === "es" ? "Spanish" : "Simplified Chinese"}, addressing the couple as you two (你们 / you two / ustedes), gently, no exclamation marks, no emoji.`;
+// 11-05: the first words read like a template ("kept in 19 photos… May these pictures…"). One short line, as a friend would say it.
+const memoryInstructions = (language) => `You write the caption for one memory in a couple's shared photo album. You know only the date, the place and how many photos they took that day; you cannot see the photos.
+Title: just the place or the occasion, as they would call it (for example "Magic Kingdom", "旧金山", "Puerto Rico"), never "A day in…" or a date.
+Text: one short, warm sentence to the couple (at most 30 Chinese characters or 20 words), about being there together. Vary how you start. Never mention the date, the number of photos, "these photos/pictures", "kept here", or wishes such as "May…". Never invent what happened, the weather, food or anyone's feelings beyond two people enjoying that place together. Speak about the two of them, never as if you were there or part of it. A day with many photos may sound a little fuller; that is all the count tells you.
+Write in ${language === "en" ? "English" : language === "es" ? "Spanish" : "Simplified Chinese"}, addressing them as 你们 / you two / ustedes. No exclamation marks, no emoji.`;
 
 export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
   const router = express.Router();
@@ -92,8 +96,11 @@ export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
       const made = await asAiUser({ userId, relationshipId: context.relationship.id, language }, () => mediator.structured({ name: "photo_memory", schema: memorySchema, instructions: memoryInstructions(language), input: JSON.stringify({ date: day, place: place || null, photos: Number(req.body?.count) || photoIds.length }), maxOutputTokens: 300 }));
       words = { title: clean(made?.title, 60) || words.title, text: clean(made?.text, 400) };
     } catch (error) { console.error("Photo memory words failed:", error?.message || error); /* The memory is kept with the place as its title. */ }
-    const first = !(await madeKeys(userId, album)).size;
     const items = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
+      // Checked again here: two requests for the same memory can both pass the early check while the words are written.
+      const inAlbum = (await tx.listRelationshipRecordsForUser("spaceItems", userId)).filter((item) => item.spaceId === album.id && item.photoEvent && !item.archivedAt);
+      if (inAlbum.some((item) => item.photoEvent === key)) return null;
+      const first = !inAlbum.length;
       const created = [];
       for (const id of photoIds) {
         const photo = await visiblePhoto(tx, id, userId);
@@ -109,6 +116,7 @@ export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
       }
       return created;
     });
+    if (!items) return res.json({ duplicate: true });
     for (const item of items) emit(item, "space.updated");
     res.status(201).json({ title: words.title, items: items.length });
   });
