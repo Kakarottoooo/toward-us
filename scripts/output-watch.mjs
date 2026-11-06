@@ -64,13 +64,20 @@ export async function outputWatch({ data, user: email, state = {}, limit = 80 })
     for (const summary of graph.summaries) candidates.push({ source: "summaries", ref: summary.id, at: summary.createdAt, kind: summary.ownerUserId === userId ? "own_summary" : "partner_summary", asked: null, text: summary.text || "", shared: summary.status === "confirmed" });
     for (const proposal of graph.proposals) candidates.push({ source: "proposals", ref: proposal.id, at: proposal.createdAt, kind: "proposal", asked: null, text: [proposal.title, proposal.rationale, proposal.tradeoffs].filter((part) => typeof part === "string" && part).join("\n"), shared: true });
 
+    // An answer nobody just asked for should match the language the founder actually chats in, which can differ from the
+    // account setting (account en, chats in Chinese): their own recent words first, else what the couple writes in Us.
+    const recent = (messages) => messages.filter((message) => message.text).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-20).map((message) => message.text).join(" ");
+    const usMembers = graph.togetherConversations.flatMap((conversation) => (conversation.messages || []).filter((message) => message.role === "member"));
+    const ownWords = [...usMembers.filter((message) => message.actorUserId === userId), ...graph.privateAgentThreads.filter((thread) => thread.ownerUserId === userId).flatMap((thread) => (thread.messages || []).filter((message) => message.role === "user"))];
+    const usual = detectLanguage(recent(ownWords)) || detectLanguage(recent(usMembers)) || language;
+
     const cursors = { ...(state.cursors || {}) };
     const fresh = candidates.filter((item) => item.at && (!cursors[item.source] || item.at > cursors[item.source])).sort((a, b) => a.at.localeCompare(b.at));
     const picked = fresh.slice(0, Math.max(0, limit));
     const outputs = picked.map(({ shared, ...item }) => ({
       ...item,
       asked: item.asked ? clip(item.asked, ASKED_LIMIT) : null,
-      flags: flagText(item.text, { language, asked: item.asked, leaks: shared ? leaks : null }),
+      flags: flagText(item.text, { language: usual, asked: item.asked, leaks: shared ? leaks : null }),
       text: clip(item.text, TEXT_LIMIT),
     }));
     for (const item of picked) if (!cursors[item.source] || item.at > cursors[item.source]) cursors[item.source] = item.at;

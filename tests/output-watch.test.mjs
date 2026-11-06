@@ -57,11 +57,13 @@ function buildState() {
   };
 }
 
-async function withFixture(callback) {
+async function withFixture(callback, change = () => {}) {
   const directory = await mkdtemp(join(tmpdir(), "pinky-watch-test-"));
   try {
     const data = join(directory, "store.json");
-    await writeFile(data, JSON.stringify(buildState()), "utf8");
+    const state = buildState();
+    change(state);
+    await writeFile(data, JSON.stringify(state), "utf8");
     await callback({ directory, data });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
@@ -97,6 +99,25 @@ test("the CLI leaves the data file untouched and advances cursors so a second ru
   const third = JSON.parse((await run(process.execPath, args)).stdout);
   assert.equal(third.outputs.length, 0);
   assert.equal(await readFile(data, "utf8"), before);
+}));
+
+test("a reply nobody just asked for is judged by the language the founder actually writes in, not the account setting", () => withFixture(async ({ data }) => {
+  const report = await outputWatch({ data, user: "founder@example.test", state: {} });
+  const opener = report.outputs.find((item) => item.ref.endsWith("#r0"));
+  assert.equal(opener.asked, null);
+  assert.deepEqual(opener.flags, []);
+}, (state) => {
+  // An English account that chats in Chinese; Pinky opens the thread (e.g. a chat-import report) in Chinese.
+  state.users.me.language = "en";
+  state.relationshipGraph.privateAgentThreads["thread-me"].messages.unshift({ id: "r0", role: "assistant", text: "你们的记录里最温暖的部分是彼此很会照顾。", createdAt: at(7) });
+}));
+
+test("before the founder has written anything, the couple's language in Us is the yardstick", () => withFixture(async ({ data }) => {
+  const report = await outputWatch({ data, user: "founder@example.test", state: {} });
+  assert.deepEqual(report.outputs.find((item) => item.ref.endsWith("#r0")).flags, []);
+}, (state) => {
+  state.users.me.language = "en";
+  state.relationshipGraph.privateAgentThreads["thread-me"].messages = [{ id: "r0", role: "assistant", text: "你们的记录里最温暖的部分是彼此很会照顾。", createdAt: at(8) }];
 }));
 
 test("flags fire on the watched failure shapes", () => {
