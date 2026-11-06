@@ -42,6 +42,7 @@ import { createVoiceCallRouter } from "./voice-call.mjs";
 import { createSuggestionsRouter } from "./suggestions-router.mjs";
 import { createPromiseKeeper, createPromisesRouter } from "./promises.mjs";
 import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
+import { createLedgerRouter } from "./ledger.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
@@ -488,6 +489,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
   app.use("/api", createProfileRouter({ store, emit }));
+  app.use("/api", createLedgerRouter({ store, emit }));
   app.use("/api", createPromisesRouter({ store, keeper: promiseKeeper, emit }));
   app.use("/api", createSpaceRouter({ store, emit }));
   app.use("/api", createPhotoRouter({ store }));
