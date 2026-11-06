@@ -117,12 +117,16 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   </div>;
 
   // The map is its own page, opened from the globe at the top right (founder 11-05).
-  if (mapOpen) return <div className="moments-page" data-testid="moments-map">
-    <button type="button" className="moments-back" onClick={() => setMapOpen(false)}><ArrowLeft size={18} />{t("回忆", "Memories", "Recuerdos")}</button>
-    <header className="moments-focus-head"><h2>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</h2><small>{t(`一起去过 ${places.length} 个地方`, `${places.length} places together`, `${places.length} lugares juntos`)}</small></header>
+  // The map fills the page under the app header, with the way back and the title floating on it (founder 11-06: the two
+  // header rows above a small map wasted the screen).
+  if (mapOpen) return <div className="moments-map-page" data-testid="moments-map">
     {places.length ? <Suspense fallback={<p className="moments-note">{mapLabels.loading}</p>}>
-      <MemoriesMap places={places} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} labels={mapLabels} onOpen={openPlace} />
+      <MemoriesMap places={places} language={language} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} labels={mapLabels} onOpen={openPlace} />
     </Suspense> : <div className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></div>}
+    <div className="moments-map-top">
+      <button type="button" className="moments-map-back" onClick={() => setMapOpen(false)} aria-label={t("返回回忆", "Back to memories", "Volver a recuerdos")}><ArrowLeft size={20} weight="bold" /></button>
+      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`一起去过 ${places.length} 个地方`, `${places.length} places together`, `${places.length} lugares juntos`)}</small></div>
+    </div>
   </div>;
 
   // Stories Pinky found, as round bubbles at the top; each plays full screen.
@@ -163,7 +167,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     <div className="moments-toolbar">
     <div className="moments-icons">
         <button type="button" className="moments-find" onClick={ask} aria-label={t("跟 Pinky 说一个回忆", "Tell Pinky a memory", "Cuéntale un recuerdo a Pinky")}><Plus size={18} weight="bold" /><span>{t("记一个回忆", "Add", "Añadir")}</span></button>
-        <button type="button" className="moments-find" onClick={() => { setMapOpen(true); window.scrollTo?.({ top: 0 }); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={18} /><span>{t("地图", "Map", "Mapa")}</span></button>
+        <button type="button" className="moments-find" onClick={(event) => { (event.currentTarget.closest(".relationship-main") as HTMLElement | null)?.scrollTo({ top: 0 }); setMapOpen(true); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={18} /><span>{t("地图", "Map", "Mapa")}</span></button>
       </div>
     </div>
     <div className="moments-top">

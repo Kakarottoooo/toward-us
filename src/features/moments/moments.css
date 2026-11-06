@@ -161,3 +161,18 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .story-viewer-foot small { font-size: 13px; opacity: .85; }
 .story-viewer-foot strong { font-size: 22px; font-weight: 800; }
 .story-viewer-foot p { margin: 0; font-size: 16px; line-height: 1.5; }
+/* The map page: the map fills everything under the app header; the way back, the title and globe/flat float on it. */
+.relationship-main:has(> .moments-map-page), .relationship-main:has(.moments-map-page) { overflow: hidden; }
+.moments-map-page { position: absolute; inset: 0; z-index: 2; background: #f6f0e6; }
+.moments-map-page .memories-map-box { position: absolute; inset: 0; height: auto; min-height: 0; border-radius: 0; background: #f6f0e6; }
+.moments-map-page .memories-map-modes { top: auto; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 4px; border-radius: 20px; background: rgba(37,37,37,.86); box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+.moments-map-page .memories-map-modes button { min-height: 34px; padding: 0 18px; border-radius: 16px; color: rgba(255,255,255,.82); }
+.moments-map-page .memories-map-modes button[aria-pressed="true"] { background: #fff; color: var(--jian-ink); }
+.moments-map-top { position: absolute; top: 12px; left: 12px; right: 64px; z-index: 3; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+.moments-map-back { flex: 0 0 auto; display: grid; place-items: center; width: 42px; height: 42px; border: 0; border-radius: 50%; background: rgba(255,253,249,.94); color: var(--jian-ink); box-shadow: 0 2px 8px rgba(37,37,37,.18); cursor: pointer; pointer-events: auto; }
+.moments-map-title { display: grid; gap: 1px; min-width: 0; padding: 7px 14px; border-radius: 16px; background: rgba(255,253,249,.94); box-shadow: 0 2px 8px rgba(37,37,37,.18); pointer-events: auto; }
+.moments-map-title strong { color: var(--jian-ink); font-size: 16px; font-weight: 750; white-space: nowrap; }
+.moments-map-title small { color: #6f6860; font-size: 12px; white-space: nowrap; }
+.moments-map-page .maplibregl-ctrl-top-right { top: 6px; right: 6px; }
+.moments-map-page .maplibregl-ctrl-group { border-radius: 14px; overflow: hidden; box-shadow: 0 2px 8px rgba(37,37,37,.18); }
+.moments-map-page .moments-empty { position: absolute; inset: 80px 16px auto; }
