@@ -18,4 +18,8 @@ export const MATCH_ERRORS = {
   drawing_required: ["先画几笔再交给 TA。", "Draw something before passing it on.", "Dibuja algo antes de pasarlo."],
   guess_required: ["写下你的答案。", "Write your guess.", "Escribe tu respuesta."],
   statements_required: ["写满三句，再选出哪句是假的。", "Write all three, then mark which one is the lie.", "Escribe las tres y marca cuál es la mentira."],
+  roll_first: ["先掷骰子。", "Roll the die first.", "Primero tira el dado."],
+  choose_plane: ["先选一架飞机走。", "Pick a plane to move first.", "Primero elige qué avión mover."],
+  task_pending: ["先完成或跳过这个小任务。", "Do or skip the little task first.", "Primero haz o salta la tarea."],
+  plane_stuck: ["这架飞机这次走不了。", "That plane can't move this time.", "Ese avión no puede moverse esta vez."],
 };
