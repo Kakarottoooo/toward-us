@@ -121,6 +121,12 @@ after(async () => {
   await rm(temporaryDirectory, { recursive: true, force: true });
 });
 
+test("a connected photo album can send the times and places of thousands of photos in one plan", async () => {
+  const assets = Array.from({ length: 6000 }, (_, index) => ({ id: `${String(index).padStart(5, "0")}-ABCDEF01-2345-6789-ABCD-EF0123456789/L0/001`, takenAt: "2024-05-01T10:00:00Z", day: "2024-05-01", lat: 34.0123, lon: -118.4912 }));
+  const response = await fetch(`${baseUrl}/api/photo-memories/plan`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assets }) });
+  assert.equal(response.status, 401, "parsed (then refused for not being signed in), not rejected as too large");
+});
+
 test("registration uses an HttpOnly cookie and partner invitations bind exactly two accounts", async () => {
   const alice = await register("Alice");
   const bob = await register("Bob");
