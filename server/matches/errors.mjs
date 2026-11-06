@@ -17,4 +17,5 @@ export const MATCH_ERRORS = {
   invalid_action: ["这一步不行，再试一次。", "That move doesn't work. Try again.", "Ese movimiento no vale. Inténtalo de nuevo."],
   drawing_required: ["先画几笔再交给 TA。", "Draw something before passing it on.", "Dibuja algo antes de pasarlo."],
   guess_required: ["写下你的答案。", "Write your guess.", "Escribe tu respuesta."],
+  statements_required: ["写满三句，再选出哪句是假的。", "Write all three, then mark which one is the lie.", "Escribe las tres y marca cuál es la mentira."],
 };

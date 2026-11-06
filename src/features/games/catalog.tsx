@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowsSplit, ChatsCircle, GridNine, PaintBrush, Target } from "@phosphor-icons/react";
+import { ArrowsSplit, ChatsCircle, CircleHalf, GridFour, GridNine, HandFist, MaskHappy, PaintBrush, Target } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -69,6 +69,44 @@ export function gameCatalog(language: Language): GameEntry[] {
       rules: [
         t("Pinky 出一个温柔的问题，你们各写一句真心话。", "Pinky asks a gentle question and you each write an honest line.", "Pinky hace una pregunta tierna y cada uno escribe una línea sincera."),
         t("两个人都写完才能看到对方的。不会问前任或让人尴尬的事。", "You see each other's only once both have written. Never about exes or anything embarrassing.", "Solo se ven cuando los dos han escrito. Nunca sobre ex parejas ni nada incómodo."),
+      ],
+    },
+    {
+      id: "reversi", category: "board", kind: "match", icon: <CircleHalf size={26} weight="duotone" />, name: t("黑白棋", "Reversi", "Reversi"),
+      tagline: t("夹住对方的棋子就能翻成你的颜色。", "Sandwich their discs to flip them to your colour.", "Atrapa sus fichas entre las tuyas para voltearlas."),
+      rules: [
+        t("8×8 的棋盘，开局的人执黑先走。", "An 8 x 8 board; whoever starts plays black and goes first.", "Tablero de 8 x 8; quien empieza lleva negras y sale primero."),
+        t("每一步都要把对方的一排（横、竖、斜）夹在你的两颗子之间，被夹住的全部翻成你的颜色。能下的位置会有小圆点提示。", "Each move must trap a line of their discs (across, down or diagonal) between two of yours; every trapped disc flips. Spots you can play show a small dot.", "Cada jugada debe atrapar una línea de sus fichas entre dos tuyas; todas las atrapadas se voltean. Los puntos donde puedes jugar llevan un puntito."),
+        t("没地方下就自动跳过；两个人都下不了时，棋子多的人赢。", "No move means your turn is skipped; when neither can move, more discs wins.", "Sin jugada se salta tu turno; cuando nadie puede jugar, gana quien tenga más fichas."),
+        t("TA 不在时可以和小家伙下，它特别爱抢角。", "When your partner's away, play your little one: it loves the corners.", "Si tu pareja no está, juega con tu pequeñín: adora las esquinas."),
+      ],
+    },
+    {
+      id: "connect4", category: "board", kind: "match", icon: <GridFour size={26} weight="duotone" />, name: t("四子棋", "Four in a row", "Cuatro en raya"),
+      tagline: t("点一列投下棋子，先连成四个的赢。", "Drop discs into columns; first to four in a row wins.", "Deja caer fichas en columnas; gana quien haga cuatro en línea."),
+      rules: [
+        t("7 列 6 行，点哪一列，棋子就掉到那一列最下面的空位。", "Seven columns, six rows: a disc falls to the lowest free spot of the column you tap.", "Siete columnas y seis filas: la ficha cae al hueco más bajo de la columna que toques."),
+        t("横、竖、斜先连成四个的人赢；棋盘下满就是平局。", "Four in a row across, down or diagonally wins; a full board is a draw.", "Cuatro en línea en cualquier dirección gana; tablero lleno es empate."),
+        t("一盘只要几分钟，下一盘换另一个人先走。", "A game takes a few minutes; the other one goes first next time.", "Una partida dura unos minutos; la próxima empieza el otro."),
+      ],
+    },
+    {
+      id: "truths", category: "words", kind: "match", icon: <MaskHappy size={26} weight="duotone" />, name: t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"),
+      tagline: t("说三件关于自己的事，让 TA 猜哪件是编的。", "Tell three things about you; they guess which one you made up.", "Cuenta tres cosas de ti; adivina cuál es inventada."),
+      rules: [
+        t("轮到你时写三件关于你的事，其中一件是编的，再点“这句是假的”标出来。", "On your turn write three things about you, one made up, and mark it with This one's the lie.", "En tu turno escribe tres cosas sobre ti, una inventada, y márcala."),
+        t("TA 只看到三句话，猜哪句是假的。猜完揭晓，然后换 TA 来说。", "They only see the three lines and guess the lie; then it's revealed and you swap.", "Solo ve las tres frases y adivina la mentira; luego se revela y cambian."),
+        t("越像真的越好玩，也是更了解对方的好机会。", "The more believable the better, and you'll learn things about each other.", "Cuanto más creíble, mejor, y se conocerán un poco más."),
+        t("也可以和小家伙玩，它也会说三件关于自己的事。", "You can play your little one too: it tells three things about itself.", "También con tu pequeñín: cuenta tres cosas de sí mismo."),
+      ],
+    },
+    {
+      id: "rps", category: "casual", kind: "match", icon: <HandFist size={26} weight="duotone" />, name: t("石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"),
+      tagline: t("三局两胜，可以先定个赌注，比如输的人洗碗。", "Best of three, with a bet if you like: loser does the dishes.", "Al mejor de tres, con apuesta si quieren: quien pierda lava los platos."),
+      rules: [
+        t("开始前可以写一个赌注，第一把出拳之前都能定。", "Before the first pick you can set a bet.", "Antes de la primera jugada pueden fijar una apuesta."),
+        t("两个人各自偷偷出，都出完才一起揭晓；平手就再来。", "You each pick in secret; it's revealed once both have picked, and a tie is played again.", "Cada uno elige en secreto; se revela cuando ambos eligen, y el empate se repite."),
+        t("先赢两把的人赢。结束后 Pinky 会在“我们俩”里说谁赢了、谁要兑现赌注。", "First to two wins. Pinky then says in Us who won and who owes the bet.", "Gana quien llegue a dos. Pinky dice en Nosotros quién ganó y quién debe la apuesta."),
       ],
     },
   ];

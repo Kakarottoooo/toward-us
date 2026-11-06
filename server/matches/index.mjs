@@ -4,6 +4,10 @@ import { drawGuess } from "./draw-guess.mjs";
 import { asAiUser } from "../ai-budget.mjs";
 import { BOTH, HOST, matchError, PET } from "./errors.mjs";
 import { gomoku } from "./gomoku.mjs";
+import { reversi } from "./reversi.mjs";
+import { connectFour } from "./connect-four.mjs";
+import { twoTruths } from "./two-truths.mjs";
+import { rps } from "./rps.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
 // the same shape, so adding one is adding a module here and its screen in src/features/games:
@@ -23,9 +27,9 @@ import { gomoku } from "./gomoku.mjs";
 // turn(state) may be BOTH when either player may act.
 // A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
 // pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
-export const GAMES = Object.freeze({ gomoku, draw: drawGuess });
+export const GAMES = Object.freeze({ gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps });
 export const COLLECTION = "matches";
-const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"] };
+const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"], reversi: ["黑白棋", "Reversi", "Reversi"], connect4: ["四子棋", "Four in a row", "Cuatro en raya"], truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"], rps: ["石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"] };
 export const gameName = (game, language) => { const names = NAMES[game] || [game, game, game]; return language === "en" ? names[1] : language === "es" ? names[2] : names[0]; };
 
 export const withPet = (match) => match.players.includes(PET);
@@ -102,7 +106,9 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
 
 /** What the hall shows per game, from all of this couple's matches of it. */
 export function matchStats(matches) {
-  return Object.fromEntries(Object.entries(GAMES).map(([id, module]) => [id, module.stats(matches.filter((match) => match.game === id && (id !== "gomoku" || match.status === "finished")))]));
+  // Board games count finished games; the others count rounds played, also in games still going.
+  const FINISHED_ONLY = new Set(["gomoku", "reversi", "connect4", "xiangqi"]);
+  return Object.fromEntries(Object.entries(GAMES).map(([id, module]) => [id, module.stats(matches.filter((match) => match.game === id && (!FINISHED_ONLY.has(id) || match.status === "finished")))]));
 }
 
 const playing = new Set();
