@@ -1,0 +1,57 @@
+/* 情侣飞行棋 */
+.ludo { --ludo-me: #e0405a; --ludo-me-soft: #fde3e6; --ludo-them: #3a72d6; --ludo-them-soft: #e1eafb; --ludo-pet: #c27a12; --ludo-pet-soft: #f8ead2; display: flex; flex-direction: column; gap: 12px; }
+.ludo-board { display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(8, 1fr); gap: 3px; width: 100%; max-width: 420px; aspect-ratio: 9 / 8; margin: 0 auto; padding: 6px; border-radius: 18px; background: #f3e4cf; box-sizing: border-box; }
+.ludo-square { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0; min-width: 0; min-height: 0; padding: 0; border: 1px solid rgba(138,90,18,.18); border-radius: 8px; background: var(--jian-paper-bright, #fffdf8); color: inherit; font: inherit; overflow: hidden; }
+.device-screen .ludo-square, .device-screen .ludo-launch { min-height: 0; }
+.ludo-square.is-heart { background: #fff1f3; border-color: rgba(224,64,90,.28); }
+.ludo-square.is-entry.is-me { background: var(--ludo-me-soft); }
+.ludo-square.is-entry.is-them { background: var(--ludo-them-soft); }
+.ludo-square.is-entry.is-pet { background: var(--ludo-pet-soft); }
+.ludo-mark { position: absolute; inset: 0; margin: auto; opacity: .3; pointer-events: none; }
+.ludo-square.is-heart .ludo-mark { color: #e0405a; opacity: .45; }
+.ludo-square.is-entry.is-me .ludo-mark { color: var(--ludo-me); }
+.ludo-square.is-entry.is-them .ludo-mark { color: var(--ludo-them); }
+.ludo-square.is-entry.is-pet .ludo-mark { color: var(--ludo-pet); }
+.ludo-square.is-choice { cursor: pointer; box-shadow: 0 0 0 2px var(--ludo-me); animation: ludo-pulse 1s ease-in-out infinite alternate; }
+.ludo-square.is-choice:disabled { cursor: default; animation: none; }
+@keyframes ludo-pulse { from { box-shadow: 0 0 0 2px rgba(224,64,90,.9); } to { box-shadow: 0 0 0 4px rgba(224,64,90,.35); } }
+
+.ludo-plane { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 22px; height: 22px; margin: -2px; color: var(--ludo-me); filter: drop-shadow(0 1px 0 #fff); }
+.ludo-plane b { position: absolute; right: -2px; bottom: -3px; color: #4d4740; font-size: 9px; font-weight: 800; line-height: 1; }
+.ludo-plane.is-them { color: var(--ludo-them); }
+.ludo-plane.is-pet { color: var(--ludo-pet); }
+.ludo-plane.is-pick { animation: ludo-bob .6s ease-in-out infinite alternate; }
+@keyframes ludo-bob { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+
+.ludo-center { grid-row: 2 / 8; grid-column: 2 / 9; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; padding: 4px 2px; min-height: 0; }
+.ludo-dock { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 2px 10px; border-radius: 12px; background: rgba(255,253,248,.7); font-size: 14px; font-weight: 650; color: #5d574f; }
+.ludo-dock.is-turn.is-me { box-shadow: inset 0 0 0 1.5px var(--ludo-me); color: #c2344f; }
+.ludo-dock.is-turn.is-them { box-shadow: inset 0 0 0 1.5px var(--ludo-them); color: #2a5aae; }
+.ludo-dock.is-turn.is-pet { box-shadow: inset 0 0 0 1.5px var(--ludo-pet); color: #8a5a12; }
+.ludo-dock-name { display: inline-flex; flex: 1; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ludo-dock-name img { width: 20px; height: 20px; object-fit: contain; }
+.ludo-hangar { display: inline-flex; gap: 6px; }
+.ludo-launch { display: inline-grid; place-items: center; width: 40px; height: 40px; margin: -4px 0; padding: 0; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--ludo-me); cursor: pointer; }
+.ludo-home { display: inline-flex; align-items: center; gap: 3px; color: #5d574f; font-size: 13px; }
+
+.ludo-dice { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ludo-dice small { color: var(--jian-muted); font-size: 13px; font-weight: 600; }
+.ludo-die { display: grid; place-items: center; width: 72px; height: 72px; padding: 0; border: 0; border-radius: 20px; background: #fff; color: #b9ada0; box-shadow: 0 2px 0 rgba(138,90,18,.25); cursor: default; }
+.ludo-die.is-ready { color: var(--ludo-me); box-shadow: 0 0 0 3px rgba(224,64,90,.35), 0 3px 0 rgba(138,90,18,.25); cursor: pointer; }
+.ludo-die.is-ready:not(:disabled):active { transform: translateY(2px) scale(.97); }
+.ludo-die.is-rolling { color: #4d4740; animation: ludo-tumble .45s ease-in-out; }
+@keyframes ludo-tumble { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(-14deg) scale(1.08); } 75% { transform: rotate(10deg) scale(1.02); } 100% { transform: rotate(0) scale(1); } }
+
+.ludo-task, .ludo-log { box-sizing: border-box; width: 100%; max-width: 420px; margin-inline: auto; }
+.ludo-choices { flex-wrap: wrap; }
+.ludo-choices .game-primary { padding: 0 18px; }
+.ludo-task { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 16px; border: 1px solid rgba(224,64,90,.28); border-radius: 18px; background: #fff7f8; color: #e0405a; text-align: center; animation: ludo-pop .25s ease-out; }
+.ludo-task small { color: #c2344f; font-size: 14px; font-weight: 700; }
+.ludo-task p { margin: 0 0 4px; color: var(--jian-ink); font-size: 18px; font-weight: 650; line-height: 1.45; }
+/* Only a scale: the card stays opaque even if the animation is paused (a page in the background). */
+@keyframes ludo-pop { from { transform: scale(.96); } to { transform: none; } }
+.ludo-log { display: flex; flex-direction: column; gap: 4px; margin: 0 auto; padding: 0; list-style: none; }
+.ludo-log li { padding: 6px 12px; border-radius: 12px; background: var(--jian-paper-bright, #fffdf8); color: #4d4740; font-size: 14px; line-height: 1.4; border-left: 3px solid var(--ludo-me); }
+.ludo-log li.is-them { border-left-color: var(--ludo-them); }
+.ludo-log li.is-pet { border-left-color: var(--ludo-pet); }
+@media (prefers-reduced-motion: reduce) { .ludo-square.is-choice, .ludo-plane.is-pick, .ludo-die.is-rolling, .ludo-task { animation: none; } }

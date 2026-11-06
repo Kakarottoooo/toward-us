@@ -1,0 +1,28 @@
+/* 象棋 */
+.xiangqi { display: flex; flex-direction: column; gap: 12px; }
+.xiangqi-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+.xiangqi-dot.is-red { background: #c8323a; }
+.xiangqi-dot.is-black { background: #252525; }
+.xiangqi-check { align-self: center; margin: -4px 0 0; padding: 4px 16px; border-radius: 999px; background: #c2344f; color: #fff; font-size: 17px; font-weight: 800; letter-spacing: .04em; animation: xiangqi-check .5s ease-out; }
+@keyframes xiangqi-check { from { transform: scale(.8); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Nine points across: the board takes a little of the page gutter so each point gets a 40px tap cell on a 375px phone. */
+.xiangqi-board { display: block; align-self: center; width: min(calc(100% + 24px), 440px); height: auto; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.xiangqi-board.is-mine { cursor: pointer; }
+.xiangqi-wood { fill: #edcf9c; }
+.xiangqi-lines line { stroke: #8a6738; stroke-width: 1; }
+.xiangqi-river { fill: #8a6738; font-size: 17px; font-weight: 600; letter-spacing: .1em; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.xiangqi-piece circle { fill: #fdf5e6; stroke-width: 1.6; }
+.xiangqi-piece .xiangqi-ring { fill: none; stroke-width: .9; }
+.xiangqi-piece text { font-size: 19px; font-weight: 800; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.xiangqi-piece text.is-zh { font-size: 20px; font-weight: 700; font-family: "Songti SC", "STSong", "Noto Serif SC", "SimSun", serif; }
+.xiangqi-piece.is-red circle { stroke: #c8323a; }
+.xiangqi-piece.is-red text { fill: #c8323a; }
+.xiangqi-piece.is-black circle { stroke: #252525; }
+.xiangqi-piece.is-black text { fill: #252525; }
+.xiangqi-piece.is-last > circle:first-child { stroke: #e0405a; stroke-width: 2.6; }
+.xiangqi-piece.is-pick > circle:first-child { fill: #fff1c9; stroke: #2f6fd6; stroke-width: 3; }
+.xiangqi-piece.is-target > circle:first-child { stroke: #2f6fd6; stroke-width: 3; stroke-dasharray: 4 3; }
+.xiangqi-piece.is-checked > circle:first-child { fill: #ffd9d9; stroke: #e0405a; stroke-width: 3; }
+.xiangqi-from { fill: none; stroke: #e0405a; stroke-width: 1.6; stroke-dasharray: 3 2; pointer-events: none; }
+.xiangqi-dest { fill: #2f6fd6; opacity: .6; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .xiangqi-check { animation: none; } }

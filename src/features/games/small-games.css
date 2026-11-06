@@ -1,0 +1,61 @@
+/* 黑白棋, 四子棋, 两个真相一个谎言, 石头剪刀布 (game batch 2). */
+.small-game { display: flex; flex-direction: column; gap: 12px; }
+
+.reversi-board { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; width: 100%; max-width: 400px; aspect-ratio: 1; margin: 0 auto; padding: 6px; border-radius: 12px; background: #2f6b4a; }
+.reversi-cell { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 3px; background: #3c8a5f; cursor: default; }
+.device-screen .reversi-cell { min-height: 0; }
+.reversi-cell.is-legal { cursor: pointer; }
+.reversi-cell.is-legal::after { content: ""; width: 26%; height: 26%; border-radius: 50%; background: rgba(255,255,255,.4); }
+.reversi-disc { width: 82%; height: 82%; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.reversi-disc.is-b { background: #252525; }
+.reversi-disc.is-w { background: #fffdf8; }
+.reversi-disc.is-last { outline: 2px solid #e0405a; outline-offset: 1px; }
+.reversi-disc.is-flipped { animation: disc-flip .35s ease-out; }
+@keyframes disc-flip { from { transform: scaleX(.1); } to { transform: none; } }
+
+.four-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+.four-dot.is-r { background: #e0405a; }
+.four-dot.is-y { background: #f2b33a; }
+.four-board { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; width: 100%; max-width: 400px; margin: 0 auto; padding: 8px; border-radius: 14px; background: #2f6fde; }
+.four-column { display: grid; grid-template-rows: repeat(6, 1fr); gap: 4px; min-width: 0; padding: 2px 0; border: 0; border-radius: 8px; background: transparent; cursor: default; }
+.device-screen .four-column { min-height: 0; }
+.four-board.is-mine .four-column:not(:disabled) { cursor: pointer; }
+.four-board.is-mine .four-column:not(:disabled):hover, .four-board.is-mine .four-column:focus-visible { background: rgba(255,255,255,.18); }
+.four-slot { display: block; width: 100%; aspect-ratio: 1; border-radius: 50%; background: #f4efe6; }
+.four-slot.is-r { background: #e0405a; }
+.four-slot.is-y { background: #f2b33a; }
+.four-slot.is-last { box-shadow: inset 0 0 0 3px rgba(255,255,255,.7); }
+.four-slot.is-four { box-shadow: 0 0 0 3px #fff; }
+
+.truths-last { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--jian-paper-bright); }
+.truths-last small { color: var(--jian-muted); font-size: 13px; }
+.truths-last ol, .truths-list { margin: 0; padding-left: 20px; font-size: 15px; line-height: 1.6; }
+.truths-last li.is-lie, .truths-list li.is-lie { color: #c2344f; }
+.truths-last li.is-guess { font-weight: 700; }
+.truths-last em { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #fde3e7; color: #c2344f; font-size: 12px; font-style: normal; }
+.truths-last b { font-size: 15px; }
+.truths-last b.is-hit { color: #c2344f; }
+.truths-row { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid rgba(37,37,37,.12); border-radius: 14px; background: var(--jian-paper-bright); }
+.truths-row.is-lie { border-color: rgba(224,64,90,.45); background: #fff4f2; }
+.truths-row input { min-height: 44px; padding: 0 12px; border: 1px solid rgba(37,37,37,.16); border-radius: 10px; background: #fff; color: var(--jian-ink); font: inherit; font-size: 16px; }
+.truths-mark { align-self: flex-start; min-height: 36px; padding: 0 12px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: transparent; color: #5d574f; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.truths-mark.is-on { border-color: #c2344f; background: #c2344f; color: #fff; }
+.truths-choices { display: flex; flex-direction: column; gap: 8px; }
+.truths-choice { min-height: 52px; padding: 10px 16px; border: 1px solid rgba(37,37,37,.14); border-radius: 14px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-size: 16px; line-height: 1.5; text-align: left; cursor: pointer; }
+.truths-choice:hover { border-color: #c2344f; }
+
+.rps-score { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0; font-size: 16px; font-weight: 650; }
+.rps-score b { font-size: 26px; }
+.rps-score small { color: var(--jian-muted); font-size: 13px; font-weight: 600; }
+.rps-stake { margin: 0; color: #5d574f; font-size: 15px; text-align: center; }
+.rps-stake-form { display: flex; gap: 8px; }
+.rps-stake-form input { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border: 1px solid rgba(37,37,37,.18); border-radius: 999px; background: #fff; color: var(--jian-ink); font: inherit; font-size: 15px; }
+.rps-reveal { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-radius: 16px; background: var(--jian-paper-bright); }
+.rps-reveal span { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #8a5a12; }
+.rps-reveal small { color: var(--jian-muted); font-size: 12px; }
+.rps-reveal b { flex: 1; font-size: 15px; text-align: center; }
+.rps-picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.rps-pick { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 104px; border: 1px solid rgba(37,37,37,.14); border-radius: 18px; background: var(--jian-paper-bright); color: #8a5a12; font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; }
+.rps-pick span { color: var(--jian-ink); }
+.rps-pick:hover { border-color: #e0405a; }
+.rps-owes { display: block; margin-top: 6px; color: #5d574f; font-size: 15px; font-weight: 600; }
