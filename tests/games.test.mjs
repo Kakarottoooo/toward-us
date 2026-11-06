@@ -8,7 +8,7 @@ import { createFileStore } from "../server/store.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { buildTogetherContext } from "../server/together-domain.mjs";
 
-const usAction = (patch) => ({ kind: "game", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: null, remindDaysBefore: null, photoId: null, localDateTime: null, idea: null, amount: null, currency: null, paidBy: null, split: null, ...patch });
+const usAction = (patch) => ({ kind: "game", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: null, remindDaysBefore: null, photoId: null, localDateTime: null, idea: null, ...patch });
 
 test("小游戏: a card in Us, answers hidden until both answered, then revealed with the 默契值", async (t) => {
   const base = resolve("work"); await mkdir(base, { recursive: true });

@@ -12,7 +12,7 @@ import { createMemoryRouter } from "../server/memory-router.mjs";
 import { buildTogetherContext } from "../server/together-domain.mjs";
 import { createCycleRouter, predict } from "../server/cycle.mjs";
 
-const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, amount: null, currency: null, paidBy: null, split: null, ...patch });
+const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, ...patch });
 const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
 test("prediction: typical cycle and length from the logs, today's day of the period, and a missed log rolls forward", () => {

@@ -8,7 +8,7 @@ import { createFileStore } from "../server/store.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 
-const usAction = (patch) => ({ kind: "milestone", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: null, remindDaysBefore: null, photoId: null, localDateTime: null, idea: null, amount: null, currency: null, paidBy: null, split: null, ...patch });
+const usAction = (patch) => ({ kind: "milestone", operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: null, remindDaysBefore: null, photoId: null, localDateTime: null, idea: null, ...patch });
 
 test("异地: each one's time zone is shared with the other, and the next meeting is counted down", async (t) => {
   const base = resolve("work"); await mkdir(base, { recursive: true });
