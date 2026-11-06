@@ -154,3 +154,47 @@ test("deleting really removes the messages, and a Mac upload token works once", 
   assert.equal((await fetch(f.url("/imports/mac-helper.sh"))).status, 200, "the helper script needs no session");
   assert.equal((await fetch(f.url("/imports"))).status, 401);
 });
+
+test("the synced iMessage history is analysed by itself: once it has enough, quietly again after a week with enough new", async (t) => {
+  const f = await fixture(t);
+  const { command } = (await f.request("/imports/mac-sync-command", "POST", { language: "en" })).body;
+  const token = command.trim().split(" ").at(-1);
+  const rows = (from, count) => Array.from({ length: count }, (_, index) => ({ date: (757_000_000 + (from + index) * 600) * 1e9, text: `${(from + index) % 2 ? "running late" : "are you home"} ${from + index}`, is_from_me: (from + index) % 2 ? 0 : 1, handle: "+15550001111" }));
+  const sync = async (from, count) => (await fetch(f.url(`/imports/sync/${token}`), { method: "POST", headers: { "content-type": "application/octet-stream" }, body: JSON.stringify({ format: "pinky-imessage", chat: { title: "Blair" }, rows: rows(from, count) }) })).status;
+  const record = async () => (await f.request("/imports")).body.imports.find((item) => item.sync);
+  const reports = () => f.calls.structured.filter((call) => call.name === "chat_history_report").length;
+
+  assert.equal(await sync(0, 30), 200);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(reports(), 0, "too little to read yet");
+  assert.equal(await sync(30, 30), 200);
+  for (let index = 0; index < 200 && !(await record())?.analysis; index += 1) await new Promise((r) => setTimeout(r, 30));
+  const analysed = await record();
+  assert.equal(analysed.analysis.overview, report.overview);
+  assert.equal(analysed.status, "ready", "search keeps working while and after it is read");
+  assert.equal(reports(), 1);
+  // Its owner hears about it once, in their own conversation; Blair never sees it.
+  for (let index = 0; index < 100; index += 1) { if ((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.some((message) => message.text === report.message)) break; await new Promise((r) => setTimeout(r, 30)); }
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.filter((message) => message.text === report.message).length, 1);
+  // A few more messages, or many but within the week: not read again.
+  assert.equal(await sync(60, 400), 200);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(reports(), 1, "not again within a week");
+  // What Pinky knows in the owner's chat now includes the reading of the synced history.
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "what do we fight about?", itemId: randomUUID() });
+  const context = f.calls.planner.at(-1).chatImports.find((item) => item.synced);
+  assert.equal(context.overview, report.overview);
+  assert.equal(f.calls.planner.at(-1).chatImports.filter((item) => item.id === context.id).length, 1, "listed once");
+});
+
+test("a synced history is due again only after a week and enough new messages", async () => {
+  const { dueForAnalysis } = await import("../server/chat-import.mjs");
+  const base = { sync: { kind: "imessage" }, status: "ready", people: [{ role: "me" }, { role: "partner" }] };
+  assert.equal(dueForAnalysis({ ...base, messageCount: 49 }), false);
+  assert.equal(dueForAnalysis({ ...base, messageCount: 50 }), true);
+  const read = { ...base, analysis: {}, analyzedCount: 100, analyzedAt: new Date(Date.now() - 8 * 86_400_000).toISOString() };
+  assert.equal(dueForAnalysis({ ...read, messageCount: 399 }), false);
+  assert.equal(dueForAnalysis({ ...read, messageCount: 400 }), true);
+  assert.equal(dueForAnalysis({ ...read, messageCount: 400, analyzedAt: new Date().toISOString() }), false);
+  assert.equal(dueForAnalysis({ ...base, messageCount: 500, people: [{ role: "me" }] }), false, "not before it knows who is who");
+});

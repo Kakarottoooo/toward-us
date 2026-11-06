@@ -17,6 +17,14 @@ import { asAiUser, isAiLimit } from "./ai-budget.mjs";
 const COLLECTION = "chatImports";
 const MAX_BYTES = 120 * 1024 * 1024, IMPORT_LIMIT = 20;
 const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
+// The synced history is read once it has this many messages, and read again only after a week with this many new ones.
+export const SYNC_FIRST = 50, SYNC_MORE = 300, SYNC_EVERY_MS = 7 * 86_400_000;
+export function dueForAnalysis(record, now = Date.now()) {
+  if (!record?.sync || record.status !== "ready" || record.rawDeleted) return false;
+  if (!["me", "partner"].every((role) => record.people?.some((person) => person.role === role))) return false;
+  if (!record.analysis) return (record.messageCount || 0) >= SYNC_FIRST;
+  return (record.messageCount || 0) - (record.analyzedCount || 0) >= SYNC_MORE && now - Date.parse(record.analyzedAt || 0) >= SYNC_EVERY_MS;
+}
 const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.chat.json`);
 /** Where an import's messages are on disk, for account and private-data deletion. */
@@ -44,13 +52,19 @@ export function importView(record) {
 
 /** Compact context for the agents: the finished analysis, never the raw messages (those are reached by search only). */
 export function importContext(records) {
-  // The Mac sync is kept, not analysed (founder 11-05: "只存着，问到才用"), so the agents only learn it exists and search it.
-  const synced = records.filter((record) => record.sync && record.status === "ready" && !record.rawDeleted).map((record) => ({
+  // The Mac sync is analysed on its own (founder 11-06: "同步完之后就可以自动分析"): once it has enough, then again after a week
+  // with enough new messages. Until then the agents only learn it exists and search it.
+  const analysed = (record) => record.analysis ? {
+    overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle, patterns: record.analysis.patterns.map(({ title, detail }) => ({ title, detail })),
+    strengths: record.analysis.strengths, hurts: record.analysis.hurts, moments: record.analysis.moments, dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
+    analysedThrough: day(record.analyzedThrough || record.lastAt),
+  } : {};
+  const synced = records.filter((record) => record.sync && record.status === "ready" && !record.rawDeleted).map((record) => ({ ...analysed(record),
     id: record.id, title: record.title, platform: record.platform, synced: true, canSearch: true, period: [day(record.firstAt), day(record.lastAt)],
     messageCount: record.messageCount, lastSyncAt: record.sync.lastSyncAt || null,
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
   }));
-  return [...synced, ...records.filter((record) => record.status === "ready" && record.analysis).slice(0, 5).map((record) => ({
+  return [...synced, ...records.filter((record) => !record.sync && record.status === "ready" && record.analysis).slice(0, 5).map((record) => ({
     id: record.id, title: record.title, platform: record.platform, period: [day(record.firstAt), day(record.lastAt)], messageCount: record.messageCount,
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
     canSearch: !record.rawDeleted, overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle,
@@ -247,8 +261,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
     const job = asAiUser({ userId: record.ownerUserId, language: record.language }, () => analyze(record)).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
-      await update(record, record.ownerUserId, (draft) => { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; }).catch(() => {});
-      if (isAiLimit(error)) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
+      await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
+      if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
     }).finally(() => jobs.delete(record.id));
     jobs.set(record.id, job);
   }
@@ -277,7 +291,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!notes.some(Boolean)) throw new Error("No part of the history could be read.");
     const input = JSON.stringify({ period: [day(record.firstAt), day(record.lastAt)], messageCount: record.messageCount, sampled, statistics: { ...stats, perPerson: { [names.me]: stats.perPerson.me, [names.partner]: stats.perPerson.partner } }, notes: notes.filter(Boolean) });
     const analysis = await mediator.structured({ name: "chat_history_report", schema: reportSchema, instructions: reportInstructions(names, record.language), input: input.slice(0, 400_000), maxOutputTokens: 6000 });
-    const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); });
+    const first = !record.analysis;
+    const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); draft.analyzedAt = draft.completedAt; draft.analyzedCount = record.messageCount; draft.analyzedThrough = record.lastAt || null; draft.analysisError = null; });
+    // A refresh of the synced history updates what Pinky understands quietly; only the first reading is posted.
+    if (record.sync && !first) return;
     await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
   }
 
@@ -470,6 +487,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       Object.assign(draft, { status: "ready", error: null, title: them, messageCount: messages.length, firstAt: messages.find((message) => message.at)?.at || null, lastAt: [...messages].reverse().find((message) => message.at)?.at || null, people: [{ name: me, count: count(true), role: "me" }, { name: them, count: count(false), role: "partner" }] });
       draft.sync = { ...draft.sync, lastSyncAt: now };
     });
+    const synced = await owned(store, record.id, user.id).catch(() => null);
+    if (synced && dueForAnalysis(synced)) start({ ...synced, sessionId: null });
     // The partner's words are in it, so the partner is told once, in Us, that it exists and who can see it (founder 11-05).
     if (first && activePair(context)) {
       const name = user.name || "TA";
