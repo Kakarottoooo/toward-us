@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { ChatCircleDots, LockKey, Trash, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { IdeasSection } from "./IdeasSection";
 import { TogetherCard } from "./TogetherCard";
 import "./moments.css";
 
-type Item = { id: string; title: string; text: string; date: string | null; photoId?: string | null; createdAt: string; ownerUserId: string };
+type Item = { id: string; title: string; text: string; date: string | null; photoId?: string | null; idea?: number; createdAt: string; ownerUserId: string };
 type Album = { id: string; system?: string; visibility: string; items: Item[] };
 type Checkin = { id: string; text: string; mood?: string | null; createdAt: string; ownerUserId: string; visibility: string };
-type Moment = { key: string; date: string; title: string; text: string; photos: string[]; ids: string[]; shared: boolean; mine: boolean; mood?: string | null };
+type Moment = { key: string; date: string; title: string; text: string; photos: string[]; ids: string[]; shared: boolean; mine: boolean; mood?: string | null; idea?: number };
 type Filter = "all" | "us" | "me";
 
 /** Moments: the couple's memory album and each member's own, as one timeline. Things are added by telling Pinky. */
@@ -27,6 +28,7 @@ export function MomentsPage({ language, userId, paired, since = null, onSince, o
         const moment = grouped.get(key) || { key, date, title: item.title, text: "", photos: [], ids: [], shared: album.visibility === "shared", mine: item.ownerUserId === userId };
         if (item.text && !moment.text) moment.text = item.text;
         if (item.photoId) moment.photos.push(item.photoId);
+        if (item.idea && album.visibility === "shared") moment.idea = item.idea;
         moment.ids.push(item.id); moment.mine = moment.mine && item.ownerUserId === userId; grouped.set(key, moment);
       }
       // Daily check-ins told to Pinky are private moments with a feeling.
@@ -52,11 +54,15 @@ export function MomentsPage({ language, userId, paired, since = null, onSince, o
   const day = (date: string, withYear = false) => new Date(`${date}T12:00:00Z`).toLocaleDateString(languageTag(language), { month: "long", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
   const mood = (value?: string | null) => value === "low" ? t("有点低落", "Feeling low", "Con poco ánimo") : value === "mixed" ? t("说不清", "Mixed", "Mezclado") : value === "okay" ? t("还好", "Okay", "Bien") : value === "good" ? t("很好", "Good", "Muy bien") : "";
   const photos = (ids: string[]) => <div className={`moment-photos count-${Math.min(ids.length, 3)}`}>{ids.slice(0, 6).map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
+  // Ideas done together: the oldest shared memory that names one ticks it, with its first photo.
+  const done = new Map<number, { photo: string | null; date: string }>();
+  for (const moment of [...(moments || [])].reverse()) if (moment.idea && !done.has(moment.idea)) done.set(moment.idea, { photo: moment.photos[0] || null, date: moment.date });
   const ask = () => onAsk(t("帮我存一个回忆：", "Keep a memory for us: ", "Guarda un recuerdo: "), paired && filter !== "me" ? "us" : "me");
 
   return <div className="moments-page" data-testid="moments-page">
     {paired && onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
     {!!onThisDay.length && <section className="moments-onthisday"><small>{t("往年的今天", "On this day", "Un día como hoy")}</small>{onThisDay.slice(0, 2).map((moment) => <div key={moment.key}>{moment.photos[0] && <img src={`/api/photos/${encodeURIComponent(moment.photos[0])}`} alt="" draggable={false} />}<span><strong>{moment.title || moment.text}</strong><small>{day(moment.date, true)}</small></span></div>)}</section>}
+    {paired && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />}
     {paired && <div className="moments-filter" role="group" aria-label={t("显示哪些回忆", "Which moments", "Qué recuerdos")}>{(["all", "us", "me"] as Filter[]).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? t("全部", "All", "Todos") : value === "us" ? t("我们俩的", "Ours", "Nuestros") : t("只有我", "Just me", "Solo yo")}</button>)}</div>}
     {error && <p className="space-error" role="alert">{error}</p>}
     {moments && !visible.length && <section className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Pinky 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Pinky in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Pinky en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></section>}

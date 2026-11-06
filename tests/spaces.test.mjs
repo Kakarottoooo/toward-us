@@ -188,6 +188,16 @@ test("on the day, Pinky recalls the couple's shared moments from earlier years i
   assert.equal((await open(f.ids[0])).length, 1, "posted once a day, whoever opens Us first");
 });
 
+test("a memory Pinky keeps for one of the 100 little things carries its number, so the list can tick it off", async (t) => {
+  let album = null;
+  const f = await fixture(t, { shared: () => ({ reply: "Kept it.", draftAgreement: null, actions: [together({ kind: "space_item", spaceId: album, title: "Sunset at the beach", idea: 1 }), together({ kind: "space_item", spaceId: album, title: "Not an idea", idea: 500 })] }) });
+  album = (await f.request("/spaces")).body.spaces.find((space) => space.system === "moments" && space.visibility === "shared").id;
+  await f.request("/together/messages", "POST", { text: "Pinky, we watched a sunset at the beach! (100 little things #1)", itemId: randomUUID(), language: "en" });
+  const items = (await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.find((space) => space.id === album).items;
+  assert.equal(items.find((item) => item.title === "Sunset at the beach").idea, 1, "the partner sees it ticked too");
+  assert.equal(items.find((item) => item.title === "Not an idea").idea, undefined, "only 1-100 counts");
+});
+
 test("recap cards: made on a day worth celebrating or on request, from shared moments only, once per occasion", async (t) => {
   const { celebrationOn, storyMaterial } = await import("../server/story.mjs");
   assert.deepEqual(celebrationOn("2025-05-20", "2025-08-27"), { key: "day-100", kind: "day", day: 100 });
