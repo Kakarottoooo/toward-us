@@ -294,7 +294,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       for (const member of context.members) {
         const preference = await preferences(store, member.userId), notify = notifyOf(preference), quiet = quietNow(preference);
         const mine = fresh.filter((item) => authorOf(item) !== member.userId).filter((item) => notify[kindOf(item)] !== false && (!quiet || kindOf(item) === "reminders"));
-        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"), mine.every((item) => kindOf(item) === "pinky"));
+        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"), mine.every((item) => kindOf(item) === "pinky"), mine.every((item) => item.kind === "nudge"));
       }
       return { sent };
     },
@@ -451,7 +451,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
 
   // One member's phones and installed web apps, at most once per 10 minutes across both; respects "turn off all reminder
   // notifications" (and, for browsers, their explicit opt-in, as for personal reminders); best effort, never retried.
-  async function nudge(userId, partnerWrote, surprise = false) {
+  async function nudge(userId, partnerWrote, surprise = false, missYou = false) {
     const { phones, browsers } = await store.transaction(LOCK, async (db) => {
       const preference = await preferences(db, userId), none = { phones: [], browsers: [] };
       if (preference?.enabled === false) return none;
@@ -466,7 +466,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       return { phones, browsers };
     });
     const language = phones.length || browsers.length ? await memberLanguage(store, userId) : "zh";
-    const body = surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
+    const body = missYou ? say(language, "TA 想你了 💗", "Your partner is thinking of you 💗", "Tu pareja está pensando en ti 💗") : surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
     for (const device of phones) {
       try { await sendNative(device.token, { title: "Pinky", body, url: "/?channel=us" }); sent += 1; }

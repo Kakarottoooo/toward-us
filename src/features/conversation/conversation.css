@@ -210,3 +210,11 @@
 .daily-answers { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
 .daily-answers li { padding: 10px 12px; border-radius: 12px; background: rgba(37,37,37,.05); }
 .daily-answers small { margin-top: 0; font-weight: 600; }
+/* 想你了 (11-06): a heart beside the call button in Us; a soft line in the thread; hearts floating up when one is sent or arrives. */
+.conversation-heart { color: #e0457b; }
+.conversation-nudge { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 6px auto; padding: 6px 14px; width: fit-content; border-radius: 16px; background: #fbe6ee; color: #993556; font-size: 14px; font-weight: 650; }
+.conversation-nudge time { color: #b06a86; font-size: 12px; font-weight: 500; }
+.miss-you-hearts { position: absolute; inset: 0; z-index: 40; overflow: hidden; pointer-events: none; }
+.miss-you-hearts svg { position: absolute; bottom: 18%; color: #e0457b; opacity: 0; animation: miss-you-float 1.8s ease-out forwards; filter: drop-shadow(0 2px 4px rgba(224,69,123,.3)); }
+@keyframes miss-you-float { 0% { opacity: 0; transform: translateY(0) scale(.6); } 15% { opacity: 1; transform: translateY(-30px) scale(1); } 100% { opacity: 0; transform: translateY(-420px) scale(1.15) rotate(-12deg); } }
+@media (prefers-reduced-motion: reduce) { .miss-you-hearts svg { animation-duration: .01s; } }

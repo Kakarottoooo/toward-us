@@ -28,7 +28,7 @@ type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; cr
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -46,6 +46,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [channel, setChannel] = useState<Channel>(() => { try { const asked = new URLSearchParams(location.search).get("channel"); return asked === "us" || asked === "me" ? asked : localStorage.getItem(channelKey) === "us" ? "us" : "me"; } catch { return "me"; } });
   const [session, setSession] = useState<Session | null>(null);
   const [together, setTogether] = useState<Together | null>(null);
+  // 想你了 (founder 11-06): hearts float up when one is sent from here or arrives from the partner while Us is open.
+  const [hearts, setHearts] = useState(0);
+  const heartsSeen = useRef<string | null>(null);
   const [approved, setApproved] = useState<string[]>([]);
   // Pages of earlier Us messages the member asked for, kept apart from the live working set. `anchor` is the working set's
   // first message when the first page was fetched: if the working set moves on (older lines archived), the pages are dropped
@@ -261,6 +264,22 @@ ${text}` : text, target);
   const ready = attachments.filter((item) => item.id).map((item) => item.id!);
   const uploading = attachments.some((item) => !item.id && !item.failed);
   // The import posts its own note into this conversation; reload it so the card shows up right away.
+  const missYou = async () => {
+    setHearts((count) => count + 1);
+    try {
+      const result = await relationshipApi<{ message: { id: string } }>("/api/together/nudge", jsonBody({ language }));
+      heartsSeen.current = result.message.id;
+      await loadTogether();
+    } catch (caught) { setNotice((caught as Error).message); }
+  };
+  // A 想你了 from the partner that arrives while Us is open floats the hearts too (once per nudge; not for old ones on open).
+  useEffect(() => {
+    if (!together) return;
+    const latest = together.conversation.messages.filter((item) => item.kind === "nudge" && item.actorUserId !== user.id).at(-1);
+    // The first load only notes what is already there (none counts too), so the first new one floats the hearts.
+    if (heartsSeen.current === null) { heartsSeen.current = latest?.id || ""; return; }
+    if (latest && heartsSeen.current !== latest.id) { heartsSeen.current = latest.id; if (channel === "us") setHearts((count) => count + 1); }
+  }, [together, channel, user.id]);
   const startCall = async () => {
     keyboard.hide(); voice.stop(); setNotice("");
     if (channel === "us") { setCall({ channel: "us", sessionId: null }); return; }
@@ -437,6 +456,7 @@ ${text}` : text, target);
     const author = message.role === "agent" ? "Pinky" : recorder ? `${message.actorUserId === user.id ? user.name : partnerName}${t(`（在 ${recorder} 的手机上说）`, ` (spoken on ${recorder}'s phone)`, ` (dicho en el teléfono de ${recorder})`)}` : mine ? "" : partnerName;
     // System copy is stored in every language; free-form model replies and member text are shown as written.
     const text = message.i18n?.[language] ?? message.text;
+    if (message.kind === "nudge") return <p key={message.id} className="conversation-nudge" data-testid="nudge"><Heart size={15} weight="fill" />{message.actorUserId === user.id ? t(`你想 ${partnerName} 了`, `You're thinking of ${partnerName}`, `Estás pensando en ${partnerName}`) : t(`${partnerName} 想你了`, `${partnerName} is thinking of you`, `${partnerName} está pensando en ti`)}<time>{new Date(message.createdAt).toLocaleTimeString(languageTag(language), { hour: "numeric", minute: "2-digit" })}</time></p>;
     if (message.kind === "agreement_card") {
       const ref = message.refs.find((item) => item.type === "agreement");
       const live = ref && pendingAgreement && pendingAgreement.id === ref.id && pendingAgreement.version === ref.version && !together?.readOnly;
@@ -513,6 +533,7 @@ ${text}` : text, target);
   const working: AgentActivity = channel === "me" ? (waitingMe ? activity.me || { step: "thinking" } : null) : paired ? activity.us || (waitingUs ? { step: "thinking" } : null) : null;
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
   return <div className={`paper-screen conversation-home ${mascotShown ? "has-mascot" : ""} ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen">
+    {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
       {/* One row: menu, the two channels, and a live voice call with Pinky (privately in Just me, for everyone in the room in Us). */}
       <div className="conversation-topline">
@@ -521,6 +542,7 @@ ${text}` : text, target);
           <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={17} />{t("只有我", "Just me", "Solo yo")}{unreadMe && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
           <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={17} />{t("我们俩", "Us", "Nosotros")}{unreadUs && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
         </div>
+        {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
       <CoupleMascot character={mascot} status={working && <AgentStatusPill activity={working} language={language} />} />

@@ -10,7 +10,8 @@ import { composeStory } from "./story.mjs";
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question"]);
+// "nudge" is 想你了: one tap, no words (founder 11-06).
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 // The conversation record carries at most MESSAGE_LIMIT messages (the working set every read and prompt sees). What falls off

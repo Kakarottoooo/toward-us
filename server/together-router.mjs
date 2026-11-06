@@ -6,7 +6,7 @@ import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
-import { announceAgreement, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
+import { announceAgreement, appendTogetherMessage, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
@@ -62,6 +62,19 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, context = await pairing(req);
     const limit = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.limit || ""), 10) || 50));
     res.json(await olderTogetherMessages(store, { relationshipId: context.relationship.id, userId, before: clean(String(req.query?.before || ""), 80), limit }));
+  });
+
+  // 想你了: one tap that tells the partner they are being thought of. A second tap within 30 seconds is the same one.
+  router.post("/together/nudge", async (req, res) => {
+    const userId = req.auth.user.id;
+    const result = await transaction(req, async (tx, _context, relationshipId) => {
+      const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
+      const last = [...conversation.messages].reverse().find((item) => item.kind === "nudge" && item.actorUserId === userId);
+      if (last && Date.now() - Date.parse(last.createdAt) < 30_000) return { conversation, message: last, duplicate: true };
+      return appendTogetherMessage(tx, { relationshipId, actorUserId: userId, source: "app", kind: "nudge", text: "💗" });
+    });
+    if (!result.duplicate) { emit(result.conversation, "together.updated", null, userId); void recordUsage(store, { userId, relationshipId: result.conversation.relationshipId, action: "together_nudge" }); }
+    res.status(result.duplicate ? 200 : 201).json({ message: result.message, duplicate: Boolean(result.duplicate) });
   });
 
   router.post("/together/messages", async (req, res) => {
