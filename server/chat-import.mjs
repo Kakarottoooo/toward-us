@@ -1,11 +1,11 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
 import { ImportFormatError, parseChatExport, parsePastedText } from "./chat-import-parsers.mjs";
 import { canViewRecord, createRelationshipRecord } from "./relationship-domain.mjs";
-import { appendTogetherMessage } from "./together-domain.mjs";
+import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
 import { photoFile, visiblePhoto } from "./photo-store.mjs";
 import { asAiUser, isAiLimit } from "./ai-budget.mjs";
 
@@ -37,19 +37,27 @@ export function importView(record) {
     people: record.people || [], messageCount: record.messageCount || 0, firstAt: record.firstAt || null, lastAt: record.lastAt || null,
     progress: record.progress || null, stats: record.stats || null, analysis: record.analysis || null, sampled: Boolean(record.sampled),
     rawDeleted: Boolean(record.rawDeleted), shareRequestedAt: record.shareRequest?.requestedAt || null, sharedCopyId: record.sharedCopyId || null,
+    // Never the token or its hash: only whether this import is the Mac sync and when it last arrived.
+    sync: record.sync ? { lastSyncAt: record.sync.lastSyncAt || null } : null,
   };
 }
 
 /** Compact context for the agents: the finished analysis, never the raw messages (those are reached by search only). */
 export function importContext(records) {
-  return records.filter((record) => record.status === "ready" && record.analysis).slice(0, 5).map((record) => ({
+  // The Mac sync is kept, not analysed (founder 11-05: "只存着，问到才用"), so the agents only learn it exists and search it.
+  const synced = records.filter((record) => record.sync && record.status === "ready" && !record.rawDeleted).map((record) => ({
+    id: record.id, title: record.title, platform: record.platform, synced: true, canSearch: true, period: [day(record.firstAt), day(record.lastAt)],
+    messageCount: record.messageCount, lastSyncAt: record.sync.lastSyncAt || null,
+    me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
+  }));
+  return [...synced, ...records.filter((record) => record.status === "ready" && record.analysis).slice(0, 5).map((record) => ({
     id: record.id, title: record.title, platform: record.platform, period: [day(record.firstAt), day(record.lastAt)], messageCount: record.messageCount,
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
     canSearch: !record.rawDeleted, overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle,
     patterns: record.analysis.patterns.map(({ title, detail }) => ({ title, detail })), strengths: record.analysis.strengths, hurts: record.analysis.hurts,
     moments: record.analysis.moments, dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
     stats: record.stats ? { perPerson: record.stats.perPerson, silences: record.stats.silences?.slice(0, 3) } : null,
-  }));
+  }))];
 }
 
 /** Searches an import's messages for the agents: literal words and/or a date prefix, with a little surrounding context. */
@@ -58,11 +66,12 @@ export async function searchImport(record, { query = "", date = "" } = {}) {
   const messages = JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null"))?.conversation?.messages, hits = [];
   if (!messages) return "The messages are not available.";
   const words = String(query || "").toLocaleLowerCase().split(/\s+/).filter(Boolean).slice(0, 4);
-  for (let index = 0; index < messages.length && hits.length < 12; index += 1) {
+  // Newest first: in a chat that keeps growing, "what did she say about dinner" means lately.
+  for (let index = messages.length - 1; index >= 0 && hits.length < 12; index -= 1) {
     const message = messages[index];
     if (date && !String(message.at || "").startsWith(date)) continue;
     if (words.length && !words.some((word) => message.text.toLocaleLowerCase().includes(word))) continue;
-    if (!words.length && hits.length && index - hits.at(-1) < 6) continue;
+    if (!words.length && hits.length && hits.at(-1) - index < 6) continue;
     hits.push(index);
   }
   if (!hits.length) return "No matching messages.";
@@ -172,7 +181,7 @@ overview is 3 to 4 plain sentences about the relationship as a whole, without re
 export function createChatImportRouter({ store, mediator, appendAssistantMessage }) {
   const router = express.Router();
   const jobs = new Map(), macTokens = new Map();
-  const publicPaths = /^\/imports\/(mac-helper\.sh|upload\/)/;
+  const publicPaths = /^\/imports\/(mac-helper\.sh|mac-sync\.sh|upload\/|sync\/)/;
   router.use("/imports", (req, res, next) => req.auth || publicPaths.test(`/imports${req.path}`) ? next() : res.status(401).json({ error: "Please sign in." }));
 
   const owned = async (db, id, userId) => {
@@ -286,6 +295,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   router.importScreenshots = importScreenshots;
 
   const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : "zh";
+  // Behind a TLS proxy (Tailscale, Render) the app sees plain http; only a local address keeps it.
+  const originOf = (req) => { const host = req.get("x-forwarded-host") || req.get("host"); return `${req.get("x-forwarded-proto") || (/^(localhost|127.|[::1])/.test(host) ? req.protocol : "https")}://${host}`; };
+  const hashToken = (token) => createHash("sha256").update(String(token)).digest("hex");
   const parseUpload = (req) => {
     const name = clean(String(req.query.name || ""), 200);
     try { return parseChatExport({ name, bytes: req.body }); }
@@ -297,6 +309,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   router.get("/imports/mac-helper.sh", async (_req, res) => {
     // A Windows checkout may have turned its line endings into CRLF, which bash on the Mac cannot run.
     res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-helper.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
+  });
+  router.get("/imports/mac-sync.sh", async (_req, res) => {
+    res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-sync.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
   });
   router.get("/imports", async (req, res) => {
     const records = (await store.listRelationshipRecordsForUser(COLLECTION, req.auth.user.id)).filter((record) => canViewRecord(record, req.auth.user.id));
@@ -409,10 +424,59 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     for (const [token, entry] of macTokens) if (entry.expiresAt < Date.now()) macTokens.delete(token);
     const token = randomBytes(24).toString("base64url");
     macTokens.set(token, { userId: req.auth.user.id, language: languageOf(req), sessionId: clean(req.body?.session, 80) || null, expiresAt: Date.now() + 30 * 60_000 });
-    // Behind a TLS proxy (Tailscale, Render) the app sees plain http; only a local address keeps it.
-    const host = req.get("x-forwarded-host") || req.get("host");
-    const origin = `${req.get("x-forwarded-proto") || (/^(localhost|127.|[::1])/.test(host) ? req.protocol : "https")}://${host}`;
+    const origin = originOf(req);
     res.json({ command: `curl -fsSL ${origin}/api/imports/mac-helper.sh | bash -s -- ${origin} ${token}`, expiresInMinutes: 30 });
+  });
+
+  // Continuous iMessage sync (11-05): one import per member that every run on the Mac appends new messages to. It is kept,
+  // not analysed; Pinky searches it when its owner asks. The command keeps working until a new one is made or the import is
+  // deleted; only the token's hash is stored.
+  router.post("/imports/mac-sync-command", async (req, res) => {
+    const user = req.auth.user, language = languageOf(req), token = randomBytes(24).toString("base64url");
+    const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).find((record) => record.ownerUserId === user.id && record.sync?.kind === "imessage" && !record.archivedAt);
+    let record;
+    if (existing) record = await update(existing, user.id, (draft) => { draft.sync = { ...draft.sync, tokenHash: hashToken(token) }; });
+    else {
+      record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "waiting_sync", platform: "imessage", title: "iMessage", fileId: randomUUID(), language, people: [], messageCount: 0, sync: { kind: "imessage", tokenHash: hashToken(token), lastSyncAt: null } });
+      await store.transaction(`user:${user.id}`, (tx) => tx.createRelationshipRecord(COLLECTION, record));
+    }
+    const origin = originOf(req);
+    res.json({ command: `curl -fsSL ${origin}/api/imports/mac-sync.sh | bash -s -- ${origin} ${token}`, import: importView(record) });
+  });
+  router.post("/imports/sync/:token", raw, async (req, res) => {
+    const hash = hashToken(req.params.token);
+    const record = (await store.listRecordsForJob(COLLECTION)).find((item) => item.sync?.tokenHash === hash && !item.archivedAt);
+    const user = record ? await store.getUserById(record.ownerUserId) : null;
+    if (!record || !user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("This sync command no longer works. Open Pinky and copy a new one.\n");
+    let parsed;
+    try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read these messages.\n"); }
+    const language = record.language || "zh";
+    const context = await store.getRelationshipContext(user.id);
+    const partner = context?.members?.find((member) => member.userId !== user.id)?.user?.name || "";
+    const conversation = parsed.conversations[0] || { title: "", messages: [] };
+    const me = user.name || "Me", them = partner || conversation.title || "TA";
+    const incoming = conversation.messages.filter((message) => message.text?.trim() || message.media).map((message) => ({ ...message, sender: message.fromMe ? me : them }));
+    const before = JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null"))?.conversation?.messages || [];
+    // The Mac sends only what is new since its last run; an overlap (a retry, a new command) is dropped here.
+    const key = (message) => `${message.at}|${message.fromMe ? 1 : 0}|${message.text}`;
+    const seen = new Set(before.map(key)), fresh = [];
+    for (const message of incoming) if (!seen.has(key(message))) { seen.add(key(message)); fresh.push(message); }
+    const messages = [...before, ...fresh].sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+    await mkdir(mediaDirectory(), { recursive: true });
+    await writeFile(fileFor(record), JSON.stringify({ conversation: { id: "0", title: conversation.title || record.title, messages } }));
+    const first = !record.sync.lastSyncAt, now = new Date().toISOString();
+    const count = (fromMe) => messages.filter((message) => Boolean(message.fromMe) === fromMe).length;
+    await update(record, user.id, (draft) => {
+      Object.assign(draft, { status: "ready", error: null, title: them, messageCount: messages.length, firstAt: messages.find((message) => message.at)?.at || null, lastAt: [...messages].reverse().find((message) => message.at)?.at || null, people: [{ name: me, count: count(true), role: "me" }, { name: them, count: count(false), role: "partner" }] });
+      draft.sync = { ...draft.sync, lastSyncAt: now };
+    });
+    // The partner's words are in it, so the partner is told once, in Us, that it exists and who can see it (founder 11-05).
+    if (first && activePair(context)) {
+      const name = user.name || "TA";
+      const result = await store.transaction(`relationship:${context.relationship.id}`, (tx) => appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId: user.id, source: "app", handle: `imessage-sync:${record.id}`, i18n: togetherI18n((lang) => say(lang, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`)), text: say(language, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`) })).catch((error) => { console.error("Could not tell the partner about iMessage sync:", error?.message || error); return null; });
+      if (result && !result.duplicate) router.emitTogether?.(result.conversation, null);
+    }
+    res.type("text/plain").send(`${say(language, `已同步 ${fresh.length} 条新消息，一共 ${messages.length} 条。只有你能看到。`, `Synced ${fresh.length} new messages, ${messages.length} in all. Only you can see them.`, `Se sincronizaron ${fresh.length} mensajes nuevos, ${messages.length} en total. Solo tú los ves.`)}\n`);
   });
   router.post("/imports/upload/:token", raw, async (req, res) => {
     const entry = macTokens.get(req.params.token);
