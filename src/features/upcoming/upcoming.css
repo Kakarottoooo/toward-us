@@ -68,3 +68,9 @@
 .upcoming-sheet-ask { background: var(--jian-ink); color: #fff; }
 .upcoming-sheet-delete { background: rgba(37,37,37,.06); color: #903e38; }
 .upcoming-sheet-delete.confirming { background: #f6e2de; }
+/* 异地: the next time they meet, counted down at the top of Coming up. */
+.meetup-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 18px; border: 0; border-radius: 18px; background: linear-gradient(135deg, rgba(214,112,140,.16), rgba(107,143,214,.14)); color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; }
+.meetup-card small { color: #5f5952; font-size: 13px; }
+.meetup-card strong { font-size: 26px; font-weight: 800; line-height: 1.2; }
+.meetup-card span { color: #5f5952; font-size: 15px; }
+.meetup-card:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }

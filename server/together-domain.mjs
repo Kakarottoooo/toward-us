@@ -359,7 +359,9 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
         const record = await setTogetherSince(tx, { relationshipId, userId, date: action.date, title: action.title });
         refs.push({ type: "milestone", id: record.id, version: record.version, title: record.title }); continue;
       }
-      const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title: action.title.slice(0, 120), date: action.date, timezone: "UTC", recurringRule: action.recurringRule, jointlyConfirmed: false, notes: action.text || "", provenanceSource: "agent" });
+      // 异地: the next time they meet is a "meetup" date, counted down in Us and on Coming up.
+      const meetup = action.text === "next_meeting";
+      const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: meetup ? "meetup" : "custom", title: action.title.slice(0, 120), date: action.date, timezone: "UTC", recurringRule: meetup ? "once" : action.recurringRule, jointlyConfirmed: false, notes: action.text || "", provenanceSource: "agent" });
       await tx.createRelationshipRecord("milestones", record); refs.push({ type: "milestone", id: record.id, version: record.version, title: record.title });
       // A shared reminder on the date makes the Agent post it in this conversation when due (reminder-service announces it).
       if (action.remindDaysBefore !== null && action.remindDaysBefore !== undefined) await tx.createRelationshipRecord("reminders", createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "owner", status: "active", milestoneId: record.id, minutesBefore: action.remindDaysBefore * 1440, channel: "in_app", provenanceSource: "agent" }));

@@ -7,6 +7,7 @@ import type { GraphRecord } from "../relationship/types";
 import { RemindersPanel } from "../reminders/RemindersPanel";
 import { UpcomingYear, type CalendarEntry } from "./UpcomingYear";
 import { TogetherCard } from "../moments/TogetherCard";
+import { daysUntil } from "../conversation/DistanceBar";
 
 type Reminder = { id: string; title?: string; dueAt?: string; status: string; milestoneId?: string; frequency?: string };
 const localDay = (iso: string) => { const date = new Date(iso); return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-CA"); };
@@ -32,9 +33,14 @@ export function UpcomingPage({ language, userId = "", milestones = [], reminders
     try { await relationshipApi(`/api/milestones/${encodeURIComponent(open.id)}`, { method: "DELETE" }); setOpen(null); await onChanged?.(); } catch (caught) { setError((caught as Error).message); }
   };
   const date = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  // 异地: the next time they meet, counted down at the top.
+  const today = new Date().toLocaleDateString("en-CA");
+  const meetup = milestones.filter((item) => item.type === "meetup" && !item.archivedAt && typeof item.date === "string" && String(item.date) >= today).sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
+  const meetDays = meetup ? daysUntil(String(meetup.date), today) : null;
   return <div className="feature-stack">
+    {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${meetDays} days to go`, `Faltan ${meetDays} días`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
     {onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
-    <UpcomingYear language={language} entries={entries} onAsk={onAsk} />
+    <UpcomingYear language={language} entries={entries} onAsk={onAsk} counted={meetup?.id} />
     <details className="upcoming-manage"><summary>{t("管理我的提醒和通知", "Manage my reminders and notifications", "Gestionar mis recordatorios y avisos")}</summary><RemindersPanel language={language} onChanged={onChanged} compose={false} /></details>
     <BottomSheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }} title={String(open?.title || "")} snap={0.5}>
       {open && <div className="upcoming-sheet">

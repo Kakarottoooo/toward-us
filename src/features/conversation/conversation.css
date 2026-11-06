@@ -251,3 +251,9 @@
 .game-result { display: flex; align-items: center; gap: 6px; margin: 0; color: #5f5952; font-size: 15px; font-weight: 700; }
 .game-result.is-match { color: #a24d65; }
 .game-result small { margin-left: auto; color: #7a736a; font-size: 13px; font-weight: 600; }
+/* 异地: the partner's own time and the countdown to meeting, quietly under the top of Us. */
+.distance-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 10px; margin: 4px auto 0; color: #5f5952; font-size: 13px; }
+.distance-clock, .distance-meet { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: rgba(37,37,37,.05); white-space: nowrap; }
+.distance-clock small { color: #8a837a; font-size: 12px; }
+.distance-clock svg { color: #b08a3e; }
+.distance-meet { background: rgba(214,112,140,.12); color: #8f4458; font-weight: 600; }
