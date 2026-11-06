@@ -7,6 +7,7 @@ import { visiblePhoto } from "./photo-store.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
+import { careNoteFor } from "./cycle.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 
@@ -63,7 +64,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     // The next time they meet (a "meetup" date Pinky kept), counted down in Us and on Coming up.
     const day = (() => { try { return new Date().toLocaleDateString("en-CA", { timeZone: validZone(req.query?.timezone) ? req.query.timezone : "UTC" }); } catch { return new Date().toISOString().slice(0, 10); } })();
     const meetup = (snapshot.milestones || []).filter((item) => item.relationshipId === relationshipId && item.type === "meetup" && !item.archivedAt && typeof item.date === "string" && item.date >= day).sort((a, b) => a.date.localeCompare(b.date))[0];
-    res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), nextMeeting: meetup ? { id: meetup.id, date: meetup.date, title: meetup.title } : null, members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
+    res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), nextMeeting: meetup ? { id: meetup.id, date: meetup.date, title: meetup.title } : null, care: await careNoteFor(store, userId, day).catch(() => null), members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
   });
 
   // "更早的消息": a page of what came before the message `before` (the oldest one the App holds), from the working set and

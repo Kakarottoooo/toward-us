@@ -257,3 +257,4 @@
 .distance-clock small { color: #8a837a; font-size: 12px; }
 .distance-clock svg { color: #b08a3e; }
 .distance-meet { background: rgba(214,112,140,.12); color: #8f4458; font-weight: 600; }
+.distance-care { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: #fbeef0; color: #a2394f; font-weight: 600; white-space: nowrap; }

@@ -1,4 +1,5 @@
 import { profileContext } from "./profile.mjs";
+import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { addExpense, cleanExpense, defaultCurrency, ensureLedger, formatMoney, LEDGER, ledgerContext } from "./ledger.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { openingDay, sealLetter } from "./letters.mjs";
@@ -101,6 +102,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         if (["agreement", "commitment", "milestone"].includes(kind)) { if (!relationshipId || record.relationshipId !== relationshipId || record.visibility === "private") continue; }
         else if (record.ownerUserId !== userId || record.visibility !== "private") continue;
         if (kind === "plan" && (record.intentType !== "plan" || record.sharedObjectId)) continue;
+        if (kind === "checkin" && isCycleRecord(record)) continue; // 经期 records are kept by kind period only
         records.push({ kind, record });
       }
     }
@@ -147,6 +149,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
       openPromises: await openPromises(store, userId, session).catch(() => []),
+      cycle: await cycleContext(store, userId, localTime(new Date(), session.timezone).slice(0, 10)).catch(() => null),
       profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       ledger: await ledgerContext(store, userId, { speakingTo: true }).catch(() => null),
@@ -205,7 +208,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest, ...(openOn ? { openOn } : {}) });
           replies.push(say(session.language, "已为你起草好想对 TA 说的话。你确认之前不会分享，也不会分享你的原话。", "I drafted what you would like your partner to hear. Nothing is shared, and your own words never are, until you confirm.", "Redacté lo que quieres que tu pareja escuche. No se comparte nada, ni tus palabras originales, hasta que lo confirmes.")); continue;
         }
-        if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link" && action.kind !== "expense") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
+        if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link" && action.kind !== "expense" && action.kind !== "period") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
         if (action.operation === "query") {
           const query = clean(action.query, 120).toLocaleLowerCase();
           const today = context.localDateTime.slice(0, 10);
@@ -244,6 +247,14 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           share.digest = shareDigest(share); pendingShares.push(share);
           cards.push({ id: share.cardId, kind: "space_share", version: 1 });
           replies.push(say(session.language, `确认后记进“${ledger.title}”。`, `It goes into "${ledger.title}" once you confirm.`, `Se anota en «${ledger.title}» cuando lo confirmes.`)); continue;
+        }
+        if (action.kind === "period") {
+          // 经期: the member's own private record; nothing reaches the partner or the shared Pinky.
+          const day = action.fields.date && /^\d{4}-\d{2}-\d{2}$/.test(action.fields.date) ? action.fields.date : localTime(new Date(), session.timezone).slice(0, 10);
+          const record = await logPeriod(tx, { userId, event: action.fields.title, date: day });
+          changes.push({ kind: "checkin", record });
+          replies.push(action.fields.title === "start" ? say(session.language, "记下了，只有你能看到。", "Noted, just for you.", "Anotado, solo para ti.") : say(session.language, "记下了这次结束的日子。", "Noted when it ended.", "Anotado cuándo terminó."));
+          continue;
         }
         if (action.kind === "space" || action.kind === "space_item") {
           const values = action.fields; const sharedOnly = say(session.language, "共同空间里的东西请在“我们俩”里改。", "Change things in a shared space from Us.", "Cambia lo del espacio compartido desde Nosotros.");
