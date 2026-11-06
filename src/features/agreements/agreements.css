@@ -21,3 +21,6 @@
 .agreement-review { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
 .agreement-answer { display: block; margin-top: 2px; color: #8a837a; font-size: 13px; }
 .agreement-answer.done { color: #2f7a56; }
+/* Inside Coming up: earlier agreements fold away under one line. */
+.agreements-past { display: grid; gap: 10px; }
+.agreements-past summary { min-height: 44px; display: flex; align-items: center; color: #7a736b; font-size: 14px; font-weight: 600; cursor: pointer; }

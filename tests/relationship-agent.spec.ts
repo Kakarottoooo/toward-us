@@ -12,7 +12,7 @@ test("private Agent conversations become joint work only after explicit sharing"
   await postJson(b.request, "/api/partner/accept", { code: invitation.pairing.invitation.code });
 
   const pageA = await a.newPage(); const pageB = await b.newPage(); await pageA.goto("/"); await pageB.goto("/");
-  await pageA.getByTestId("open-drawer").click(); await pageA.getByTestId("drawer-agreements").click(); await pageB.getByTestId("open-drawer").click(); await pageB.getByTestId("drawer-agreements").click();
+  await pageA.getByTestId("open-drawer").click(); await pageA.getByTestId("drawer-upcoming").click(); await pageB.getByTestId("open-drawer").click(); await pageB.getByTestId("drawer-upcoming").click();
   await expect(pageA.getByTestId("dashboard-screen")).toBeVisible(); await expect(pageB.getByTestId("dashboard-screen")).toBeVisible();
   await pageA.screenshot({ path: testInfo.outputPath("relationship-home-desktop.png"), fullPage: true }); await pageB.screenshot({ path: testInfo.outputPath("relationship-home-mobile.png"), fullPage: true });
 

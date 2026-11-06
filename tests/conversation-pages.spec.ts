@@ -78,7 +78,7 @@ async function openUs(context: BrowserContext, tab: string) {
 async function openAgreements(page: Page) {
   await page.goto("/");
   await page.getByTestId("open-drawer").click();
-  await page.getByTestId("drawer-agreements").click();
+  await page.getByTestId("drawer-upcoming").click();
   await expect(page.locator(".agreements-page")).toBeVisible();
 }
 async function send(page: Page, placeholder: string, text: string) {

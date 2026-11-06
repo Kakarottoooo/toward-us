@@ -6,7 +6,7 @@ import { asAiUser } from "./ai-budget.mjs";
 // (`translations[language]`), and the App shows that. Same-language couples never pay for a call. Members' own words are
 // never translated, and fixed system copy already carries every language (`i18n`).
 
-const RECENT = 40;
+const RECENT = 40, RETRY_AFTER_MS = 30 * 60_000;
 const LABEL = { zh: "Simplified Chinese", en: "English", es: "Spanish" };
 const han = (text) => (String(text || "").match(/\p{Script=Han}/gu) || []).length;
 const latin = (text) => (String(text || "").match(/\p{Script=Latin}/gu) || []).length;
@@ -24,11 +24,12 @@ export function untranslated(messages, language) {
 }
 
 export function createSharedTranslator({ store, mediator, emit = () => {} }) {
-  const running = new Set();
+  // A line that failed is not tried again on every open, so a model outage cannot burn the day's budget.
+  const running = new Set(), failed = new Map();
   /** Fire and forget from the read path: the reply goes out at once, the translations follow with a refresh. */
   function ensure({ relationshipId, userId, language, messages }) {
     if (!mediator?.structured || !LABEL[language]) return;
-    const todo = untranslated(messages, language).filter((message) => !running.has(`${message.id}:${language}`));
+    const todo = untranslated(messages, language).filter((message) => !running.has(`${message.id}:${language}`) && !(Date.now() - (failed.get(`${message.id}:${language}`) || 0) < RETRY_AFTER_MS));
     if (!todo.length) return;
     for (const message of todo) running.add(`${message.id}:${language}`);
     void asAiUser({ userId, language }, async () => {
@@ -38,10 +39,10 @@ export function createSharedTranslator({ store, mediator, emit = () => {} }) {
           const options = message.game?.options || [];
           const result = await mediator.structured({ name: "shared_translation", schema, instructions: instructions(language), input: JSON.stringify({ text: message.text, options }), maxOutputTokens: 1500 });
           const text = String(result?.text || "").trim().slice(0, 4000);
-          if (!text) continue;
+          if (!text) { failed.set(`${message.id}:${language}`, Date.now()); continue; }
           const translated = Array.isArray(result.options) && result.options.length === options.length ? result.options.map((option) => String(option || "").trim().slice(0, 80)) : options;
           done[message.id] = { text, ...(options.length ? { options: translated } : {}) };
-        } catch (error) { console.error("Shared translation failed:", error?.message || error); if (error?.code === "ai_daily_limit") break; }
+        } catch (error) { failed.set(`${message.id}:${language}`, Date.now()); console.error("Shared translation failed:", error?.message || error); if (error?.code === "ai_daily_limit") break; }
       }
       if (!Object.keys(done).length) return;
       const conversation = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
