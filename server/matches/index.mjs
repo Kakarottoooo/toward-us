@@ -1,7 +1,8 @@
 import { createRelationshipRecord } from "../relationship-domain.mjs";
 import { appendTogetherMessage, togetherI18n } from "../together-domain.mjs";
 import { drawGuess } from "./draw-guess.mjs";
-import { matchError } from "./errors.mjs";
+import { asAiUser } from "../ai-budget.mjs";
+import { matchError, PET } from "./errors.mjs";
 import { gomoku } from "./gomoku.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
@@ -13,12 +14,15 @@ import { gomoku } from "./gomoku.mjs";
 //   finished(state) -> boolean
 //   view(state, userId) -> what this player may see (hidden words, hands, ships... stay with their owner)
 //   stats(matches) -> the line the hall shows for this game
-// A match is a shared record of the couple (collection "matches"); its invitation is a card in Us.
+//   petActions({ state, mediator, language }) -> the moves 小家伙 makes when it is its turn (petInstant: no model, answer now)
+// A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
+// pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
 export const GAMES = Object.freeze({ gomoku, draw: drawGuess });
 export const COLLECTION = "matches";
 const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"] };
 export const gameName = (game, language) => { const names = NAMES[game] || [game, game, game]; return language === "en" ? names[1] : language === "es" ? names[2] : names[0]; };
 
+export const withPet = (match) => match.players.includes(PET);
 const activePair = (context) => context?.relationship.status === "active" && context.members.length === 2;
 
 export function viewMatch(match, userId) {
@@ -29,11 +33,12 @@ export function viewMatch(match, userId) {
 export async function listMatches(store, userId) {
   const context = await store.getRelationshipContext(userId);
   if (!context) return [];
-  return (await store.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === context.relationship.id && GAMES[match.game]);
+  // The store hands every record of the couple to either member; a game with 小家伙 is only for the one playing it.
+  return (await store.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === context.relationship.id && GAMES[match.game] && match.players.includes(userId));
 }
 
-/** Starts a game of `game`, or returns the one of that game still being played. A new one is announced in Us. */
-export async function createMatch({ store, userId, game }) {
+/** Starts a game of `game` with the partner (announced in Us) or with 小家伙, or returns the one of those still being played. */
+export async function createMatch({ store, userId, game, pet = false }) {
   const module = GAMES[game];
   if (!module) throw matchError(400, "unknown_game");
   const initial = await store.getRelationshipContext(userId);
@@ -42,15 +47,16 @@ export async function createMatch({ store, userId, game }) {
   return store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(userId);
     if (!activePair(context) || context.relationship.id !== relationshipId) throw matchError(409, "pairing_required");
-    const mine = (await tx.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === relationshipId && match.game === game);
+    const mine = (await tx.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === relationshipId && match.game === game && withPet(match) === pet && match.players.includes(userId));
     const open = mine.find((match) => match.status === "active");
     if (open) return { match: open, created: false };
     const previous = mine.filter((match) => match.status === "finished").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const players = context.members.map((member) => member.userId);
-    const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "none", approvalPolicy: "both", status: "active", game, players, state: null, turn: null, finishedAt: null });
+    const players = pet ? [userId, PET] : context.members.map((member) => member.userId);
+    const record = createRelationshipRecord({ relationshipId, userId, visibility: pet ? "private" : "shared", aiAccessScope: "none", approvalPolicy: "both", status: "active", game, players, state: null, turn: null, finishedAt: null });
     record.state = module.start({ players, inviterUserId: userId, matchId: record.id, previous });
     record.turn = module.turn(record.state);
     await tx.createRelationshipRecord(COLLECTION, record);
+    if (pet) return { match: record, created: true, conversation: null };
     const inviter = context.members.find((member) => member.userId === userId)?.user?.name || "";
     const i18n = togetherI18n((language) => language === "en" ? `${inviter} started a game of ${gameName(game, language)}` : language === "es" ? `${inviter} empezó una partida de ${gameName(game, language)}` : `${inviter} 开了一局${gameName(game, language)}`);
     const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "match_invite", text: i18n.zh, i18n, handle: `match:${record.id}` });
@@ -59,19 +65,20 @@ export async function createMatch({ store, userId, game }) {
   });
 }
 
-/** One move (or resign, end, ...) by a player. Returns the match and whose turn it was before. */
-export async function actOnMatch({ store, userId, matchId, action }) {
+/** One move (or resign, end, ...) by a player. Returns the match and whose turn it was before. `as` is PET for 小家伙's moves,
+ * made in the name of the member playing with it. */
+export async function actOnMatch({ store, userId, matchId, action, as = userId }) {
   const initial = await store.getRelationshipContext(userId);
   if (!initial) throw matchError(409, "pairing_required");
   return store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
     const match = await tx.getRelationshipRecordForUser(COLLECTION, matchId, userId);
-    if (!match || match.relationshipId !== initial.relationship.id || !match.players.includes(userId)) throw matchError(404, "not_found");
+    if (!match || match.relationshipId !== initial.relationship.id || !match.players.includes(userId) || !match.players.includes(as)) throw matchError(404, "not_found");
     const module = GAMES[match.game];
     if (!module) throw matchError(404, "not_found");
     if (match.status !== "active") throw matchError(409, "match_over");
     const context = await tx.getRelationshipContext(userId);
     if (!activePair(context)) throw matchError(409, "pairing_required");
-    const state = module.act(match.state, { userId, action });
+    const state = module.act(match.state, { userId: as, action });
     const finished = module.finished(state);
     const updated = await tx.updateRelationshipRecordForUser(COLLECTION, match.id, userId, (draft) => {
       draft.state = state; draft.turn = module.turn(state); draft.version += 1;
@@ -84,4 +91,29 @@ export async function actOnMatch({ store, userId, matchId, action }) {
 /** What the hall shows per game, from all of this couple's matches of it. */
 export function matchStats(matches) {
   return Object.fromEntries(Object.entries(GAMES).map(([id, module]) => [id, module.stats(matches.filter((match) => match.game === id && (id !== "gomoku" || match.status === "finished")))]));
+}
+
+const playing = new Set();
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** 小家伙's turn: it moves until it is the member's turn again. `onMove` sees every move (to tell the open App). Never throws. */
+export async function petPlays({ store, mediator, userId, matchId, language = "zh", onMove = () => {}, delay = 1200 }) {
+  if (playing.has(matchId)) return;
+  playing.add(matchId);
+  try {
+    for (let turn = 0; turn < 8; turn += 1) {
+      const match = await store.getRelationshipRecordForUser(COLLECTION, matchId, userId);
+      if (!match || match.status !== "active" || match.turn !== PET || !withPet(match)) return;
+      const module = GAMES[match.game];
+      const actions = await asAiUser({ userId, language }, () => module.petActions({ state: match.state, mediator, language }));
+      if (!actions.length) return;
+      const round = match.state.rounds?.length;
+      for (const [index, action] of actions.entries()) {
+        if (index && delay) await pause(delay);
+        const { match: moved } = await actOnMatch({ store, userId, matchId, action, as: PET });
+        onMove(moved);
+        if (moved.turn !== PET || moved.state.rounds?.length !== round) break;
+      }
+    }
+  } catch (error) { console.error("pet move failed", error?.matchCode || error?.message || "error"); }
+  finally { playing.delete(matchId); }
 }

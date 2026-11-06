@@ -55,3 +55,42 @@ export function fiveFrom(moves, x, y, size = SIZE) {
   }
   return null;
 }
+
+// 小家伙 as the other player (founder 11-06): a quick local evaluator, no model. Every empty point near the stones is scored
+// by the lines it would make for itself (attack) and break for the other side (defence); it wins when it can, blocks a five
+// or an open four, and otherwise plays the best score. Strong enough to play a real game, never instant-perfect.
+const LINE_SCORE = (length, open) => length >= 5 ? 1_000_000 : length === 4 ? (open === 2 ? 100_000 : open === 1 ? 12_000 : 0) : length === 3 ? (open === 2 ? 6_000 : open === 1 ? 500 : 0) : length === 2 ? (open === 2 ? 300 : open === 1 ? 40 : 0) : open === 2 ? 10 : open === 1 ? 2 : 0;
+
+function pointScore(board, size, x, y, color) {
+  let total = 0;
+  for (const [dx, dy] of DIRECTIONS) {
+    let length = 1, open = 0;
+    for (const sign of [1, -1]) {
+      let cx = x + dx * sign, cy = y + dy * sign;
+      while (cx >= 0 && cy >= 0 && cx < size && cy < size && board.get(`${cx},${cy}`) === color) { length += 1; cx += dx * sign; cy += dy * sign; }
+      if (cx >= 0 && cy >= 0 && cx < size && cy < size && !board.has(`${cx},${cy}`)) open += 1;
+    }
+    total += LINE_SCORE(length, open);
+  }
+  return total;
+}
+
+/** The point the player to move should take: [x, y]. */
+export function bestMove(state) {
+  const size = state.size, me = state.moves.length % 2, board = new Map(state.moves.map(([x, y], index) => [`${x},${y}`, index % 2]));
+  if (!state.moves.length) return [Math.floor(size / 2), Math.floor(size / 2)];
+  let best = null, bestScore = -1;
+  for (let x = 0; x < size; x += 1) for (let y = 0; y < size; y += 1) {
+    if (board.has(`${x},${y}`)) continue;
+    let near = false;
+    for (let dx = -2; dx <= 2 && !near; dx += 1) for (let dy = -2; dy <= 2 && !near; dy += 1) if (board.has(`${x + dx},${y + dy}`)) near = true;
+    if (!near) continue;
+    // Its own line counts a little more than the same line of the other side: finishing beats blocking.
+    const score = pointScore(board, size, x, y, me) * 1.1 + pointScore(board, size, x, y, 1 - me) + (7 - Math.max(Math.abs(x - 7), Math.abs(y - 7))) * 0.5;
+    if (score > bestScore) { bestScore = score; best = [x, y]; }
+  }
+  return best;
+}
+
+gomoku.petActions = async ({ state }) => { const point = bestMove(state); return point ? [{ type: "move", x: point[0], y: point[1] }] : []; };
+gomoku.petInstant = true;

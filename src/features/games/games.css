@@ -33,7 +33,12 @@
 .game-stat.is-center { margin: 0; text-align: center; }
 .game-play { display: inline-flex; flex: none; align-items: center; gap: 5px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--jian-ink); color: #fff; font: inherit; font-size: 14px; font-weight: 650; white-space: nowrap; cursor: pointer; }
 .game-play:disabled { opacity: .5; cursor: default; }
-.game-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.game-play.is-pet { background: #f3e4cf; color: #6d4a1f; }
+.game-play img { width: 22px; height: 22px; margin: -4px 0 -4px -6px; object-fit: contain; }
+.game-stat.is-pet { margin-top: 2px; color: #8a5a12; }
+.game-going-row em { color: #8a5a12; font-style: normal; font-weight: 600; }
+.game-card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.game-card-foot .game-rules-toggle { margin-right: auto; }
 .game-rules-toggle { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 4px; border: 0; background: transparent; color: var(--jian-blue); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .game-rules-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .game-rules { margin: 6px 0 4px; padding: 0 4px 0 22px; color: #4d4740; font-size: 15px; line-height: 1.6; }
@@ -56,6 +61,8 @@
 .gomoku-players { display: flex; justify-content: center; gap: 10px; }
 .gomoku-players span { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; border-radius: 999px; background: var(--jian-paper-bright); color: #5d574f; font-size: 15px; font-weight: 650; }
 .gomoku-players span.is-turn { background: #fff1ee; color: #c2344f; box-shadow: inset 0 0 0 1.5px rgba(224,64,90,.4); }
+.gomoku-face { width: 22px; height: 22px; margin-right: -2px; object-fit: contain; }
+.draw-face { display: block; width: 72px; height: 72px; margin: 0 auto 8px; object-fit: contain; }
 .stone { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
 .stone.is-black { background: #252525; }
 .stone.is-white { background: #fff; box-shadow: inset 0 0 0 1.5px #9a8f82; }

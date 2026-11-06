@@ -1,13 +1,13 @@
 import express from "express";
 import { recordUsage } from "./usage.mjs";
-import { actOnMatch, createMatch, gameName, GAMES, listMatches, matchStats, viewMatch } from "./matches/index.mjs";
+import { actOnMatch, createMatch, gameName, GAMES, listMatches, matchStats, petPlays, viewMatch, withPet } from "./matches/index.mjs";
 import { MATCH_ERRORS, matchError } from "./matches/errors.mjs";
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
 // 游戏大厅: the hall's list, starting a game, and each move. `notify(userId, { body, url, tag })` reaches a member who isn't
 // looking (see reminder-service notifyMember); `online(userId)` is true while they have the App open.
-export function createMatchRouter({ store, emit = () => {}, notify = async () => {}, online = () => false }) {
+export function createMatchRouter({ store, mediator = null, emit = () => {}, notify = async () => {}, online = () => false, petDelay = 1200 }) {
   const router = express.Router();
   router.use("/matches", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
 
@@ -16,7 +16,7 @@ export function createMatchRouter({ store, emit = () => {}, notify = async () =>
     if (!context) throw matchError(409, "pairing_required");
     const matches = await listMatches(store, userId);
     const shown = [...matches.filter((match) => match.status === "active"), ...matches.filter((match) => match.status !== "active").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10)];
-    res.json({ games: Object.keys(GAMES), matches: shown.map((match) => viewMatch(match, userId)), stats: matchStats(matches), members: context.members.map((member) => ({ id: member.userId, name: member.user.name })), readOnly: context.relationship.status !== "active" || context.members.length !== 2 });
+    res.json({ games: Object.keys(GAMES), matches: shown.map((match) => viewMatch(match, userId)), stats: matchStats(matches.filter((match) => !withPet(match))), petStats: matchStats(matches.filter(withPet)), members: context.members.map((member) => ({ id: member.userId, name: member.user.name })), readOnly: context.relationship.status !== "active" || context.members.length !== 2 });
   });
 
   router.get("/matches/:id", async (req, res) => {
@@ -27,8 +27,10 @@ export function createMatchRouter({ store, emit = () => {}, notify = async () =>
 
   router.post("/matches", async (req, res) => {
     const userId = req.auth.user.id;
-    const result = await createMatch({ store, userId, game: String(req.body?.game || "") });
-    if (result.created) {
+    const pet = req.body?.with === "pet";
+    const result = await createMatch({ store, userId, game: String(req.body?.game || ""), pet });
+    if (result.created && pet) await petTurn(req, result.match);
+    else if (result.created) {
       emit(result.match, "match.updated"); emit(result.conversation, "together.updated", null, userId);
       void recordUsage(store, { userId, relationshipId: result.match.relationshipId, action: "match_started" });
     }
@@ -38,6 +40,7 @@ export function createMatchRouter({ store, emit = () => {}, notify = async () =>
   router.post("/matches/:id/actions", async (req, res) => {
     const userId = req.auth.user.id, action = req.body && typeof req.body === "object" ? req.body : {};
     const { match, before } = await actOnMatch({ store, userId, matchId: req.params.id, action });
+    if (withPet(match)) { const after = await petTurn(req, match); return res.json({ match: viewMatch(after, userId) }); }
     emit(match, "match.updated");
     const partner = match.players.find((id) => id !== userId);
     // The partner hears about it when it becomes their move, or when the game ends, unless they are looking at the App.
@@ -55,6 +58,16 @@ export function createMatchRouter({ store, emit = () => {}, notify = async () =>
     if (match.status !== "active") void recordUsage(store, { userId, relationshipId: match.relationshipId, action: "match_finished" });
     res.json({ match: viewMatch(match, userId) });
   });
+
+  // 小家伙 moves when it is its turn: a board move right away (the reply carries it), a drawing or a guess a moment later,
+  // told to this member's open App only.
+  async function petTurn(req, match) {
+    const userId = req.auth.user.id, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    if (match.turn !== "pet" || match.status !== "active") return match;
+    const run = petPlays({ store, mediator, userId, matchId: match.id, language, delay: petDelay, onMove: (moved) => emit(moved, "match.updated", userId) });
+    if (GAMES[match.game]?.petInstant) { await run; return (await listMatches(store, userId)).find((item) => item.id === match.id) || match; }
+    void run; return match;
+  }
 
   router.use((error, req, res, next) => {
     if (!error?.matchCode) return next(error);

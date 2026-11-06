@@ -32,6 +32,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("横、竖、斜任意方向先连成五个（或更多）的人赢。", "The first to get five (or more) in a row, across, down or diagonally, wins.", "Gana quien primero ponga cinco (o más) en línea: horizontal, vertical o diagonal."),
         t("点一下选位置，再点一次或按“落子”确认。", "Tap a spot to pick it, then tap again or press Place to confirm.", "Toca un punto para elegirlo y vuelve a tocar o pulsa Colocar para confirmar."),
         t("不用两个人同时在线：轮到 TA 时会收到提醒。下一盘换另一个人执黑。", "You don't both need to be online: your partner is told when it's their move. Next game, the other one plays black.", "No hace falta estar los dos conectados: a tu pareja le avisamos cuando le toca. En la siguiente, el otro lleva negras."),
+        t("TA 不在的时候，可以和小家伙下，它马上就会回你一步。", "When your partner's away, play your little one: it answers right away.", "Si tu pareja no está, juega con tu pequeñín: responde enseguida."),
       ],
     },
     {
@@ -42,6 +43,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("画好了交给 TA，TA 有 3 次机会猜。会提示是哪一类、几个字。", "Pass it on when you're done; your partner gets 3 guesses, with a hint of the kind of thing and its length.", "Cuando termines, pásalo; tu pareja tiene 3 intentos, con una pista del tipo y la longitud."),
         t("猜中或者 3 次用完，答案揭晓，换另一个人画。", "Guessed or out of guesses, the word is revealed and you swap roles.", "Con acierto o sin intentos, se revela la palabra y cambian los papeles."),
         t("你们是一队的：大厅里记着一起猜中了几幅。", "You're on the same team: the hall keeps count of how many drawings you got.", "Son un equipo: en la sala se cuenta cuántos dibujos acertaron."),
+        t("也可以和小家伙玩：你画它猜，它画你猜。", "You can also play your little one: you draw and it guesses, then it draws for you.", "También puedes jugar con tu pequeñín: tú dibujas y adivina, luego dibuja para ti."),
       ],
     },
     {
