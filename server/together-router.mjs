@@ -6,6 +6,7 @@ import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
+import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 
@@ -129,6 +130,19 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text: req.body?.text, language: language(req), emit: (updated) => emit(updated, "together.updated") });
     void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "daily_answered" });
+    res.json({ conversation: projectRecord(conversation, userId) });
+  });
+
+  // 小游戏: "再来一局" starts a round directly; answers follow the daily question's hidden-until-both rule.
+  router.post("/together/games", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const message = await startGame({ store, mediator, relationshipId: initial.relationship.id, userId, type: GAME_TYPES.includes(req.body?.type) ? req.body.type : null, language: language(req), emit: (updated) => emit(updated, "together.updated") });
+    if (message) void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "game_started" });
+    res.status(message ? 201 : 202).json({ started: Boolean(message) });
+  });
+  router.post("/together/games/:id/answer", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const conversation = await answerGame({ store, relationshipId: initial.relationship.id, userId, messageId: req.params.id, choice: req.body?.choice, text: req.body?.text, emit: (updated) => emit(updated, "together.updated") });
     res.json({ conversation: projectRecord(conversation, userId) });
   });
 

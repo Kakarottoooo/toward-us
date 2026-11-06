@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Alarm, BookOpenText, CalendarBlank, ChatsCircle, ChatTeardropText, EnvelopeSimpleOpen, Handshake, HandHeart, Heart, Images, ListChecks, MagnifyingGlass, MapTrifold, NotePencil, Scales, Sparkle, UserCircle, UsersThree } from "@phosphor-icons/react";
+import { Alarm, BookOpenText, GameController, CalendarBlank, ChatsCircle, ChatTeardropText, EnvelopeSimpleOpen, Handshake, HandHeart, Heart, Images, ListChecks, MagnifyingGlass, MapTrifold, NotePencil, Scales, Sparkle, UserCircle, UsersThree } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import "./capabilities.css";
@@ -31,6 +31,7 @@ export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onPr
     { key: "dates", icon: icon(<CalendarBlank size={22} />), title: t("纪念日和重要日子", "Anniversaries and dates", "Aniversarios y fechas"), detail: t("在一起的日子、生日、纪念日，提前提醒你们。", "The day you got together, birthdays, anniversaries, with reminders.", "El día que empezaron, cumpleaños, aniversarios, con avisos."), say: t("Pinky，记住我们是哪天在一起的：", "Pinky, remember the day we got together: ", "Pinky, recuerda el día en que empezamos: "), channel: "us" },
     { key: "repair", icon: icon(<UsersThree size={22} />), title: t("吵架时帮一把", "Help after a fight", "Ayuda tras una pelea"), detail: t("不评谁对谁错，帮你们看清刚才发生了什么。", "No verdict on who is right; it helps you see what just happened.", "Sin juzgar quién tiene razón; les ayuda a ver qué pasó."), say: t("Pinky，帮我们看看刚才怎么了", "Pinky, help us look at what just went wrong", "Pinky, ayúdanos a ver qué acaba de pasar"), channel: "us" },
     { key: "recap", icon: icon(<BookOpenText size={22} />), title: t("回顾卡", "Recaps", "Resúmenes"), detail: t("把一段时间做成一张小故事卡。", "Turn a stretch of time into a little story card.", "Convierte un periodo en una pequeña tarjeta."), say: t("Pinky，给我们做一张今年的回顾", "Pinky, make us a recap of this year", "Pinky, haznos un resumen de este año"), channel: "us" },
+    { key: "games", icon: icon(<GameController size={22} />), title: t("小游戏", "Little games", "Juegos"), detail: t("二选一、默契问答、真心话，两个人都答完才一起揭晓。", "Would you rather, how well do you know me, heart to heart; revealed once you both answer.", "¿Qué prefieres?, ¿cuánto me conoces?, de corazón; se revela cuando ambos responden."), say: t("Pinky，来玩个小游戏", "Pinky, let's play a little game", "Pinky, juguemos un juego"), channel: "us" },
     { key: "ideas", icon: icon(<Sparkle size={22} />), title: t("100 件小事", "100 little things", "100 cosas"), detail: t("一起打卡的约会清单，做过的会留进回忆。", "A date checklist to tick off together; done ones go into your memories.", "Una lista de citas para marcar juntos; lo hecho queda en sus recuerdos."), say: t("Pinky，今天我们做哪件小事？", "Pinky, which little thing should we do today?", "Pinky, ¿qué cosita hacemos hoy?"), channel: "us" },
   ];
   const look: Item[] = [
