@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { createApiApp } from "./app.mjs";
 import { createMediator } from "./mediator.mjs";
+import { createPushDelivery } from "./push-delivery.mjs";
 import { createStore } from "./store.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -20,7 +21,11 @@ const store = await createStore(dataFile, process.env.DATABASE_URL);
 const mediator = createMediator();
 const app = createApiApp({ store, mediator, production });
 // Catch up persisted jobs after a restart; external ticks wake sleeping hosts.
-void app.locals.runMaintenance().catch(() => console.error("Reminder maintenance will retry on the next tick."));
+const maintain = () => void app.locals.runMaintenance().catch(() => console.error("Reminder maintenance will retry on the next tick."));
+maintain();
+// A host nothing ticks from outside (the founder's own dogfood server) still sends reminders, the evening daily question and
+// partner pushes on time. Runs are idempotent, so an external tick as well is harmless.
+setInterval(maintain, 5 * 60_000).unref();
 
 if (production) {
   const clientRoot = resolve(root, "dist", "client");
@@ -53,6 +58,7 @@ const server = app.listen(port, "0.0.0.0", () => {
   console.log(`Pinky is running on http://127.0.0.1:${port}`);
   console.log(`AI mediation: ${mediator.aiReady ? `ready (${mediator.model})` : "local fallback"}`);
   console.log(`Identity and storage: cookie sessions + ${store.kind}`);
+  console.log(`Browser push: ${createPushDelivery().enabled ? "on" : "off (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set)"}`);
   console.log("Audio is processed in memory and is not persisted by this server.");
 });
 
