@@ -115,6 +115,10 @@ export function MemoriesMap({ places, language = "zh", label, labels, onOpen }: 
           for (const place of current.current) bounds.extend([place.lon, place.lat]);
           gl.fitBounds(bounds, { padding: 56, maxZoom: 10, duration: 0 });
         }
+        // Places far apart (the US and China) framed the whole world as a small globe in the middle of the screen (11-06):
+        // open no farther out than a globe that fills a phone's width, centred on where most memories are.
+        const closest = readMode() === "flat" ? 1.5 : 1.8, home = current.current[0];
+        if (home && gl.getZoom() < closest) gl.jumpTo({ center: [home.lon, home.lat], zoom: closest });
         // The credit stays one tap away (the ⓘ) instead of covering the bottom of a phone-sized map.
         gl.once("idle", () => box.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
         if (alive) setReady(true);
