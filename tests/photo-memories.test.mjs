@@ -71,3 +71,27 @@ test("the phone gets the next memories to make; each is made once, in the shared
   assert.equal(after.filter((item) => item.photoEvent === "2023-01-01|-").length, 1);
   assert.match(told[0].text, /connected an iPhone album/);
 });
+
+test("a photo can be fetched small for bubbles and walls, made once and kept", async (t) => {
+  const { default: sharp } = await import("sharp");
+  const { readdir } = await import("node:fs/promises");
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "photo-thumbs-"));
+  process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
+  const store = await createFileStore(join(directory, "store.json"));
+  const userId = randomUUID();
+  await store.createUser({ id: userId, email: `${userId}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
+  const app = express(); app.use((req, _res, next) => { req.auth = { user: { id: userId } }; next(); }); app.use("/api", createPhotoRouter({ store }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); delete process.env.TOWARD_US_DATA_FILE; await rm(directory, { recursive: true, force: true }); });
+  const url = (path) => `http://127.0.0.1:${server.address().port}/api${path}`;
+  const big = await sharp({ create: { width: 1280, height: 960, channels: 3, background: { r: 228, g: 106, b: 154 } } }).jpeg({ quality: 90 }).toBuffer();
+  const id = (await (await fetch(url("/photos"), { method: "POST", headers: { "content-type": "image/jpeg" }, body: big })).json()).photo.id;
+  const small = await fetch(url(`/photos/${id}?w=240`));
+  assert.equal(small.headers.get("content-type"), "image/jpeg");
+  const bytes = Buffer.from(await small.arrayBuffer()), meta = await sharp(bytes).metadata();
+  assert.deepEqual([meta.width, meta.height], [240, 240], "a square, cropped to fill a tile");
+  assert.ok(bytes.length < big.length / 5);
+  assert.ok((await readdir(`${process.env.TOWARD_US_DATA_FILE}.media`)).some((name) => name.endsWith(".w240.jpg")), "kept for the next time");
+  assert.equal((await sharp(Buffer.from(await (await fetch(url(`/photos/${id}?w=999`))).arrayBuffer())).metadata()).width, 1280, "other sizes get the photo itself");
+});

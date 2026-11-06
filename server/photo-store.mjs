@@ -13,6 +13,21 @@ const MAX_BYTES = 8 * 1024 * 1024, PHOTO_LIMIT = 6000;
 const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.${TYPES[record.mime]}`);
+const THUMB_WIDTHS = new Set([240, 480]);
+const thumbFor = (record, width) => join(mediaDirectory(), `${record.fileId}.w${width}.jpg`);
+/** A small JPEG of a photo, made on first use and kept on disk. Falls back to the photo itself if it cannot be made. */
+async function thumbnail(record, width) {
+  const cached = await readFile(thumbFor(record, width)).catch(() => null);
+  if (cached) return cached;
+  const original = await readFile(fileFor(record)).catch(() => null);
+  if (!original) return null;
+  try {
+    const { default: sharp } = await import("sharp");
+    const small = await sharp(original).rotate().resize({ width, height: width, fit: "cover", withoutEnlargement: true }).jpeg({ quality: 72, mozjpeg: true }).toBuffer();
+    await writeFile(thumbFor(record, width), small).catch(() => {});
+    return small;
+  } catch { return original; }
+}
 /** Where a photo's bytes are on disk, for server-side readers such as screenshot import. */
 export const photoFile = fileFor;
 
@@ -55,9 +70,12 @@ export function createPhotoRouter({ store }) {
   });
   router.get("/photos/:id", async (req, res) => {
     const record = await visiblePhoto(store, req.params.id, req.auth.user.id);
-    const bytes = await readFile(fileFor(record)).catch(() => null);
+    // ?w=240 or ?w=480: a small JPEG for bubbles and photo walls, made once and kept beside the photo. Showing hundreds of
+    // full 1280px photos as 60-130px tiles made Memories stutter on the phone (11-06).
+    const width = THUMB_WIDTHS.has(Number(req.query.w)) ? Number(req.query.w) : 0;
+    const bytes = width ? await thumbnail(record, width) : await readFile(fileFor(record)).catch(() => null);
     if (!bytes) throw fail(404, "Photo not found.");
-    res.set({ "content-type": record.mime, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" }).send(bytes);
+    res.set({ "content-type": width ? "image/jpeg" : record.mime, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" }).send(bytes);
   });
   router.use((error, _req, res, next) => error.statusCode ? res.status(error.statusCode).json({ error: error.message }) : error.type === "entity.too.large" ? res.status(413).json({ error: "This photo is too large." }) : next(error));
   return router;
