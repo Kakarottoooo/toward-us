@@ -113,7 +113,7 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .memories-map-box .maplibregl-ctrl-attrib { font-size: 10px; }
 /* Photos first (11-05, like Google Photos): story bubbles on top, a photo wall by month, and a floating time switch. */
 .moments-page.is-photos { padding-bottom: 76px; }
-.moments-toolbar { display: flex; justify-content: flex-end; margin: -6px 0 -6px; }
+.moments-toolbar { display: block; margin: -6px 0 -4px; }
 .moments-top { display: block; }
 .story-bubbles { margin: 0 -16px; }
 .story-bubbles-track { display: flex; gap: 12px; padding: 2px 16px; }
@@ -123,8 +123,8 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .story-bubble-ring.is-ideas { background: #4b5bd6; color: #fff; }
 .story-bubble-ring.is-ideas > * { width: 26px; height: 26px; border: 0; }
 .story-bubble-label { display: -webkit-box; max-width: 74px; overflow: hidden; font-size: 12px; font-weight: 600; line-height: 1.25; text-align: center; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.moments-icons { display: flex; gap: 8px; }
-.moments-icons .moments-find { width: 38px; height: 38px; border-radius: 12px; }
+.moments-icons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.moments-icons .moments-find { display: flex; align-items: center; justify-content: center; gap: 6px; width: auto; height: 40px; padding: 0 10px; border-radius: 14px; font-size: 14px; font-weight: 650; white-space: nowrap; }
 .photo-wall-month { display: grid; gap: 8px; }
 .photo-wall-month h3 { margin: 6px 0 0; color: var(--jian-ink); font-size: 17px; font-weight: 750; }
 .photo-wall-month h3 small { color: #6f6860; font-size: 14px; font-weight: 500; }
