@@ -10,7 +10,8 @@ export type Member = { id: string; name: string };
 export type Hall = {
   games: string[]; matches: MatchView[]; members: Member[]; readOnly: boolean;
   petStats?: Hall["stats"];
-  stats: { gomoku?: { wins: Record<string, number>; draws: number; played: number }; draw?: { guessed: number; played: number } };
+  // Per game id; each game's module decides what it counts (see GameHall's line()).
+  stats: Record<string, unknown>;
 };
 
 export type GomokuState = { size: number; black: string; white: string; moves: Array<[number, number]>; winner: string | null; line: Array<[number, number]> | null; draw: boolean; resignedBy: string | null };
