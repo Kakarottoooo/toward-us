@@ -334,12 +334,13 @@ const togetherTurnSchema = {
   properties: {
     reply: { type: "string" },
     actions: { type: "array", maxItems: 6, items: { type: "object", additionalProperties: false,
-      required: ["kind", "operation", "targetId", "spaceId", "title", "text", "date", "layout", "done", "recurringRule", "remindDaysBefore", "photoId", "localDateTime", "idea"],
+      required: ["kind", "operation", "targetId", "spaceId", "title", "text", "date", "layout", "done", "recurringRule", "remindDaysBefore", "photoId", "localDateTime", "idea", "amount", "currency", "paidBy", "split"],
       properties: {
-        kind: { type: "string", enum: ["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment"] }, operation: { type: "string", enum: ["create", "update", "archive"] },
+        kind: { type: "string", enum: ["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment", "expense", "settle_up"] }, operation: { type: "string", enum: ["create", "update", "archive"] },
         targetId: { type: ["string", "null"] }, spaceId: { type: ["string", "null"] }, title: { type: ["string", "null"] }, text: { type: ["string", "null"] },
         date: { type: ["string", "null"] }, layout: { type: ["string", "null"], enum: ["list", "checklist", "timeline", "gallery", "notes", null] },
         done: { type: ["boolean", "null"] }, recurringRule: { type: ["string", "null"], enum: ["once", "yearly", null] }, remindDaysBefore: { type: ["integer", "null"] }, photoId: { type: ["string", "null"] }, localDateTime: { type: ["string", "null"] }, idea: { type: ["integer", "null"] },
+        amount: { type: ["number", "null"] }, currency: { type: ["string", "null"] }, paidBy: { type: ["string", "null"], enum: ["writer", "other", null] }, split: { type: ["string", "null"], enum: ["half", "for_other", null] },
       } } },
     draftAgreement: { anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, required: ["title", "summary", "terms", "unresolvedPoints"], properties: {
       title: { type: "string" }, summary: { type: "string" }, terms: { type: "array", items: { type: "string" } }, unresolvedPoints: { type: "array", items: { type: "string" } },
@@ -347,7 +348,7 @@ const togetherTurnSchema = {
   },
 };
 
-const TOGETHER_KINDS = new Set(["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment"]), TOGETHER_OPERATIONS = new Set(["create", "update", "archive"]);
+const TOGETHER_KINDS = new Set(["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment", "expense", "settle_up"]), TOGETHER_OPERATIONS = new Set(["create", "update", "archive"]);
 function sanitizeTogetherActions(actions) {
   const text = (value, limit) => typeof value === "string" ? value.trim().slice(0, limit) : null;
   // Agreement commitments have ids like "commitment:<agreement>:v1:0".
@@ -357,7 +358,9 @@ function sanitizeTogetherActions(actions) {
     date: typeof action.date === "string" && (action.kind === "chat_search" ? /^\d{4}-\d{2}(-\d{2})?$/ : /^\d{4}-\d{2}-\d{2}$/).test(action.date) ? action.date : null, layout: ["list", "checklist", "timeline", "gallery", "notes"].includes(action.layout) ? action.layout : null,
     done: typeof action.done === "boolean" ? action.done : null, recurringRule: action.recurringRule === "yearly" ? "yearly" : "once",
     idea: Number.isInteger(action.idea) && action.idea >= 1 && action.idea <= 100 ? action.idea : null, photoId: id(action.photoId), localDateTime: typeof action.localDateTime === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(action.localDateTime) ? action.localDateTime : null, remindDaysBefore: Number.isInteger(action.remindDaysBefore) && action.remindDaysBefore >= 0 && action.remindDaysBefore <= 60 ? action.remindDaysBefore : null,
-  }));
+    amount: typeof action.amount === "number" && Number.isFinite(action.amount) ? action.amount : null, currency: typeof action.currency === "string" && /^[A-Za-z]{3}$/.test(action.currency) ? action.currency.toUpperCase() : null,
+    paidBy: ["writer", "other"].includes(action.paidBy) ? action.paidBy : null, split: ["half", "for_other"].includes(action.split) ? action.split : null,
+  })).filter((action) => action.kind !== "expense" || (action.amount > 0 && action.paidBy));
 }
 
 const mediationSchema = {
@@ -386,6 +389,8 @@ You are a capable, warm helper for whatever the two of them want to do together:
 actions change what both of them keep, and the server applies them only together with your reply:
 - space: a shared collection you build for them (a trip packing checklist, date ideas, a bucket list of things to do together someday, a gratitude journal, gift ideas, a renovation list, trip photos). When they mention something they would love to do together one day, offer to keep it on their bucket list. Create one when they want to collect related things, with a short title and a layout: checklist for to-dos, list for ideas, timeline for dated events or a journal, gallery for photos, notes for longer text. Check spaces in the context first and add to a fitting one instead of creating a duplicate. Every thing they list becomes its own space_item; a space's text is only an optional one-line description, never the items.
 - Moments: the space with system "moments" is the couple's shared memory album. When they want to keep a memory (a date, a first time, a trip, photos of a day), add space_items there: short title, text with the story in their words, date it happened, one item per photo with the same title and date. Never create another space for memories. When their message tags one of the "100 small things" ideas as #N (e.g. "（100 件小事 #40）" / "(100 little things #40)"), set idea = N on every item for that memory (null otherwise) and write text as a short, warm note about the day from what they said, never inventing details. Call it their memories (你们的回忆 / your memories / sus recuerdos), never "our", and never describe how photos or items are stored.
+- expense (operation create; title = what it was for, amount = the number, currency = ISO code they used or the one in ledger, date = the day or null for today, paidBy = writer when the person who wrote the latest message paid, other when the other partner paid, split = half by default, for_other when it was entirely for the other person): when they mention money one of them spent for the two of them (dinner, groceries, rent, tickets) or ask you to note it. It goes into their shared ledger "我们的账本", created on first use; never into another space. ledger in the context has the open balance, what they spent by month and recent entries: answer "who owes whom" or "how much did we spend this month" from it.
+- settle_up (operation create, no fields): when they say they have settled up / paid each other back (结清了, 我转给你了); it closes the open balance.
 - space_item: an entry in a space; spaceId from the context, or null to use the space created in this same reply. Messages may carry photoIds (photos they sent here; you cannot see them, only their words): to keep them, add one space_item per photo with photoId, usually in a gallery space. Short title, optional text, optional date YYYY-MM-DD, done for checklists. update/archive need targetId and leave unchanged fields null.
 - web_search (operation create, text = what to look up): when they need real-world, current information such as restaurants, activities, places, events, opening hours, prices or gift ideas. You will be called again with the findings in context.lookups; then answer with two or three specific options, one short sentence each saying why it fits them; give each a link action (its website or Maps) instead of writing URLs in the reply, mention anything unconfirmed once and briefly, and put the options in a space if they want to keep them. When context.lookups is present it holds the findings of searches you asked for; nothing has been posted yet and this reply is the first they will see, so answer directly and do not search again. If context.webSearch is false, answer from general knowledge and say you cannot look things up right now.
 - ask_privately (operation create, text = one open question): when they face a real decision or disagreement where each should think alone first, or one of them asks you to hear both sides. The same question appears in each partner's private chat with their own Pinky, where each answers privately and may choose to share a version back here. Say in your reply that you asked each of them privately and that nobody sees the other's private answer. At most once per topic.

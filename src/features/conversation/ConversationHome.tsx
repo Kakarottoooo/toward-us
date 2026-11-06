@@ -616,7 +616,7 @@ function ConversationDrawer({ user, paired, language, onClose, onOpen, onInvite,
     relationshipApi<{ home: { pending: unknown[] }; graph: { milestones: Array<{ type?: string; date?: string; archivedAt?: string | null }> } }>("/api/relationship/home")
       .then((result) => setHome({ pending: result.home.pending.length, since: result.graph.milestones.find((item) => item.type === "relationship_started" && !item.archivedAt)?.date || null })).catch(() => {});
   }, [paired]);
-  useEffect(() => { relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => setSpaces(result.spaces.filter((space) => !space.system))).catch(() => {}); }, []);
+  useEffect(() => { relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => setSpaces(result.spaces.filter((space) => !space.system || space.system === "ledger"))).catch(() => {}); }, []);
   const [chats, setChats] = useState(0);
   useEffect(() => { listImports().then((items) => setChats(items.length)).catch(() => {}); }, []);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [onClose]);

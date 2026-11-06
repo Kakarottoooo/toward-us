@@ -3,10 +3,11 @@ import { ChatCircleDots, CheckCircle, Circle, LockKey, Trash, UsersThree } from 
 import { languageTag, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { LedgerView } from "./LedgerView";
 import "./spaces.css";
 
 export type SpaceItem = { id: string; title: string; text: string; date: string | null; done: boolean; photoId?: string | null; createdAt: string; version: number };
-export type Space = { id: string; title: string; layout: "list" | "checklist" | "timeline" | "gallery" | "notes"; description: string; visibility: string; version: number; updatedAt: string; items: SpaceItem[] };
+export type Space = { id: string; title: string; system?: string; layout: "list" | "checklist" | "timeline" | "gallery" | "notes"; description: string; visibility: string; version: number; updatedAt: string; items: SpaceItem[] };
 
 /** One space Pinky built: shown in the layout it chose, with small edits only. New things are asked for in the conversation. */
 export function SpacePage({ id, language, onBack, onAsk }: { id: string; language: Language; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
@@ -62,8 +63,8 @@ export function SpacePage({ id, language, onBack, onAsk }: { id: string; languag
       {space && <p className="space-scope">{shared ? <><UsersThree size={16} />{t("你们俩都能看到", "Both of you can see this", "Los dos pueden verlo")}</> : <><LockKey size={16} />{t("只有你能看到", "Only you can see this", "Solo tú puedes verlo")}</>}</p>}
       {space?.description && <p className="space-description">{space.description}</p>}
       {error && <p className="space-error" role="alert">{error}</p>}
-      {body()}
-      {space && <button className="space-ask" onClick={() => onAsk(t(`往“${space.title}”里加：`, `Add to "${space.title}": `, `Añade a «${space.title}»: `), shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button>}
+      {space?.system === "ledger" ? <LedgerView id={space.id} language={language} onError={setError} /> : body()}
+      {space && <button className="space-ask" onClick={() => onAsk(space.system === "ledger" ? t("Pinky 记一笔：", "Pinky, note an expense: ", "Pinky, anota un gasto: ") : t(`往“${space.title}”里加：`, `Add to "${space.title}": `, `Añade a «${space.title}»: `), shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button>}
     </main>
   </div>;
 }

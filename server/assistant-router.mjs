@@ -1,4 +1,5 @@
 import { profileContext } from "./profile.mjs";
+import { addExpense, cleanExpense, defaultCurrency, ensureLedger, formatMoney, LEDGER, ledgerContext } from "./ledger.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { openingDay, sealLetter } from "./letters.mjs";
 import express from "express";
@@ -14,7 +15,7 @@ import { askAboutPromise, openPromises } from "./promise-checks.mjs";
 import { isAiLimit } from "./ai-budget.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
-const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date, share.photoId || null])).digest("hex");
+const shareDigest = (share) => createHash("sha256").update(JSON.stringify([share.spaceId, share.title, share.text, share.date, share.photoId || null, ...(share.expense ? [share.expense] : [])])).digest("hex");
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
@@ -148,6 +149,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       openPromises: await openPromises(store, userId, session).catch(() => []),
       profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
+      ledger: await ledgerContext(store, userId, { speakingTo: true }).catch(() => null),
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     // Pinky answers in the language this member writes in, not the interface language the conversation was opened with.
@@ -203,7 +205,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest, ...(openOn ? { openOn } : {}) });
           replies.push(say(session.language, "已为你起草好想对 TA 说的话。你确认之前不会分享，也不会分享你的原话。", "I drafted what you would like your partner to hear. Nothing is shared, and your own words never are, until you confirm.", "Redacté lo que quieres que tu pareja escuche. No se comparte nada, ni tus palabras originales, hasta que lo confirmes.")); continue;
         }
-        if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
+        if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link" && action.kind !== "expense") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
         if (action.operation === "query") {
           const query = clean(action.query, 120).toLocaleLowerCase();
           const today = context.localDateTime.slice(0, 10);
@@ -226,6 +228,22 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           const url = handoffUrl({ url: calendar ? null : values.text, localDateTime: calendar ? values.localDateTime : null, title: clean(values.title, 120), location: calendar ? clean(values.text, 200) : "", timezone: session.timezone });
           if (url) cards.push({ id: randomUUID(), kind: "link", version: 1, title: clean(values.title, 60), url });
           continue;
+        }
+        if (action.kind === "expense") {
+          // 共同记账 from Just me: the ledger is shared, so nothing is recorded until the member confirms this exact card.
+          const pair = await tx.getRelationshipContext(userId);
+          if (!activePair(pair)) throw fail(409, unpaired(session.language));
+          const ledger = await ensureLedger(tx, { userId, relationshipId: pair.relationship.id, language: session.language });
+          const partnerId = pair.members.find((member) => member.userId !== userId)?.userId;
+          const values = action.fields, expense = cleanExpense(values, (await ledgerContext(tx, userId))?.recent?.findLast?.((item) => item.currency)?.currency || defaultCurrency(session.language));
+          if (!expense) throw fail(400, say(session.language, "金额不对，再说一次多少钱？", "That amount doesn't look right. How much was it?", "Ese importe no parece correcto. ¿Cuánto fue?"));
+          const partnerName = pair.members.find((member) => member.userId === partnerId)?.user?.name || say(session.language, "TA", "your partner", "tu pareja");
+          const who = values.paidBy === "partner" ? say(session.language, `${partnerName}付的`, `${partnerName} paid`, `pagó ${partnerName}`) : say(session.language, "你付的", "you paid", "pagaste tú");
+          const how = expense.split === "for_other" ? say(session.language, "全算对方的", "all for the other", "todo para la otra persona") : say(session.language, "各一半", "split in half", "a medias");
+          const share = { cardId: randomUUID(), spaceId: ledger.id, spaceTitle: ledger.title, album: LEDGER, title: clean(values.title, 160) || say(session.language, "一笔开销", "An expense", "Un gasto"), text: `${formatMoney(expense.amount, expense.currency, session.language)} · ${who} · ${how}`, date: values.date && /^\d{4}-\d{2}-\d{2}$/.test(values.date) ? values.date : localTime(new Date(), session.timezone).slice(0, 10), photoId: null, expense: { amount: expense.amount, currency: expense.currency, split: expense.split, paidByUserId: values.paidBy === "partner" ? partnerId : userId }, createdAt: new Date().toISOString(), sharedAt: null };
+          share.digest = shareDigest(share); pendingShares.push(share);
+          cards.push({ id: share.cardId, kind: "space_share", version: 1 });
+          replies.push(say(session.language, `确认后记进“${ledger.title}”。`, `It goes into "${ledger.title}" once you confirm.`, `Se anota en «${ledger.title}» cuando lo confirmes.`)); continue;
         }
         if (action.kind === "space" || action.kind === "space_item") {
           const values = action.fields; const sharedOnly = say(session.language, "共同空间里的东西请在“我们俩”里改。", "Change things in a shared space from Us.", "Cambia lo del espacio compartido desde Nosotros.");
@@ -374,7 +392,8 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       if (space.visibility !== "shared" || space.relationshipId !== initial.relationship.id) throw fail(409, unpaired(session.language));
       // A private photo becomes a separate shared copy only now, when its owner confirmed this exact card.
       const photo = share.photoId ? await sharePhotoCopy(tx, { photo: await visiblePhoto(tx, share.photoId, userId), userId, relationshipId: initial.relationship.id }) : null;
-      const item = await addSpaceItem(tx, { userId, space, title: share.title, text: share.text, date: share.date, photoId: photo?.id || null, source: "member_confirmed" });
+      const item = share.expense ? await addExpense(tx, { userId, relationshipId: initial.relationship.id, members: (await tx.getRelationshipContext(userId)).members, language: session.language, title: share.title, date: share.date, ...share.expense, source: "member_confirmed" })
+        : await addSpaceItem(tx, { userId, space, title: share.title, text: share.text, date: share.date, photoId: photo?.id || null, source: "member_confirmed" });
       await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: item.id, objectType: "space_item", eventType: "space_item.shared", sourceVersion: latest.version }));
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
       return { session: saved, item };

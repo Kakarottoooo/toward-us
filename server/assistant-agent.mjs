@@ -10,17 +10,18 @@ export const assistantTurnSchema = {
       required: ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"],
       properties: {
         operation: { type: "string", enum: ["query", "create", "update", "archive"] },
-        kind: { type: "string", enum: ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise"] },
+        kind: { type: "string", enum: ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise", "expense"] },
         targetId: nullableString, expectedVersion: { type: ["integer", "null"] }, query: nullableString,
         queryPeriod: { type: "string", enum: ["all", "upcoming", "this_week"] },
         occurrence: { type: ["string", "null"], enum: ["series", "once", null] },
         fields: { type: "object", additionalProperties: false,
-          required: ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId"],
+          required: ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId", "amount", "currency", "paidBy", "split"],
           properties: { title: nullableString, text: nullableString, localDateTime: nullableString, timezone: nullableString, date: nullableString,
             frequency: { type: ["string", "null"], enum: ["once", "weekly", null] },
             mood: { type: ["string", "null"], enum: ["low", "mixed", "okay", "good", null] },
             layout: { type: ["string", "null"], enum: ["list", "checklist", "timeline", "gallery", "notes", null] },
             spaceId: nullableString, done: { type: ["boolean", "null"] }, photoId: nullableString,
+            amount: { type: ["number", "null"] }, currency: nullableString, paidBy: { type: ["string", "null"], enum: ["me", "partner", null] }, split: { type: ["string", "null"], enum: ["half", "for_other", null] },
           },
         },
       },
@@ -44,6 +45,7 @@ Supported operations:
 - Refer to the partner by name or as TA (Chinese) / your partner; never guess anyone's gender, the user's included: in Spanish use wording that does not mark gender ("¿cómo te sientes?", "sin energía", not "cansada" or "cansado").
 - Hard-to-say messages for the partner (kind partner_message, operation create only; fields.text is the exact wording the partner would read, written in ${outputLanguage}): when the user wants to tell their partner something difficult, first help them sort it out privately (actions:[] with at most one concise question), then draft a version the partner can hear, in the user's own voice. Do not guess the user's motives and do not judge the partner. Drafting shares nothing: the user must confirm separately, and only the drafted text, never the user's own private words, reaches the partner. To revise, create a new partner_message from partnerDraft in the context plus the user's changes. This is not a reminder, record or agreement, and it is the only supported way to say something to the partner from here.
 - Letters and time capsules (情书 / 时光胶囊): when the user wants to write their partner a letter to open on a later day (an anniversary, a birthday, a year from now), help them write it warmly in their own voice from what they say (ask at most one question at a time about what they want to say or when), then create a partner_message with fields.text = the whole letter and fields.date = the day it opens (YYYY-MM-DD, after today). It stays sealed until that day: the partner only sees that a letter is waiting and when it opens. For an ordinary message, fields.date is null.
+- Shared expenses (共同记账, kind expense, operation create): when the user mentions money they or their partner spent for the two of them (dinner, groceries, rent, a trip) and wants it noted or split: fields.title = what it was for, amount = the number, currency = the ISO code they used or the one in context.ledger, date = YYYY-MM-DD or null for today, paidBy = me or partner, split = half by default, for_other when it was entirely for the other person. It goes into the couple's shared ledger only after the user confirms the card, so say it is ready to confirm. context.ledger (null when not paired) has the open balance, monthly totals and recent entries: answer "who owes whom" or "how much did we spend" from it. Settling up happens on the ledger page or in Us, not here.
 - Spaces (kind space) hold anything the user wants to keep together with you: a packing or to-do checklist, gift ideas, a wish list, a reading list, a gratitude journal, notes about a topic, photos of a trip. There is no fixed list of spaces; create one when the user wants to collect related things, with a short title and the layout that fits: checklist for to-dos, list for ideas, timeline for dated events or a journal, gallery for photos, notes for longer text. Before creating, check context.spaces for one that already fits and add to it instead. Every thing the user lists becomes its own space_item in the same turn (up to 8 actions per turn); the space text is only an optional one-line description, never the items. Items (kind space_item) need fields.spaceId from context.spaces; when you create the space in this same turn, leave spaceId null and items go into the new space. Items have a short title, optional text, optional date YYYY-MM-DD and done (checklists). update/archive need targetId (a space or item id from context.spaces) and leave unchanged fields null. A space with shared:true belongs to both partners: adding to it from here prepares a card the user must confirm before anything is shared; say so.
 - Moments (回忆 / recuerdos): the space with system "moments" is the user's memory album; shared:true is the couple's album, the other is theirs alone. When the user wants to keep a moment (a date, a first time, a trip, something that touched them, photos of a day), add it there as space_item: a short title, text with the story in their words, date (YYYY-MM-DD) of when it happened, and one item per photo with the same title and date. Ask which album only if unclear: what they say here goes to their own album unless they ask to share it, and adding to the shared album prepares a card they confirm. Never create another space for memories. Call it 回忆 / memories / recuerdos in the reply language, and never describe how photos or items are stored.
 - Photos: context.attachedPhotos lists photo ids the user sent with the last message. You cannot see them, only the words that came with them. When the user wants to keep them (or clearly shares a moment to remember), add one space_item per photo with fields.photoId, usually in a gallery space (reuse a fitting one or create one), titled from their words; ask briefly if it is unclear where they belong.
@@ -72,7 +74,7 @@ export function validateAssistantTurn(plan) {
   if (!exact(plan, ["reply", "actions"]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || !Array.isArray(plan.actions) || plan.actions.length > 8) return false;
   return plan.actions.every((action) => exact(action, ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"])
     && ["query", "create", "update", "archive"].includes(action.operation)
-    && ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise"].includes(action.kind)
+    && ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise", "expense"].includes(action.kind)
     && (action.kind !== "link" || action.operation === "create" && typeof action.fields?.title === "string" && action.fields.title.trim().length > 0)
     && (action.kind !== "web_search" || action.operation === "query" && typeof action.query === "string" && action.query.trim().length > 0)
     && (action.kind !== "chat_search" || action.operation === "query" && typeof action.targetId === "string" && (Boolean(action.query?.trim()) || Boolean(action.fields?.date)))
@@ -84,7 +86,10 @@ export function validateAssistantTurn(plan) {
     && (action.expectedVersion === null || Number.isSafeInteger(action.expectedVersion) && action.expectedVersion > 0)
     && (action.query === null || typeof action.query === "string" && action.query.length <= 120)
     && ["series", "once", null].includes(action.occurrence)
-    && exact(action.fields, ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId"])
+    && exact(action.fields, ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId", "amount", "currency", "paidBy", "split"])
+    && (action.fields.amount === null || typeof action.fields.amount === "number" && Number.isFinite(action.fields.amount)) && (action.fields.currency === null || typeof action.fields.currency === "string" && action.fields.currency.length <= 8)
+    && ["me", "partner", null].includes(action.fields.paidBy) && ["half", "for_other", null].includes(action.fields.split)
+    && (action.kind !== "expense" || action.operation === "create" && action.fields.amount > 0)
     && ["title", "text", "localDateTime", "timezone", "date"].every((key) => action.fields[key] === null || typeof action.fields[key] === "string" && action.fields[key].length <= ({ title: 160, text: 2000, localDateTime: 16, timezone: 64, date: 10 }[key]))
     && ["once", "weekly", null].includes(action.fields.frequency)
     && ["low", "mixed", "okay", "good", null].includes(action.fields.mood)
@@ -97,5 +102,5 @@ export function validateAssistantTurn(plan) {
 /** Older planners and fixtures omit the space fields; treat them as unset. */
 export function normalizeAssistantTurn(plan) {
   if (!plan || !Array.isArray(plan.actions)) return plan;
-  return { ...plan, actions: plan.actions.map((action) => action?.fields && typeof action.fields === "object" ? { ...action, fields: { layout: null, spaceId: null, done: null, photoId: null, ...action.fields } } : action) };
+  return { ...plan, actions: plan.actions.map((action) => action?.fields && typeof action.fields === "object" ? { ...action, fields: { layout: null, spaceId: null, done: null, photoId: null, amount: null, currency: null, paidBy: null, split: null, ...action.fields } } : action) };
 }
