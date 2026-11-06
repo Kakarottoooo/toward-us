@@ -154,7 +154,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </>}
 
     {mode === "map" && (places.length ? <Suspense fallback={<p className="moments-note">{t("正在打开地图…", "Opening the map…", "Abriendo el mapa…")}</p>}>
-      <MemoriesMap places={places} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} onOpen={(place: Place) => go({ title: place.title, detail: t(`${place.moments.length} 段`, `${place.moments.length} memories`, `${place.moments.length} recuerdos`), moments: place.moments })} />
+      <MemoriesMap places={places} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} labels={{ globe: t("地球", "Globe", "Globo"), flat: t("平面", "Flat", "Plano"), loading: t("正在打开地图…", "Opening the map…", "Abriendo el mapa…"), failed: t("地图没加载出来，稍后再试。", "The map didn't load. Try again later.", "El mapa no cargó. Inténtalo más tarde.") }} onOpen={(place: Place) => go({ title: place.title, detail: t(`${place.moments.length} 段`, `${place.moments.length} memories`, `${place.moments.length} recuerdos`), moments: place.moments })} />
       <p className="moments-note">{t(`你们一起去过 ${places.length} 个地方。点照片看那里的回忆。`, `${places.length} places you've been together. Tap a photo to see its memories.`, `${places.length} lugares donde han estado juntos. Toca una foto para ver sus recuerdos.`)}</p>
     </Suspense> : <section className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></section>)}
 
