@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowsSplit, ChatsCircle, GridNine, PaintBrush, Target } from "@phosphor-icons/react";
+import { ArrowsSplit, ChatsCircle, GridNine, Horse, PaintBrush, Target } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -33,6 +33,17 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("点一下选位置，再点一次或按“落子”确认。", "Tap a spot to pick it, then tap again or press Place to confirm.", "Toca un punto para elegirlo y vuelve a tocar o pulsa Colocar para confirmar."),
         t("不用两个人同时在线：轮到 TA 时会收到提醒。下一盘换另一个人执黑。", "You don't both need to be online: your partner is told when it's their move. Next game, the other one plays black.", "No hace falta estar los dos conectados: a tu pareja le avisamos cuando le toca. En la siguiente, el otro lleva negras."),
         t("TA 不在的时候，可以和小家伙下，它马上就会回你一步。", "When your partner's away, play your little one: it answers right away.", "Si tu pareja no está, juega con tu pequeñín: responde enseguida."),
+      ],
+    },
+    {
+      id: "xiangqi", category: "board", kind: "match", icon: <Horse size={26} weight="duotone" />, name: t("象棋", "Chinese chess", "Ajedrez chino"),
+      tagline: t("楚河汉界，将死对方的将就赢。", "Cross the river and checkmate the other general.", "Cruza el río y da jaque mate al otro general."),
+      rules: [
+        t("开局的人执红先走，下一盘换另一个人执红。你的棋子总在下方。", "Whoever starts plays red and moves first; next game, the other one plays red. Your pieces are always at the bottom.", "Quien empieza lleva rojas y sale primero; en la siguiente, el otro lleva rojas. Tus piezas siempre están abajo."),
+        t("点一下自己的棋子，能走的位置会亮起来，再点一下就走过去。", "Tap one of your pieces to light up where it can go, then tap a spot to move there.", "Toca una de tus piezas para ver adónde puede ir y luego toca el punto para moverla."),
+        t("帅（将）和仕（士）不出九宫，相（象）不过河、塞象眼不能走，马被绊腿不能走，炮隔一个子才能吃，兵（卒）过河后可以横走，两个将不能在同一条线上照面。", "K general and A advisors stay in the palace. E elephants never cross the river and are blocked by a piece in between. H horses are blocked by a piece next to them. R chariots move straight. C cannons move like chariots but capture by jumping exactly one piece. P soldiers go forward, and sideways too after the river.", "K general y A consejeros no salen del palacio. E elefantes no cruzan el río y se bloquean con una pieza en medio. H caballos se bloquean con una pieza al lado. R carros van en línea recta. C cañones se mueven como carros pero capturan saltando exactamente una pieza. P soldados avanzan, y tras el río también de lado."),
+        t("不能让自己的将被吃，两个将也不能在没有子隔开时照面。把对方将死，或让对方无棋可走就赢；也可以认输。", "You may never leave your own general in check, and the two generals may never face each other on an open line. Win by checkmate, or when the other side has no legal move; either of you may resign.", "Nunca puedes dejar a tu general en jaque, y los dos generales no pueden mirarse en una línea abierta. Ganas con jaque mate o si el otro no tiene ningún movimiento; cualquiera puede rendirse."),
+        t("各走 150 步还没分出胜负就算和棋。TA 不在的时候，可以和小家伙下。", "No result after 150 moves each is a draw. When your partner's away, play your little one.", "Sin resultado tras 150 movimientos cada uno, es empate. Si tu pareja no está, juega con tu pequeñín."),
       ],
     },
     {
