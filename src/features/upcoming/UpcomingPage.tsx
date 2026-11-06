@@ -6,13 +6,14 @@ import { relationshipApi } from "../relationship/api";
 import type { GraphRecord } from "../relationship/types";
 import { RemindersPanel } from "../reminders/RemindersPanel";
 import { UpcomingYear, type CalendarEntry } from "./UpcomingYear";
+import { TogetherCard } from "../moments/TogetherCard";
 
 type Reminder = { id: string; title?: string; dueAt?: string; status: string; milestoneId?: string; frequency?: string };
 const localDay = (iso: string) => { const date = new Date(iso); return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-CA"); };
 
 /** Coming up for one member: the couple's shared dates and deadlines (when paired) with their own reminders, on one calendar.
  * Tapping a shared date shows its details; changes are asked of Pinky, and whoever added a date can delete it. */
-export function UpcomingPage({ language, userId = "", milestones = [], reminders: sharedReminders = [], commitments = [], onOpenCommitment, onAsk, onChanged }: { language: Language; userId?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
+export function UpcomingPage({ language, userId = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged }: { language: Language; userId?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState<GraphRecord | null>(null);
@@ -32,6 +33,7 @@ export function UpcomingPage({ language, userId = "", milestones = [], reminders
   };
   const date = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
   return <div className="feature-stack">
+    {onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
     <UpcomingYear language={language} entries={entries} onAsk={onAsk} />
     <details className="upcoming-manage"><summary>{t("管理我的提醒和通知", "Manage my reminders and notifications", "Gestionar mis recordatorios y avisos")}</summary><RemindersPanel language={language} onChanged={onChanged} compose={false} /></details>
     <BottomSheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }} title={String(open?.title || "")} snap={0.5}>
