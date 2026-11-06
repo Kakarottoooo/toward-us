@@ -26,7 +26,7 @@ export function placeInYear(entries: CalendarEntry[], year: number): Placed[] {
 const kindOrder = (kind: CalendarKind) => ["date", "plan", "reminder", "holiday"].indexOf(kind);
 
 /** The year at a glance: the next date as a countdown, twelve small months with colored days, one month opened, then a list. */
-export function UpcomingYear({ language, entries, onAsk }: { language: Language; entries: CalendarEntry[]; onAsk: (text: string) => void }) {
+export function UpcomingYear({ language, entries, onAsk, counted }: { language: Language; entries: CalendarEntry[]; onAsk: (text: string) => void; counted?: string }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const today = todayIso(), thisYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(thisYear);
@@ -37,7 +37,8 @@ export function UpcomingYear({ language, entries, onAsk }: { language: Language;
   const placed = useMemo(() => placeInYear(withHolidays(year), year), [entries, year, showHolidays, language]);
   // What comes next always looks from today, across the turn of the year.
   const ahead = useMemo(() => [...placeInYear(withHolidays(thisYear), thisYear), ...placeInYear(withHolidays(thisYear + 1), thisYear + 1)].filter((entry) => entry.day >= today && daysBetween(today, entry.day) < 366), [entries, showHolidays, language, today]);
-  const next = ahead[0];
+  // A date already counted down above (the next meeting) is not shown twice as "next".
+  const next = ahead.find((entry) => entry.id !== counted);
   const byDay = new Map<string, Placed[]>(); for (const entry of placed) byDay.set(entry.day, [...(byDay.get(entry.day) || []), entry]);
   const mondayFirst = language !== "en";
   const weekdays = Array.from({ length: 7 }, (_, index) => new Date(Date.UTC(2024, 0, mondayFirst ? 1 + index : 7 + index)).toLocaleDateString(languageTag(language), { weekday: "narrow", timeZone: "UTC" }));

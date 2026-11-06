@@ -18,6 +18,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
   const language = (req) => hint(req) || "zh";
   const pairing = async (req) => { const context = await store.getRelationshipContext(req.auth.user.id); if (!context) throw decisionError(409, "pairing_required"); return context; };
   const writable = (context) => context.relationship.status === "active" && context.members.length === 2;
+  const validZone = (zone) => { if (typeof zone !== "string" || !zone || zone.length > 64) return false; try { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return true; } catch { return false; } };
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = async (req, action) => {
     const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
@@ -35,6 +36,11 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       // The member's own calendar day decides what "today" is.
       const timezone = clean(String(req.query?.timezone || ""), 64) || "UTC"; let today = "";
       try { today = new Date().toLocaleDateString("en-CA", { timeZone: timezone }); } catch { today = new Date().toISOString().slice(0, 10); }
+      // 异地 (founder 11-06): each member's own time zone is kept on the shared conversation, so the other one sees "TA 那边 14:05".
+      if (validZone(timezone) && timezone !== "UTC") await transaction(req, async (tx) => {
+        const current = await tx.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
+        if (current && current.zones?.[userId] !== timezone) await tx.updateRelationshipRecordForUser("togetherConversations", current.id, userId, (draft) => { draft.zones = { ...(draft.zones || {}), [userId]: timezone }; });
+      }).catch(() => {});
       const recalled = await recallOnThisDay(store, { relationshipId, userId, today }).catch(() => null);
       if (recalled) emit(recalled, "together.updated", null, userId);
       // On a day worth celebrating, the first one to open Us starts the recap card; it arrives a little later.
@@ -54,7 +60,10 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);
     if (!conversation) throw decisionError(409, "pairing_required");
     const { activeAgreements, openCommitments, pendingAgreement } = buildTogetherContext(snapshot, relationshipId);
-    res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
+    // The next time they meet (a "meetup" date Pinky kept), counted down in Us and on Coming up.
+    const day = (() => { try { return new Date().toLocaleDateString("en-CA", { timeZone: validZone(req.query?.timezone) ? req.query.timezone : "UTC" }); } catch { return new Date().toISOString().slice(0, 10); } })();
+    const meetup = (snapshot.milestones || []).filter((item) => item.relationshipId === relationshipId && item.type === "meetup" && !item.archivedAt && typeof item.date === "string" && item.date >= day).sort((a, b) => a.date.localeCompare(b.date))[0];
+    res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), nextMeeting: meetup ? { id: meetup.id, date: meetup.date, title: meetup.title } : null, members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
   });
 
   // "更早的消息": a page of what came before the message `before` (the oldest one the App holds), from the working set and
