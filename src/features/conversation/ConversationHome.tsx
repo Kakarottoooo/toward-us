@@ -651,15 +651,16 @@ function ConversationDrawer({ user, paired, language, onPet, onClose, onOpen, on
   const [chats, setChats] = useState(0);
   useEffect(() => { listImports().then((items) => setChats(items.length)).catch(() => {}); }, []);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [onClose]);
-  const fixed: DrawerItem[] = paired ? [
-    { key: "agreements", icon: <Handshake size={22} />, label: t("约定", "Agreements", "Acuerdos"), badge: home?.pending, onClick: () => onOpen("/?view=agreements") },
-    { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=upcoming") },
-  ] : [
+  const moments: DrawerItem = { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") };
+  const agreements: DrawerItem = { key: "agreements", icon: <Handshake size={22} />, label: t("约定", "Agreements", "Acuerdos"), badge: home?.pending, onClick: () => onOpen("/?view=agreements") };
+  const upcoming: DrawerItem = { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=upcoming") };
+  // Ordered by what a couple opens most (founder 11-06); an agreement waiting for approval moves to the top with its badge.
+  const fixed: DrawerItem[] = paired ? (home?.pending ? [agreements, upcoming, moments] : [upcoming, moments, agreements]) : [
     { key: "invite", icon: <UserPlus size={22} />, label: t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja"), onClick: onInvite },
     { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=reminders") },
   ];
   const fixedSpaces: DrawerItem[] = [
-    { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") },
+    ...(paired ? [] : [moments]),
     // Entries for features that otherwise only start by talking (founder 11-06: "我不知道怎么用，去哪里用").
     ...(paired ? [
       { key: "profile", icon: <UserCircle size={22} />, label: t("关于我们", "About us", "Sobre nosotros"), onClick: onProfile },
