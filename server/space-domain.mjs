@@ -61,7 +61,7 @@ export async function visibleSpace(tx, id, userId) {
 }
 
 /** An item inherits who can see it from its space, so nothing private can land in a shared space by accident. */
-export async function addSpaceItem(tx, { userId, space, title = "", text = "", date = null, done = false, photoId = null, source = "agent" }) {
+export async function addSpaceItem(tx, { userId, space, title = "", text = "", date = null, done = false, photoId = null, idea = null, source = "agent" }) {
   const name = clean(title, 160), body = clean(text, 2000);
   if (!name && !body && !photoId) throw fail(400, "Say what to add.");
   const items = (await tx.listRelationshipRecordsForUser("spaceItems", userId)).filter((item) => item.spaceId === space.id && canViewRecord(item, userId));
@@ -69,6 +69,8 @@ export async function addSpaceItem(tx, { userId, space, title = "", text = "", d
   const record = createRelationshipRecord({
     relationshipId: space.relationshipId, userId, visibility: space.visibility, aiAccessScope: space.aiAccessScope,
     spaceId: space.id, ...(space.system ? { album: space.system } : {}), title: name, text: body, date: date && isDate(date) ? date : null, done: Boolean(done), photoId: photoId ? clean(photoId, 80) : null, provenanceSource: source,
+    // Which of the "100 small things" this memory is (moments only), so the list can tick it off.
+    ...(Number.isInteger(idea) && idea >= 1 && idea <= 100 ? { idea } : {}),
   });
   await tx.createRelationshipRecord("spaceItems", record);
   await tx.updateRelationshipRecordForUser("spaces", space.id, userId, (draft) => { draft.version += 1; });

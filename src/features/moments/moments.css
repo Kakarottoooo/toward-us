@@ -45,3 +45,25 @@
 .together-edit { justify-self: start; padding: 4px 0; border: 0; background: none; color: #993c1d; font-size: 13px; font-weight: 600; cursor: pointer; }
 .together-note { color: #993c1d; font-size: 13px !important; }
 .together-error { color: #903e38; }
+/* 100 little things: a quiet, collapsible source of ideas above the album. */
+.ideas { display: grid; gap: 12px; padding: 14px 16px; border-radius: 20px; background: #eef0fb; color: #2c3477; }
+.ideas-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.ideas-head > span { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.ideas-head strong { font-size: 17px; font-weight: 700; }
+.ideas-head small { color: #4a528f; font-size: 14px; line-height: 1.4; }
+.ideas-caret { flex: 0 0 auto; transition: transform .2s ease; }
+.ideas-caret.open { transform: rotate(180deg); }
+.ideas-progress { height: 6px; border-radius: 3px; background: rgba(44,52,119,.12); overflow: hidden; }
+.ideas-progress span { display: block; height: 100%; border-radius: 3px; background: #4b5bd6; }
+.ideas-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.ideas-cats button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 17px; background: rgba(44,52,119,.08); color: #2c3477; font-size: 14px; font-weight: 600; cursor: pointer; }
+.ideas-cats button.active { background: #2c3477; color: #fff; }
+.ideas-hint { margin: 0; color: #4a528f; font-size: 14px; line-height: 1.5; }
+.ideas-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ideas-list button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 12px; border: 0; border-radius: 14px; background: #fbfbff; color: var(--jian-ink); font-size: 16px; text-align: left; cursor: pointer; }
+.ideas-list button:focus-visible { outline: 2px solid #4b5bd6; outline-offset: 2px; }
+.ideas-list button.is-done { background: #e3f3e8; }
+.ideas-num { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(44,52,119,.08); color: #4a528f; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.is-done .ideas-num { background: #2f8a4c; color: #fff; }
+.ideas-text { flex: 1; min-width: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.ideas-list img { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }

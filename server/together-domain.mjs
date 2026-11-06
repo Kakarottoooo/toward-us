@@ -359,7 +359,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
       if (!space || space.visibility !== "shared" || space.relationshipId !== relationshipId) throw decisionError(404, "not_found");
       const photo = action.photoId ? await tx.getRelationshipRecordForUser("photos", action.photoId, userId) : null;
       if (action.photoId && (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId || photo.archivedAt)) throw decisionError(404, "not_found");
-      record = await addSpaceItem(tx, { userId, space, title: action.title || "", text: action.text || "", date: action.date, done: action.done === true, photoId: photo?.id || null, source: "agent" });
+      record = await addSpaceItem(tx, { userId, space, title: action.title || "", text: action.text || "", date: action.date, done: action.done === true, photoId: photo?.id || null, idea: space.system === "moments" ? action.idea : null, source: "agent" });
       if (!refs.some((ref) => ref.type === "space" && ref.id === space.id)) refs.push({ type: "space", id: space.id, version: space.version, title: space.title, ...(space.system ? { system: space.system } : {}) });
       continue;
     }
