@@ -32,6 +32,7 @@ import { createNativePush } from "./native-push.mjs";
 import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
+import { createMatchRouter } from "./match-router.mjs";
 import { createAgentActivity, createAgentActivityRouter } from "./agent-activity.mjs";
 import { createSpaceRouter } from "./space-router.mjs";
 import { createPhotoRouter } from "./photo-store.mjs";
@@ -489,6 +490,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
+  app.use("/api", createMatchRouter({ store, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message), online: (userId) => relationshipRouter.isOnline?.(userId) }));
   app.use("/api", createProfileRouter({ store, emit }));
   app.use("/api", createCycleRouter({ store, emit }));
   app.use("/api", createDiscoverRouter({ store }));

@@ -1,0 +1,66 @@
+import express from "express";
+import { recordUsage } from "./usage.mjs";
+import { actOnMatch, createMatch, gameName, GAMES, listMatches, matchStats, viewMatch } from "./matches/index.mjs";
+import { MATCH_ERRORS, matchError } from "./matches/errors.mjs";
+
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+
+// 游戏大厅: the hall's list, starting a game, and each move. `notify(userId, { body, url, tag })` reaches a member who isn't
+// looking (see reminder-service notifyMember); `online(userId)` is true while they have the App open.
+export function createMatchRouter({ store, emit = () => {}, notify = async () => {}, online = () => false }) {
+  const router = express.Router();
+  router.use("/matches", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
+
+  router.get("/matches", async (req, res) => {
+    const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);
+    if (!context) throw matchError(409, "pairing_required");
+    const matches = await listMatches(store, userId);
+    const shown = [...matches.filter((match) => match.status === "active"), ...matches.filter((match) => match.status !== "active").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10)];
+    res.json({ games: Object.keys(GAMES), matches: shown.map((match) => viewMatch(match, userId)), stats: matchStats(matches), members: context.members.map((member) => ({ id: member.userId, name: member.user.name })), readOnly: context.relationship.status !== "active" || context.members.length !== 2 });
+  });
+
+  router.get("/matches/:id", async (req, res) => {
+    const userId = req.auth.user.id, match = (await listMatches(store, userId)).find((item) => item.id === req.params.id);
+    if (!match) throw matchError(404, "not_found");
+    res.json({ match: viewMatch(match, userId) });
+  });
+
+  router.post("/matches", async (req, res) => {
+    const userId = req.auth.user.id;
+    const result = await createMatch({ store, userId, game: String(req.body?.game || "") });
+    if (result.created) {
+      emit(result.match, "match.updated"); emit(result.conversation, "together.updated", null, userId);
+      void recordUsage(store, { userId, relationshipId: result.match.relationshipId, action: "match_started" });
+    }
+    res.status(result.created ? 201 : 200).json({ match: viewMatch(result.match, userId), created: result.created });
+  });
+
+  router.post("/matches/:id/actions", async (req, res) => {
+    const userId = req.auth.user.id, action = req.body && typeof req.body === "object" ? req.body : {};
+    const { match, before } = await actOnMatch({ store, userId, matchId: req.params.id, action });
+    emit(match, "match.updated");
+    const partner = match.players.find((id) => id !== userId);
+    // The partner hears about it when it becomes their move, or when the game ends, unless they are looking at the App.
+    if (partner && !online(partner) && (match.status !== "active" || (match.turn === partner && before !== partner))) {
+      const context = await store.getRelationshipContext(userId), me = context?.members.find((member) => member.userId === userId)?.user?.name || "";
+      const drawn = match.game === "draw" && match.state.rounds.at(-1)?.strokes && match.status === "active";
+      const body = (language) => {
+        const game = gameName(match.game, language);
+        if (match.status !== "active") return say(language, `${me} 结束了这局${game}，去看看结果`, `${me} finished your game of ${game}. See how it went`, `${me} terminó su partida de ${game}. Mira el resultado`);
+        if (drawn) return say(language, `${me} 画好了，来猜猜是什么`, `${me} finished a drawing. Can you guess it?`, `${me} terminó un dibujo. ¿Adivinas qué es?`);
+        return say(language, `轮到你了 · ${game}`, `Your turn · ${game}`, `Te toca · ${game}`);
+      };
+      void notify(partner, { body: { zh: body("zh"), en: body("en"), es: body("es") }, url: `/?channel=us&game=${encodeURIComponent(match.id)}`, tag: `pinky-game-${match.id}`.slice(0, 64) }).catch(() => console.error("game push failed"));
+    }
+    if (match.status !== "active") void recordUsage(store, { userId, relationshipId: match.relationshipId, action: "match_finished" });
+    res.json({ match: viewMatch(match, userId) });
+  });
+
+  router.use((error, req, res, next) => {
+    if (!error?.matchCode) return next(error);
+    const language = req.body?.language || req.query?.language || "zh";
+    const copy = MATCH_ERRORS[error.matchCode] || MATCH_ERRORS.invalid_action;
+    res.status(error.statusCode || 400).json({ error: say(language, ...copy), code: error.matchCode });
+  });
+  return router;
+}

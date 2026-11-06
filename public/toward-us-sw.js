@@ -50,7 +50,7 @@ function safeDestination(value) {
   if (typeof value !== "string" || !value.startsWith("/?")) return "/?view=reminders";
   const url = new URL(value, self.location.origin);
   if (url.origin !== self.location.origin || url.pathname !== "/") return "/?view=reminders";
-  if (url.searchParams.get("channel") === "us") return "/?channel=us";
+  if (url.searchParams.get("channel") === "us") { const game = url.searchParams.get("game"); return game && /^[a-zA-Z0-9-]{1,80}$/.test(game) ? `/?channel=us&game=${game}` : "/?channel=us"; }
   if (!["reminders", "decide", "plans", "checkins"].includes(url.searchParams.get("view"))) return "/?view=reminders";
   const allowed = new URLSearchParams({ view: url.searchParams.get("view") });
   for (const name of ["issue", "outcome", "milestone", "reminder"]) {

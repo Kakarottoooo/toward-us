@@ -22,6 +22,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   const nativeOn = typeof sendNative === "function";
   // Like the iMessage mirror: what this process already nudged about per conversation, so nothing older than it goes out.
   const togetherCursors = new Map(), startedAt = new Date().toISOString();
+  // 游戏: when each tag (one per game) last reached a member, so a quick back-and-forth sends one notice, not one per move.
+  const memberNotices = new Map();
   const owned = async (db, collection, userId) => (await db.listRelationshipRecordsForUser(collection, userId)).filter((item) => item.ownerUserId === userId && !item.archivedAt);
   const update = (db, collection, item, patch) => db.updateRelationshipRecordForUser(collection, item.id, item.ownerUserId, (record) => { Object.assign(record, patch); record.version += 1; });
   const privateRecord = (userId, data) => createRelationshipRecord({ userId, relationshipId: null, visibility: "private", aiAccessScope: "none", ...data });
@@ -278,6 +280,23 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     // New messages since the last call nudge the members who did not write them (App phones and installed web apps alike),
     // vaguely, when the couple has no live iMessage
     // group to carry them. `actorUserId` is the member who triggered an Agent card, so they are not nudged about their own action.
+    /** One notice to one member, e.g. "轮到你了" in a game: `body` is { zh, en, es }, `url` an in-app path, `tag` replaces an
+     * unread notice with the same tag. Follows their "messages" switch and quiet night; at most one per tag every 3 minutes. */
+    async notifyMember(userId, { body, url, tag }) {
+      if (!nativeOn && !pushOn) return { sent: 0 };
+      const key = `${userId}:${tag}`, last = memberNotices.get(key) || 0;
+      if (now().getTime() - last < 3 * 60_000) return { sent: 0 };
+      const preference = await preferences(store, userId);
+      if (preference?.enabled === false || notifyOf(preference).messages === false || quietNow(preference)) return { sent: 0 };
+      memberNotices.set(key, now().getTime());
+      const language = await memberLanguage(store, userId), text = String(body?.[language] || body?.zh || "").slice(0, 160);
+      const phones = nativeOn ? (await owned(store, "nativePushDevices", userId)).filter((item) => active(item) && item.token) : [];
+      const browsers = pushOn && preference?.enabled && active(preference) ? (await owned(store, "pushSubscriptions", userId)).filter((item) => active(item) && item.subscription) : [];
+      let sent = 0;
+      for (const device of phones) { try { await sendNative(device.token, { title: "Pinky", body: text, url }); sent += 1; } catch (error) { console.error("member native push failed", error?.code || "error"); } }
+      for (const device of browsers) { try { const receipt = await sendPush(device.subscription, { title: "Pinky", body: text, url, tag }, { dedupeKey: tag }); if (receipt?.statusCode >= 200 && receipt.statusCode < 300) sent += 1; } catch (error) { console.error("member web push failed", error?.code || error?.statusCode || "error"); } }
+      return { sent };
+    },
     async notifyTogether(conversation, actorUserId = null) {
       if ((!nativeOn && !pushOn) || !conversation?.relationshipId || !Array.isArray(conversation.messages)) return { sent: 0 };
       const cursor = togetherCursors.get(conversation.id) || { since: startedAt, ids: new Set() };
