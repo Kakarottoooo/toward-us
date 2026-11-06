@@ -30,3 +30,26 @@
 .character-actions button:disabled { opacity: .45; cursor: default; }
 .character-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .character-placeholder, .character-dot { animation: none; } }
+/* 一起养的小家伙: the pill under the top of Us and its sheet. */
+.pet-pill { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 10px; border: 0; border-radius: 999px; background: rgba(226,168,77,.18); color: #8a5a12; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.pet-pill em { font-style: normal; font-weight: 600; color: #a2394f; }
+.pet-pill.is-sleepy { background: rgba(37,37,37,.07); color: #6f6a63; }
+.pet-pill:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.pet-sheet { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-bottom: 12px; text-align: center; }
+.pet-portrait { display: grid; place-items: center; width: 120px; height: 120px; color: #c9913a; }
+.pet-portrait img { max-width: 120px; max-height: 120px; object-fit: contain; }
+.pet-portrait.is-sleepy { opacity: .7; }
+.pet-level { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 26px; font-weight: 800; }
+.pet-level small { color: #7a736a; font-size: 13px; font-weight: 600; }
+.pet-progress { width: 100%; max-width: 280px; height: 8px; overflow: hidden; border-radius: 999px; background: rgba(37,37,37,.08); }
+.pet-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #e2a84d, #d6708c); }
+.pet-mood { margin: 0; color: #5f5952; font-size: 15px; }
+.pet-pat { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 24px; border: 0; border-radius: 999px; background: var(--jian-ink); color: var(--jian-paper-bright); font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
+.pet-pat:disabled { background: rgba(37,37,37,.12); color: #6f6a63; cursor: default; }
+.pet-partner { color: #7a736a; font-size: 13px; }
+.pet-make { min-height: 40px; padding: 0 16px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: transparent; color: var(--jian-ink); font: inherit; font-size: 14px; cursor: pointer; }
+.pet-how { width: 100%; text-align: left; }
+.pet-how h3 { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; color: #7a736a; font-size: 13px; }
+.pet-how ul { margin: 0; padding: 0; list-style: none; }
+.pet-how li { display: flex; justify-content: space-between; min-height: 34px; align-items: center; border-bottom: 1px solid rgba(37,37,37,.06); font-size: 14px; }
+.pet-how b { color: #a2394f; }

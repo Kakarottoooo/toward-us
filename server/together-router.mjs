@@ -8,6 +8,7 @@ import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mj
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
 import { careNoteFor } from "./cycle.mjs";
+import { petIt, syncPet } from "./pet.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 
@@ -32,6 +33,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
 
   router.get("/together", async (req, res) => {
     const userId = req.auth.user.id, context = await pairing(req), relationshipId = context.relationship.id;
+    let pet = null;
     if (writable(context)) {
       const ensured = await transaction(req, (tx) => ensureTogetherConversation(tx, { relationshipId, userId })); if (ensured.created) emit(ensured.conversation, "together.updated");
       // The member's own calendar day decides what "today" is.
@@ -42,6 +44,10 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
         const current = await tx.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
         if (current && current.zones?.[userId] !== timezone) await tx.updateRelationshipRecordForUser("togetherConversations", current.id, userId, (draft) => { draft.zones = { ...(draft.zones || {}), [userId]: timezone }; });
       }).catch(() => {});
+      // 一起养的小家伙: brought up to date with what they did since (and a new level announced once).
+      const synced = await transaction(req, (tx) => syncPet(tx, { relationshipId, userId, zone: validZone(timezone) ? timezone : "UTC", language: language(req) })).catch(() => null);
+      if (synced?.leveled) emit(synced.conversation, "together.updated");
+      pet = synced?.view || null;
       const recalled = await recallOnThisDay(store, { relationshipId, userId, today }).catch(() => null);
       if (recalled) emit(recalled, "together.updated", null, userId);
       // On a day worth celebrating, the first one to open Us starts the recap card; it arrives a little later.
@@ -64,7 +70,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     // The next time they meet (a "meetup" date Pinky kept), counted down in Us and on Coming up.
     const day = (() => { try { return new Date().toLocaleDateString("en-CA", { timeZone: validZone(req.query?.timezone) ? req.query.timezone : "UTC" }); } catch { return new Date().toISOString().slice(0, 10); } })();
     const meetup = (snapshot.milestones || []).filter((item) => item.relationshipId === relationshipId && item.type === "meetup" && !item.archivedAt && typeof item.date === "string" && item.date >= day).sort((a, b) => a.date.localeCompare(b.date))[0];
-    res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), nextMeeting: meetup ? { id: meetup.id, date: meetup.date, title: meetup.title } : null, care: await careNoteFor(store, userId, day).catch(() => null), members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
+    res.json({ conversation: projectRecord(conversation, userId), pendingAgreement, activeAgreements, openCommitments, readOnly: !writable(context), nextMeeting: meetup ? { id: meetup.id, date: meetup.date, title: meetup.title } : null, care: await careNoteFor(store, userId, day).catch(() => null), pet, members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) });
   });
 
   // "更早的消息": a page of what came before the message `before` (the oldest one the App holds), from the working set and
@@ -144,6 +150,14 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
   });
 
   // 小游戏: "再来一局" starts a round directly; answers follow the daily question's hidden-until-both rule.
+  // 摸摸它: once a day each.
+  router.post("/together/pet", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const zone = validZone(req.body?.timezone) ? req.body.timezone : "UTC";
+    const result = await transaction(req, (tx, _context, relationshipId) => petIt(tx, { relationshipId, userId, zone, language: language(req) }));
+    emit(result.conversation, "together.updated");
+    res.json({ pet: result.view });
+  });
   router.post("/together/games", async (req, res) => {
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const message = await startGame({ store, mediator, relationshipId: initial.relationship.id, userId, type: GAME_TYPES.includes(req.body?.type) ? req.body.type : null, language: language(req), emit: (updated) => emit(updated, "together.updated") });
