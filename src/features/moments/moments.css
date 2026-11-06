@@ -176,3 +176,14 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .moments-map-page .maplibregl-ctrl-top-right { top: 6px; right: 6px; }
 .moments-map-page .maplibregl-ctrl-group { border-radius: 14px; overflow: hidden; box-shadow: 0 2px 8px rgba(37,37,37,.18); }
 .moments-map-page .moments-empty { position: absolute; inset: 80px 16px auto; }
+/* 找你们俩的合照 */
+.find-us-faces { display: flex; gap: 12px; justify-content: center; }
+.find-us-face { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 120px; padding: 10px; border: 1px dashed rgba(37,37,37,.25); border-radius: 16px; background: transparent; color: #5f5952; font: inherit; font-size: 13px; cursor: pointer; }
+.find-us-face img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
+.find-us-face:focus-visible, .find-us-grid button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.find-us-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.find-us-grid button { position: relative; aspect-ratio: 1; padding: 0; overflow: hidden; border: 0; border-radius: 6px; background: rgba(37,37,37,.06); cursor: pointer; }
+.find-us-grid img, .find-us-grid span { display: block; width: 100%; height: 100%; object-fit: cover; }
+.find-us-grid button.is-chosen img { opacity: .75; }
+.find-us-grid button.is-chosen { box-shadow: inset 0 0 0 3px #d6708c; }
+.find-us-grid svg { position: absolute; right: 6px; bottom: 6px; color: #d6708c; background: #fff; border-radius: 50%; }

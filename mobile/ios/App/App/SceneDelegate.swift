@@ -3,6 +3,8 @@ import Capacitor
 import WebKit
 import Photos
 import CoreLocation
+import PhotosUI
+import Vision
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -98,8 +100,11 @@ public class PinkyPhotosPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "scan", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "thumbnail", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "place", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pickFace", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "findTogether", returnType: CAPPluginReturnPromise),
     ]
     private let geocoder = CLGeocoder()
+    var pickCall: CAPPluginCall?
 
     private static func status(_ value: PHAuthorizationStatus) -> String {
         switch value {
@@ -182,5 +187,113 @@ public class PinkyPhotosPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["name": name])
             }
         }
+    }
+}
+
+// MARK: - 找你们俩的合照 (founder 11-06): no couple album needed. The member picks one photo of themself and one of their
+// partner; Vision finds the faces and a feature print of each; then the library is scanned on the phone for photos with
+// two faces that look like the two of them. Nothing leaves the phone here: the member reviews the candidates and only the
+// ones they choose are uploaded, the same way an album is.
+extension PinkyPhotosPlugin: PHPickerViewControllerDelegate {
+    /// Opens the photo picker for one photo with a face; returns that face's feature print and a small crop to show.
+    @objc func pickFace(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            var config = PHPickerConfiguration(photoLibrary: .shared())
+            config.filter = .images; config.selectionLimit = 1
+            let picker = PHPickerViewController(configuration: config)
+            picker.delegate = self
+            self.pickCall = call
+            self.bridge?.viewController?.present(picker, animated: true)
+        }
+    }
+
+    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let call = pickCall else { return }
+        pickCall = nil
+        guard let id = results.first?.assetIdentifier, let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { call.reject("cancelled"); return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let image = Self.image(of: asset, side: 1600, network: true), let faces = Self.faces(in: image), let face = faces.max(by: { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }),
+                  let crop = Self.crop(image, to: face.boundingBox), let print = Self.featurePrint(of: crop) else { call.reject("no_face"); return }
+            let preview = UIImage(cgImage: crop).jpegData(compressionQuality: 0.8)?.base64EncodedString() ?? ""
+            call.resolve(["print": Self.encode(print), "face": preview])
+        }
+    }
+
+    /// Scans the library (newest first, the last few years) for photos with two faces that match the two prints. Returns the
+    /// best candidates with when and where, sorted by how closely both faces match. Progress is sent as "findProgress".
+    @objc func findTogether(_ call: CAPPluginCall) {
+        guard let a = Self.decode(call.getString("a") ?? ""), let b = Self.decode(call.getString("b") ?? "") else { call.reject("missing faces"); return }
+        let limit = call.getInt("limit") ?? 80, maxScan = call.getInt("maxScan") ?? 4000
+        let since = Date(timeIntervalSince1970: (call.getDouble("since") ?? (Date().timeIntervalSince1970 - 3 * 365 * 86_400)))
+        DispatchQueue.global(qos: .userInitiated).async {
+            let options = PHFetchOptions()
+            options.predicate = NSPredicate(format: "mediaType == %d AND creationDate > %@", PHAssetMediaType.image.rawValue, since as NSDate)
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.fetchLimit = maxScan
+            let assets = PHAsset.fetchAssets(with: options)
+            let iso = ISO8601DateFormatter()
+            let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd"; day.locale = Locale(identifier: "en_US_POSIX"); day.timeZone = .current
+            var found: [(score: Float, item: [String: Any])] = []
+            let total = assets.count
+            for index in 0..<total {
+                autoreleasepool {
+                    let asset = assets.object(at: index)
+                    if index % 50 == 0 { self.notifyListeners("findProgress", data: ["done": index, "total": total, "found": found.count]) }
+                    // A quick look on the local thumbnail first; only photos with two or more faces are looked at closely.
+                    guard let small = Self.image(of: asset, side: 512, network: false), let quick = Self.faces(in: small), quick.count >= 2,
+                          let image = Self.image(of: asset, side: 1400, network: false), let faces = Self.faces(in: image), faces.count >= 2 else { return }
+                    let prints = faces.prefix(8).compactMap { face -> [Float]? in Self.crop(image, to: face.boundingBox).flatMap { Self.featurePrint(of: $0) } }
+                    guard prints.count >= 2 else { return }
+                    var best = Float.greatestFiniteMagnitude
+                    for i in prints.indices { for j in prints.indices where i != j { best = min(best, max(Self.distance(prints[i], a), Self.distance(prints[j], b))) } }
+                    guard let date = asset.creationDate else { return }
+                    var item: [String: Any] = ["id": asset.localIdentifier, "takenAt": iso.string(from: date), "day": day.string(from: date), "score": best]
+                    if let location = asset.location { item["lat"] = location.coordinate.latitude; item["lon"] = location.coordinate.longitude }
+                    found.append((best, item))
+                }
+            }
+            found.sort { $0.score < $1.score }
+            self.notifyListeners("findProgress", data: ["done": total, "total": total, "found": found.count])
+            call.resolve(["assets": found.prefix(limit).map { $0.item }, "scanned": total, "withTwoFaces": found.count])
+        }
+    }
+
+    // Helpers: images from the library, faces and their feature prints.
+    static func image(of asset: PHAsset, side: CGFloat, network: Bool) -> CGImage? {
+        let options = PHImageRequestOptions()
+        options.isSynchronous = true; options.deliveryMode = network ? .highQualityFormat : .fastFormat; options.resizeMode = .fast; options.isNetworkAccessAllowed = network
+        var out: CGImage?
+        PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: side, height: side), contentMode: .aspectFit, options: options) { image, _ in out = image?.cgImage }
+        return out
+    }
+    static func faces(in image: CGImage) -> [VNFaceObservation]? {
+        let request = VNDetectFaceRectanglesRequest()
+        try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        return request.results?.filter { $0.boundingBox.width * CGFloat(image.width) >= 40 }
+    }
+    static func crop(_ image: CGImage, to box: CGRect) -> CGImage? {
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        // Vision boxes are normalized with the origin at the bottom left; widen a little to keep the whole face.
+        var rect = CGRect(x: box.minX * w, y: (1 - box.maxY) * h, width: box.width * w, height: box.height * h)
+        rect = rect.insetBy(dx: -rect.width * 0.25, dy: -rect.height * 0.25).intersection(CGRect(x: 0, y: 0, width: w, height: h))
+        return image.cropping(to: rect.integral)
+    }
+    static func featurePrint(of image: CGImage) -> [Float]? {
+        let request = VNGenerateImageFeaturePrintRequest()
+        try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        guard let observation = request.results?.first as? VNFeaturePrintObservation, observation.elementType == .float else { return nil }
+        return observation.data.withUnsafeBytes { Array($0.bindMemory(to: Float.self).prefix(observation.elementCount)) }
+    }
+    static func distance(_ x: [Float], _ y: [Float]) -> Float {
+        guard x.count == y.count else { return .greatestFiniteMagnitude }
+        var sum: Float = 0
+        for index in x.indices { let d = x[index] - y[index]; sum += d * d }
+        return sum.squareRoot()
+    }
+    static func encode(_ values: [Float]) -> String { values.withUnsafeBufferPointer { Data(buffer: $0) }.base64EncodedString() }
+    static func decode(_ text: String) -> [Float]? {
+        guard let data = Data(base64Encoded: text), data.count % 4 == 0, !data.isEmpty else { return nil }
+        return data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
     }
 }
