@@ -138,6 +138,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     }
   });
 
+  // A connected photo album sends the times and places of every photo it holds (thousands; no pictures) in one plan.
+  app.use("/api/photo-memories/plan", express.json({ limit: "8mb" }));
   app.use(express.json({ limit: "256kb" }));
   app.use((req, res, next) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !(req.path.startsWith("/api/") || req.path.startsWith("/m/"))) return next();
