@@ -73,7 +73,9 @@ test("an imported chat is analyzed privately and reported back into the owner's 
   assert.equal(item.analysis.overview, report.overview);
   assert.ok(!JSON.stringify(item).includes("running late"), "the API never returns the raw messages");
   assert.ok(f.calls.structured.some((call) => call.name === "chat_history_part" && call.input.includes("Blair: running late")), "the model reads the transcript with the chosen names");
-  const messages = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages;
+  // The import is marked ready just before the report is posted, so wait for the report itself.
+  let messages = [];
+  for (let index = 0; index < 100 && messages.length < 2; index += 1) { messages = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages; if (messages.length < 2) await new Promise((r) => setTimeout(r, 30)); }
   assert.deepEqual(messages.map((message) => message.cards?.[0]?.kind), ["chat_import", "chat_import"]);
   assert.equal(messages.at(-1).text, report.message);
   // The partner sees nothing of it.
