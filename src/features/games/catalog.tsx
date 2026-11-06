@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowsSplit, ChatsCircle, GridNine, PaintBrush, Target } from "@phosphor-icons/react";
+import { ArrowsSplit, BowlSteam, ChatsCircle, GridNine, PaintBrush, Target } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -44,6 +44,17 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("猜中或者 3 次用完，答案揭晓，换另一个人画。", "Guessed or out of guesses, the word is revealed and you swap roles.", "Con acierto o sin intentos, se revela la palabra y cambian los papeles."),
         t("你们是一队的：大厅里记着一起猜中了几幅。", "You're on the same team: the hall keeps count of how many drawings you got.", "Son un equipo: en la sala se cuenta cuántos dibujos acertaron."),
         t("也可以和小家伙玩：你画它猜，它画你猜。", "You can also play your little one: you draw and it guesses, then it draws for you.", "También puedes jugar con tu pequeñín: tú dibujas y adivina, luego dibuja para ti."),
+      ],
+    },
+    {
+      id: "soup", category: "puzzle", kind: "match", icon: <BowlSteam size={26} weight="duotone" />, name: t("海龟汤", "Lateral puzzles", "Acertijos laterales"),
+      tagline: t("Pinky 出一个怪故事，你们一起问出真相。", "Pinky tells a strange little story; ask your way to the truth together.", "Pinky cuenta una historia rara; descubran juntos la verdad preguntando."),
+      rules: [
+        t("Pinky 讲一个听起来很奇怪的小故事（汤面），真相（汤底）只有它知道。都是清汤：好玩或温暖，不吓人。", "Pinky tells a short, strange-sounding story; only Pinky knows what really happened. Always gentle: clever, funny or sweet, never scary.", "Pinky cuenta una historia corta y rara; solo Pinky sabe lo que pasó de verdad. Siempre amable: ingeniosa, divertida o tierna, nunca de miedo."),
+        t("你们俩随时都可以问，只能问“是 / 不是”的问题。Pinky 会答：是、不是、不重要、是也不是。", "Either of you can ask at any time, but only yes-or-no questions. Pinky answers yes, no, doesn't matter, or yes and no.", "Cualquiera de los dos puede preguntar cuando quiera, pero solo preguntas de sí o no. Pinky responde sí, no, no importa o sí y no."),
+        t("屏幕上会显示找到了几个关键，看看离真相还有多远。", "The screen shows how many key facts you've found, so you can tell how close you are.", "La pantalla muestra cuántas claves han encontrado, para ver cuánto les falta."),
+        t("想好了就“猜汤底”，说出完整的故事，Pinky 判断对不对。实在猜不出，可以“看汤底”。", "When you think you know, guess the answer by telling the whole story, and Pinky judges it. Stuck? Show the answer.", "Cuando creas saberlo, propón la solución contando la historia completa y Pinky la juzga. ¿Atascados? Vean la solución."),
+        t("TA 不在的时候，也可以自己和 Pinky 玩。", "When your partner's away, you can solve one on your own with Pinky.", "Si tu pareja no está, puedes resolver uno tú solo con Pinky."),
       ],
     },
     {

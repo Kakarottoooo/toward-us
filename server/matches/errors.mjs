@@ -9,6 +9,7 @@ export function matchError(statusCode, code) { return Object.assign(new Error(co
 
 export const MATCH_ERRORS = {
   not_found: ["没有找到这局游戏。", "This game was not found.", "No se encontró esta partida."],
+  soup_not_ready: ["Pinky 还在熬汤，马上就好。", "Pinky is still writing the puzzle. Almost there.", "Pinky aún está preparando el acertijo. Ya casi."], soup_busy: ["Pinky 还在想上面的问题，等它答完再问。", "Pinky is still thinking about the last questions. Ask again once it answers.", "Pinky aún piensa en las últimas preguntas. Pregunta otra vez cuando responda."], question_required: ["写下你的问题。", "Write your question.", "Escribe tu pregunta."],
   unknown_game: ["还没有这个游戏。", "That game isn't here yet.", "Ese juego aún no está."],
   pairing_required: ["要先和 TA 绑定，才能一起玩。", "Pair with your partner to play together.", "Vincúlate con tu pareja para jugar juntos."],
   not_your_turn: ["还没轮到你。", "It's not your turn yet.", "Aún no es tu turno."],

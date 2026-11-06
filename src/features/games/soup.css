@@ -1,0 +1,51 @@
+/* 海龟汤 */
+.soup { display: flex; flex-direction: column; gap: 12px; }
+.soup-wait { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 40px 0 8px; color: #6d5a43; font-size: 17px; font-weight: 650; text-align: center; }
+.soup-wait svg { color: #8a5a12; animation: soup-steam 1.6s ease-in-out infinite; }
+@keyframes soup-steam { 50% { transform: translateY(-3px); opacity: .7; } }
+@media (prefers-reduced-motion: reduce) { .soup-wait svg, .soup-thinking { animation: none; } }
+
+.soup-surface { padding: 14px 16px; border-radius: 18px; background: #f3e4cf; color: #3f3326; }
+.soup-surface small { display: flex; align-items: center; gap: 5px; color: #8a5a12; font-size: 14px; font-weight: 700; }
+.soup-surface p { margin: 6px 0 0; font-size: 17px; line-height: 1.6; }
+
+.soup-progress { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; color: #c2344f; font-size: 15px; font-weight: 650; }
+.soup-progress span { display: inline-flex; gap: 5px; }
+.soup-progress i { width: 10px; height: 10px; border-radius: 50%; background: #eadfd2; }
+.soup-progress i.is-on { background: #e0405a; }
+
+.soup-log { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.soup-log li { display: flex; flex-direction: column; gap: 6px; }
+.soup-ask { align-self: flex-start; max-width: 86%; padding: 9px 13px; border-radius: 16px 16px 16px 4px; background: var(--jian-paper-bright); box-shadow: inset 0 0 0 1px rgba(37,37,37,.1); }
+.soup-log li.is-mine .soup-ask { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: #fff1ee; box-shadow: inset 0 0 0 1px rgba(224,64,90,.2); }
+.soup-ask small { display: block; color: var(--jian-muted); font-size: 13px; font-weight: 650; }
+.soup-ask p { margin: 2px 0 0; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.soup-reply { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-left: 4px; font-size: 15px; }
+.soup-log li.is-mine .soup-reply { justify-content: flex-end; padding: 0 4px 0 0; }
+.soup-pinky { color: #8a5a12; font-size: 13px; font-weight: 700; }
+.soup-verdict { padding: 3px 11px; border-radius: 999px; font-size: 15px; font-weight: 700; }
+.soup-verdict.is-yes { background: #e3f3e8; color: #23764a; }
+.soup-verdict.is-no { background: #fdeaea; color: #b8323f; }
+.soup-verdict.is-irrelevant { background: #eeeae4; color: #5d574f; }
+.soup-verdict.is-partly { background: #f6e8d2; color: #8a5a12; }
+.soup-note { color: #4d4740; }
+.soup-found { display: inline-flex; align-items: center; gap: 3px; color: #c2344f; font-size: 14px; font-style: normal; font-weight: 650; }
+.soup-thinking { color: var(--jian-muted); font-style: italic; animation: soup-think 1.4s ease-in-out infinite; }
+@keyframes soup-think { 50% { opacity: .45; } }
+
+.soup-modes { display: flex; align-self: center; padding: 3px; border-radius: 999px; background: #eee6dc; }
+.soup-modes button { min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: #5d574f; font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; }
+.soup-modes button.is-on { background: var(--jian-ink); color: #fff; }
+.soup-form { display: flex; gap: 8px; }
+.soup-form > :first-child { flex: 1; min-width: 0; }
+.soup-form input { width: 100%; box-sizing: border-box; min-height: 46px; padding: 0 16px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-size: 16px; }
+.soup-form .game-primary { flex: none; width: 46px; padding: 0; }
+
+.soup-truth { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 18px; background: var(--jian-paper-bright); box-shadow: inset 0 0 0 1.5px rgba(224,64,90,.25); }
+.soup-truth h2 { margin: 0; color: #c2344f; font-size: 18px; font-weight: 700; text-align: center; }
+.soup-by { margin: -4px 0 0; color: var(--jian-muted); font-size: 14px; text-align: center; }
+.soup-truth-text { margin: 0; color: #3f3326; font-size: 16px; line-height: 1.65; }
+.soup-facts { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.soup-facts li { display: flex; align-items: flex-start; gap: 7px; color: #8a8177; font-size: 15px; line-height: 1.45; }
+.soup-facts li svg { flex: none; margin-top: 1px; }
+.soup-facts li.is-found { color: #23764a; }
