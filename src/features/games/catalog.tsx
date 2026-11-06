@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AirplaneTilt, ArrowsSplit, ChatsCircle, CircleHalf, GridFour, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target } from "@phosphor-icons/react";
+import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridFour, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -66,6 +66,17 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("两架都能走时自己选；都走不了就轮到对方。回家要刚好掷到剩下的格数。", "If both planes can move, you choose; if neither can, the turn passes. Getting home takes the exact roll.", "Si los dos aviones pueden moverse, eliges tú; si ninguno puede, pasa el turno. Para llegar a casa hace falta la tirada exacta."),
         t("正好停在对方飞机上，就把它撞回起点。", "Land exactly on your partner's plane to send it back to the start.", "Cae justo sobre el avión de tu pareja para mandarlo de vuelta a la salida."),
         t("停在爱心格，就做一个 Pinky 准备的小任务，点“做到了”或“跳过”再继续。也可以和小家伙玩，它会自己掷骰子、做任务。", "Land on a heart and do a little task Pinky wrote for you, then tap Done or Skip. You can also play your little one: it rolls and does its tasks by itself.", "Si caes en un corazón, haz una tarea que Pinky preparó y pulsa Hecho o Saltar. También puedes jugar con tu pequeñín: tira y hace sus tareas solo."),
+      ],
+    },
+    {
+      id: "soup", category: "puzzle", kind: "match", icon: <BowlSteam size={26} weight="duotone" />, name: t("海龟汤", "Lateral puzzles", "Acertijos laterales"),
+      tagline: t("Pinky 出一个怪故事，你们一起问出真相。", "Pinky tells a strange little story; ask your way to the truth together.", "Pinky cuenta una historia rara; descubran juntos la verdad preguntando."),
+      rules: [
+        t("Pinky 讲一个听起来很奇怪的小故事（汤面），真相（汤底）只有它知道。都是清汤：好玩或温暖，不吓人。", "Pinky tells a short, strange-sounding story; only Pinky knows what really happened. Always gentle: clever, funny or sweet, never scary.", "Pinky cuenta una historia corta y rara; solo Pinky sabe lo que pasó de verdad. Siempre amable: ingeniosa, divertida o tierna, nunca de miedo."),
+        t("你们俩随时都可以问，只能问“是 / 不是”的问题。Pinky 会答：是、不是、不重要、是也不是。", "Either of you can ask at any time, but only yes-or-no questions. Pinky answers yes, no, doesn't matter, or yes and no.", "Cualquiera de los dos puede preguntar cuando quiera, pero solo preguntas de sí o no. Pinky responde sí, no, no importa o sí y no."),
+        t("屏幕上会显示找到了几个关键，看看离真相还有多远。", "The screen shows how many key facts you've found, so you can tell how close you are.", "La pantalla muestra cuántas claves han encontrado, para ver cuánto les falta."),
+        t("想好了就“猜汤底”，说出完整的故事，Pinky 判断对不对。实在猜不出，可以“看汤底”。", "When you think you know, guess the answer by telling the whole story, and Pinky judges it. Stuck? Show the answer.", "Cuando creas saberlo, propón la solución contando la historia completa y Pinky la juzga. ¿Atascados? Vean la solución."),
+        t("TA 不在的时候，也可以自己和 Pinky 玩。", "When your partner's away, you can solve one on your own with Pinky.", "Si tu pareja no está, puedes resolver uno tú solo con Pinky."),
       ],
     },
     {

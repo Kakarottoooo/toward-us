@@ -9,6 +9,7 @@ import { ConnectFour, Reversi } from "./BoardGames";
 import { Rps, TwoTruths } from "./FunGames";
 import { Xiangqi } from "./Xiangqi";
 import { Ludo } from "./Ludo";
+import { Soup } from "./Soup";
 import { PET, type MatchView, type Member } from "./types";
 
 export type Opponent = { name: string; picture: string | null; pet: boolean };
@@ -20,7 +21,7 @@ export type ScreenProps<State = unknown> = { match: MatchView<State>; language: 
 
 // Each game's own screen, by game id (server/matches/index.mjs GAMES). Adding a game adds one line here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = { gomoku: Gomoku, draw: DrawGuess, reversi: Reversi, connect4: ConnectFour, truths: TwoTruths, rps: Rps, xiangqi: Xiangqi, ludo: Ludo };
+const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = { gomoku: Gomoku, draw: DrawGuess, reversi: Reversi, connect4: ConnectFour, truths: TwoTruths, rps: Rps, xiangqi: Xiangqi, ludo: Ludo, soup: Soup };
 
 /** One game's own screen. Loads the match, reloads when the other one moves (`changed`), and sends this player's moves. */
 export function MatchScreen({ matchId, language, userId, members, pet, changed, name, onBack, onRematch }: { matchId: string; language: Language; userId: string; members: Member[]; pet: { name: string; picture: string | null }; changed: number; name: (game: string) => string; onBack: () => void; onRematch: (game: string, pet: boolean) => Promise<void> }) {
