@@ -77,7 +77,7 @@ export function syncAlbum(album: { id: string; title: string }, language: Langua
           const photoIds: string[] = [];
           for (const id of event.assets) { try { photoIds.push(await upload((await plugin.thumbnail({ id, size: 1280 })).data)); } catch { /* A photo iCloud cannot fetch now is skipped. */ } }
           // A memory whose photos could not be fetched is left for the next run.
-          if (photoIds.length) { await json("/api/photo-memories/events", { key: event.key, day: event.day, place, photoIds, count: event.count, language }); madeThisRound += 1; }
+          if (photoIds.length) { await json("/api/photo-memories/events", { key: event.key, day: event.day, place, photoIds, count: event.count, language }); madeThisRound += 1; report({ made: last.made + 1, remaining: Math.max(0, last.remaining - 1) }); }
         }
         // Nothing could be fetched this round (offline, iCloud busy): stop instead of asking for the same memories again.
         if (!madeThisRound) break;
