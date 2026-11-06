@@ -30,7 +30,7 @@ const pin = (cover: string, count: number, bubble: boolean, label: string) => {
   element.type = "button";
   element.className = bubble ? "memory-pin is-bubble" : "memory-pin";
   element.setAttribute("aria-label", label);
-  if (cover) { const image = document.createElement("img"); image.src = `/api/photos/${encodeURIComponent(cover)}`; image.alt = ""; image.draggable = false; element.appendChild(image); }
+  if (cover) { const image = document.createElement("img"); image.src = `/api/photos/${encodeURIComponent(cover)}?w=240`; image.decoding = "async"; image.alt = ""; image.draggable = false; element.appendChild(image); }
   const badge = document.createElement("span"); badge.textContent = String(count); element.appendChild(badge);
   return element;
 };

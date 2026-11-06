@@ -75,8 +75,8 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const onThisDay = all.filter((moment) => moment.date.slice(5) === today.slice(5) && moment.date < today);
   const day = (date: string, withYear = false) => new Date(`${date}T12:00:00Z`).toLocaleDateString(languageTag(language), { month: "long", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
   const mood = (value?: string | null) => value === "low" ? t("有点低落", "Feeling low", "Con poco ánimo") : value === "mixed" ? t("说不清", "Mixed", "Mezclado") : value === "okay" ? t("还好", "Okay", "Bien") : value === "good" ? t("很好", "Good", "Muy bien") : "";
-  const photo = (id: string | null, className = "") => id ? <img className={className} src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /> : <span className={`${className} moments-nophoto`} aria-hidden="true" />;
-  const photos = (ids: string[]) => <div className={`moment-photos count-${Math.min(ids.length, 3)}`}>{ids.slice(0, 6).map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
+  const photo = (id: string | null, className = "", width = 240) => id ? <img className={className} decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=${width}`} alt="" loading="lazy" draggable={false} /> : <span className={`${className} moments-nophoto`} aria-hidden="true" />;
+  const photos = (ids: string[]) => <div className={`moment-photos count-${Math.min(ids.length, 3)}`}>{ids.slice(0, 6).map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=480`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
   // Ideas done together: the oldest shared memory that names one ticks it, with its first photo.
   const done = new Map<number, { photo: string | null; date: string }>();
   for (const moment of [...all].reverse()) if (moment.idea && !done.has(moment.idea)) done.set(moment.idea, { photo: moment.photos[0] || null, date: moment.date });
@@ -143,7 +143,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
       return <section key={key} className="photo-wall-month">
         <h3>{monthTitle(key)}{where.length ? <small> · {where.join(t("、", ", ", ", "))}</small> : null}</h3>
         <div className="photo-wall">{items.map((moment) => <button key={moment.key} type="button" className={moment.photos.length ? "photo-tile" : "photo-tile is-text"} onClick={() => openMoment(moment)}>
-          {moment.photos.length ? <img src={`/api/photos/${encodeURIComponent(moment.photos[0])}`} alt="" loading="lazy" draggable={false} /> : <span className="photo-tile-text">{moment.title || moment.text}</span>}
+          {moment.photos.length ? <img decoding="async" src={`/api/photos/${encodeURIComponent(moment.photos[0])}?w=480`} alt="" loading="lazy" draggable={false} /> : <span className="photo-tile-text">{moment.title || moment.text}</span>}
           {moment.photos.length > 1 && <em>{moment.photos.length}</em>}
           {!moment.shared && <LockKey className="photo-tile-lock" size={14} weight="fill" />}
         </button>)}</div>
@@ -155,7 +155,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     for (const moment of list) for (const id of moment.photos) { const key = moment.date.slice(0, 7); if (!months.has(key)) months.set(key, []); months.get(key)!.push({ id, moment }); }
     return [...months].sort((a, b) => b[0].localeCompare(a[0])).map(([key, items]) => <section key={key} className="photo-wall-month">
       <h3>{monthTitle(key)}</h3>
-      <div className="photo-wall is-dense">{items.map(({ id, moment }) => <button key={id} type="button" className="photo-tile" onClick={() => openMoment(moment)}><img src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /></button>)}</div>
+      <div className="photo-wall is-dense">{items.map(({ id, moment }) => <button key={id} type="button" className="photo-tile" onClick={() => openMoment(moment)}><img decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=240`} alt="" loading="lazy" draggable={false} /></button>)}</div>
     </section>);
   };
   const scales: Array<[Scale, string]> = [["years", t("年", "Years", "Años")], ["months", t("月", "Months", "Meses")], ["all", t("全部", "All", "Todo")]];
@@ -181,7 +181,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     {error && <p className="space-error" role="alert">{error}</p>}
 
     {scale === "years" && !year && <div className="year-grid">{years.map((item) => <button key={item.year} type="button" onClick={() => setOpenYear(item.year)} data-testid={`year-${item.year}`}>
-      {photo(item.cover, "year-cover")}
+      {photo(item.cover, "year-cover", 480)}
       <span><strong>{item.year}</strong><small>{count(item.moments.length)}{item.places.length ? ` · ${item.places.slice(0, 3).join(t("、", ", ", ", "))}` : ""}</small></span>
     </button>)}</div>}
     {scale === "years" && year && <>

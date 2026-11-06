@@ -30,7 +30,7 @@ export function IdeasSection({ language, done, onDid }: { language: Language; do
         return <li key={idea.number}><button type="button" className={mark ? "is-done" : ""} onClick={() => did(idea.number, text)} data-testid={`idea-${idea.number}`}>
           <span className="ideas-num">{mark ? <Check size={14} weight="bold" /> : idea.number}</span>
           <span className="ideas-text">{text}</span>
-          {mark?.photo && <img src={`/api/photos/${encodeURIComponent(mark.photo)}`} alt="" draggable={false} />}
+          {mark?.photo && <img decoding="async" src={`/api/photos/${encodeURIComponent(mark.photo)}?w=240`} alt="" draggable={false} />}
         </button></li>;
       })}</ol>
     </>}
