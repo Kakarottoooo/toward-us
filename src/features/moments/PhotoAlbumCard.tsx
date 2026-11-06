@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { ImagesSquare, UsersThree } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
+import { FindUs } from "./FindUs";
 import { askPhotoAccess, connectedAlbum, forgetAlbum, listAlbums, onPhotoProgress, syncAlbum, type PhotoAlbum, type Progress } from "./photoAlbum";
 
 /** Connect one iPhone album (a shared couple album, say); Pinky turns it into memories by day and place. iPhone App only. */
-export function PhotoAlbumCard({ language }: { language: Language }) {
+export function PhotoAlbumCard({ language, partnerName }: { language: Language; partnerName?: string }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [album, setAlbum] = useState(connectedAlbum());
   const [choices, setChoices] = useState<PhotoAlbum[] | null>(null);
   const [note, setNote] = useState("");
+  const [finding, setFinding] = useState(false);
   const [progress, setProgress] = useState<Progress>({ made: 0, remaining: 0, running: false, error: "" });
   useEffect(() => onPhotoProgress(setProgress), []);
   const connect = async () => {
@@ -21,6 +23,9 @@ export function PhotoAlbumCard({ language }: { language: Language }) {
   };
   const pick = (choice: PhotoAlbum) => { const chosen = { id: choice.id, title: choice.title }; setChoices(null); setAlbum(chosen); void syncAlbum(chosen, language); };
   const stop = () => { forgetAlbum(); setAlbum(null); };
+
+  if (finding) return <FindUs language={language} partnerName={partnerName || t("TA", "your partner", "tu pareja")} onClose={() => setFinding(false)} />;
+  const findButton = <button type="button" className="photo-album-quiet" onClick={() => setFinding(true)} data-testid="find-us-open">{t("没有情侣相册？找你们俩的合照", "No couple album? Find photos of you two", "¿Sin álbum de pareja? Busca fotos de ustedes")}</button>;
 
   if (choices) return <section className="photo-album" data-testid="photo-album">
     <strong>{t("选一个你们俩的相册", "Pick an album of you two", "Elige un álbum de ustedes dos")}</strong>
@@ -41,6 +46,7 @@ export function PhotoAlbumCard({ language }: { language: Language }) {
     <span className="photo-album-actions">
       {!progress.running && <button type="button" onClick={() => void syncAlbum(album, language)}>{t("现在整理", "Sort now", "Ordenar ahora")}</button>}
       <button type="button" className="photo-album-quiet" onClick={stop}>{t("断开", "Disconnect", "Desconectar")}</button>
+      {!progress.running && findButton}
     </span>
   </section>;
 
@@ -48,6 +54,6 @@ export function PhotoAlbumCard({ language }: { language: Language }) {
     <span className="photo-album-head"><ImagesSquare size={20} weight="fill" /><strong>{t("从 iPhone 相册自动整理回忆", "Make memories from your iPhone album", "Recuerdos desde tu álbum del iPhone")}</strong></span>
     <small>{t("连上你们的情侣相册，Pinky 按日子和地点整理成一段段回忆，往年的今天还会提起。", "Connect your couple album; Pinky sorts it into memories by day and place, and brings them back on the day in later years.", "Conecta su álbum de pareja; Pinky lo ordena en recuerdos por día y lugar, y los recuerda en el aniversario.")}</small>
     {note && <p className="space-error" role="alert">{note}</p>}
-    <span className="photo-album-actions"><button type="button" onClick={() => void connect()} data-testid="photo-album-connect">{t("连接相册", "Connect album", "Conectar álbum")}</button></span>
+    <span className="photo-album-actions"><button type="button" onClick={() => void connect()} data-testid="photo-album-connect">{t("连接相册", "Connect album", "Conectar álbum")}</button>{findButton}</span>
   </section>;
 }

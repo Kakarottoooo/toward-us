@@ -13,6 +13,9 @@ type Plugin = {
   scan(options: { albumId: string }): Promise<{ assets: Asset[] }>;
   thumbnail(options: { id: string; size?: number }): Promise<{ data: string }>;
   place(options: { lat: number; lon: number; locale: string }): Promise<{ name: string }>;
+  pickFace(): Promise<{ print: string; face: string }>;
+  findTogether(options: { a: string; b: string; since?: number; limit?: number }): Promise<{ assets: Array<Asset & { score: number }>; scanned: number; withTwoFaces: number }>;
+  addListener(event: "findProgress", listener: (data: { done: number; total: number; found: number }) => void): Promise<{ remove: () => void }>;
 };
 export type Progress = { made: number; remaining: number; running: boolean; error: string };
 
@@ -60,12 +63,19 @@ export function onPhotoProgress(listener: (progress: Progress) => void) { listen
 /** Connects an album and makes every memory it holds, newest first, a few at a time. Later calls only add what is new. */
 export function syncAlbum(album: { id: string; title: string }, language: Language) {
   write(ALBUM_KEY, JSON.stringify(album));
+  return addPhotos(async (plugin) => (await plugin.scan({ albumId: album.id })).assets, language, true);
+}
+
+/** Makes memories from photos the member chose (找你们俩的合照), the same way an album does. */
+export function addChosenPhotos(assets: Asset[], language: Language) { return addPhotos(async () => assets, language, false); }
+
+function addPhotos(source: (plugin: Plugin) => Promise<Asset[]>, language: Language, album: boolean) {
   if (running) return running;
   running = (async () => {
     const plugin = photoPlugin(); if (!plugin) return;
     report({ running: true, error: "" });
     try {
-      const assets = (await plugin.scan({ albumId: album.id })).assets.map((asset) => ({ id: asset.id, takenAt: asset.takenAt, day: asset.day, lat: asset.lat ?? null, lon: asset.lon ?? null }));
+      const assets = (await source(plugin)).map((asset) => ({ id: asset.id, takenAt: asset.takenAt, day: asset.day, lat: asset.lat ?? null, lon: asset.lon ?? null }));
       const locale = language === "en" ? "en_US" : language === "es" ? "es_ES" : "zh_CN";
       for (let round = 0; round < 200; round += 1) {
         const plan = await json<Plan>("/api/photo-memories/plan", { assets });
@@ -82,12 +92,30 @@ export function syncAlbum(album: { id: string; title: string }, language: Langua
         // Nothing could be fetched this round (offline, iCloud busy): stop instead of asking for the same memories again.
         if (!madeThisRound) break;
       }
-      write(LAST_KEY, String(Date.now()));
+      if (album) write(LAST_KEY, String(Date.now()));
     } catch (error) { report({ error: (error as Error).message }); }
     finally { report({ running: false }); running = null; }
   })();
   return running;
 }
+
+// 找你们俩的合照: the two reference faces (feature prints only, never the photos) stay on this phone for "find new ones".
+const FACES_KEY = "pinky-couple-faces", FOUND_KEY = "pinky-couple-found";
+export type Face = { print: string; face: string };
+export const savedFaces = () => { try { return JSON.parse(read(FACES_KEY) || "null") as { me: Face; partner: Face } | null; } catch { return null; } };
+export const saveFaces = (faces: { me: Face; partner: Face } | null) => write(FACES_KEY, faces ? JSON.stringify(faces) : null);
+export const lastFound = () => Number(read(FOUND_KEY) || 0);
+export async function pickFace(): Promise<Face | "no_face" | null> {
+  try { return await photoPlugin()!.pickFace(); } catch (error) { return /no_face/.test(String((error as Error).message || error)) ? "no_face" : null; }
+}
+/** Candidates for photos of the two of them, best first, with progress while the phone looks through the library. */
+export async function findTogether(faces: { me: Face; partner: Face }, onProgress: (done: number, total: number) => void, since?: number) {
+  const plugin = photoPlugin()!;
+  const listener = await plugin.addListener("findProgress", (data) => onProgress(data.done, data.total)).catch(() => null);
+  try { const result = await plugin.findTogether({ a: faces.me.print, b: faces.partner.print, limit: 90, ...(since ? { since: since / 1000 } : {}) }); write(FOUND_KEY, String(Date.now())); return result; }
+  finally { listener?.remove(); }
+}
+export const thumbnail = async (id: string) => { try { return `data:image/jpeg;base64,${(await photoPlugin()!.thumbnail({ id, size: 300 })).data}`; } catch { return ""; } };
 
 /** On opening the App: quietly add new photos from the connected album, at most every few hours. */
 export function autoSyncAlbum(language: Language) {
