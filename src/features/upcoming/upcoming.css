@@ -91,3 +91,4 @@
 .cycle-logs button { min-width: 40px; height: 36px; border: 0; border-radius: 10px; background: transparent; color: #8a6870; font: inherit; font-size: 13px; cursor: pointer; }
 .cycle-logs button.confirming { background: #f6e2de; color: #903e38; }
 .cycle-care { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-radius: 16px; background: #fbeef0; color: #a2394f; font-size: 16px; font-weight: 700; }
+.cycle-start { min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: #c4485f; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }

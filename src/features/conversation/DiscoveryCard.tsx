@@ -6,7 +6,7 @@ import { relationshipApi } from "../relationship/api";
 type Channel = "me" | "us";
 export type DiscoverKey = "games" | "miss_you" | "pet" | "meetup" | "ledger" | "recap" | "agreement" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
 // The order things are shown in, one a day per conversation, skipping what is already in use.
-const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "miss_you", "pet", "meetup", "ledger", "recap", "agreement"], me: ["profile", "letter", "photos", "hard_words", "reminder", "cycle"] };
+const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "miss_you", "pet", "meetup", "ledger", "recap", "agreement"], me: ["letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
 
 type Memory = { dismissed: DiscoverKey[]; current: Partial<Record<Channel, DiscoverKey>>; day: Partial<Record<Channel, string>> };
 const keyFor = (userId: string) => `pinky-discover:${userId}`;

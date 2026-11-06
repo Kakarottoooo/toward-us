@@ -22,7 +22,7 @@ export function PetPill({ language, pet, character, partnerName, onPetted, onMak
   const label: Record<string, string> = { daily: t("一起答了今日一问", "Both answered the daily question", "Respondieron la pregunta del día"), game: t("一起玩了一局", "Played a round", "Jugaron una ronda"), nudge: t("想你了", "Thinking of you", "Pienso en ti"), letter: t("拆开了一封信", "Opened a letter", "Abrieron una carta"), moment: t("存了一个回忆", "Kept a memory", "Guardaron un recuerdo"), agreement: t("说好了一件事", "Made an agreement", "Hicieron un acuerdo"), pet: t("摸摸它", "Petted it", "Lo acariciaron"), both: t("今天两个人都摸了它", "Both petted it today", "Ambos lo acariciaron hoy") };
   const image = character?.image?.still;
   return <>
-    <button type="button" className={`pet-pill is-${pet.mood}`} onClick={() => setOpen(true)} data-testid="pet-pill"><PawPrint size={14} weight="fill" />Lv.{pet.level}{!pet.pettedByMe && <em>{t("摸摸它", "Pet it", "Acarícialo")}</em>}</button>
+    <button type="button" className={`pet-pill is-${pet.mood}`} onClick={() => setOpen(true)} data-testid="pet-pill"><PawPrint size={14} weight="fill" />{t("小家伙", "Little one", "Pequeño")} Lv.{pet.level}{!pet.pettedByMe && <em>{t("摸摸它", "Pet it", "Acarícialo")}</em>}</button>
     <BottomSheet open={open} onOpenChange={setOpen} title={t("我们的小家伙", "Our little one", "Nuestro pequeño")} snap={0.75}>
       <div className="pet-sheet" data-testid="pet-sheet">
         <div className={`pet-portrait is-${pet.mood}`}>{image ? <img src={image} alt="" draggable={false} /> : <PawPrint size={56} weight="fill" />}</div>
