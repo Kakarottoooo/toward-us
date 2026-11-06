@@ -6,7 +6,6 @@ import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOME
 import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
-import { addExpense, ledgerContext, settleUp } from "./ledger.mjs";
 import { startGame } from "./games.mjs";
 import { notTriedYet } from "./discover.mjs";
 
@@ -222,7 +221,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const name = (id) => members.find((member) => member.id === id)?.name || "";
   // Each open commitment says whose it is, so an answer to a check-in is recorded against the writer's own part only.
   const owner = (ownerType) => ownerType === "both" ? "both" : (membership?.members || []).find((member) => ownerType === `member_${String(member.role).toLowerCase()}`)?.user?.name || "";
-  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), ledger: await ledgerContext(store, actorUserId).catch(() => null), notTriedYet: await notTriedYet(store, actorUserId, "us").catch(() => []) };
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), notTriedYet: await notTriedYet(store, actorUserId, "us").catch(() => []) };
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
@@ -284,16 +283,6 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
 async function applyTogetherActions(tx, { relationshipId, userId, actions, asked = [], timezone = "UTC", language = "zh" }) {
   const refs = []; let created = null;
   for (const action of actions) {
-    if (action.kind === "expense" || action.kind === "settle_up") {
-      // 共同记账: the writer of the latest line is "writer"; the ledger is created on first use.
-      const context = await tx.getRelationshipContext(userId);
-      if (!(context?.relationship.status === "active" && context.relationship.id === relationshipId)) throw decisionError(404, "not_found");
-      const other = context.members.find((member) => member.userId !== userId)?.userId;
-      const result = action.kind === "settle_up" ? await settleUp(tx, { userId, relationshipId, members: context.members, language })
-        : { ledger: await tx.getRelationshipRecordForUser("spaces", (await addExpense(tx, { userId, relationshipId, members: context.members, language, title: action.title, date: action.date, amount: action.amount, currency: action.currency, split: action.split, paidByUserId: action.paidBy === "other" ? other : userId })).spaceId, userId) };
-      if (!refs.some((ref) => ref.type === "space" && ref.id === result.ledger.id)) refs.push({ type: "space", id: result.ledger.id, version: result.ledger.version, title: result.ledger.title, system: result.ledger.system });
-      continue;
-    }
     if (action.kind === "link") {
       const calendar = isCalendar(action.text, action.localDateTime);
       const url = handoffUrl({ url: calendar ? null : action.text, localDateTime: calendar ? action.localDateTime : null, title: action.title || "", location: calendar ? action.text || "" : "", timezone });

@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Receipt, Sparkle, UserCircle, X } from "@phosphor-icons/react";
+import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle, X } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
 type Channel = "me" | "us";
-export type DiscoverKey = "games" | "miss_you" | "pet" | "meetup" | "ledger" | "recap" | "agreement" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
+export type DiscoverKey = "games" | "miss_you" | "pet" | "meetup" | "recap" | "agreement" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
 // The order things are shown in, one a day per conversation, skipping what is already in use.
-const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "miss_you", "pet", "meetup", "ledger", "recap", "agreement"], me: ["letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
+const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "miss_you", "pet", "meetup", "recap", "agreement"], me: ["letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
 
 type Memory = { dismissed: DiscoverKey[]; current: Partial<Record<Channel, DiscoverKey>>; day: Partial<Record<Channel, string>> };
 const keyFor = (userId: string) => `pinky-discover:${userId}`;
@@ -39,7 +39,6 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
     miss_you: { icon: <Heart size={20} weight="fill" />, title: t(`想 ${partner} 了？`, `Thinking of ${partner}?`, `¿Piensas en ${partner}?`), text: t(`点上面的爱心，${partner} 那边会飘起爱心。`, `Tap the heart at the top and hearts float up on ${partner}'s side.`, `Toca el corazón de arriba y a ${partner} le aparecen corazones.`), button: t("发一个想你了", "Send one now", "Enviar uno") },
     pet: { icon: <PawPrint size={20} weight="fill" />, title: t("你们一起养的小家伙", "Your little one", "Su pequeño"), text: t("你们一起答题、玩游戏、存回忆，它都会长大。每人每天能摸它一次。", "It grows with everything you do together; each of you can pet it once a day.", "Crece con lo que hacen juntos; cada uno puede acariciarlo una vez al día."), button: t("摸摸它", "Pet it", "Acariciarlo") },
     meetup: { icon: <AirplaneTilt size={20} weight="fill" />, title: t("下次什么时候见面？", "When do you meet next?", "¿Cuándo se ven?"), text: t("跟 Pinky 说日期，你们俩顶部都会倒数“还有几天见面”。", "Tell Pinky the date and you both see the countdown.", "Dile la fecha a Pinky y ambos verán la cuenta atrás."), button: t("说个日期", "Tell the date", "Decir la fecha") },
-    ledger: { icon: <Receipt size={20} weight="fill" />, title: t("一起记账", "A shared ledger", "Cuentas juntos"), text: t("“Pinky，晚饭我付了 320”，它会记下谁欠谁，随时结清。", "\"Pinky, I paid 40 for dinner\": it keeps who owes whom.", "«Pinky, pagué 40 de la cena»: lleva quién debe a quién."), button: t("记一笔", "Note an expense", "Anotar un gasto") },
     recap: { icon: <BookOpenText size={20} weight="fill" />, title: t("做一张回顾卡", "Make a recap", "Hagan un resumen"), text: t("把最近一段时间做成你们的小故事。", "Turn a stretch of time into your little story.", "Conviertan un tiempo en su pequeña historia."), button: t("试试", "Try it", "Probar") },
     agreement: { icon: <Handshake size={20} weight="fill" />, title: t("把说好的写下来", "Write down what you agree", "Anoten lo acordado"), text: t("两个人都同意才算数，Pinky 会帮你们跟进。", "It counts once you both approve, and Pinky follows up.", "Vale cuando ambos aprueban, y Pinky da seguimiento."), button: t("试试", "Try it", "Probar") },
     profile: { icon: <UserCircle size={20} weight="fill" />, title: t(`Pinky 会记住 ${partner} 的喜好`, `Pinky remembers what ${partner} likes`, `Pinky recuerda lo que le gusta a ${partner}`), text: t("聊到的喜好、雷区、想要的东西，它会自己记下，挑礼物时用上。只有你能看到。", "Likes, sore spots and wishes you mention are kept for gifts and ideas. Only you see them.", "Gustos, puntos sensibles y deseos que mencionas se guardan para regalos. Solo tú los ves."), button: t("看看记了什么", "See what it knows", "Ver qué sabe") },

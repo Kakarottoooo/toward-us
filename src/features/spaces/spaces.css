@@ -40,22 +40,3 @@
 
 .space-ask { align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; margin: 12px 0 8px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--jian-ink); color: var(--jian-paper-bright); font-size: 16px; font-weight: 600; cursor: pointer; }
 .space-ask:focus-visible, .space-check:focus-visible, .space-remove:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-/* 我们的账本: who owes whom first, then entries by month. */
-.ledger { display: flex; flex-direction: column; gap: 18px; }
-.ledger-balance { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px; border-radius: 18px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
-.ledger-balance strong { color: var(--jian-ink); font-size: 22px; font-weight: 700; line-height: 1.3; }
-.ledger-balance small { color: #5f5952; font-size: 14px; }
-.ledger-balance button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; margin-top: 4px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--jian-ink); color: var(--jian-paper-bright); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
-.ledger-balance button.confirming { background: #2f6b47; }
-.ledger-balance button:disabled { opacity: .5; }
-.ledger-balance button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-.ledger-month ul { margin: 0; padding: 0; overflow: hidden; border-radius: 16px; background: var(--jian-paper-bright); list-style: none; }
-.ledger-month li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
-.ledger-month li + li { border-top: 1px solid rgba(37,37,37,.07); }
-.ledger-month li > div { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-width: 0; }
-.ledger-month li strong { color: var(--jian-ink); font-size: 16px; overflow-wrap: anywhere; }
-.ledger-month li small { color: #7a736a; font-size: 13px; }
-.ledger-amount { flex: 0 0 auto; color: var(--jian-ink); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.ledger-month li.is-settled { opacity: .55; }
-.ledger-settled-note { color: #2f6b47; font-size: 14px; }
-.ledger-settled-note span { flex: 1 1 auto; min-width: 0; }

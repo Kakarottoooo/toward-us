@@ -9,8 +9,7 @@ export const FEATURES = {
   // channel: where the card shows; hint: what the agents may offer (cycle is never offered unprompted).
   games: { channel: "us", hint: "little games in Us (would you rather, how well do you know me, heart to heart): say \"Pinky, let's play a game\"" },
   miss_you: { channel: "us", hint: "the heart at the top of Us sends 想你了 with floating hearts" },
-  pet: { channel: "us", hint: "their little one (the Lv pill at the top of Us) grows with what they do together; each can pet it once a day" },
-  ledger: { channel: "us", hint: "a shared ledger: tell Pinky in Us who paid for what and it keeps who owes whom" },
+  pet: { channel: "us", hint: "their little one (the little one floating at the side of Us) grows with what they do together; each can pet it once a day" },
   meetup: { channel: "us", hint: "a countdown to the next time they meet: tell Pinky the date in Us" },
   recap: { channel: "us", hint: "a recap card of a stretch of their time together: \"Pinky, make us a recap\"" },
   agreement: { channel: "us", hint: "writing down what they agreed so both approve it and Pinky follows up" },
@@ -38,7 +37,6 @@ export async function featuresUsed(store, userId) {
     }
     if (Object.values(conversation?.pets || {}).some((ids) => ids.includes(userId)) || Object.keys(conversation?.pet?.seen || {}).some((key) => key.startsWith("pet:") && key.endsWith(`:${userId}`))) used.add("pet");
     const spaces = await list("spaces");
-    if (spaces.some((space) => space.system === "ledger" && space.relationshipId === relationshipId)) used.add("ledger");
     const milestones = await list("milestones");
     if (milestones.some((item) => item.type === "meetup" && item.relationshipId === relationshipId)) used.add("meetup");
     if ((await list("agreements")).some((item) => item.relationshipId === relationshipId)) used.add("agreement");
