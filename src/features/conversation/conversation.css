@@ -231,3 +231,7 @@
 .conversation-noted svg { flex: 0 0 auto; margin-top: 2px; }
 .conversation-noted span { min-width: 0; overflow-wrap: anywhere; }
 .conversation-noted:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+/* Pinky 能做什么: one quiet way in from the suggestions and from the empty Just me. */
+.conversation-suggestions button.conversation-suggestions-all { border-color: transparent; background: transparent; color: #8f4458; font-weight: 600; padding-left: 4px; }
+.conversation-empty-link { margin-top: 14px; padding: 8px 14px; border: 1px solid rgba(143,68,88,.3); border-radius: 999px; background: transparent; color: #8f4458; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.conversation-empty-link:focus-visible, .conversation-suggestions-all:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }

@@ -11,6 +11,7 @@ import { RelationshipHome } from "./features/relationship-home/RelationshipHome"
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
 import { SpacePage } from "./features/spaces/SpacePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
+import { CapabilitiesPage } from "./features/capabilities/CapabilitiesPage";
 import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
@@ -19,7 +20,7 @@ import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
 
-type Screen = "home" | "conversation" | "space" | "import" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
+type Screen = "home" | "conversation" | "space" | "import" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type User = { id: string; email: string; name: string; createdAt: string };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; expiresAt: string } | null };
@@ -125,12 +126,13 @@ function AccountPrototype() {
   const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
   const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
-  if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
+  if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : url.includes("view=capabilities") ? "capabilities" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
   if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
   if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
+  if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(fullScreen); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
   if (screen === "feedback" && user) return <FeedbackPage language={language} from={feedbackFrom} onBack={backToConversation} />;
   if (screen === "privacy" && user) return <SettingsPage initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} />;
   if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
@@ -227,7 +229,7 @@ function Wordmark({ language }: { language: Language }) { return <div className=
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
-function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "capabilities" ? "capabilities" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 // The server words account errors in Chinese; English and Spanish screens show their own words instead.
 const ACCOUNT_ERRORS: Record<string, [en: string, es: string]> = {
   "请输入有效邮箱。": ["Enter a valid email address.", "Introduce un correo electrónico válido."],

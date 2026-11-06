@@ -1,0 +1,15 @@
+.capabilities-body { display: flex; flex-direction: column; gap: 22px; padding-bottom: 32px; }
+.capabilities-lead { margin: 0 4px; color: #5f5952; font-size: 15px; line-height: 1.6; }
+.capabilities-body section { display: flex; flex-direction: column; gap: 8px; }
+.capabilities-body h2 { margin: 0 4px; color: #7a736a; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.capabilities-note { margin: 0 4px; color: #8a837a; font-size: 13px; }
+.capability-list { overflow: hidden; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.capability { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 14px 16px; border: 0; background: transparent; color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; }
+.capability + .capability { border-top: 1px solid rgba(37,37,37,.07); }
+.capability:hover { background: rgba(37,37,37,.03); }
+.capability:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: -2px; }
+.capability-icon { flex: 0 0 auto; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: rgba(214,112,140,.12); color: #a24d65; }
+.capability-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.capability-text strong { font-size: 16px; font-weight: 700; line-height: 1.35; }
+.capability-text small { color: #5f5952; font-size: 14px; line-height: 1.5; }
+.capability-text em { margin-top: 2px; color: #8f4458; font-size: 14px; font-style: normal; line-height: 1.5; overflow-wrap: anywhere; }

@@ -1,0 +1,55 @@
+import type { ReactNode } from "react";
+import { Alarm, BookOpenText, CalendarBlank, ChatsCircle, ChatTeardropText, EnvelopeSimpleOpen, Handshake, HandHeart, Heart, Images, ListChecks, MagnifyingGlass, MapTrifold, NotePencil, Scales, Sparkle, UserCircle, UsersThree } from "@phosphor-icons/react";
+import { localized, type Language } from "../../i18n";
+import { PageHeader } from "../conversation/ConversationHome";
+import "./capabilities.css";
+
+type Channel = "me" | "us";
+type Item = { key: string; icon: ReactNode; title: string; detail: string; say?: string; channel?: Channel; open?: () => void };
+
+/** Pinky 能做什么 (founder 11-06): almost everything happens by talking, so this one page shows what can be asked. Each line
+ * carries a sentence to try; tapping it puts the sentence in the right conversation without sending it. Pages that are
+ * there to look at open directly. */
+export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onProfile }: { language: Language; paired: boolean; onBack: () => void; onAsk: (text: string, channel: Channel) => void; onOpen: (url: string) => void; onProfile: () => void }) {
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const icon = (node: ReactNode) => node;
+  const me: Item[] = [
+    { key: "reminder", icon: icon(<Alarm size={22} />), title: t("提醒", "Reminders", "Recordatorios"), detail: t("一次的、每周的，到点推送给你。", "Once or every week, pushed to you on time.", "Una vez o cada semana, te avisa a tiempo."), say: t("明天早上 8 点提醒我给妈妈打电话", "Remind me to call my mom tomorrow at 8am", "Recuérdame llamar a mi mamá mañana a las 8") },
+    { key: "checkin", icon: icon(<NotePencil size={22} />), title: t("心情日记", "Mood diary", "Diario de ánimo"), detail: t("今天怎么样，说两句就记下，只有你能看。", "Say how today went; it is kept just for you.", "Cuenta cómo fue tu día; solo tú lo ves."), say: t("今天有点累，帮我记一下", "I'm a bit tired today, note it down", "Hoy estoy algo cansado, anótalo") },
+    { key: "hard", icon: icon(<ChatTeardropText size={22} />), title: t("难开口的话", "Hard-to-say things", "Lo que cuesta decir"), detail: t("先私下理一理，再写成 TA 听得进去的话；你确认了才发。", "Sort it out privately first, then word it so your partner can hear it; it goes only when you confirm.", "Ordénalo primero en privado y luego dilo de forma que tu pareja lo escuche; solo se envía si confirmas."), say: t("我最近有点委屈，想跟 TA 说，帮我想想怎么开口", "I've been feeling hurt lately and want to tell my partner. Help me find the words", "Me he sentido dolido y quiero decírselo a mi pareja. Ayúdame a encontrar las palabras") },
+    { key: "letter", icon: icon(<EnvelopeSimpleOpen size={22} />), title: t("情书 · 时光胶囊", "Letters · time capsules", "Cartas · cápsulas del tiempo"), detail: t("写一封信封存起来，到那天才在“我们俩”里打开。", "Write a letter and seal it; it opens in Us on the day.", "Escribe una carta y séllala; se abre en Nosotros ese día."), say: t("帮我给 TA 写一封信，我们纪念日那天打开", "Help me write my partner a letter to open on our anniversary", "Ayúdame a escribirle una carta a mi pareja para abrir en nuestro aniversario") },
+    { key: "profile", icon: icon(<UserCircle size={22} />), title: t("喜好档案", "What Pinky knows", "Lo que Pinky sabe"), detail: t("聊到的喜好、雷区、想要的东西，Pinky 自己记下，挑礼物出主意时用上。", "Likes, sore spots and wishes you mention are kept by themselves and used for gifts and ideas.", "Los gustos, puntos sensibles y deseos que mencionas se guardan solos y sirven para regalos e ideas."), say: t("跟你说说 TA：", "Let me tell you about my partner: ", "Te cuento sobre mi pareja: ") },
+    { key: "search", icon: icon(<MagnifyingGlass size={22} />), title: t("查东西、找地方", "Look things up", "Buscar cosas"), detail: t("餐厅、约会去处、礼物、营业时间，查好给你链接。", "Restaurants, date spots, gifts, opening hours, with links.", "Restaurantes, planes, regalos, horarios, con enlaces."), say: t("这周六附近有什么适合约会的餐厅？", "Any good date restaurants nearby this Saturday?", "¿Algún buen restaurante para una cita cerca este sábado?") },
+    { key: "lists", icon: icon(<ListChecks size={22} />), title: t("清单和收集", "Lists and collections", "Listas y colecciones"), detail: t("行李清单、礼物点子、想看的电影，随时往里加。", "Packing lists, gift ideas, films to watch; add to them anytime.", "Listas de equipaje, ideas de regalo, películas; añade cuando quieras."), say: t("帮我列一个去日本的行李清单", "Make me a packing list for Japan", "Hazme una lista de equipaje para Japón") },
+    { key: "photos", icon: icon(<Images size={22} />), title: t("照片存进回忆", "Keep photos as memories", "Guardar fotos como recuerdos"), detail: t("发几张照片，说一句“存进回忆”。", "Send a few photos and say “keep this”.", "Envía unas fotos y di «guárdalo»."), say: t("把这几张照片存进回忆", "Keep these photos in our memories", "Guarda estas fotos en nuestros recuerdos") },
+    { key: "import", icon: icon(<ChatsCircle size={22} />), title: t("导入聊天记录", "Bring in chat history", "Traer el historial de chat"), detail: t("微信、iMessage、WhatsApp 都行，Pinky 帮你看懂你们的相处方式。", "WeChat, iMessage, WhatsApp and more; Pinky helps you see your patterns.", "WeChat, iMessage, WhatsApp y más; Pinky te ayuda a ver sus patrones."), say: t("怎么导入我们的聊天记录？", "How do I bring in our chat history?", "¿Cómo traigo nuestro historial de chat?") },
+  ];
+  const us: Item[] = [
+    { key: "miss", icon: icon(<Heart size={22} weight="fill" />), title: t("想你了", "Miss you", "Te extraño"), detail: t("点“我们俩”顶部的爱心，TA 那边会飘起爱心。", "Tap the heart at the top of Us; hearts float up on their side.", "Toca el corazón arriba en Nosotros; le aparecen corazones."), channel: "us" },
+    { key: "decide", icon: icon(<Scales size={22} />), title: t("一起做决定", "Decide together", "Decidir juntos"), detail: t("各自先私下想，Pinky 再把两边放在一起。", "Each thinks privately first, then Pinky brings both sides together.", "Cada quien piensa en privado y luego Pinky junta ambas partes."), say: t("Pinky，周末去哪，帮我们一起定一下", "Pinky, help us decide where to go this weekend", "Pinky, ayúdanos a decidir adónde ir este fin de semana"), channel: "us" },
+    { key: "agree", icon: icon(<Handshake size={22} />), title: t("约定", "Agreements", "Acuerdos"), detail: t("说好的事写下来，两个人都同意才算数，Pinky 会帮你们跟进。", "Write down what you settled on; it counts once you both agree, and Pinky follows up.", "Anoten lo que acordaron; vale cuando ambos aceptan y Pinky da seguimiento."), say: t("Pinky，把我们刚才说好的写成约定", "Pinky, write down what we just agreed on", "Pinky, anota lo que acabamos de acordar"), channel: "us" },
+    { key: "dates", icon: icon(<CalendarBlank size={22} />), title: t("纪念日和重要日子", "Anniversaries and dates", "Aniversarios y fechas"), detail: t("在一起的日子、生日、纪念日，提前提醒你们。", "The day you got together, birthdays, anniversaries, with reminders.", "El día que empezaron, cumpleaños, aniversarios, con avisos."), say: t("Pinky，记住我们是哪天在一起的：", "Pinky, remember the day we got together: ", "Pinky, recuerda el día en que empezamos: "), channel: "us" },
+    { key: "repair", icon: icon(<UsersThree size={22} />), title: t("吵架时帮一把", "Help after a fight", "Ayuda tras una pelea"), detail: t("不评谁对谁错，帮你们看清刚才发生了什么。", "No verdict on who is right; it helps you see what just happened.", "Sin juzgar quién tiene razón; les ayuda a ver qué pasó."), say: t("Pinky，帮我们看看刚才怎么了", "Pinky, help us look at what just went wrong", "Pinky, ayúdanos a ver qué acaba de pasar"), channel: "us" },
+    { key: "recap", icon: icon(<BookOpenText size={22} />), title: t("回顾卡", "Recaps", "Resúmenes"), detail: t("把一段时间做成一张小故事卡。", "Turn a stretch of time into a little story card.", "Convierte un periodo en una pequeña tarjeta."), say: t("Pinky，给我们做一张今年的回顾", "Pinky, make us a recap of this year", "Pinky, haznos un resumen de este año"), channel: "us" },
+    { key: "ideas", icon: icon(<Sparkle size={22} />), title: t("100 件小事", "100 little things", "100 cosas"), detail: t("一起打卡的约会清单，做过的会留进回忆。", "A date checklist to tick off together; done ones go into your memories.", "Una lista de citas para marcar juntos; lo hecho queda en sus recuerdos."), say: t("Pinky，今天我们做哪件小事？", "Pinky, which little thing should we do today?", "Pinky, ¿qué cosita hacemos hoy?"), channel: "us" },
+  ];
+  const look: Item[] = [
+    { key: "moments", icon: icon(<HandHeart size={22} />), title: t("回忆和地图", "Memories and map", "Recuerdos y mapa"), detail: t("照片墙、Pinky 编好的故事、去过的地方。", "Photo wall, stories Pinky put together, places you've been.", "Muro de fotos, historias de Pinky, lugares visitados."), open: () => onOpen("/?view=moments") },
+    { key: "upcoming", icon: icon(<MapTrifold size={22} />), title: t("即将到来", "Coming up", "Próximamente"), detail: t("提醒、纪念日、在一起多少天、未拆的信。", "Reminders, anniversaries, days together, sealed letters.", "Recordatorios, aniversarios, días juntos, cartas selladas."), open: () => onOpen(paired ? "/?view=upcoming" : "/?view=reminders") },
+    ...(paired ? [{ key: "agreements", icon: icon(<Handshake size={22} />), title: t("约定", "Agreements", "Acuerdos"), detail: t("说好的事和进展。", "What you agreed and how it's going.", "Lo acordado y cómo va."), open: () => onOpen("/?view=agreements") }] : []),
+    { key: "about", icon: icon(<UserCircle size={22} />), title: t("关于我们", "About us", "Sobre nosotros"), detail: t("Pinky 记下的你、TA 和你们俩，可改可删。", "What Pinky knows about you, your partner and you two; edit or remove anything.", "Lo que Pinky sabe de ti, tu pareja y ustedes; edita o quita lo que quieras."), open: onProfile },
+  ];
+  const row = (item: Item) => <button key={item.key} type="button" className="capability" data-testid={`capability-${item.key}`} onClick={() => item.open ? item.open() : onAsk(item.say || "", item.channel || "me")}>
+    <span className="capability-icon">{item.icon}</span>
+    <span className="capability-text"><strong>{item.title}</strong><small>{item.detail}</small>{item.say && <em>{t("试试说：", "Try: ", "Prueba: ")}“{item.say.replace(/[：:]\s*$/, "…")}”</em>}</span>
+  </button>;
+  return <div className="paper-screen relationship-shell capabilities-screen">
+    <PageHeader language={language} title={t("Pinky 能做什么", "What Pinky can do", "Qué puede hacer Pinky")} onBack={onBack} />
+    <main className="relationship-main"><div className="capabilities-body" data-testid="capabilities-page">
+      <p className="capabilities-lead">{t("大部分事情直接跟 Pinky 说就行。点一项，示例会填进对话框，改一改再发。", "Most things you just tell Pinky. Tap one and its example goes into the chat box for you to adjust and send.", "Casi todo se lo dices a Pinky. Toca uno y el ejemplo aparece en el chat para que lo ajustes y lo envíes.")}</p>
+      <section><h2>{t("在“只有我”里", "In Just me", "En Solo yo")}</h2><div className="capability-list">{me.map(row)}</div></section>
+      <section><h2>{t("在“我们俩”里", "In Us", "En Nosotros")}</h2>{!paired && <p className="capabilities-note">{t("邀请 TA 加入后就能用。", "Available once your partner joins.", "Disponible cuando tu pareja se una.")}</p>}<div className="capability-list">{us.map(row)}</div></section>
+      <section><h2>{t("可以翻看的", "Pages to look at", "Para mirar")}</h2><div className="capability-list">{look.map(row)}</div></section>
+    </div></main>
+  </div>;
+}
