@@ -226,3 +226,8 @@
 .letter-card { padding: 18px 20px; border: 1px solid #ecd9c6; border-radius: 18px; background: #fffaf2; box-shadow: 0 2px 10px rgba(125,47,23,.08); }
 .letter-card header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; color: #993556; font-size: 14px; font-weight: 700; }
 .letter-text { margin: 0; color: #3d3833; font-family: Georgia, "Songti SC", "STSong", serif; font-size: 16px; line-height: 1.8; white-space: pre-wrap; }
+/* 喜好档案: one quiet line after Pinky noted something lasting; it opens 关于我们. */
+.conversation-noted { align-self: flex-start; display: inline-flex; align-items: flex-start; gap: 6px; max-width: 100%; margin: -2px 0 2px; padding: 6px 12px; border: 0; border-radius: 999px; background: rgba(214,112,140,.1); color: #8f4458; font: inherit; font-size: 13px; line-height: 1.45; text-align: left; cursor: pointer; }
+.conversation-noted svg { flex: 0 0 auto; margin-top: 2px; }
+.conversation-noted span { min-width: 0; overflow-wrap: anywhere; }
+.conversation-noted:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
