@@ -8,6 +8,7 @@ import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
 import { addExpense, ledgerContext, settleUp } from "./ledger.mjs";
 import { startGame } from "./games.mjs";
+import { notTriedYet } from "./discover.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
@@ -221,7 +222,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const name = (id) => members.find((member) => member.id === id)?.name || "";
   // Each open commitment says whose it is, so an answer to a check-in is recorded against the writer's own part only.
   const owner = (ownerType) => ownerType === "both" ? "both" : (membership?.members || []).find((member) => ownerType === `member_${String(member.role).toLowerCase()}`)?.user?.name || "";
-  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), ledger: await ledgerContext(store, actorUserId).catch(() => null) };
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), ledger: await ledgerContext(store, actorUserId).catch(() => null), notTriedYet: await notTriedYet(store, actorUserId, "us").catch(() => []) };
   let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);

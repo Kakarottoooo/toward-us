@@ -1,5 +1,6 @@
 import { profileContext } from "./profile.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
+import { notTriedYet } from "./discover.mjs";
 import { addExpense, cleanExpense, defaultCurrency, ensureLedger, formatMoney, LEDGER, ledgerContext } from "./ledger.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { openingDay, sealLetter } from "./letters.mjs";
@@ -149,6 +150,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
       openPromises: await openPromises(store, userId, session).catch(() => []),
+      notTriedYet: await notTriedYet(store, userId, "me").catch(() => []),
       cycle: await cycleContext(store, userId, localTime(new Date(), session.timezone).slice(0, 10)).catch(() => null),
       profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],

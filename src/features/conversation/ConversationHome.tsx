@@ -15,6 +15,7 @@ import { OnboardingTour, characterOwed, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import { GameCard, type GameAnswers, type GameRound } from "./GameCard";
 import { DistanceBar } from "./DistanceBar";
+import { DiscoveryCard, type DiscoverKey } from "./DiscoveryCard";
 import { PetPill, type PetView } from "../character/PetPanel";
 import { CoupleMascot } from "../character/CoupleMascot";
 import { useCoupleCharacter } from "../character/character";
@@ -419,6 +420,16 @@ ${text}` : text, target);
     catch (error) { setNotice((error as Error).message); return false; }
   };
   const playAgain = async () => { setNotice(""); try { await relationshipApi("/api/together/games", jsonBody({ language })); await loadTogether(); } catch (error) { setNotice((error as Error).message); } };
+  // 主动展示功能: what the "try this" card does when tapped.
+  const discover = (key: DiscoverKey) => {
+    const say = (text: string, target: Channel) => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); };
+    if (key === "games") void playAgain();
+    else if (key === "miss_you") void missYou();
+    else if (key === "pet") void relationshipApi<{ pet: PetView }>("/api/together/pet", jsonBody({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", language })).then((result) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet: result.pet }); }).catch(() => {});
+    else if (key === "profile") { keyboard.hide(); onPrivacy("profile"); }
+    else if (key === "photos") open("/?view=moments");
+    else say({ meetup: t("Pinky，我们下次见面是 ", "Pinky, we next meet on ", "Pinky, nos vemos el "), ledger: t("Pinky，记一笔：", "Pinky, note an expense: ", "Pinky, anota un gasto: "), recap: t("Pinky，给我们做一张最近的回顾", "Pinky, make us a recap of lately", "Pinky, haznos un resumen de estos días"), agreement: t("Pinky，把我们说好的写下来：", "Pinky, write down what we agreed: ", "Pinky, anota lo que acordamos: "), letter: t("帮我给 TA 写一封信，在这天打开：", "Help me write my partner a letter to open on ", "Ayúdame a escribir una carta para abrir el "), hard_words: t("我有句话不知道怎么跟 TA 说：", "There's something I don't know how to tell my partner: ", "Hay algo que no sé cómo decirle a mi pareja: "), reminder: t("提醒我 ", "Remind me to ", "Recuérdame ") }[key as "meetup"] || "", ["meetup", "ledger", "recap", "agreement"].includes(key) ? "us" : "me");
+  };
   const answerDaily = async (id: string, text: string) => {
     setNotice("");
     try { await relationshipApi(`/api/together/daily/${encodeURIComponent(id)}/answer`, jsonBody({ text, language })); await loadTogether(); return true; }
@@ -577,6 +588,7 @@ ${text}` : text, target);
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
+      {!readOnly && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=agreements")} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
