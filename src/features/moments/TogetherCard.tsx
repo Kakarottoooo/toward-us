@@ -3,8 +3,9 @@ import { Heart } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { togetherStats } from "./together";
+import "./moments.css";
 
-/** Top of Moments: how long they have been together and the next day worth celebrating; asks for the day once. */
+/** Top of Coming Up (moved from Moments 11-05, where it covered the photos): how long they have been together and the next day worth celebrating; asks for the day once. */
 export function TogetherCard({ language, since, onSave }: { language: Language; since: string | null; onSave: (date: string) => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();

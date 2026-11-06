@@ -6,7 +6,6 @@ import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type
 import { IdeasSection } from "./IdeasSection";
 import { PhotoAlbumCard } from "./PhotoAlbumCard";
 import { photoPlugin } from "./photoAlbum";
-import { TogetherCard } from "./TogetherCard";
 import "./moments.css";
 
 // The map library is only loaded when someone opens the map.
@@ -21,7 +20,7 @@ type Focus = { title: string; detail?: string; moments: Moment[] };
 
 /** Moments: the couple's memory album and each member's own. Opens on stories Pinky found, zooms by year and month, filters
  * by topic, shows a map, and keeps the full timeline one tap away. Things are added by telling Pinky. */
-export function MomentsPage({ language, userId, paired, since = null, milestones = [], onSince, onAsk }: { language: Language; userId: string; paired: boolean; since?: string | null; milestones?: Milestone[]; onSince?: (date: string) => Promise<void>; onAsk: (text: string, channel: "me" | "us") => void }) {
+export function MomentsPage({ language, userId, paired, milestones = [], onAsk }: { language: Language; userId: string; paired: boolean; milestones?: Milestone[]; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [moments, setMoments] = useState<Moment[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -131,7 +130,6 @@ export function MomentsPage({ language, userId, paired, since = null, milestones
         {topics.map((topic) => <button key={topic.id} type="button" onClick={() => go({ title: topic.label, detail: t(`${topic.moments.length} 段`, `${topic.moments.length} memories`, `${topic.moments.length} recuerdos`), moments: [...topic.moments].sort((a, b) => b.date.localeCompare(a.date)) })}>{topic.label}</button>)}
         {places.slice(0, 8).map((place) => <button key={`${place.title}${place.lat}`} type="button" onClick={() => go({ title: place.title, detail: t(`${place.moments.length} 段`, `${place.moments.length} memories`, `${place.moments.length} recuerdos`), moments: place.moments })}>{place.title}</button>)}
       </div>}
-      {paired && onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
       {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
       {paired && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />}
       {!!visible.length && <section className="moments-recent"><h2>{t("最近", "Recent", "Recientes")}</h2></section>}
