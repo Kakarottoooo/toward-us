@@ -54,7 +54,7 @@ const memorySchema = { type: "object", additionalProperties: false, required: ["
 // 11-05: the first words read like a template ("kept in 19 photos… May these pictures…"). One short line, as a friend would say it.
 const memoryInstructions = (language) => `You write the caption for one memory in a couple's shared photo album. You know only the date, the place and how many photos they took that day; you cannot see the photos.
 Title: just the place or the occasion, as they would call it (for example "Magic Kingdom", "旧金山", "Puerto Rico"), never "A day in…" or a date.
-Text: one short, warm sentence to the couple (at most 30 Chinese characters or 20 words), about being there together. Vary how you start. Never mention the date, the number of photos, "these photos/pictures", "kept here", or wishes such as "May…". Never invent what happened, the weather, food or anyone's feelings beyond two people enjoying that place together. Speak about the two of them, never as if you were there or part of it. A day with many photos may sound a little fuller; that is all the count tells you.
+Text: one short, warm sentence to the couple (at most 30 Chinese characters or 20 words), about being there together. Vary how you start. Never mention the date, the number of photos, "these photos/pictures", "kept here", or wishes such as "May…". Never invent what happened, the weather, food or anyone's feelings beyond two people enjoying that place together. Speak about the two of them, never as if you were there or part of it. A day with many photos may sound a little fuller; that is all the count tells you. "recent" lists lines already in their album: start and phrase yours differently (no "side by side" if it is there).
 Write in ${language === "en" ? "English" : language === "es" ? "Spanish" : "Simplified Chinese"}, addressing them as 你们 / you two / ustedes. No exclamation marks, no emoji.`;
 
 export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
@@ -91,9 +91,11 @@ export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
     const photoIds = (Array.isArray(req.body?.photoIds) ? req.body.photoIds : []).map((id) => clean(id, 80)).filter(Boolean).slice(0, PER_EVENT);
     if (!photoIds.length) throw fail(400, "Send the photos first.");
     if ((await madeKeys(userId, album)).has(key)) return res.json({ duplicate: true });
+    // The last few lines already in the album, so each new one does not open the same way.
+    const recent = (await store.listRelationshipRecordsForUser("spaceItems", userId)).filter((item) => item.spaceId === album.id && item.photoEvent && item.text && !item.archivedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6).map((item) => item.text);
     let words = { title: place || day, text: "" };
     try {
-      const made = await asAiUser({ userId, relationshipId: context.relationship.id, language }, () => mediator.structured({ name: "photo_memory", schema: memorySchema, instructions: memoryInstructions(language), input: JSON.stringify({ date: day, place: place || null, photos: Number(req.body?.count) || photoIds.length }), maxOutputTokens: 300 }));
+      const made = await asAiUser({ userId, relationshipId: context.relationship.id, language }, () => mediator.structured({ name: "photo_memory", schema: memorySchema, instructions: memoryInstructions(language), input: JSON.stringify({ date: day, place: place || null, photos: Number(req.body?.count) || photoIds.length, recent }), maxOutputTokens: 300 }));
       words = { title: clean(made?.title, 60) || words.title, text: clean(made?.text, 400) };
     } catch (error) { console.error("Photo memory words failed:", error?.message || error); /* The memory is kept with the place as its title. */ }
     const items = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
