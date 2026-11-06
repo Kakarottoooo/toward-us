@@ -13,6 +13,7 @@ import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
 import { OnboardingTour, characterOwed, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
+import { GameCard, type GameAnswers, type GameRound } from "./GameCard";
 import { CoupleMascot } from "../character/CoupleMascot";
 import { useCoupleCharacter } from "../character/character";
 import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking";
@@ -28,7 +29,7 @@ type PrivateMessage = { id: string; role: "user" | "assistant"; kind?: string; t
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game"; game?: GameRound; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -409,6 +410,13 @@ ${text}` : text, target);
     try { await navigator.clipboard.writeText(`${text} ${url}`); setNotice(t("链接已复制，发给朋友吧。", "Link copied. Send it to a friend.", "Enlace copiado. Envíaselo a alguien.")); }
     catch { setNotice(`${text} ${url}`); }
   };
+  // 小游戏: answer a round, or start another ("再来一局").
+  const answerGame = async (id: string, answer: { choice?: number; text?: string }) => {
+    setNotice("");
+    try { await relationshipApi(`/api/together/games/${encodeURIComponent(id)}/answer`, jsonBody({ ...answer, language })); await loadTogether(); return true; }
+    catch (error) { setNotice((error as Error).message); return false; }
+  };
+  const playAgain = async () => { setNotice(""); try { await relationshipApi("/api/together/games", jsonBody({ language })); await loadTogether(); } catch (error) { setNotice((error as Error).message); } };
   const answerDaily = async (id: string, text: string) => {
     setNotice("");
     try { await relationshipApi(`/api/together/daily/${encodeURIComponent(id)}/answer`, jsonBody({ text, language })); await loadTogether(); return true; }
@@ -474,6 +482,7 @@ ${text}` : text, target);
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准 v${version}`, `Approve v${version}`, `Aprobar v${version}`)}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>)}
       </article>;
     }
+    if (message.kind === "game" && message.game) return <GameCard key={message.id} prompt={text} game={message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} />;
     if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000} askedAt={message.createdAt} listening={dictating === message.id && voiceActive} onVoice={(append) => dictate(message.id, append)} onAnswer={(answer) => answerDaily(message.id, answer)} />;
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;

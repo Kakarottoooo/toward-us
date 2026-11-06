@@ -7,12 +7,13 @@ import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
 import { addExpense, ledgerContext, settleUp } from "./ledger.mjs";
+import { startGame } from "./games.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
 // "nudge" is 想你了: one tap, no words (founder 11-06).
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter"]);
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter", "game"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 // The conversation record carries at most MESSAGE_LIMIT messages (the working set every read and prompt sees). What falls off
@@ -243,7 +244,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   }
   // A recap card is made after the reply, in the background (it takes a little while), and posted here when ready.
   const recaps = turn.actions.filter((action) => action.kind === "recap");
-  turn = { ...turn, actions: turn.actions.filter((action) => !["mediate", "recap"].includes(action.kind)) };
+  // A game card follows the reply; its round is written separately (小游戏).
+  const games = turn.actions.filter((action) => action.kind === "game");
+  turn = { ...turn, actions: turn.actions.filter((action) => !["mediate", "recap", "game"].includes(action.kind)) };
   const reply = (outcome) => transaction(async (tx) => {
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
@@ -266,6 +269,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     replied = await reply({ reply: failed[language] || failed.zh, i18n: failed, actions: [], draftAgreement: null, source: "local" });
   }
   if (!replied.duplicate) emit(replied.conversation);
+  if (!replied.duplicate && games.length) void startGame({ store, mediator, relationshipId, userId: actorUserId, type: games[0].title, language, emit });
   if (!replied.duplicate && recaps.length) void composeStory({ store, mediator, relationshipId, userId: actorUserId, language, occasion: recaps[0].title || "", key: `asked-${message.id}`, emit });
   for (const session of asked) notifyPrivate(session);
   return { conversation: replied.conversation, message, reply: replied.message, duplicate: saved.duplicate };
