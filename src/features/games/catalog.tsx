@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowsSplit, ChatsCircle, GridNine, PaintBrush, Target } from "@phosphor-icons/react";
+import { AirplaneTilt, ArrowsSplit, ChatsCircle, GridNine, PaintBrush, Target } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -44,6 +44,17 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("猜中或者 3 次用完，答案揭晓，换另一个人画。", "Guessed or out of guesses, the word is revealed and you swap roles.", "Con acierto o sin intentos, se revela la palabra y cambian los papeles."),
         t("你们是一队的：大厅里记着一起猜中了几幅。", "You're on the same team: the hall keeps count of how many drawings you got.", "Son un equipo: en la sala se cuenta cuántos dibujos acertaron."),
         t("也可以和小家伙玩：你画它猜，它画你猜。", "You can also play your little one: you draw and it guesses, then it draws for you.", "También puedes jugar con tu pequeñín: tú dibujas y adivina, luego dibuja para ti."),
+      ],
+    },
+    {
+      id: "ludo", category: "casual", kind: "match", icon: <AirplaneTilt size={26} weight="duotone" />, name: t("情侣飞行棋", "Couples' ludo", "Parchís de pareja"),
+      tagline: t("掷骰子绕一圈飞回家，停在爱心格做个小任务。", "Roll, fly around the loop and home; a heart square means a little task.", "Tira, da la vuelta y vuelve a casa; un corazón trae una tarea."),
+      rules: [
+        t("每人 2 架飞机，从自己的起飞格出发，沿同一圈 30 格飞一整圈再回家。两架都先到家的人赢。", "You each have 2 planes. They start from your own take-off square, fly once around the shared 30-square loop and then home. Get both home first to win.", "Cada uno tiene 2 aviones. Salen de tu casilla de despegue, dan una vuelta al circuito compartido de 30 casillas y vuelven a casa. Gana quien lleve primero los dos."),
+        t("掷到 6 才能起飞，掷到 6 还能再掷一次；连续 3 次没掷到 6，也会有一架照样起飞。", "A 6 launches a plane and gives you another roll. Miss a 6 three times in a row and a plane takes off anyway.", "Un 6 hace despegar un avión y te da otra tirada. Si fallas el 6 tres veces seguidas, un avión despega igual."),
+        t("两架都能走时自己选；都走不了就轮到对方。回家要刚好掷到剩下的格数。", "If both planes can move, you choose; if neither can, the turn passes. Getting home takes the exact roll.", "Si los dos aviones pueden moverse, eliges tú; si ninguno puede, pasa el turno. Para llegar a casa hace falta la tirada exacta."),
+        t("正好停在对方飞机上，就把它撞回起点。", "Land exactly on your partner's plane to send it back to the start.", "Cae justo sobre el avión de tu pareja para mandarlo de vuelta a la salida."),
+        t("停在爱心格，就做一个 Pinky 准备的小任务，点“做到了”或“跳过”再继续。也可以和小家伙玩，它会自己掷骰子、做任务。", "Land on a heart and do a little task Pinky wrote for you, then tap Done or Skip. You can also play your little one: it rolls and does its tasks by itself.", "Si caes en un corazón, haz una tarea que Pinky preparó y pulsa Hecho o Saltar. También puedes jugar con tu pequeñín: tira y hace sus tareas solo."),
       ],
     },
     {
