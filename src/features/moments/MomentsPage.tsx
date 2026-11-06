@@ -134,6 +134,9 @@ export function MomentsPage({ language, userId, paired, since = null, milestones
       {paired && onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
       {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
       {paired && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />}
+      {!!visible.length && <section className="moments-recent"><h2>{t("最近", "Recent", "Recientes")}</h2></section>}
+      {!!visible.length && timeline(visible.slice(0, 5))}
+      {visible.length > 5 && <button type="button" className="moments-more" onClick={() => setMode("all")}>{t(`看全部 ${visible.length} 段`, `See all ${visible.length}`, `Ver los ${visible.length}`)}</button>}
       {moments && !all.length && <section className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Pinky 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Pinky in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Pinky en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></section>}
     </>}
 
