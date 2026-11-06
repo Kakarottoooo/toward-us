@@ -205,7 +205,10 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     await call("/partner/accept", b, { code: invitation.body.pairing.invitation.code });
     const say = (text) => call("/together/messages", a, { text, itemId: randomUUID(), language: "en" });
     // Temporary measurement-friendly free defaults (11-04) until the founder tunes them from the ops report.
-    assert.deepEqual(AI_CAPS.free, { person: 60, couple: 100, background: 80, chatImport: 65, features: { composer_suggestions: 15 } });
+    assert.deepEqual(AI_CAPS.free, { person: 60, couple: 100, background: 80, chatImport: 65, features: { composer_suggestions: 15, photo_memory: 24 } });
+    // A big album (one call per memory) once used 70 of the couple's 80 background calls in a day, so games fell back to
+    // canned questions and translations failed. Even with both members syncing, album captions leave most of the pool.
+    for (const plan of [AI_CAPS.free, AI_CAPS.paid]) assert.ok(plan.features.photo_memory * 2 <= plan.background * 0.6);
     for (let i = 0; i < AI_CAPS.free.person; i += 1) assert.equal((await say(`@Pinky idea ${i}?`)).status, 201);
     const capped = await say("@Pinky one more idea?");
     assert.equal(capped.status, 429);

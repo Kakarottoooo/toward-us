@@ -2,7 +2,7 @@ import express from "express";
 import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
 import { addSpaceItem, ensureMomentSpaces } from "./space-domain.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
-import { asAiUser } from "./ai-budget.mjs";
+import { asAiUser, isAiLimit } from "./ai-budget.mjs";
 
 // Photo memories (founder 11-05): the iPhone App reads an album the member picks (a shared couple album, thousands of photos)
 // and Pinky turns it into the couple's memories, one per day and place, with a few warm words. The founder chose that these
@@ -97,7 +97,12 @@ export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
     try {
       const made = await asAiUser({ userId, relationshipId: context.relationship.id, language }, () => mediator.structured({ name: "photo_memory", schema: memorySchema, instructions: memoryInstructions(language), input: JSON.stringify({ date: day, place: place || null, photos: Number(req.body?.count) || photoIds.length, recent }), maxOutputTokens: 300 }));
       words = { title: clean(made?.title, 60) || words.title, text: clean(made?.text, 400) };
-    } catch (error) { console.error("Photo memory words failed:", error?.message || error); /* The memory is kept with the place as its title. */ }
+    } catch (error) {
+      // Out of today's allowance: make nothing (a memory made now would keep no words forever); the phone stops and the
+      // same memory is asked for again on its next sync.
+      if (isAiLimit(error)) return res.json({ paused: true });
+      console.error("Photo memory words failed:", error?.message || error); /* The memory is kept with the place as its title. */
+    }
     const items = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
       // Checked again here: two requests for the same memory can both pass the early check while the words are written.
       const inAlbum = (await tx.listRelationshipRecordsForUser("spaceItems", userId)).filter((item) => item.spaceId === album.id && item.photoEvent && !item.archivedAt);
