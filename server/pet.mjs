@@ -1,4 +1,4 @@
-import { appendTogetherMessage, coupleLanguage } from "./together-domain.mjs";
+import { appendTogetherMessage } from "./together-domain.mjs";
 import { MOMENTS } from "./space-domain.mjs";
 
 // 一起养的小家伙 (founder 11-06): the couple's character grows with what the two of them do together. Nothing new to learn: it
@@ -79,8 +79,7 @@ export async function syncPet(tx, { relationshipId, userId, zone, language = "zh
   const { pet, leveled } = grow(conversation.pet, events(snapshot, relationshipId, conversation, zone), today);
   let current = conversation;
   if (JSON.stringify(pet) !== JSON.stringify(conversation.pet || null)) current = await tx.updateRelationshipRecordForUser("togetherConversations", id, userId, (draft) => { draft.pet = pet; });
-  if (leveled) {
-    language = coupleLanguage((current.messages || []).filter((message) => message.role === "member").slice(-20).map((message) => String(message.text || "")), language);
+  if (leveled) {
     const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: say(language, `🎉 你们的小家伙长到 Lv.${leveled} 了！谢谢你们一直陪着它。`, `🎉 Your little one just reached Lv.${leveled}! Thanks for looking after it together.`, `🎉 ¡Su pequeño llegó al nivel ${leveled}! Gracias por cuidarlo juntos.`), handle: `pet-level:${leveled}` });
     current = posted.conversation;
   }

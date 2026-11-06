@@ -5,7 +5,7 @@ import { join } from "node:path";
 import express from "express";
 import { ImportFormatError, parseChatExport, parsePastedText } from "./chat-import-parsers.mjs";
 import { canViewRecord, createRelationshipRecord } from "./relationship-domain.mjs";
-import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
+import { appendTogetherMessage, memberLanguage, togetherI18n } from "./together-domain.mjs";
 import { photoFile, visiblePhoto } from "./photo-store.mjs";
 import { asAiUser, isAiLimit } from "./ai-budget.mjs";
 
@@ -259,7 +259,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   function start(record) {
     if (jobs.has(record.id)) return;
     // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
-    const job = asAiUser({ userId: record.ownerUserId, language: record.language }, () => analyze(record)).catch(async (error) => {
+    // The report is written in the owner's interface language at the time it is read, not the one the import began in (founder 11-06: one language everywhere, the one each member picked).
+    const job = memberLanguage(store, record.ownerUserId).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record)); }).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
       await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
       if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
@@ -467,7 +468,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!record || !user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("This sync command no longer works. Open Pinky and copy a new one.\n");
     let parsed;
     try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read these messages.\n"); }
-    const language = record.language || "zh";
+    const language = await memberLanguage(store, user.id);
     const context = await store.getRelationshipContext(user.id);
     const partner = context?.members?.find((member) => member.userId !== user.id)?.user?.name || "";
     const conversation = parsed.conversations[0] || { title: "", messages: [] };

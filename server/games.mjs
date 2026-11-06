@@ -1,4 +1,4 @@
-import { appendTogetherMessage, coupleLanguage } from "./together-domain.mjs";
+import { appendTogetherMessage } from "./together-domain.mjs";
 import { clean, decisionError } from "./agreement-actions.mjs";
 
 // 小游戏 (founder 11-06): games are cards in Us, never a separate page. Pinky starts one when they ask ("Pinky，来玩个游戏")
@@ -48,8 +48,7 @@ export async function startGame({ store, mediator, relationshipId, userId, type 
     const { conversation, previous, profile } = material(snapshot, relationshipId);
     const games = (conversation?.messages || []).filter((message) => message.kind === GAME);
     // Unasked, the kinds take turns.
-    const kind = GAME_TYPES.includes(type) ? type : GAME_TYPES[(GAME_TYPES.indexOf(games.at(-1)?.game?.type) + 1) % GAME_TYPES.length];
-    language = coupleLanguage((conversation?.messages || []).filter((message) => message.role === "member").slice(-20).map((message) => String(message.text || "")), language);
+    const kind = GAME_TYPES.includes(type) ? type : GAME_TYPES[(GAME_TYPES.indexOf(games.at(-1)?.game?.type) + 1) % GAME_TYPES.length];
     const byRole = (role) => context.members.find((member) => member.role === role);
     const roleOf = (id) => context.members.find((member) => member.userId === id)?.role || null;
     let round = null;

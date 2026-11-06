@@ -64,12 +64,6 @@ export async function outputWatch({ data, user: email, state = {}, limit = 80 })
     for (const summary of graph.summaries) candidates.push({ source: "summaries", ref: summary.id, at: summary.createdAt, kind: summary.ownerUserId === userId ? "own_summary" : "partner_summary", asked: null, text: summary.text || "", shared: summary.status === "confirmed" });
     for (const proposal of graph.proposals) candidates.push({ source: "proposals", ref: proposal.id, at: proposal.createdAt, kind: "proposal", asked: null, text: [proposal.title, proposal.rationale, proposal.tradeoffs].filter((part) => typeof part === "string" && part).join("\n"), shared: true });
 
-    // An answer nobody just asked for should match the language the founder actually chats in, which can differ from the
-    // account setting (account en, chats in Chinese): their own recent words first, else what the couple writes in Us.
-    const recent = (messages) => messages.filter((message) => message.text).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-20).map((message) => message.text).join(" ");
-    const usMembers = graph.togetherConversations.flatMap((conversation) => (conversation.messages || []).filter((message) => message.role === "member"));
-    const ownWords = [...usMembers.filter((message) => message.actorUserId === userId), ...graph.privateAgentThreads.filter((thread) => thread.ownerUserId === userId).flatMap((thread) => (thread.messages || []).filter((message) => message.role === "user"))];
-    const usual = detectLanguage(recent(ownWords)) || detectLanguage(recent(usMembers)) || language;
 
     const cursors = { ...(state.cursors || {}) };
     const fresh = candidates.filter((item) => item.at && (!cursors[item.source] || item.at > cursors[item.source])).sort((a, b) => a.at.localeCompare(b.at));
@@ -77,7 +71,7 @@ export async function outputWatch({ data, user: email, state = {}, limit = 80 })
     const outputs = picked.map(({ shared, ...item }) => ({
       ...item,
       asked: item.asked ? clip(item.asked, ASKED_LIMIT) : null,
-      flags: flagText(item.text, { language: usual, asked: item.asked, leaks: shared ? leaks : null }),
+      flags: flagText(item.text, { language, asked: item.asked, leaks: shared ? leaks : null }),
       text: clip(item.text, TEXT_LIMIT),
     }));
     for (const item of picked) if (!cursors[item.source] || item.at > cursors[item.source]) cursors[item.source] = item.at;
@@ -143,20 +137,11 @@ export function flagText(text, { language = "zh", asked = null, leaks = null } =
   if (/\b(?:pick|choose|select|reply(?: with)?|type)\s+(?:option\s+)?[1-3A-C]\b/i.test(body) || /(?:选|选择|回复|输入)\s*[1-3１-３A-Ca-c](?![\d\p{L}])/u.test(body) || /\b(?:elige|escoge|responde)\s+(?:la opción\s+)?[1-3A-C]\b/i.test(body)) flags.push("choice_menu");
   if (/not connected|isn't connected|can(?:no|')t access|do(?:n't| not) have access|unable to access|no access to|无法访问|没有权限|未连接|没有连接|无法连接|不能访问|看不到你的|no tengo acceso|no puedo acceder|no está conectad/i.test(body)) flags.push("claims_not_connected");
   if (/you(?:'ll| will)? need to (?:manually|do it yourself|open|go to)|please (?:manually|do it yourself)|you can do it yourself|do it manually|你需要自己|你得自己|请你手动|你可以自己去|手动(?:添加|设置|创建|操作)|tendrás que hacerlo|hazlo tú mism|manualmente/i.test(body)) flags.push("asks_manual_work");
-  // Pinky answers in the language the person just wrote in; the account language is the fallback.
-  if (value.trim() && wrongLanguage(body, detectLanguage(asked) || language)) flags.push("wrong_language");
+  // Pinky answers in the interface language the founder picked, whatever language they wrote in (founder 11-06).
+  if (value.trim() && wrongLanguage(body, language)) flags.push("wrong_language");
   if (genderedGuess(body)) flags.push("gendered_guess");
   if (leaks && leaksPrivate(value, leaks)) flags.push("private_leak");
   return flags;
-}
-
-function detectLanguage(text) {
-  const value = String(text || "");
-  if (hanCount(value) >= 2) return "zh";
-  const spanish = (value.match(SPANISH) || []).length; const english = (value.match(ENGLISH) || []).length;
-  if (spanish >= 2 && spanish > english) return "es";
-  if (english >= 2 && english > spanish) return "en";
-  return null;
 }
 
 function wrongLanguage(text, language) {

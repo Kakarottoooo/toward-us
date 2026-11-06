@@ -101,23 +101,13 @@ test("the CLI leaves the data file untouched and advances cursors so a second ru
   assert.equal(await readFile(data, "utf8"), before);
 }));
 
-test("a reply nobody just asked for is judged by the language the founder actually writes in, not the account setting", () => withFixture(async ({ data }) => {
+test("replies are judged by the interface language the founder picked, not the language they write in", () => withFixture(async ({ data }) => {
   const report = await outputWatch({ data, user: "founder@example.test", state: {} });
-  const opener = report.outputs.find((item) => item.ref.endsWith("#r0"));
-  assert.equal(opener.asked, null);
-  assert.deepEqual(opener.flags, []);
+  assert.ok(report.outputs.find((item) => item.ref.endsWith("#r0")).flags.includes("wrong_language"));
 }, (state) => {
-  // An English account that chats in Chinese; Pinky opens the thread (e.g. a chat-import report) in Chinese.
+  // An English account that chats in Chinese: since 11-06 everything Pinky writes to it should be English.
   state.users.me.language = "en";
   state.relationshipGraph.privateAgentThreads["thread-me"].messages.unshift({ id: "r0", role: "assistant", text: "你们的记录里最温暖的部分是彼此很会照顾。", createdAt: at(7) });
-}));
-
-test("before the founder has written anything, the couple's language in Us is the yardstick", () => withFixture(async ({ data }) => {
-  const report = await outputWatch({ data, user: "founder@example.test", state: {} });
-  assert.deepEqual(report.outputs.find((item) => item.ref.endsWith("#r0")).flags, []);
-}, (state) => {
-  state.users.me.language = "en";
-  state.relationshipGraph.privateAgentThreads["thread-me"].messages = [{ id: "r0", role: "assistant", text: "你们的记录里最温暖的部分是彼此很会照顾。", createdAt: at(8) }];
 }));
 
 test("flags fire on the watched failure shapes", () => {
@@ -127,9 +117,9 @@ test("flags fire on the watched failure shapes", () => {
   assert.ok(flagText("出错了：TypeError 在 reminder_service 里").includes("internal_id"));
   assert.ok(flagText(`这个${String.fromCharCode(0xfffd)}坏了`).includes("mojibake"));
   assert.ok(flagText("æ”¶åˆ°ï¼Œå·²ç»è®°ä¸‹").includes("mojibake"));
-  // The language the person just wrote in wins over the account setting.
-  assert.deepEqual(flagText("好的，我记下了。", { language: "en", asked: "帮我记一下" }), []);
-  assert.ok(flagText("Got it, I saved that note for you and your partner.", { language: "en", asked: "帮我记一下" }).includes("wrong_language"));
+  // The interface language the person picked wins over the language they wrote in (founder 11-06).
+  assert.ok(flagText("好的，我记下了。", { language: "en", asked: "帮我记一下" }).includes("wrong_language"));
+  assert.ok(!flagText("Got it, I saved that note for you and your partner.", { language: "en", asked: "帮我记一下" }).includes("wrong_language"), "an English interface gets English even when asked in Chinese");
   assert.ok(flagText("我没有权限访问你的日历").includes("claims_not_connected"));
   assert.ok(flagText("你需要自己去设置里打开").includes("asks_manual_work"));
   assert.ok(flagText("I added it to your shopping list for you.").includes("wrong_language"));
