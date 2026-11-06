@@ -9,7 +9,7 @@ import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
 import { handoffUrl, isCalendar } from "./handoff.mjs";
-import { appendTogetherMessage, writtenLanguage } from "./together-domain.mjs";
+import { appendTogetherMessage, memberLanguage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
@@ -155,8 +155,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
-    // Pinky answers in the language this member writes in, not the interface language the conversation was opened with.
-    const language = writtenLanguage(context.messages.filter((item) => item.role === "user").map((item) => item.text), session.language);
+    // Pinky answers in the interface language this member picked, whatever language they type in (founder 11-06: one language everywhere, the one each member picked).
+    const language = await memberLanguage(store, userId, body?.language);
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan;
     progress("thinking");

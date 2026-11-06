@@ -55,19 +55,22 @@ test("spoken reminder creation, continuation and cancellation update one durable
   const restarted = await createFileStore(f.storePath); assert.equal((await restarted.getRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0])).messages.length, 6);
 });
 
-test("the private Pinky answers in the language the member writes in, and says plainly when the model is down", async (t) => {
-  // The session was opened from an English interface (the founder's account), but the member writes Chinese.
+test("the private Pinky answers in the interface language the member picked, whatever they type, and says plainly when the model is down", async (t) => {
+  // One language everywhere (founder 11-06): an English interface gets English, even when the member types Chinese.
   const f = await fixture(t, (context) => { if (/fail|出错/.test(context.messages.at(-1).text)) throw new Error("model down"); return { reply: "ok", actions: [] }; });
   const language = () => f.calls.at(-1)[1];
-  assert.equal((await f.turn("帮我记一下，周五晚上八点要给妈妈打电话")).status, 200); assert.equal(language(), "zh");
-  assert.equal((await f.turn("ok")).status, 200); assert.equal(language(), "zh", "a short acknowledgement keeps the language of the last clear message");
-  assert.equal((await f.turn("Remind me on Friday at eight to call my mother")).status, 200); assert.equal(language(), "en");
+  await f.store.updateUserLanguage(f.ids[0], "en");
+  assert.equal((await f.turn("帮我记一下，周五晚上八点要给妈妈打电话")).status, 200); assert.equal(language(), "en");
+  await f.store.updateUserLanguage(f.ids[0], "zh");
+  assert.equal((await f.turn("Remind me on Friday at eight to call my mother")).status, 200); assert.equal(language(), "zh");
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "ok", itemId: randomUUID(), language: "es" })).status, 200); assert.equal(language(), "es", "the language the App says it shows right now wins");
+  await f.store.updateUserLanguage(f.ids[0], "en");
   // The hard-to-say draft for the partner follows the same language as the reply.
   assert.match(assistantInstructions("zh"), /partner would read, written in Simplified Chinese/);
   assert.match(assistantInstructions("es"), /Reply in Spanish\./);
   // A failed model: a plain, current message in that language; nothing about forms that no longer exist.
   let failed = await f.turn("fail"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky is unavailable right now. Nothing was changed; please try again later.");
-  failed = await f.turn("刚才出错了，再试一次吧"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky 暂时不可用，什么都没有改动。请稍后再试。");
+  await f.store.updateUserLanguage(f.ids[0], "zh"); failed = await f.turn("刚才出错了，再试一次吧"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky 暂时不可用，什么都没有改动。请稍后再试。");
   assert.ok(!/表单|forms|formularios/.test(JSON.stringify(failed.body)));
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.length, 6, "a failed turn saves nothing");
 });

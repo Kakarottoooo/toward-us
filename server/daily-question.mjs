@@ -1,4 +1,4 @@
-import { appendTogetherMessage, coupleLanguage, previousDailyQuestions } from "./together-domain.mjs";
+import { appendTogetherMessage, previousDailyQuestions } from "./together-domain.mjs";
 import { clean, decisionError } from "./agreement-actions.mjs";
 import { MOMENTS } from "./space-domain.mjs";
 
@@ -59,7 +59,6 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
     // Questions the conversation has moved past still count: a repeat is a repeat however long ago it was asked.
     const previous = await previousDailyQuestions(store, { relationshipId, userId });
     const material = questionMaterial(snapshot, relationshipId, today, previous);
-    language = coupleLanguage(material.recentConversation, language);
     // Normally the question was made the day before, so it appears the moment Us opens.
     const prepared = snapshot.togetherConversations?.find((item) => item.relationshipId === relationshipId)?.preparedDaily;
     let question = prepared && prepared.language === language && Date.now() - Date.parse(prepared.at) < 48 * 3_600_000 && !previous.includes(prepared.question) ? prepared.question : "";
@@ -125,7 +124,7 @@ async function reactToAnswers({ store, mediator, relationshipId, userId, questio
     const name = (id) => members.find((member) => member.userId === id)?.user?.name || "";
     const answers = Object.entries(question.answers).map(([id, item]) => ({ from: name(id), text: item.text }));
     const input = JSON.stringify({ question: question.text, answers });
-    const reply = clean((await mediator.structured({ name: "daily_reaction", schema: reactionSchema, instructions: reactionInstructions(coupleLanguage([question.text, ...answers.map((item) => item.text)], language)), input, maxOutputTokens: 300 })).reply, 600);
+    const reply = clean((await mediator.structured({ name: "daily_reaction", schema: reactionSchema, instructions: reactionInstructions(language), input, maxOutputTokens: 300 })).reply, 600);
     if (!reply) return;
     const result = await store.transaction(`relationship:${relationshipId}`, (tx) => appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: reply, replyTo: question.id, handle: `daily-reaction:${question.id}` }));
     if (!result.duplicate) emit(result.conversation);

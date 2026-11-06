@@ -24,24 +24,6 @@ const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotia
 const togetherId = (relationshipId) => `together:${relationshipId}`;
 const archiveId = (relationshipId, seq) => `${togetherId(relationshipId)}:archive:${seq}`;
 
-/** Which script a text clearly leans to: "zh", "latin" (English or Spanish), or null when it is too short to tell. */
-const leaning = (text) => {
-  const han = (text.match(/\p{Script=Han}/gu) || []).length, latin = (text.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-  return han >= 4 && han * 2 >= latin ? "zh" : latin >= 12 && han * 4 < latin ? "latin" : null;
-};
-/** Both partners read the same question, so it follows the language they actually write to each other in Us; the opener's
- * interface language only decides when their texts do not clearly lean one way (or between English and Spanish). */
-export function coupleLanguage(texts, fallback) {
-  const lean = leaning(texts.join(" "));
-  return lean === "zh" ? "zh" : lean === "latin" && fallback === "zh" ? "en" : fallback;
-}
-/** The language a person writes in: their most recent text that clearly leans one way, else the interface language. Pinky
- * answers in it, so a couple whose account is set to English still gets Chinese replies when they write Chinese. */
-export function writtenLanguage(texts, fallback) {
-  const recent = texts.map((text) => String(text || "")).slice(-10).reverse().find(leaning);
-  return recent === undefined ? fallback : coupleLanguage([recent], fallback);
-}
-
 // Pinky's check-in on an agreement ("这周做到了吗？回复我说说看") asks both of them. For a while after it, each member's first
 // message in Us is their answer to it, so a plain reply reaches Pinky without @-mentioning it; after that, Pinky waits to be
 // called again. Only Pinky's own agreement check-ins open such a window; outcome reviews are answered privately.
@@ -211,8 +193,6 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
   progress("thinking");
-  // Pinky answers in the language the couple writes in Us, whatever interface language the device that sent this is set to.
-  language = writtenLanguage(messages.filter((item) => item.role === "member").map((item) => item.text), language);
   await ensureMomentSpaces(store, actorUserId);
   const membership = await store.getRelationshipContext(actorUserId);
   const members = (membership?.members || []).map((member) => ({ id: member.userId, name: member.user?.name || "" }));
