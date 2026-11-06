@@ -163,9 +163,9 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   return <div className="moments-page is-photos" data-testid="moments-page">
     <div className="moments-toolbar">
     <div className="moments-icons">
-        <button type="button" className="moments-find" onClick={ask} aria-label={t("跟 Pinky 说一个回忆", "Tell Pinky a memory", "Cuéntale un recuerdo a Pinky")}><Plus size={20} weight="bold" /></button>
-        <button type="button" className="moments-find" onClick={() => { setMapOpen(true); window.scrollTo?.({ top: 0 }); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={20} /></button>
-        <button type="button" className="moments-find" onClick={find} aria-label={t("问 Pinky 找回忆", "Ask Pinky to find a memory", "Pide a Pinky un recuerdo")}><MagnifyingGlass size={20} /></button>
+        <button type="button" className="moments-find" onClick={ask} aria-label={t("跟 Pinky 说一个回忆", "Tell Pinky a memory", "Cuéntale un recuerdo a Pinky")}><Plus size={18} weight="bold" /><span>{t("记一个回忆", "Add", "Añadir")}</span></button>
+        <button type="button" className="moments-find" onClick={() => { setMapOpen(true); window.scrollTo?.({ top: 0 }); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={18} /><span>{t("地图", "Map", "Mapa")}</span></button>
+        <button type="button" className="moments-find" onClick={find} aria-label={t("问 Pinky 找回忆", "Ask Pinky to find a memory", "Pide a Pinky un recuerdo")}><MagnifyingGlass size={18} /><span>{t("找回忆", "Find", "Buscar")}</span></button>
       </div>
     </div>
     <div className="moments-top">
