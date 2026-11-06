@@ -12,11 +12,30 @@ const MODE_KEY = "pinky-map-mode";
 type Mode = "globe" | "flat";
 const readMode = (): Mode => { try { return localStorage.getItem(MODE_KEY) === "flat" ? "flat" : "globe"; } catch { return "globe"; } };
 
+// Pinky's palette on OpenFreeMap's positron (founder 11-06: "做的再更精美一点"): ivory land, soft blue water, sage parks,
+// rose borders, and one name per place in the app's language instead of "Russia / Россия".
+const PAINT: Record<string, Record<string, unknown>> = {
+  background: { "background-color": "#f6f0e6" }, water: { "fill-color": "#bcd8e6" }, park: { "fill-color": "#e3ebd6" },
+  landcover_wood: { "fill-color": "#e3ebd6" }, landuse_residential: { "fill-color": "#efe6da" }, building: { "fill-color": "#ebe2d6", "fill-outline-color": "#e2d8cb" },
+  waterway: { "line-color": "#bcd8e6" }, boundary_2: { "line-color": "#d8a9bd" }, boundary_3: { "line-color": "#e6c9d5" },
+};
+type Language = "zh" | "en" | "es";
+const localName = (language: Language) => language === "zh" ? ["coalesce", ["get", "name:zh-Hans"], ["get", "name:zh"], ["get", "name:en"], ["get", "name"]]
+  : language === "es" ? ["coalesce", ["get", "name:es"], ["get", "name:en"], ["get", "name"]] : ["coalesce", ["get", "name:en"], ["get", "name"]];
+
 // Fetched here so it can be fixed before any tile is laid out: MapLibre 5's globe draws nothing when a layer switches
 // symbol-placement by zoom (OpenFreeMap's road shields). The tile index goes straight into the style, one round trip less.
-async function loadStyle(): Promise<StyleSpecification> {
+async function loadStyle(language: Language): Promise<StyleSpecification> {
   const [style, tiles] = await Promise.all([fetch(STYLE).then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.json(); }), fetch(TILEJSON).then((response) => (response.ok ? response.json() : null), () => null)]);
-  for (const layer of style.layers || []) if (layer.layout && Array.isArray(layer.layout["symbol-placement"])) layer.layout["symbol-placement"] = "line";
+  for (const layer of style.layers || []) {
+    if (layer.layout && Array.isArray(layer.layout["symbol-placement"])) layer.layout["symbol-placement"] = "line";
+    if (PAINT[layer.id]) layer.paint = { ...layer.paint, ...PAINT[layer.id] };
+    // Place and water names: one name in the app's language, in Pinky's ink on an ivory halo. Road shields keep their numbers.
+    if (layer.type === "symbol" && layer.layout?.["text-field"] && /^(label_|water_name|airport)/.test(layer.id)) {
+      layer.layout["text-field"] = localName(language);
+      layer.paint = { ...layer.paint, "text-color": layer.id.startsWith("water") ? "#5b7f99" : layer.id.startsWith("label_country") ? "#5f4a52" : "#4a4540", "text-halo-color": "#f6f0e6", "text-halo-width": 1.4, "text-halo-blur": 0.5 };
+    }
+  }
   for (const [key, source] of Object.entries<Record<string, unknown>>(style.sources || {})) {
     if (tiles?.tiles?.length && source.url === TILEJSON) style.sources[key] = { type: source.type, tiles: tiles.tiles, minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, bounds: tiles.bounds, attribution: tiles.attribution };
   }
@@ -35,7 +54,7 @@ const pin = (cover: string, count: number, bubble: boolean, label: string) => {
   return element;
 };
 
-export function MemoriesMap({ places, label, labels, onOpen }: { places: Place[]; label: string; labels: { globe: string; flat: string; failed: string; loading: string }; onOpen: (place: Place) => void }) {
+export function MemoriesMap({ places, language = "zh", label, labels, onOpen }: { places: Place[]; language?: Language; label: string; labels: { globe: string; flat: string; failed: string; loading: string }; onOpen: (place: Place) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<GlMap | null>(null);
   const open = useRef(onOpen); open.current = onOpen;
@@ -50,7 +69,7 @@ export function MemoriesMap({ places, label, labels, onOpen }: { places: Place[]
     let alive = true;
     const shown = markers.current;
     let gl: GlMap | null = null;
-    loadStyle().then((style) => {
+    loadStyle(language).then((style) => {
       if (!alive || !box.current) return;
       const first = current.current[0];
       gl = map.current = new maplibregl.Map({ container: box.current, style, center: first ? [first.lon, first.lat] : [0, 20], zoom: first ? 2.2 : 1.2, attributionControl: { compact: true }, maxPitch: 60, fadeDuration: 0 });
@@ -58,6 +77,8 @@ export function MemoriesMap({ places, label, labels, onOpen }: { places: Place[]
       gl.on("style.load", () => {
         if (!gl) return;
         gl.setProjection({ type: readMode() === "flat" ? "mercator" : "globe" });
+        // A soft rose-and-sky glow around the globe that fades as you zoom in.
+        gl.setSky({ "sky-color": "#f3dfe7", "horizon-color": "#fbeef2", "fog-color": "#f6f0e6", "sky-horizon-blend": 0.6, "horizon-fog-blend": 0.7, "fog-ground-blend": 0.9, "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 7, 0] });
         gl.addSource("places", {
           type: "geojson", cluster: true, clusterRadius: 52, clusterMaxZoom: 12, data: geo(current.current),
           // A bubble keeps the first photo among its places and adds up their memories.
