@@ -122,7 +122,7 @@ export const autoPending = (match) => match.status === "active" && (hosting(GAME
 
 /** Pinky's hosting and 小家伙's turn: they act until nothing is left for them. `onMove` sees every move (to tell the open App).
  * Never throws. */
-export async function petPlays({ store, mediator, userId, matchId, language = "zh", onMove = () => {}, delay = 1200 }) {
+export async function petPlays({ store, mediator, userId, matchId, language = "zh", onMove = () => {}, delay = 1200, again = 0 }) {
   if (playing.has(matchId)) return;
   playing.add(matchId);
   try {
@@ -143,4 +143,7 @@ export async function petPlays({ store, mediator, userId, matchId, language = "z
     }
   } catch (error) { console.error("auto move failed", error?.matchCode || error?.message || "error"); }
   finally { playing.delete(matchId); }
+  // Something may have arrived while it was busy (a question asked just as it answered the last one): look once more.
+  const latest = again < 3 ? await store.getRelationshipRecordForUser(COLLECTION, matchId, userId).catch(() => null) : null;
+  if (latest && autoPending(latest)) return petPlays({ store, mediator, userId, matchId, language, onMove, delay, again: again + 1 });
 }

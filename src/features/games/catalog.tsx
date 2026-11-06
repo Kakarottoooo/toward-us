@@ -8,7 +8,7 @@ import { localized, type Language } from "../../i18n";
 //   - kind "card": a round played as a card in Us (server/games.mjs).
 // A category is listed only once it has a game.
 export type CategoryId = "board" | "draw" | "words" | "puzzle" | "casual";
-export type GameEntry = { id: string; category: CategoryId; kind: "match" | "card"; cardType?: "choice" | "guess" | "truth"; icon: ReactNode; name: string; tagline: string; rules: string[] };
+export type GameEntry = { id: string; category: CategoryId; kind: "match" | "card"; cardType?: "choice" | "guess" | "truth"; solo?: boolean; icon: ReactNode; name: string; tagline: string; rules: string[] };
 
 export function categories(language: Language): Array<{ id: CategoryId; name: string }> {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
@@ -69,7 +69,8 @@ export function gameCatalog(language: Language): GameEntry[] {
       ],
     },
     {
-      id: "soup", category: "puzzle", kind: "match", icon: <BowlSteam size={26} weight="duotone" />, name: t("海龟汤", "Lateral puzzles", "Acertijos laterales"),
+      // Played alone with Pinky hosting when the partner is away: the "with the pet" match, but the pet doesn't play.
+      id: "soup", category: "puzzle", kind: "match", solo: true, icon: <BowlSteam size={26} weight="duotone" />, name: t("海龟汤", "Lateral puzzles", "Acertijos laterales"),
       tagline: t("Pinky 出一个怪故事，你们一起问出真相。", "Pinky tells a strange little story; ask your way to the truth together.", "Pinky cuenta una historia rara; descubran juntos la verdad preguntando."),
       rules: [
         t("Pinky 讲一个听起来很奇怪的小故事（汤面），真相（汤底）只有它知道。都是清汤：好玩或温暖，不吓人。", "Pinky tells a short, strange-sounding story; only Pinky knows what really happened. Always gentle: clever, funny or sweet, never scary.", "Pinky cuenta una historia corta y rara; solo Pinky sabe lo que pasó de verdad. Siempre amable: ingeniosa, divertida o tierna, nunca de miedo."),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CaretDown, PawPrint, Play } from "@phosphor-icons/react";
+import { ArrowLeft, CaretDown, PawPrint, Play, User } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -59,7 +59,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   const nameOf = (id: string) => catalog.find((game) => game.id === id)?.name || id;
 
   if (open) return <div className="game-hall" role="dialog" aria-modal="true" aria-label={t("游戏", "Games", "Juegos")} data-testid="game-hall">
-    <MatchScreen key={open} matchId={open} language={language} userId={userId} members={hall?.members || []} pet={{ name: petName, picture: petPicture }} changed={changed?.id === open ? changed.at : 0} name={nameOf} onBack={() => { keyboard.hide(); setOpen(null); void load(); }} onRematch={async (game, pet) => { const result = await relationshipApi<{ match: MatchView }>("/api/matches", jsonBody({ game, language, ...(pet ? { with: "pet" } : {}) })); await load(); setOpen(result.match.id); }} />
+    <MatchScreen key={open} matchId={open} solo={(id) => Boolean(catalog.find((game) => game.id === id)?.solo)} language={language} userId={userId} members={hall?.members || []} pet={{ name: petName, picture: petPicture }} changed={changed?.id === open ? changed.at : 0} name={nameOf} onBack={() => { keyboard.hide(); setOpen(null); void load(); }} onRematch={async (game, pet) => { const result = await relationshipApi<{ match: MatchView }>("/api/matches", jsonBody({ game, language, ...(pet ? { with: "pet" } : {}) })); await load(); setOpen(result.match.id); }} />
   </div>;
 
   const shown = category === "all" ? sections : sections.filter((item) => item.id === category);
@@ -88,7 +88,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
             </div>
             <div className="game-card-foot">
               <button type="button" className="game-rules-toggle" aria-expanded={rules === game.id} onClick={() => setRules(rules === game.id ? null : game.id)} data-testid={`game-rules-${game.id}`}><CaretDown size={14} />{t("怎么玩", "How to play", "Cómo se juega")}</button>
-              {game.kind === "match" && <button type="button" className="game-play is-pet" disabled={busy === `${game.id}:true`} onClick={() => void start(game, true)} data-testid={`game-pet-${game.id}`}>{petPicture ? <img src={petPicture} alt="" /> : <PawPrint size={15} weight="fill" />}{petGoing ? t(`继续和${petName}`, `Continue with ${petName}`, `Seguir con ${petName}`) : t(`和${petName}玩`, `Play ${petName}`, `Con ${petName}`)}</button>}
+              {game.kind === "match" && <button type="button" className="game-play is-pet" disabled={busy === `${game.id}:true`} onClick={() => void start(game, true)} data-testid={`game-pet-${game.id}`}>{game.solo ? <User size={15} weight="fill" /> : petPicture ? <img src={petPicture} alt="" /> : <PawPrint size={15} weight="fill" />}{game.solo ? (petGoing ? t("继续一个人玩", "Continue solo", "Seguir solo") : t("一个人玩", "Play solo", "Jugar solo")) : petGoing ? t(`继续和${petName}`, `Continue with ${petName}`, `Seguir con ${petName}`) : t(`和${petName}玩`, `Play ${petName}`, `Con ${petName}`)}</button>}
               <button type="button" className="game-play" disabled={busy === `${game.id}:false` || hall?.readOnly} onClick={() => void start(game)} data-testid={`game-start-${game.id}`}><Play size={14} weight="fill" />{ongoing ? t("继续", "Continue", "Seguir") : game.kind === "card" ? t("在对话里玩", "Play in chat", "Jugar en el chat") : t("和 TA 玩", "Play your partner", "Con tu pareja")}</button>
             </div>
             {rules === game.id && <ol className="game-rules">{game.rules.map((rule) => <li key={rule}>{rule}</li>)}</ol>}
