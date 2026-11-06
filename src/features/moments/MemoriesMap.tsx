@@ -23,10 +23,13 @@ async function loadStyle(): Promise<StyleSpecification> {
   return style;
 }
 
-const pin = (cover: string, count: number, bubble: boolean) => {
+const geo = (places: Place[]) => ({ type: "FeatureCollection" as const, features: places.map((place, index) => ({ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [place.lon, place.lat] }, properties: { index, memories: place.moments.length, cover: place.cover || "" } })) });
+
+const pin = (cover: string, count: number, bubble: boolean, label: string) => {
   const element = document.createElement("button");
   element.type = "button";
   element.className = bubble ? "memory-pin is-bubble" : "memory-pin";
+  element.setAttribute("aria-label", label);
   if (cover) { const image = document.createElement("img"); image.src = `/api/photos/${encodeURIComponent(cover)}`; image.alt = ""; image.draggable = false; element.appendChild(image); }
   const badge = document.createElement("span"); badge.textContent = String(count); element.appendChild(badge);
   return element;
@@ -36,26 +39,29 @@ export function MemoriesMap({ places, label, labels, onOpen }: { places: Place[]
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<GlMap | null>(null);
   const open = useRef(onOpen); open.current = onOpen;
+  // The map is built once; afterwards only its pins follow the places. Rebuilding it whenever a memory arrived (a phone
+  // album syncing in the background) threw the globe back to where it started while someone was turning it (11-05).
+  const current = useRef(places); current.current = places;
+  const markers = useRef(new Map<string, Marker>());
   const [mode, setMode] = useState<Mode>(readMode);
   const [ready, setReady] = useState(false), [error, setError] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    const markers = new Map<string, Marker>();
+    const shown = markers.current;
     let gl: GlMap | null = null;
     loadStyle().then((style) => {
       if (!alive || !box.current) return;
-      const first = places[0];
+      const first = current.current[0];
       gl = map.current = new maplibregl.Map({ container: box.current, style, center: first ? [first.lon, first.lat] : [0, 20], zoom: first ? 2.2 : 1.2, attributionControl: { compact: true }, maxPitch: 60, fadeDuration: 0 });
       gl.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
       gl.on("style.load", () => {
         if (!gl) return;
         gl.setProjection({ type: readMode() === "flat" ? "mercator" : "globe" });
         gl.addSource("places", {
-          type: "geojson", cluster: true, clusterRadius: 52, clusterMaxZoom: 12,
+          type: "geojson", cluster: true, clusterRadius: 52, clusterMaxZoom: 12, data: geo(current.current),
           // A bubble keeps the first photo among its places and adds up their memories.
           clusterProperties: { memories: ["+", ["get", "memories"]], cover: [["case", ["!=", ["accumulated"], ""], ["accumulated"], ["get", "cover"]], ["get", "cover"]] },
-          data: { type: "FeatureCollection", features: places.map((place, index) => ({ type: "Feature", geometry: { type: "Point", coordinates: [place.lon, place.lat] }, properties: { index, memories: place.moments.length, cover: place.cover || "" } })) },
         });
         // Invisible circles keep the clustered features rendered so their photos can follow them.
         gl.addLayer({ id: "places", type: "circle", source: "places", paint: { "circle-radius": 1, "circle-opacity": 0 } });
@@ -65,26 +71,27 @@ export function MemoriesMap({ places, label, labels, onOpen }: { places: Place[]
           const seen = new Set<string>();
           for (const feature of gl.querySourceFeatures("places")) {
             const props = feature.properties as Record<string, unknown>, coordinates = (feature.geometry as unknown as { coordinates: [number, number] }).coordinates;
-            const bubble = Boolean(props.cluster), id = bubble ? `c${props.cluster_id}` : `p${props.index}`;
+            const bubble = Boolean(props.cluster), place = bubble ? null : current.current[Number(props.index)];
+            const id = bubble ? `c${props.cluster_id}:${props.memories}` : `p${props.index}:${place?.title}:${props.memories}`;
             if (seen.has(id)) continue;
             seen.add(id);
-            if (markers.has(id)) continue;
-            const element = pin(String(props.cover || ""), Number(bubble ? props.memories : props.memories) || 0, bubble);
-            element.setAttribute("aria-label", bubble ? `${props.point_count}` : places[Number(props.index)]?.title || "");
+            if (shown.has(id)) continue;
+            const element = pin(String(props.cover || ""), Number(props.memories) || 0, bubble, bubble ? String(props.point_count) : place?.title || "");
             element.addEventListener("click", (event) => {
               event.stopPropagation();
               if (!gl) return;
-              if (!bubble) { const place = places[Number(props.index)]; if (place) open.current(place); return; }
+              if (!bubble) { const latest = current.current[Number(props.index)]; if (latest) open.current(latest); return; }
               void (gl.getSource("places") as GeoJSONSource).getClusterExpansionZoom(Number(props.cluster_id)).then((zoom) => gl?.easeTo({ center: coordinates, zoom: Math.min(zoom, 14) })).catch(() => {});
             });
-            markers.set(id, new maplibregl.Marker({ element }).setLngLat(coordinates).addTo(gl));
+            shown.set(id, new maplibregl.Marker({ element }).setLngLat(coordinates).addTo(gl));
           }
-          for (const [id, marker] of markers) if (!seen.has(id)) { marker.remove(); markers.delete(id); }
+          for (const [id, marker] of shown) if (!seen.has(id)) { marker.remove(); shown.delete(id); }
         };
         gl.on("render", draw);
-        if (places.length > 1) {
+        // Framed once, when the map opens; after that the view is the person's own.
+        if (current.current.length > 1) {
           const bounds = new maplibregl.LngLatBounds();
-          for (const place of places) bounds.extend([place.lon, place.lat]);
+          for (const place of current.current) bounds.extend([place.lon, place.lat]);
           gl.fitBounds(bounds, { padding: 56, maxZoom: 10, duration: 0 });
         }
         // The credit stays one tap away (the ⓘ) instead of covering the bottom of a phone-sized map.
@@ -94,8 +101,17 @@ export function MemoriesMap({ places, label, labels, onOpen }: { places: Place[]
     }).catch(() => { if (alive) setError(true); });
     const watch = new ResizeObserver(() => map.current?.resize());
     if (box.current) watch.observe(box.current);
-    return () => { alive = false; watch.disconnect(); for (const marker of markers.values()) marker.remove(); gl?.remove(); map.current = null; };
-  }, [places]);
+    return () => { alive = false; watch.disconnect(); for (const marker of shown.values()) marker.remove(); shown.clear(); gl?.remove(); map.current = null; };
+  }, []);
+
+  // New or changed places: new pins, same view.
+  useEffect(() => {
+    const source = ready ? map.current?.getSource("places") as GeoJSONSource | undefined : undefined;
+    if (!source) return;
+    for (const marker of markers.current.values()) marker.remove();
+    markers.current.clear();
+    source.setData(geo(places));
+  }, [places, ready]);
 
   const project = (next: Mode) => {
     setMode(next);
