@@ -3,6 +3,8 @@ import { ChatCircleDots, LockKey, Trash, UsersThree } from "@phosphor-icons/reac
 import { languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { IdeasSection } from "./IdeasSection";
+import { PhotoAlbumCard } from "./PhotoAlbumCard";
+import { photoPlugin } from "./photoAlbum";
 import { TogetherCard } from "./TogetherCard";
 import "./moments.css";
 
@@ -61,7 +63,8 @@ export function MomentsPage({ language, userId, paired, since = null, onSince, o
 
   return <div className="moments-page" data-testid="moments-page">
     {paired && onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
-    {!!onThisDay.length && <section className="moments-onthisday"><small>{t("往年的今天", "On this day", "Un día como hoy")}</small>{onThisDay.slice(0, 2).map((moment) => <div key={moment.key}>{moment.photos[0] && <img src={`/api/photos/${encodeURIComponent(moment.photos[0])}`} alt="" draggable={false} />}<span><strong>{moment.title || moment.text}</strong><small>{day(moment.date, true)}</small></span></div>)}</section>}
+    {!!onThisDay.length && <section className="moments-onthisday"><small>{t("往年的今天", "On this day", "Un día como hoy")}</small>{onThisDay.slice(0, 2).map((moment) => <div key={moment.key}>{moment.photos[0] && <img loading="lazy" src={`/api/photos/${encodeURIComponent(moment.photos[0])}`} alt="" draggable={false} />}<span><strong>{moment.title || moment.text}</strong><small>{day(moment.date, true)}</small></span></div>)}</section>}
+    {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
     {paired && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />}
     {paired && <div className="moments-filter" role="group" aria-label={t("显示哪些回忆", "Which moments", "Qué recuerdos")}>{(["all", "us", "me"] as Filter[]).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? t("全部", "All", "Todos") : value === "us" ? t("我们俩的", "Ours", "Nuestros") : t("只有我", "Just me", "Solo yo")}</button>)}</div>}
     {error && <p className="space-error" role="alert">{error}</p>}

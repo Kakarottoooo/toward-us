@@ -67,3 +67,16 @@
 .is-done .ideas-num { background: #2f8a4c; color: #fff; }
 .ideas-text { flex: 1; min-width: 0; line-height: 1.4; overflow-wrap: anywhere; }
 .ideas-list img { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }
+/* A connected iPhone album: one quiet card above the ideas. */
+.photo-album { display: grid; gap: 8px; padding: 14px 16px; border-radius: 20px; background: #e8f2ef; color: #1f4d40; }
+.photo-album-head { display: flex; align-items: center; gap: 10px; }
+.photo-album strong { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.photo-album > small { color: #355f53; font-size: 14px; line-height: 1.5; }
+.photo-album-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.photo-album-actions button, .photo-album-list button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: #1f6b55; color: #fff; font-size: 15px; font-weight: 650; cursor: pointer; }
+.photo-album .photo-album-quiet { background: transparent; color: #1f6b55; padding: 0 8px; }
+.photo-album-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.photo-album-list button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; background: #fbfdfc; color: var(--jian-ink); font-weight: 600; text-align: left; }
+.photo-album-list span { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.photo-album-list em { display: inline-flex; align-items: center; gap: 3px; color: #1f6b55; font-size: 12px; font-style: normal; }
+.photo-album-list small { flex: 0 0 auto; color: #5b6d67; font-size: 13px; font-weight: 500; }

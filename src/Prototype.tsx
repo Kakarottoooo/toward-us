@@ -15,6 +15,7 @@ import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativ
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
+import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
 
@@ -79,7 +80,7 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); }
+      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); if (state.pairing?.status === "active") autoSyncAlbum(language); }
     }).catch(() => {});
     listenNativePushTaps();
     registerAppWorker();

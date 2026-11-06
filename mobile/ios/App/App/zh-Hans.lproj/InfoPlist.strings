@@ -1,1 +1,2 @@
 "NSMicrophoneUsageDescription" = "仅在你点按麦克风时使用，用来把你说的话实时转成文字。";
+"NSPhotoLibraryUsageDescription" = "在你选择要发送的照片，或连接一个相册让 Pinky 整理成你们的回忆时使用。";

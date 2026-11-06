@@ -51,7 +51,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Used only when you choose to take a photo to send in Pinky.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Used only when you choose photos to send in Pinky.</string>
+	<string>Used when you choose photos to send, or connect an album so Pinky can turn it into your memories.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Used only when you tap the microphone, to turn your speech into text on your phone.</string>
 	<key>CFBundleLocalizations</key>
