@@ -34,6 +34,7 @@ import { createTogetherRouter } from "./together-router.mjs";
 import { createAgentActivity, createAgentActivityRouter } from "./agent-activity.mjs";
 import { createSpaceRouter } from "./space-router.mjs";
 import { createPhotoRouter } from "./photo-store.mjs";
+import { createPhotoMemoryRouter } from "./photo-memories.mjs";
 import { createHandoffRouter } from "./handoff.mjs";
 import { createChatImportRouter } from "./chat-import.mjs";
 import { createVoiceCallRouter } from "./voice-call.mjs";
@@ -466,6 +467,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   const chatImportRouter = createChatImportRouter({ store, mediator, appendAssistantMessage: (...args) => assistantRouter.assistant.postNote(...args) });
   chatImportRouter.emitTogether = (conversation, actorUserId = null) => emit(conversation, "together.updated", null, actorUserId);
   app.use("/api", chatImportRouter);
+  const photoMemoryRouter = createPhotoMemoryRouter({ store, mediator, emit });
+  photoMemoryRouter.emitTogether = (conversation) => emit(conversation, "together.updated", null, null);
+  app.use("/api", photoMemoryRouter);
   app.use("/api", createPrivateAgentRouter({ store, mediator, memoryContext, emit }));
   // "还欠着什么": promises noticed in either conversation, in the background (11-03).
   const promiseKeeper = createPromiseKeeper({ store, mediator, emit });

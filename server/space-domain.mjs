@@ -3,7 +3,8 @@ import { canViewRecord, createRelationshipRecord, projectRecord } from "./relati
 // Spaces are the general container Pinky builds for each couple (a trip plan, a gratitude journal, a renovation list…).
 // The model chooses the title and how it is shown; the server only enforces who can see and change it.
 export const SPACE_LAYOUTS = Object.freeze(["list", "checklist", "timeline", "gallery", "notes"]);
-const SPACE_LIMIT = 60, ITEM_LIMIT = 500;
+// The memory album can fill from a phone's photo album (one item per photo), so it holds far more than a list.
+const SPACE_LIMIT = 60, ITEM_LIMIT = 500, ALBUM_ITEM_LIMIT = 5000;
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00Z`));
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
@@ -61,16 +62,18 @@ export async function visibleSpace(tx, id, userId) {
 }
 
 /** An item inherits who can see it from its space, so nothing private can land in a shared space by accident. */
-export async function addSpaceItem(tx, { userId, space, title = "", text = "", date = null, done = false, photoId = null, idea = null, source = "agent" }) {
+export async function addSpaceItem(tx, { userId, space, title = "", text = "", date = null, done = false, photoId = null, idea = null, photoEvent = null, source = "agent" }) {
   const name = clean(title, 160), body = clean(text, 2000);
   if (!name && !body && !photoId) throw fail(400, "Say what to add.");
   const items = (await tx.listRelationshipRecordsForUser("spaceItems", userId)).filter((item) => item.spaceId === space.id && canViewRecord(item, userId));
-  if (items.length >= ITEM_LIMIT) throw fail(409, "This space is full.");
+  if (items.length >= (space.system === MOMENTS ? ALBUM_ITEM_LIMIT : ITEM_LIMIT)) throw fail(409, "This space is full.");
   const record = createRelationshipRecord({
     relationshipId: space.relationshipId, userId, visibility: space.visibility, aiAccessScope: space.aiAccessScope,
     spaceId: space.id, ...(space.system ? { album: space.system } : {}), title: name, text: body, date: date && isDate(date) ? date : null, done: Boolean(done), photoId: photoId ? clean(photoId, 80) : null, provenanceSource: source,
     // Which of the "100 small things" this memory is (moments only), so the list can tick it off.
     ...(Number.isInteger(idea) && idea >= 1 && idea <= 100 ? { idea } : {}),
+    // Which day-and-place of a connected phone album this memory came from, so it is never made twice.
+    ...(photoEvent ? { photoEvent: clean(photoEvent, 80) } : {}),
   });
   await tx.createRelationshipRecord("spaceItems", record);
   await tx.updateRelationshipRecordForUser("spaces", space.id, userId, (draft) => { draft.version += 1; });

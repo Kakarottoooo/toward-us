@@ -1,1 +1,2 @@
 "NSMicrophoneUsageDescription" = "Se usa solo cuando tocas el micrófono, para convertir tu voz en texto en tiempo real.";
+"NSPhotoLibraryUsageDescription" = "Se usa cuando eliges fotos para enviar o conectas un álbum para que Pinky lo convierta en sus recuerdos.";
