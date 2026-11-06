@@ -21,14 +21,14 @@ import { promiseToMention, type PromiseItem } from "../promises/promises";
 import "./conversation.css";
 
 type Channel = "me" | "us";
-type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string };
+type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string; openOn?: string };
 type SpaceSummary = { id: string; title: string; layout: string; visibility: string; system?: string };
 type CallTranscript = { minutes: number; rows: Array<{ role: string; text: string }> };
 type PrivateMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript };
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
-type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter"; call?: CallTranscript; story?: Story; answers?: DailyAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -397,6 +397,8 @@ ${text}` : text, target);
   const inviteUrl = pairing?.invitation ? `${location.origin}${location.pathname}?invite=${pairing.invitation.code}` : "";
   const copyInvite = async () => { try { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setNotice(inviteUrl); } };
 
+  // A letter's opening day, written out ("2027年3月5日", "March 5, 2027").
+  const longDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
   const partnerName = together?.members.find((member) => member.id !== user.id)?.name || t("TA", "Your partner", "Tu pareja");
   const pendingAgreement = together?.pendingAgreement;
   // Recommend Pinky to friends: the phone's own share sheet when it has one, else the link is copied.
@@ -423,11 +425,11 @@ ${text}` : text, target);
   const privateCard = (card: Card) => {
     if (card.kind === "chat_import") return <ImportCard key={card.id} id={card.id} language={language} onOpen={open} onFinished={() => void reloadSession()} />;
     if (card.kind === "partner_message") return <article key={card.id} className={`conversation-card partner-card is-${card.status}`} data-testid="partner-message-card">
-      <header><LockKey size={16} />{t("想对 TA 说的话", "For your partner", "Para tu pareja")}</header><p>{card.text}</p>
-      {card.status === "draft" ? <><small>{t("确认之前不会分享，你的原话也不会。", "Nothing is shared until you confirm, and your own words never are.", "No se comparte nada hasta que lo confirmes, y tus palabras originales nunca.")}</small><div className="card-actions">
-        {paired ? <button className="card-primary" disabled={busy} onClick={() => void share(card)}><PaperPlaneRight size={18} weight="fill" />{t("发送给 TA", "Send to partner", "Enviar a mi pareja")}</button> : <button className="card-primary" onClick={() => switchChannel("us")}><UsersThree size={18} />{t("先邀请 TA", "Invite your partner first", "Invita primero a tu pareja")}</button>}
+      <header>{card.openOn ? <><EnvelopeSimple size={16} />{t(`一封信 · ${longDay(card.openOn)} 打开`, `A letter · opens ${longDay(card.openOn)}`, `Una carta · se abre el ${longDay(card.openOn)}`)}</> : <><LockKey size={16} />{t("想对 TA 说的话", "For your partner", "Para tu pareja")}</>}</header><p className={card.openOn ? "letter-text" : undefined}>{card.text}</p>
+      {card.status === "draft" ? <><small>{card.openOn ? t(`确认后封存，${longDay(card.openOn)}那天才送到 TA 手里；在那之前 TA 只看到有一封信在等。`, `Once you confirm it is sealed until ${longDay(card.openOn)}; until then your partner only sees that a letter is waiting.`, `Al confirmar queda sellada hasta el ${longDay(card.openOn)}; hasta entonces tu pareja solo ve que hay una carta esperando.`) : t("确认之前不会分享，你的原话也不会。", "Nothing is shared until you confirm, and your own words never are.", "No se comparte nada hasta que lo confirmes, y tus palabras originales nunca.")}</small><div className="card-actions">
+        {paired ? <button className="card-primary" disabled={busy} onClick={() => void share(card)}>{card.openOn ? <><EnvelopeSimple size={18} weight="fill" />{t("封存这封信", "Seal this letter", "Sellar esta carta")}</> : <><PaperPlaneRight size={18} weight="fill" />{t("发送给 TA", "Send to partner", "Enviar a mi pareja")}</>}</button> : <button className="card-primary" onClick={() => switchChannel("us")}><UsersThree size={18} />{t("先邀请 TA", "Invite your partner first", "Invita primero a tu pareja")}</button>}
         <button disabled={busy} onClick={revise}>{t("再改改", "Edit", "Editar")}</button></div></> :
-        <small className="card-state">{card.status === "shared" ? <><CheckCircle size={16} weight="fill" />{t("已发到“我们俩”", "Sent to Us", "Enviado a Nosotros")}</> : t("已有更新的版本", "A newer version replaced this", "Una versión más nueva la reemplazó")}</small>}
+        <small className="card-state">{card.status === "shared" ? <><CheckCircle size={16} weight="fill" />{card.openOn ? t(`已封存，${longDay(card.openOn)}送到 TA 手里`, `Sealed; it reaches your partner on ${longDay(card.openOn)}`, `Sellada; le llega a tu pareja el ${longDay(card.openOn)}`) : t("已发到“我们俩”", "Sent to Us", "Enviado a Nosotros")}</> : t("已有更新的版本", "A newer version replaced this", "Una versión más nueva la reemplazó")}</small>}
     </article>;
     if (card.kind === "space_share") return <article key={card.id} className={`conversation-card partner-card is-${card.status}`} data-testid="space-share-card">
       <header><UsersThree size={16} />{t(`放进共同的“${card.title}”`, `Add to shared "${card.title}"`, `Añadir a «${card.title}» compartido`)}</header><p>{card.text}</p>
@@ -456,6 +458,12 @@ ${text}` : text, target);
     const author = message.role === "agent" ? "Pinky" : recorder ? `${message.actorUserId === user.id ? user.name : partnerName}${t(`（在 ${recorder} 的手机上说）`, ` (spoken on ${recorder}'s phone)`, ` (dicho en el teléfono de ${recorder})`)}` : mine ? "" : partnerName;
     // System copy is stored in every language; free-form model replies and member text are shown as written.
     const text = message.i18n?.[language] ?? message.text;
+    if (message.kind === "letter_sealed") {
+      const openOn = String((message.refs || []).find((ref) => ref.type === "letter")?.openOn || "");
+      const days = openOn ? Math.max(0, Math.round((Date.parse(`${openOn}T12:00:00`) - Date.now()) / 86_400_000)) : 0;
+      return <article key={message.id} className="conversation-card letter-sealed" data-testid="letter-sealed"><EnvelopeSimple size={30} weight="fill" /><div><strong>{message.actorUserId === user.id ? t(`你给 ${partnerName} 写了一封信`, `You wrote ${partnerName} a letter`, `Le escribiste una carta a ${partnerName}`) : t(`${partnerName} 给你写了一封信`, `${partnerName} wrote you a letter`, `${partnerName} te escribió una carta`)}</strong><small>{openOn && t(`${longDay(openOn)} 打开 · 还有 ${days} 天`, `Opens ${longDay(openOn)} · ${days} days to go`, `Se abre el ${longDay(openOn)} · faltan ${days} días`)}</small></div></article>;
+    }
+    if (message.kind === "letter") return <article key={message.id} className="conversation-card letter-card" data-testid="letter"><header><EnvelopeSimple size={18} weight="fill" />{message.actorUserId === user.id ? t(`你写给 ${partnerName} 的信`, `Your letter to ${partnerName}`, `Tu carta para ${partnerName}`) : t(`${partnerName} 写给你的信`, `A letter from ${partnerName}`, `Una carta de ${partnerName}`)}</header><p className="letter-text">{message.text}</p></article>;
     if (message.kind === "nudge") return <p key={message.id} className="conversation-nudge" data-testid="nudge"><Heart size={15} weight="fill" />{message.actorUserId === user.id ? t(`你想 ${partnerName} 了`, `You're thinking of ${partnerName}`, `Estás pensando en ${partnerName}`) : t(`${partnerName} 想你了`, `${partnerName} is thinking of you`, `${partnerName} está pensando en ti`)}<time>{new Date(message.createdAt).toLocaleTimeString(languageTag(language), { hour: "numeric", minute: "2-digit" })}</time></p>;
     if (message.kind === "agreement_card") {
       const ref = message.refs.find((item) => item.type === "agreement");

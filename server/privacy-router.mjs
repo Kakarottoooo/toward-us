@@ -208,6 +208,8 @@ export async function runPrivateRetention(store, now = new Date()) {
       const cutoff = new Date(now.getTime() - settings.privateRetentionDays * 86400000).toISOString();
       for (const collection of ["privateAgentThreads", "memories", "checkins"]) {
         for (const record of await tx.listRelationshipRecordsForUser(collection, settings.ownerUserId)) if (record.ownerUserId === settings.ownerUserId && record.visibility === "private" && record.updatedAt < cutoff) {
+          // A sealed letter waits on its thread until its day (letters.mjs); that thread is kept until it has been delivered.
+          if (Array.isArray(record.letters) && record.letters.some((letter) => !letter.deliveredAt)) continue;
           await tx.deleteRelationshipRecordForUser(collection, record.id, settings.ownerUserId); deleted += 1;
         }
       }
