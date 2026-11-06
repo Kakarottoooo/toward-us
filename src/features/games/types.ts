@@ -1,5 +1,8 @@
 // The other player when someone plays with their pet, 小家伙 (server/matches/errors.mjs).
 export const PET = "pet";
+// Either player may act (海龟汤), and Pinky as a game's host (server/matches/errors.mjs).
+export const BOTH = "both";
+export const HOST = "host";
 
 // What /api/matches sends (server/matches/index.mjs viewMatch); `state` is each game's own view of itself.
 export type MatchView<State = unknown> = { id: string; game: string; status: "active" | "finished"; players: string[]; turn: string | null; createdByUserId: string; createdAt: string; updatedAt: string; finishedAt: string | null; version: number; state: State };

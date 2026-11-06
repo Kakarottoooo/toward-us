@@ -5,7 +5,7 @@ import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { categories, gameCatalog, type CategoryId, type GameEntry } from "./catalog";
 import { MatchScreen } from "./MatchScreen";
-import { PET, type Hall, type MatchView } from "./types";
+import { BOTH, PET, type Hall, type MatchView } from "./types";
 import "./games.css";
 
 /** 游戏大厅: every game by category with how to play it, games still going at the top, and each game's own screen. */
@@ -64,10 +64,10 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     <div className="game-stream"><MobileScroll className="game-scroll"><div className="game-body">
       {error && <p className="space-error" role="alert">{error}</p>}
       {going.length > 0 && <section className="game-going" aria-label={t("还没玩完", "Still going", "En curso")}>
-        {going.map((match) => <button key={match.id} type="button" className={`game-going-row ${match.turn === userId ? "is-mine" : ""}`} onClick={() => setOpen(match.id)} data-testid="game-going">
+        {going.map((match) => <button key={match.id} type="button" className={`game-going-row ${match.turn === userId || match.turn === BOTH ? "is-mine" : ""}`} onClick={() => setOpen(match.id)} data-testid="game-going">
           <span>{catalog.find((game) => game.id === match.game)?.icon}</span>
           <b>{nameOf(match.game)}{vsPet(match) && <em> · {t(`和${petName}`, `with ${petName}`, `con ${petName}`)}</em>}</b>
-          <small>{match.turn === userId ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
+          <small>{match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
         </button>)}
       </section>}
       {sections.length > 1 && <div className="game-tabs" role="tablist" aria-label={t("分类", "Categories", "Categorías")}>
@@ -85,7 +85,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
             <div className="game-card-foot">
               <button type="button" className="game-rules-toggle" aria-expanded={rules === game.id} onClick={() => setRules(rules === game.id ? null : game.id)} data-testid={`game-rules-${game.id}`}><CaretDown size={14} />{t("怎么玩", "How to play", "Cómo se juega")}</button>
               {game.kind === "match" && <button type="button" className="game-play is-pet" disabled={busy === `${game.id}:true`} onClick={() => void start(game, true)} data-testid={`game-pet-${game.id}`}>{petPicture ? <img src={petPicture} alt="" /> : <PawPrint size={15} weight="fill" />}{petGoing ? t(`继续和${petName}`, `Continue with ${petName}`, `Seguir con ${petName}`) : t(`和${petName}玩`, `Play ${petName}`, `Con ${petName}`)}</button>}
-              <button type="button" className="game-play" disabled={busy === `${game.id}:false` || hall?.readOnly} onClick={() => void start(game)} data-testid={`game-start-${game.id}`}><Play size={14} weight="fill" />{ongoing ? t("继续", "Continue", "Seguir") : game.kind === "card" ? t("在对话里玩", "Play in chat", "Jugar en el chat") : t(`和 ${partnerName} 玩`, `Play ${partnerName}`, `Con ${partnerName}`)}</button>
+              <button type="button" className="game-play" disabled={busy === `${game.id}:false` || hall?.readOnly} onClick={() => void start(game)} data-testid={`game-start-${game.id}`}><Play size={14} weight="fill" />{ongoing ? t("继续", "Continue", "Seguir") : game.kind === "card" ? t("在对话里玩", "Play in chat", "Jugar en el chat") : t("和 TA 玩", "Play your partner", "Con tu pareja")}</button>
             </div>
             {rules === game.id && <ol className="game-rules">{game.rules.map((rule) => <li key={rule}>{rule}</li>)}</ol>}
           </article>;

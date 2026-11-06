@@ -1,8 +1,8 @@
 import { createRelationshipRecord } from "../relationship-domain.mjs";
-import { appendTogetherMessage, togetherI18n } from "../together-domain.mjs";
+import { appendTogetherMessage, memberLanguage, togetherI18n } from "../together-domain.mjs";
 import { drawGuess } from "./draw-guess.mjs";
 import { asAiUser } from "../ai-budget.mjs";
-import { matchError, PET } from "./errors.mjs";
+import { BOTH, HOST, matchError, PET } from "./errors.mjs";
 import { gomoku } from "./gomoku.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
@@ -15,6 +15,12 @@ import { gomoku } from "./gomoku.mjs";
 //   view(state, userId) -> what this player may see (hidden words, hands, ships... stay with their owner)
 //   stats(matches) -> the line the hall shows for this game
 //   petActions({ state, mediator, language }) -> the moves 小家伙 makes when it is its turn (petInstant: no model, answer now)
+// Optional, for games Pinky hosts (海龟汤) or that end with something to say:
+//   hostPending(state) -> true while Pinky has something to do (write the puzzle, answer a question)
+//   hostActions({ state, mediator, language, languages }) -> what Pinky does, applied as player HOST; `languages` are the
+//     players' interface languages, so text both read can be written in each of them
+//   announce(state, { name }) -> { zh, en, es } said in Us when a game between the two of them ends (name(id) -> their name)
+// turn(state) may be BOTH when either player may act.
 // A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
 // pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
 export const GAMES = Object.freeze({ gomoku, draw: drawGuess });
@@ -40,7 +46,7 @@ export async function listMatches(store, userId) {
 /** Starts a game of `game` with the partner (announced in Us) or with 小家伙, or returns the one of those still being played. */
 export async function createMatch({ store, userId, game, pet = false }) {
   const module = GAMES[game];
-  if (!module) throw matchError(400, "unknown_game");
+  if (!module || (pet && !module.petActions)) throw matchError(400, "unknown_game");
   const initial = await store.getRelationshipContext(userId);
   if (!activePair(initial)) throw matchError(409, "pairing_required");
   const relationshipId = initial.relationship.id;
@@ -72,9 +78,8 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
   if (!initial) throw matchError(409, "pairing_required");
   return store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
     const match = await tx.getRelationshipRecordForUser(COLLECTION, matchId, userId);
-    if (!match || match.relationshipId !== initial.relationship.id || !match.players.includes(userId) || !match.players.includes(as)) throw matchError(404, "not_found");
-    const module = GAMES[match.game];
-    if (!module) throw matchError(404, "not_found");
+    const module = match && GAMES[match.game];
+    if (!match || !module || match.relationshipId !== initial.relationship.id || !match.players.includes(userId) || !(match.players.includes(as) || (as === HOST && module.hostActions))) throw matchError(404, "not_found");
     if (match.status !== "active") throw matchError(409, "match_over");
     const context = await tx.getRelationshipContext(userId);
     if (!activePair(context)) throw matchError(409, "pairing_required");
@@ -84,7 +89,14 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
       draft.state = state; draft.turn = module.turn(state); draft.version += 1;
       if (finished) { draft.status = "finished"; draft.finishedAt = new Date().toISOString(); }
     });
-    return { match: updated, before: match.turn };
+    // A game between the two of them may end with a line in Us (石头剪刀布: who lost the bet).
+    let conversation = null;
+    const said = finished && !withPet(updated) && module.announce?.(state, { name: (id) => context.members.find((member) => member.userId === id)?.user?.name || "" });
+    if (said?.zh && said.en && said.es) {
+      const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: said.zh, i18n: said, handle: `match-end:${updated.id}` });
+      if (!posted.duplicate) conversation = posted.conversation;
+    }
+    return { match: updated, before: match.turn, conversation };
   });
 }
 
@@ -95,25 +107,31 @@ export function matchStats(matches) {
 
 const playing = new Set();
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-/** 小家伙's turn: it moves until it is the member's turn again. `onMove` sees every move (to tell the open App). Never throws. */
+const hosting = (module, match) => Boolean(module?.hostActions && module.hostPending?.(match.state));
+/** True when Pinky (hosting) or 小家伙 (its turn) has something to do in this match; petPlays then does it. */
+export const autoPending = (match) => match.status === "active" && (hosting(GAMES[match.game], match) || (withPet(match) && match.turn === PET));
+
+/** Pinky's hosting and 小家伙's turn: they act until nothing is left for them. `onMove` sees every move (to tell the open App).
+ * Never throws. */
 export async function petPlays({ store, mediator, userId, matchId, language = "zh", onMove = () => {}, delay = 1200 }) {
   if (playing.has(matchId)) return;
   playing.add(matchId);
   try {
     for (let turn = 0; turn < 8; turn += 1) {
       const match = await store.getRelationshipRecordForUser(COLLECTION, matchId, userId);
-      if (!match || match.status !== "active" || match.turn !== PET || !withPet(match)) return;
-      const module = GAMES[match.game];
-      const actions = await asAiUser({ userId, language }, () => module.petActions({ state: match.state, mediator, language }));
+      if (!match || !autoPending(match)) return;
+      const module = GAMES[match.game], host = hosting(module, match);
+      const languages = host ? await Promise.all(match.players.filter((id) => id !== PET).map((id) => memberLanguage(store, id))) : [language];
+      const actions = await asAiUser({ userId, language }, () => host ? module.hostActions({ state: match.state, mediator, language, languages }) : module.petActions({ state: match.state, mediator, language }));
       if (!actions.length) return;
       const round = match.state.rounds?.length;
       for (const [index, action] of actions.entries()) {
         if (index && delay) await pause(delay);
-        const { match: moved } = await actOnMatch({ store, userId, matchId, action, as: PET });
-        onMove(moved);
-        if (moved.turn !== PET || moved.state.rounds?.length !== round) break;
+        const { match: moved, conversation } = await actOnMatch({ store, userId, matchId, action, as: host ? HOST : PET });
+        onMove(moved, conversation);
+        if (!autoPending(moved) || moved.state.rounds?.length !== round || (!host && moved.turn !== PET)) break;
       }
     }
-  } catch (error) { console.error("pet move failed", error?.matchCode || error?.message || "error"); }
+  } catch (error) { console.error("auto move failed", error?.matchCode || error?.message || "error"); }
   finally { playing.delete(matchId); }
 }

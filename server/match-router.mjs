@@ -1,7 +1,7 @@
 import express from "express";
 import { recordUsage } from "./usage.mjs";
-import { actOnMatch, createMatch, gameName, GAMES, listMatches, matchStats, petPlays, viewMatch, withPet } from "./matches/index.mjs";
-import { MATCH_ERRORS, matchError } from "./matches/errors.mjs";
+import { actOnMatch, autoPending, createMatch, gameName, GAMES, listMatches, matchStats, petPlays, viewMatch, withPet } from "./matches/index.mjs";
+import { BOTH, MATCH_ERRORS, matchError } from "./matches/errors.mjs";
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
@@ -29,22 +29,26 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     const userId = req.auth.user.id;
     const pet = req.body?.with === "pet";
     const result = await createMatch({ store, userId, game: String(req.body?.game || ""), pet });
-    if (result.created && pet) await petTurn(req, result.match);
-    else if (result.created) {
-      emit(result.match, "match.updated"); emit(result.conversation, "together.updated", null, userId);
-      void recordUsage(store, { userId, relationshipId: result.match.relationshipId, action: "match_started" });
+    let match = result.match;
+    if (result.created && !pet) {
+      emit(match, "match.updated"); emit(result.conversation, "together.updated", null, userId);
+      void recordUsage(store, { userId, relationshipId: match.relationshipId, action: "match_started" });
     }
-    res.status(result.created ? 201 : 200).json({ match: viewMatch(result.match, userId), created: result.created });
+    if (result.created) match = await autoTurn(req, match);
+    res.status(result.created ? 201 : 200).json({ match: viewMatch(match, userId), created: result.created });
   });
 
   router.post("/matches/:id/actions", async (req, res) => {
     const userId = req.auth.user.id, action = req.body && typeof req.body === "object" ? req.body : {};
-    const { match, before } = await actOnMatch({ store, userId, matchId: req.params.id, action });
-    if (withPet(match)) { const after = await petTurn(req, match); return res.json({ match: viewMatch(after, userId) }); }
+    const { match, before, conversation } = await actOnMatch({ store, userId, matchId: req.params.id, action });
+    if (conversation) emit(conversation, "together.updated", null, userId);
+    if (withPet(match)) { const after = await autoTurn(req, match); return res.json({ match: viewMatch(after, userId) }); }
     emit(match, "match.updated");
+    void autoTurn(req, match);
     const partner = match.players.find((id) => id !== userId);
     // The partner hears about it when it becomes their move, or when the game ends, unless they are looking at the App.
-    if (partner && !online(partner) && (match.status !== "active" || (match.turn === partner && before !== partner))) {
+    const theirs = (turn) => turn === partner || turn === BOTH;
+    if (partner && !online(partner) && (match.status !== "active" || (theirs(match.turn) && !theirs(before)))) {
       const context = await store.getRelationshipContext(userId), me = context?.members.find((member) => member.userId === userId)?.user?.name || "";
       const drawn = match.game === "draw" && match.state.rounds.at(-1)?.strokes && match.status === "active";
       const body = (language) => {
@@ -59,13 +63,13 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     res.json({ match: viewMatch(match, userId) });
   });
 
-  // 小家伙 moves when it is its turn: a board move right away (the reply carries it), a drawing or a guess a moment later,
-  // told to this member's open App only.
-  async function petTurn(req, match) {
+  // 小家伙 moves when it is its turn (a board move right away: the reply carries it; a drawing or a guess a moment later) and
+  // Pinky hosts (海龟汤: the puzzle, each answer). A game with 小家伙 is told to this member's open App only.
+  async function autoTurn(req, match) {
     const userId = req.auth.user.id, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
-    if (match.turn !== "pet" || match.status !== "active") return match;
-    const run = petPlays({ store, mediator, userId, matchId: match.id, language, delay: petDelay, onMove: (moved) => emit(moved, "match.updated", userId) });
-    if (GAMES[match.game]?.petInstant) { await run; return (await listMatches(store, userId)).find((item) => item.id === match.id) || match; }
+    if (!autoPending(match)) return match;
+    const run = petPlays({ store, mediator, userId, matchId: match.id, language, delay: petDelay, onMove: (moved, conversation) => { emit(moved, "match.updated", withPet(moved) ? userId : null); if (conversation) emit(conversation, "together.updated", null, userId); } });
+    if (withPet(match) && match.turn === "pet" && GAMES[match.game]?.petInstant) { await run; return (await listMatches(store, userId)).find((item) => item.id === match.id) || match; }
     void run; return match;
   }
 

@@ -1,5 +1,8 @@
 // The other player when someone plays with their pet, 小家伙 (founder 11-06), instead of their partner.
 export const PET = "pet";
+// Whose move it is when either player may act (海龟汤: both ask questions), and Pinky when it hosts a game.
+export const BOTH = "both";
+export const HOST = "host";
 
 // Errors a game's rules raise; match-router turns the code into a sentence in the player's language.
 export function matchError(statusCode, code) { return Object.assign(new Error(code), { statusCode, matchCode: code }); }
