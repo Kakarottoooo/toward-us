@@ -36,8 +36,7 @@ export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onPr
   ];
   const look: Item[] = [
     { key: "moments", icon: icon(<HandHeart size={22} />), title: t("回忆和地图", "Memories and map", "Recuerdos y mapa"), detail: t("照片墙、Pinky 编好的故事、去过的地方。", "Photo wall, stories Pinky put together, places you've been.", "Muro de fotos, historias de Pinky, lugares visitados."), open: () => onOpen("/?view=moments") },
-    { key: "upcoming", icon: icon(<MapTrifold size={22} />), title: t("即将到来", "Coming up", "Próximamente"), detail: t("提醒、纪念日、在一起多少天、未拆的信。", "Reminders, anniversaries, days together, sealed letters.", "Recordatorios, aniversarios, días juntos, cartas selladas."), open: () => onOpen(paired ? "/?view=upcoming" : "/?view=reminders") },
-    ...(paired ? [{ key: "agreements", icon: icon(<Handshake size={22} />), title: t("约定", "Agreements", "Acuerdos"), detail: t("说好的事和进展。", "What you agreed and how it's going.", "Lo acordado y cómo va."), open: () => onOpen("/?view=agreements") }] : []),
+    { key: "upcoming", icon: icon(<MapTrifold size={22} />), title: t("即将到来", "Coming up", "Próximamente"), detail: t("说好的事、提醒、纪念日、在一起多少天、未拆的信。", "What you agreed, reminders, anniversaries, days together, sealed letters.", "Lo acordado, recordatorios, aniversarios, días juntos, cartas selladas."), open: () => onOpen(paired ? "/?view=upcoming" : "/?view=reminders") },
     { key: "about", icon: icon(<UserCircle size={22} />), title: t("关于我们", "About us", "Sobre nosotros"), detail: t("Pinky 记下的你、TA 和你们俩，可改可删。", "What Pinky knows about you, your partner and you two; edit or remove anything.", "Lo que Pinky sabe de ti, tu pareja y ustedes; edita o quita lo que quieras."), open: onProfile },
   ];
   const row = (item: Item) => <button key={item.key} type="button" className="capability" data-testid={`capability-${item.key}`} onClick={() => item.open ? item.open() : onAsk(item.say || "", item.channel || "me")}>

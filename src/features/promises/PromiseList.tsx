@@ -6,7 +6,7 @@ import { actOnPromise, listPromises, type PromiseAction, type PromiseItem } from
 import "./promises.css";
 
 /** "还欠着什么": a compact list of what the two of them promised each other, with done / not now right on each line. */
-export function PromiseList({ language, partnerName, refreshKey, onChanged }: { language: Language; partnerName: string; refreshKey?: unknown; onChanged?: () => void | Promise<void> }) {
+export function PromiseList({ language, partnerName, refreshKey, onChanged, hideEmpty = false }: { language: Language; partnerName: string; refreshKey?: unknown; onChanged?: () => void | Promise<void>; hideEmpty?: boolean }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [items, setItems] = useState<PromiseItem[] | null>(null);
@@ -23,7 +23,7 @@ export function PromiseList({ language, partnerName, refreshKey, onChanged }: { 
   const who = (item: PromiseItem) => item.by === "me" ? t("你答应的", "Your promise", "Tu promesa") : item.by === "partner" ? t(`${partnerName} 答应的`, `${partnerName}'s promise`, `Promesa de ${partnerName}`) : t("你们俩说好的", "You both agreed", "Acordado por los dos");
   const day = (value: string) => new Date(value).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" });
   const agreementState = (item: PromiseItem) => !item.agreement ? null : item.agreement.status === "active" ? t("已成约定", "Now an agreement", "Ya es un acuerdo") : item.agreement.status === "awaiting_approvals" ? t("约定等你们批准", "Agreement waiting for approval", "Acuerdo esperando aprobación") : t("约定在修改", "Agreement being revised", "Acuerdo en revisión");
-  if (!items) return null;
+  if (!items || (hideEmpty && !items.length && !notice)) return null;
   return <section className="promise-list" data-testid="promise-list" aria-labelledby="promise-list-title">
     <h2 id="promise-list-title" className="space-subhead">{t("还欠着什么", "Promises to keep", "Promesas pendientes")}</h2>
     {notice && <p className="space-error" role="alert">{notice}</p>}
