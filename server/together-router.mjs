@@ -11,6 +11,7 @@ import { careNoteFor } from "./cycle.mjs";
 import { petIt, syncPet } from "./pet.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
+import { createSharedTranslator } from "./shared-translate.mjs";
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null, promises = null, profile = null }) {
@@ -20,6 +21,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
   const language = (req) => hint(req) || "zh";
   const pairing = async (req) => { const context = await store.getRelationshipContext(req.auth.user.id); if (!context) throw decisionError(409, "pairing_required"); return context; };
   const writable = (context) => context.relationship.status === "active" && context.members.length === 2;
+  // Pinky's lines in Us are shown in each member's own interface language (founder 11-06); see shared-translate.mjs.
+  const translator = createSharedTranslator({ store, mediator, emit: (conversation) => emit(conversation, "together.updated") });
   const validZone = (zone) => { if (typeof zone !== "string" || !zone || zone.length > 64) return false; try { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return true; } catch { return false; } };
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = async (req, action) => {
@@ -66,6 +69,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const conversation = snapshot.togetherConversations.find((item) => item.relationshipId === relationshipId);
     if (!conversation) throw decisionError(409, "pairing_required");
+    if (hint(req)) translator.ensure({ relationshipId, userId, language: hint(req), messages: conversation.messages });
     const { activeAgreements, openCommitments, pendingAgreement } = buildTogetherContext(snapshot, relationshipId);
     // The next time they meet (a "meetup" date Pinky kept), counted down in Us and on Coming up.
     const day = (() => { try { return new Date().toLocaleDateString("en-CA", { timeZone: validZone(req.query?.timezone) ? req.query.timezone : "UTC" }); } catch { return new Date().toISOString().slice(0, 10); } })();
