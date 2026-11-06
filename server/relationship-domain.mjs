@@ -8,14 +8,14 @@ export const GRAPH_COLLECTIONS = Object.freeze([
   "outcomeResponses", "notifications", "consentEvents", "productEvents",
   "memories", "checkins", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings",
   "togetherConversations", "nativePushDevices", "spaces", "spaceItems", "photos", "chatImports", "feedback", "characters", "aiUsage",
-  "togetherArchives",
+  "togetherArchives", "matches",
 ]);
 
 export const PERSONAL_COLLECTIONS = new Set(["privateAgentThreads", "memories", "checkins", "reminders", "notifications", "consentEvents", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "accountSettings", "productEvents", "nativePushDevices", "spaces", "spaceItems", "photos", "chatImports", "feedback", "aiUsage"]);
 // chatImports are read through /api/imports, so the (large) analyses stay out of every home payload; the couple's
 // character is read through /api/character, which projects each member's own show/hide choice; older Us messages are
-// read page by page through /api/together/history.
-const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "chatImports", "feedback", "characters", "aiUsage", "togetherArchives"]);
+// read page by page through /api/together/history; games through /api/matches.
+const INTERNAL_COLLECTIONS = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "chatImports", "feedback", "characters", "aiUsage", "togetherArchives", "matches"]);
 
 export function assertRecordScope(collection, record) {
   if (!record.ownerUserId || !record.createdByUserId) throw new Error("A record requires an owner and a creator.");

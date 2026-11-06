@@ -1,0 +1,115 @@
+/* 游戏大厅 and each game's screen: a full page over the chat, like the pet's room. */
+.game-hall { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: var(--jian-paper); color: var(--jian-ink); animation: game-in .2s ease-out; }
+/* Only a slide: the page stays opaque even if the animation is paused, so the chat never shows through. */
+@keyframes game-in { from { transform: translateY(14px); } to { transform: none; } }
+.game-top { display: flex; align-items: center; gap: 6px; padding: max(12px, env(safe-area-inset-top)) 16px 8px 10px; }
+.game-top h1 { flex: 1; min-width: 0; margin: 0 64px 0 0; overflow: hidden; font-size: 18px; font-weight: 650; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.game-stream { position: relative; flex: 1 1 auto; min-height: 0; }
+.game-scroll { height: 100%; }
+.game-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 16px calc(36px + env(safe-area-inset-bottom)); }
+.game-hall button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+
+.game-going { display: flex; flex-direction: column; gap: 8px; }
+.game-going-row { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 14px; border: 1px solid rgba(37,37,37,.12); border-radius: 16px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-size: 16px; text-align: left; cursor: pointer; }
+.game-going-row > span { display: grid; place-items: center; color: #6d5a43; }
+.game-going-row b { flex: 1; font-weight: 650; }
+.game-going-row small { color: var(--jian-muted); font-size: 14px; font-weight: 600; }
+.game-going-row.is-mine { border-color: rgba(224,64,90,.35); background: #fff1ee; }
+.game-going-row.is-mine small { color: #c2344f; }
+
+.game-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.game-tabs button { min-height: 38px; padding: 0 16px; border: 1px solid rgba(37,37,37,.14); border-radius: 999px; background: transparent; color: #4d4740; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.game-tabs button.is-on { border-color: var(--jian-ink); background: var(--jian-ink); color: #fff; }
+
+.game-section { display: flex; flex-direction: column; gap: 10px; }
+.game-section h2 { margin: 6px 2px 0; color: #5d574f; font-size: 15px; font-weight: 700; }
+.game-card { padding: 14px 14px 10px; border: 1px solid rgba(37,37,37,.12); border-radius: 18px; background: var(--jian-paper-bright); }
+.game-card-head { display: flex; align-items: flex-start; gap: 12px; }
+.game-card-icon { display: grid; flex: none; place-items: center; width: 46px; height: 46px; border-radius: 14px; background: #f3e4cf; color: #8a5a12; }
+.game-card-head > div { flex: 1; min-width: 0; }
+.game-card h3 { margin: 2px 0 4px; font-size: 17px; font-weight: 700; }
+.game-card p { margin: 0; color: #5f5952; font-size: 15px; line-height: 1.5; }
+.game-stat { display: block; margin-top: 6px; color: #c2344f; font-size: 14px; font-weight: 650; }
+.game-stat.is-center { margin: 0; text-align: center; }
+.game-play { display: inline-flex; flex: none; align-items: center; gap: 5px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--jian-ink); color: #fff; font: inherit; font-size: 14px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.game-play:disabled { opacity: .5; cursor: default; }
+.game-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.game-rules-toggle { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 4px; border: 0; background: transparent; color: var(--jian-blue); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.game-rules-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.game-rules { margin: 6px 0 4px; padding: 0 4px 0 22px; color: #4d4740; font-size: 15px; line-height: 1.6; }
+.game-rules li + li { margin-top: 4px; }
+.game-foot, .game-wait { margin: 4px 0 0; color: var(--jian-muted); font-size: 14px; text-align: center; }
+
+/* Shared by the game screens. */
+.match-body { align-items: stretch; }
+.game-actions { display: flex; justify-content: center; gap: 10px; }
+.game-actions.is-end { margin-top: 8px; }
+.game-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; padding: 0 22px; border: 0; border-radius: 999px; background: #e0405a; color: #fff; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
+.game-primary:disabled { background: #d9cfc4; color: #8a8177; cursor: default; }
+.game-quiet { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 0 16px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: transparent; color: #5d574f; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.game-quiet.is-confirm { border-color: #c2344f; color: #c2344f; }
+.game-quiet:disabled { opacity: .5; cursor: default; }
+.game-note { margin: 0; color: var(--jian-muted); font-size: 14px; text-align: center; }
+
+/* 五子棋 */
+.gomoku { display: flex; flex-direction: column; gap: 12px; }
+.gomoku-players { display: flex; justify-content: center; gap: 10px; }
+.gomoku-players span { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; border-radius: 999px; background: var(--jian-paper-bright); color: #5d574f; font-size: 15px; font-weight: 650; }
+.gomoku-players span.is-turn { background: #fff1ee; color: #c2344f; box-shadow: inset 0 0 0 1.5px rgba(224,64,90,.4); }
+.stone { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+.stone.is-black { background: #252525; }
+.stone.is-white { background: #fff; box-shadow: inset 0 0 0 1.5px #9a8f82; }
+.gomoku-status { margin: 0; color: #4d4740; font-size: 17px; font-weight: 650; text-align: center; }
+.gomoku-status.is-win { color: #c2344f; }
+.gomoku-board { display: block; width: 100%; max-width: 420px; margin: 0 auto; touch-action: manipulation; user-select: none; }
+.gomoku-board.is-mine { cursor: pointer; }
+.gomoku-wood { fill: #e8c48f; }
+.gomoku-board line { stroke: #8a6738; stroke-width: .8; }
+.gomoku-star { fill: #8a6738; }
+.gomoku-stone.is-black { fill: #252525; }
+.gomoku-stone.is-white { fill: #fffdf8; stroke: #8f8273; stroke-width: .8; }
+.gomoku-stone.is-five { stroke: #e0405a; stroke-width: 2.4; }
+.gomoku-stone.is-pick { opacity: .45; }
+.gomoku-last { fill: #e0405a; pointer-events: none; }
+
+/* 你画我猜 */
+.draw-guess { display: flex; flex-direction: column; gap: 12px; }
+.draw-canvas { display: block; width: 100%; max-width: 380px; aspect-ratio: 1; margin: 0 auto; border: 1px solid rgba(37,37,37,.12); border-radius: 16px; background: #fff; }
+.draw-canvas.is-pad { touch-action: none; cursor: crosshair; }
+.draw-canvas.is-small { width: 64px; max-width: 64px; margin: 0; border-radius: 10px; }
+.draw-word { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; margin: 0; text-align: center; }
+.draw-word small { width: 100%; color: var(--jian-muted); font-size: 14px; }
+.draw-word b { font-size: 26px; font-weight: 800; letter-spacing: .02em; }
+.draw-word.is-quiet { color: #5d574f; font-size: 15px; }
+.draw-word.is-quiet b { font-size: 16px; }
+.draw-pad { display: flex; flex-direction: column; gap: 10px; }
+.draw-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
+.draw-inks, .draw-widths { display: flex; gap: 6px; }
+.draw-inks button { flex: none; width: 32px; height: 32px; min-height: 0; padding: 0; border: 2px solid transparent; border-radius: 50%; box-shadow: inset 0 0 0 2px #fff; cursor: pointer; }
+/* Small round swatches: the screen-wide 44px button floor would make them ovals. */
+.device-screen .draw-inks button, .device-screen .draw-widths button { min-height: 0; }
+.draw-inks button.is-on { border-color: var(--jian-ink); }
+.draw-widths button { display: grid; flex: none; place-items: center; width: 34px; height: 34px; min-height: 0; padding: 0; border: 1px solid rgba(37,37,37,.14); border-radius: 50%; background: transparent; cursor: pointer; }
+.draw-widths button.is-on { border-color: var(--jian-ink); background: #fff; }
+.draw-widths i { display: block; border-radius: 50%; background: var(--jian-ink); }
+.draw-tool { display: grid; flex: none; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid rgba(37,37,37,.14); border-radius: 50%; background: transparent; color: var(--jian-ink); cursor: pointer; }
+.draw-tool:disabled { opacity: .4; cursor: default; }
+.draw-last { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: var(--jian-paper-bright); }
+.draw-last > div { display: flex; flex-direction: column; gap: 2px; }
+.draw-last small { color: var(--jian-muted); font-size: 13px; }
+.draw-last b { font-size: 17px; }
+.draw-last span { color: #5d574f; font-size: 14px; font-weight: 600; }
+.draw-last span.is-hit { color: #c2344f; }
+.draw-hint { margin: 0; color: #5d574f; font-size: 15px; font-weight: 600; text-align: center; }
+.draw-guesses { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.draw-guesses li { padding: 4px 12px; border-radius: 999px; background: var(--jian-paper-bright); color: #5d574f; font-size: 14px; }
+.draw-guesses.is-wrong li { text-decoration: line-through; text-decoration-color: rgba(194,52,79,.6); }
+.draw-guess-form { display: flex; gap: 8px; }
+.draw-guess-form input { flex: 1; min-width: 0; min-height: 46px; padding: 0 16px; border: 1px solid rgba(37,37,37,.18); border-radius: 999px; background: #fff; color: var(--jian-ink); font: inherit; font-size: 16px; }
+.draw-guess-form .game-primary { width: 50px; padding: 0; }
+.draw-over { display: flex; flex-direction: column; gap: 12px; }
+
+/* The invitation card in Us. */
+.match-invite { display: flex; align-items: center; gap: 12px; }
+.match-invite p { flex: 1; }
+@media (prefers-reduced-motion: reduce) { .game-hall { animation: none; } }

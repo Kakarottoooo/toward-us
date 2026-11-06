@@ -409,6 +409,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可归档的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
   function emit(record, eventType, ownerUserId = null, actorUserId = null) { if (!record) return; if (eventType === "together.updated") onTogether(record, actorUserId); const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
   router.emitRecord = emit;
+  // True while the member has the App open (its live event stream is connected).
+  router.isOnline = (userId) => [...clients.values()].some((bucket) => [...bucket].some((client) => client.userId === userId));
   router.closeUserConnections = (userIds) => { for (const bucket of clients.values()) for (const client of bucket) if (userIds.includes(client.userId)) { client.res.write('event: access-ended\ndata: {}\n\n'); client.res.end(); } };
   return router;
 }
