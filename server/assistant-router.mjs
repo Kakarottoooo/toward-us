@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { openingDay, sealLetter } from "./letters.mjs";
 import express from "express";
 import { canViewRecord, createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
 import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent.mjs";
@@ -44,7 +45,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
         if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
-        if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
+        if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, ...(reference.openOn ? { openOn: reference.openOn } : {}), status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         if (!current && reference.title) return { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, `已移走：${reference.title}`, `Removed: ${reference.title}`, `Quitado: ${reference.title}`) };
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
@@ -140,7 +141,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       // A voice call appears as its captions, so the user can refer back to what was said on the call.
       messages: [...session.messages.map(({ role, text, call }) => ({ role, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
       records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}), ...(kind === "checkin" ? { date: localTime(record.createdAt, session.timezone).slice(0, 10) } : {}) })),
-      partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text } : null,
+      partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text, openOn: session.partnerMessage.openOn || null } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
       openPromises: await openPromises(store, userId, session).catch(() => []),
@@ -193,8 +194,11 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         if (action.kind === "partner_message") {
           // A draft only: it stays on this private session until the member confirms the exact digest via share-confirm.
           const text = clean(action.fields?.text, 2000); if (!text) throw fail(400, "Say what you would like your partner to hear.");
-          partnerMessage = { cardId: randomUUID(), text, digest: createHash("sha256").update(text).digest("hex"), createdAt: new Date().toISOString(), sharedAt: null, messageId: null };
-          cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest });
+          // With an opening day after today it is a letter (情书 / 时光胶囊): the writer confirms the words and the day together.
+          const openOn = openingDay(action.fields?.date, session.timezone);
+          partnerMessage = { cardId: randomUUID(), text, openOn, digest: createHash("sha256").update(openOn ? `${text}
+${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt: null, messageId: null };
+          cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest, ...(openOn ? { openOn } : {}) });
           replies.push(say(session.language, "已为你起草好想对 TA 说的话。你确认之前不会分享，也不会分享你的原话。", "I drafted what you would like your partner to hear. Nothing is shared, and your own words never are, until you confirm.", "Redacté lo que quieres que tu pareja escuche. No se comparte nada, ni tus palabras originales, hasta que lo confirmes.")); continue;
         }
         if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
@@ -306,7 +310,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       }
       // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
       const reply = clean(plan.reply, 1200) || replies.join("\n") || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
@@ -327,9 +331,23 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const context = await tx.getRelationshipContext(userId);
       if (!activePair(context) || context.relationship.id !== initial.relationship.id) throw fail(409, unpaired(session.language));
       const latest = await owned(tx, session.id, userId); const draft = latest.partnerMessage;
-      if (!draft || draft.cardId !== cardId || draft.digest !== digest || createHash("sha256").update(draft.text).digest("hex") !== digest) throw fail(409, say(session.language, "这段话已经修改，请确认最新的版本。", "This message changed. Review and confirm the latest version.", "Este mensaje cambió. Revisa y confirma la última versión."));
+      if (!draft || draft.cardId !== cardId || draft.digest !== digest || createHash("sha256").update(draft.openOn ? `${draft.text}
+${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(session.language, "这段话已经修改，请确认最新的版本。", "This message changed. Review and confirm the latest version.", "Este mensaje cambió. Revisa y confirma la última versión."));
       // Already shared: answer from the durable stamp instead of the handle, which only dedupes within the last 200 messages.
       if (draft.sharedAt) return { duplicate: true, message: { id: draft.messageId, text: draft.text, createdAt: draft.sharedAt }, session: latest };
+      // A letter is sealed instead: Us gets only that it is waiting; the words stay here until the day (letters.mjs delivers them).
+      if (draft.openOn) {
+        const { sent, milestone } = await sealLetter(tx, { relationshipId: initial.relationship.id, userId, draft, language: session.language });
+        if (sent.duplicate) return { ...sent, session: latest };
+        await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: draft.cardId, objectType: "letter", eventType: "letter.sealed", sourceVersion: latest.version }));
+        const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => {
+          const at = new Date().toISOString();
+          record.partnerMessage = { ...record.partnerMessage, sharedAt: at, messageId: sent.message.id };
+          record.letters = [...(Array.isArray(record.letters) ? record.letters : []), { cardId: draft.cardId, text: draft.text, openOn: draft.openOn, relationshipId: initial.relationship.id, sealedAt: at, sealedMessageId: sent.message.id, milestoneId: milestone.id, deliveredAt: null }];
+          record.version += 1;
+        });
+        return { ...sent, session: saved };
+      }
       const sent = await appendTogetherMessage(tx, { relationshipId: initial.relationship.id, actorUserId: userId, source: "relay", kind: "relay", text: draft.text, handle: `partner_message:${draft.cardId}`, refs: [{ type: "partner_message", id: draft.cardId }] });
       if (sent.duplicate) return { ...sent, session: latest };
       await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: draft.cardId, objectType: "partner_message", eventType: "partner_message.shared", sourceVersion: latest.version }));
