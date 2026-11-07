@@ -144,6 +144,6 @@ export async function petPlays({ store, mediator, userId, matchId, language = "z
   } catch (error) { console.error("auto move failed", error?.matchCode || error?.message || "error"); }
   finally { playing.delete(matchId); }
   // Something may have arrived while it was busy (a question asked just as it answered the last one): look once more.
-  const latest = again < 3 ? await store.getRelationshipRecordForUser(COLLECTION, matchId, userId).catch(() => null) : null;
+  const latest = again < 3 ? await Promise.resolve().then(() => store.getRelationshipRecordForUser(COLLECTION, matchId, userId)).catch(() => null) : null;
   if (latest && autoPending(latest)) return petPlays({ store, mediator, userId, matchId, language, onMove, delay, again: again + 1 });
 }

@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import { createFileStore } from "../server/store.mjs";
 import { createMatchRouter } from "../server/match-router.mjs";
-import { HOME, HANGAR, TASKS, PET_LINES, dice, isHeart, ludo, petChoice } from "../server/matches/ludo.mjs";
+import { BOARD, ENTRY, FLIGHT, FLIGHT_FROM, HANGAR, HEARTS, HOME, JUMP, LAST, LOOP, PET_LINES, PLANES, TASKS, colourOf, dice, isHeart, landing, ludo, petChoice, squareOf, stepTo } from "../server/matches/ludo.mjs";
 import { HOST, PET } from "../server/matches/errors.mjs";
 
 async function couple(t, { mediator = null, languages = [null, null] } = {}) {
@@ -38,110 +38,143 @@ const A = "a", B = "b";
 const fresh = () => ludo.act(ludo.start({ players: [A, B], inviterUserId: A, matchId: "m" }), { userId: HOST, action: { type: "tasks", tasks: [{ zh: "任务一", en: "Task one", es: "Tarea uno" }, { zh: "任务二", en: "Task two", es: "Tarea dos" }], source: "model" } });
 const play = (state, userId, action) => ludo.act(state, { userId, action });
 const roll = (state, userId) => play(state, userId, { type: "roll", value: 6 });
+const H = HANGAR;
+/** A fresh game with these planes. */
+const at = (mine, theirs = [H, H, H, H], current = A) => ({ ...fresh(), current, planes: { [A]: mine, [B]: theirs } });
 
 test("飞行棋: the die is the server's alone", (t) => {
   rig(t, [2]);
   const state = roll(fresh(), A);
   assert.equal(state.die.value, 2, "the 6 the client sent is ignored");
   assert.equal(state.die.by, A);
+  assert.equal(state.board, BOARD);
   assert.equal(code(() => roll(state, A)), "not_your_turn");
   assert.equal(code(() => play(state, "stranger", { type: "roll" })), "not_your_turn");
   assert.equal(code(() => play(state, B, { type: "jump" })), "invalid_action");
 });
 
+test("飞行棋: the board — 4 planes each, a 52-square loop, each one's colour, flight and hearts never overlapping", () => {
+  const state = fresh();
+  assert.deepEqual(state.planes[A], [H, H, H, H]); assert.equal(PLANES, 4);
+  assert.deepEqual(ENTRY.map((square) => colourOf(square)), [0, 1], "each take-off square is its player's colour");
+  for (const [index, id] of [A, B].entries()) {
+    for (let progress = 0; progress <= LAST; progress += 1) assert.equal(colourOf(squareOf(state, id, progress)) === index, progress % 4 === 0, "your colour every 4th square from your take-off");
+    assert.equal(colourOf(squareOf(state, id, FLIGHT_FROM)), null); assert.equal(colourOf(squareOf(state, id, FLIGHT_FROM + FLIGHT)), null);
+  }
+  const special = [...ENTRY, ...[A, B].flatMap((id) => [squareOf(state, id, FLIGHT_FROM), squareOf(state, id, FLIGHT_FROM + FLIGHT)])];
+  assert.equal(HEARTS.length, 8);
+  assert.ok(HEARTS.every((square) => colourOf(square) === null && !special.includes(square)));
+  assert.equal(new Set(special).size, special.length);
+  // Both players' journeys are the same shape, half a loop apart.
+  assert.deepEqual([A, B].map((id) => squareOf(state, id, FLIGHT_FROM) - squareOf(state, id, 0)).map((d) => (d + LOOP) % LOOP), [31, 31]);
+});
+
 test("飞行棋: a 6 takes off and rolls again; three tries without a 6 take off anyway", (t) => {
-  rig(t, [3, 6, 4]);
+  rig(t, [3, 6, 5]);
   let state = roll(fresh(), A);
-  assert.deepEqual(state.planes[A], [HANGAR, HANGAR]); assert.equal(state.tries[A], 1); assert.equal(ludo.turn(state), B, "no 6: the turn passes");
+  assert.deepEqual(state.planes[A], [H, H, H, H]); assert.equal(state.tries[A], 1); assert.equal(ludo.turn(state), B, "no 6: the turn passes");
   state = roll(state, B);
-  assert.deepEqual(state.planes[B], [0, HANGAR], "the 6 launches a plane onto its take-off square");
+  assert.deepEqual(state.planes[B], [0, H, H, H], "the 6 launches a plane onto its take-off square");
   assert.equal(ludo.turn(state), B, "and gives another roll");
   state = roll(state, B);
-  assert.deepEqual(state.planes[B], [4, HANGAR], "one plane can move: it moves by itself");
+  assert.deepEqual(state.planes[B], [5, H, H, H], "one plane can move: it moves by itself");
   assert.equal(ludo.turn(state), A);
 
-  rig(t, [1, 2, 2, 2, 5]);
+  rig(t, [1, 2, 2, 1, 5]);
   state = roll(state, A); assert.equal(state.tries[A], 2);
-  state = roll(state, B); // B's plane: 4 -> 5
+  state = roll(state, B); // 5 -> 7
   state = roll(state, A);
-  assert.deepEqual(state.planes[B], [6, HANGAR]);
-  assert.deepEqual(state.planes[A], [0, HANGAR], "the third failed try launches one anyway");
+  assert.deepEqual(state.planes[A], [0, H, H, H], "the third failed try launches one anyway");
   assert.equal(state.tries[A], 0); assert.equal(state.log.at(-1).kind, "forced");
   assert.equal(ludo.turn(state), B, "without a 6, no extra roll");
   state = roll(state, B);
-  assert.deepEqual(state.planes[B], [8, HANGAR]);
-  // With a plane on the loop, a roll that can't launch is no "try".
-  rig(t, [6, 1]);
-  state = roll(state, A);
-  assert.equal(state.phase, "move", "a 6 with a plane out and one in the hangar: the player chooses");
-  assert.equal(ludo.turn(state), A);
-  assert.equal(code(() => roll(state, A)), "choose_plane");
-  assert.equal(code(() => play(state, A, { type: "move", plane: 2 })), "invalid_action");
-  state = play(state, A, { type: "move", plane: 1 });
-  assert.deepEqual(state.planes[A], [0, 0]);
-  assert.equal(ludo.turn(state), A, "a 6 rolls again after the move too");
-  assert.equal(state.phase, "roll");
+  assert.deepEqual(state.planes[B], [12, H, H, H], "7 + 1 = 8, its own colour: on to 12");
 });
 
-test("飞行棋: a plane that can't move can't be chosen", (t) => {
+test("飞行棋: your own colour jumps 4, your flight square flies 12 — once per move", (t) => {
   rig(t, [3]);
-  const base = fresh();
-  let state = { ...base, planes: { ...base.planes, [A]: [28, 5] } };
-  state = roll(state, A);
-  // 28 + 3 overshoots home: only plane 1 can move, so it moves.
-  assert.deepEqual(state.planes[A], [28, 8]);
-  rig(t, [1]);
-  state = { ...base, planes: { ...base.planes, [A]: [28, 5] } };
-  state = roll(state, A);
-  assert.equal(state.phase, "move");
-  assert.equal(code(() => play(state, A, { type: "move", plane: 0.5 })), "invalid_action");
-  rig(t, [4]);
-  state = roll({ ...base, planes: { ...base.planes, [A]: [27, HANGAR] } }, A);
-  assert.equal(state.phase, "roll"); assert.equal(ludo.turn(state), B, "nothing can move: the turn passes");
-  assert.deepEqual(state.planes[A], [27, HANGAR]);
-  assert.equal(state.tries[A], 0, "not stuck: a plane is out");
+  let state = roll(at([1, H, H, H]), A);
+  assert.deepEqual(state.planes[A], [8, H, H, H], "1 + 3 = 4, my colour: on to 8");
+  assert.deepEqual(state.log.slice(-2).map((entry) => entry.kind), ["move", "jump"]);
+  rig(t, [2]);
+  state = roll(at([2, H, H, H]), A);
+  assert.deepEqual(state.planes[A], [8, H, H, H], "2 + 2 = 4, jumps to 8");
+  rig(t, [5]);
+  state = roll(at([26, H, H, H]), A);
+  assert.deepEqual(state.planes[A], [FLIGHT_FROM + FLIGHT, H, H, H], "31 is my flight square: on to 43");
+  assert.equal(state.log.at(-1).kind, "flight");
+  assert.equal(landing(26, 5).via, "flight"); assert.equal(landing(FLIGHT_FROM - 4, 4).via, "flight");
+  // The other player's colour does nothing for me, and the jump that would leave the loop doesn't happen.
+  assert.deepEqual(landing(1, 1), { to: 2, via: null });
+  assert.deepEqual(landing(46, 2), { to: 48, via: null }, "48 + 4 would pass the end of my loop");
+  assert.deepEqual(landing(44, 2), { to: 46, via: null });
+  assert.deepEqual(landing(H, 6), { to: 0, via: null }, "taking off is never a jump");
+  assert.equal(landing(H, 5).to, null);
 });
 
-test("飞行棋: landing exactly on the other's plane sends it home to its hangar", (t) => {
-  const base = fresh();
-  // A's progress 13 is square 13; B's progress 28 is square (15 + 28) % 30 = 13.
-  let state = { ...base, planes: { [A]: [10, HANGAR], [B]: [28, 3] } };
+test("飞行棋: landing on the other's plane — after a jump or a flight too — sends it back; the runway is safe", (t) => {
+  // A's progress p is square 1 + p; B's progress q is square (27 + q) % 52.
+  const sameSquare = (p) => (1 + p - 27 + LOOP) % LOOP;
   rig(t, [3]);
-  state = roll(state, A);
-  assert.deepEqual(state.planes[A], [13, HANGAR]);
-  assert.deepEqual(state.planes[B], [HANGAR, 3], "captured");
+  let state = roll(at([10, H, H, H], [sameSquare(13), 3, H, H]), A);
+  assert.deepEqual(state.planes[A], [13, H, H, H]);
+  assert.deepEqual(state.planes[B], [H, 3, H, H], "captured");
   assert.equal(state.log.at(-1).kind, "capture");
-  // Passing over it is not landing on it.
-  state = { ...base, planes: { [A]: [10, HANGAR], [B]: [28, 3] } };
   rig(t, [4]);
-  state = roll(state, A);
-  assert.deepEqual(state.planes[B], [28, 3]);
-  // Both of theirs on one square both go back.
-  state = { ...base, planes: { [A]: [9, HANGAR], [B]: [28, 28] } };
-  rig(t, [4]);
-  assert.deepEqual(roll(state, A).planes[B], [HANGAR, HANGAR]);
+  state = roll(at([10, H, H, H], [sameSquare(13), 3, H, H]), A);
+  assert.deepEqual(state.planes[B], [sameSquare(13), 3, H, H], "passing over it is not landing on it");
+  rig(t, [3]);
+  state = roll(at([1, H, H, H], [sameSquare(8), sameSquare(8), H, H]), A);
+  assert.deepEqual(state.planes[A][0], 8); assert.deepEqual(state.planes[B], [H, H, H, H], "the jump's square counts, both of theirs go back");
+  rig(t, [5]);
+  state = roll(at([26, H, H, H], [sameSquare(43), H, H, H]), A);
+  assert.deepEqual(state.planes[B], [H, H, H, H], "so does the flight's");
+  // B at runway progress 52 can't be caught: runway squares are no loop squares.
+  rig(t, [6]);
+  state = roll(at([45, H, H, H], [52, H, H, H]), A);
+  assert.deepEqual(state.planes[B], [52, H, H, H]);
 });
 
-test("飞行棋: home needs the exact roll; both planes home wins", (t) => {
-  const base = fresh();
-  let state = { ...base, planes: { ...base.planes, [A]: [27, HOME] } };
-  rig(t, [4, 1, 3]);
+test("飞行棋: past the centre bounces back; all 4 planes home wins", (t) => {
+  assert.equal(stepTo(54, 4), 54, "54 + 4 = 58: two too far, back to 54");
+  assert.equal(stepTo(50, 6), HOME);
+  assert.equal(stepTo(HOME, 1), null);
+  let state = at([53, HOME, HOME, HOME]);
+  rig(t, [5, 1, 2]);
   state = roll(state, A);
-  assert.deepEqual(state.planes[A], [27, HOME], "4 overshoots");
+  assert.deepEqual(state.planes[A], [54, HOME, HOME, HOME], "53 + 5 = 58: back to 54");
   state = roll(state, B);
   state = roll(state, A);
-  assert.deepEqual(state.planes[A], [HOME, HOME]);
+  assert.deepEqual(state.planes[A], [HOME, HOME, HOME, HOME], "54 + 2: exactly home");
   assert.equal(state.winner, A); assert.ok(ludo.finished(state)); assert.equal(ludo.turn(state), null);
   assert.equal(code(() => roll(state, B)), "match_over");
   assert.deepEqual(ludo.stats([{ state }]), { wins: { [A]: 1 }, played: 1, tasks: 0 });
 });
 
+test("飞行棋: a plane that can't move can't be chosen; nothing to move passes", (t) => {
+  rig(t, [3]);
+  let state = roll(at([HOME, 5, H, H]), A);
+  assert.deepEqual(state.planes[A], [HOME, 8 + JUMP, H, H], "only plane 2 can move: 5 + 3 = 8, a jump to 12");
+  rig(t, [6]);
+  state = roll(at([10, 20, H, H]), A);
+  assert.equal(state.phase, "move");
+  assert.equal(code(() => play(state, A, { type: "move", plane: 0.5 })), "invalid_action");
+  assert.equal(code(() => play(state, A, { type: "move", plane: 4 })), "invalid_action");
+  assert.equal(code(() => roll(state, A)), "choose_plane");
+  state = play(state, A, { type: "move", plane: 2 });
+  assert.deepEqual(state.planes[A], [10, 20, 0, H]);
+  assert.equal(ludo.turn(state), A, "a 6 rolls again after the move too");
+  rig(t, [4]);
+  state = roll(at([HOME, HOME, HOME, H]), A);
+  assert.equal(ludo.turn(state), B); assert.equal(state.tries[A], 1, "only a hangar left: a try");
+});
+
 test("飞行棋: a heart's task holds the turn until it is done or skipped", (t) => {
-  const base = fresh();
-  let state = { ...base, planes: { ...base.planes, [A]: [0, HANGAR] } };
-  rig(t, [2]);
+  // A's progress 3 is square 4: a heart.
+  let state = at([0, H, H, H]);
+  rig(t, [3]);
   state = roll(state, A);
-  assert.ok(isHeart(2)); assert.equal(state.phase, "task");
+  assert.ok(isHeart(4)); assert.equal(state.phase, "task");
   assert.deepEqual(state.task, { by: A, text: { zh: "任务一", en: "Task one", es: "Tarea uno" }, extra: false }, "Pinky's tasks, in order");
   assert.equal(ludo.turn(state), A);
   assert.equal(code(() => roll(state, A)), "task_pending");
@@ -152,8 +185,8 @@ test("飞行棋: a heart's task holds the turn until it is done or skipped", (t)
   assert.equal(ludo.turn(state), B); assert.equal(state.task, null); assert.equal(state.done[A], 1);
   assert.equal(code(() => play(state, B, { type: "task", done: true })), "roll_first");
 
-  // A 6 onto a heart: the task first, then the extra roll.
-  state = { ...base, planes: { ...base.planes, [A]: [1, HOME] } };
+  // A 6 onto a heart (3 + 6 = 9, square 10): the task first, then the extra roll.
+  state = at([3, HOME, HOME, HOME]);
   rig(t, [6]);
   state = roll(state, A);
   assert.equal(state.phase, "task"); assert.equal(state.task.extra, true);
@@ -163,25 +196,35 @@ test("飞行棋: a heart's task holds the turn until it is done or skipped", (t)
   assert.equal(state.log.at(-1).kind, "task"); assert.equal(state.log.at(-1).done, false);
 });
 
-test("飞行棋: 小家伙 picks a capture, then home, then its furthest plane, and does its tasks itself", (t) => {
+test("飞行棋: 小家伙 picks a capture, then home, then the biggest leap, then its furthest plane; it does its tasks itself", (t) => {
   const pet = ludo.act(ludo.start({ players: [A, PET], inviterUserId: A, matchId: "p" }), { userId: HOST, action: { type: "tasks", tasks: [{ zh: "x" }] } });
-  const at = (mine, theirs) => ({ ...pet, current: PET, planes: { [A]: theirs, [PET]: mine } });
-  // PET's progress p is square (15 + p) % 30; A's progress 20 is square 20 = PET's progress 5.
-  assert.equal(petChoice(at([2, 26], [20, HANGAR]), PET, 3), 0, "capture first");
-  assert.equal(petChoice(at([2, 26], [HANGAR, HANGAR]), PET, 4), 1, "then home");
-  assert.equal(petChoice(at([2, 12], [HANGAR, HANGAR]), PET, 1), 1, "then the furthest");
-  rig(t, [5]);
-  const state = ludo.act(at([2, 12], [HANGAR, HANGAR]), { userId: PET, action: { type: "roll" } });
-  // 12 + 5 = 17, square 2: a heart. No tap needed.
-  assert.deepEqual(state.planes[PET], [2, 17]);
+  const board = (mine, theirs) => ({ ...pet, current: PET, planes: { [A]: theirs, [PET]: mine } });
+  // PET's progress q is square (27 + q) % 52; A's progress 29 is square 30 = PET's progress 3.
+  assert.equal(petChoice(board([1, 40, H, H], [29, H, H, H]), PET, 2), 0, "capture first");
+  assert.equal(petChoice(board([2, 52, H, H], [H, H, H, H]), PET, 4), 1, "then home");
+  assert.equal(petChoice(board([26, 33, H, H], [H, H, H, H]), PET, 5), 0, "then the flight");
+  assert.equal(petChoice(board([5, 21, H, H], [H, H, H, H]), PET, 2), 1, "then the furthest");
+  // 小家伙 lands on a heart: square 30 is its progress 3. No tap needed.
+  rig(t, [1]);
+  const state = ludo.act(board([2, H, H, H], [H, H, H, H]), { userId: PET, action: { type: "roll" } });
+  assert.deepEqual(state.planes[PET], [3, H, H, H]);
   assert.equal(state.phase, "roll"); assert.equal(ludo.turn(state), A);
   const line = state.log.at(-1);
   assert.equal(line.kind, "task"); assert.equal(line.by, PET); assert.ok(PET_LINES[line.line]);
   assert.equal(state.done[PET], 1);
 });
 
+test("飞行棋: a game on the old 30-square board can only be ended, with no winner", () => {
+  const old = { players: [A, B], seed: 1, planes: { [A]: [3, -1], [B]: [-1, -1] }, current: A, phase: "roll", die: null, rolls: 0, tries: { [A]: 0, [B]: 0 }, task: null, tasks: [{ zh: "x" }], taskSource: "builtin", taskCount: 0, done: { [A]: 0, [B]: 0 }, skipped: { [A]: 0, [B]: 0 }, log: [], winner: null, resignedBy: null };
+  assert.equal(ludo.turn(old), null);
+  assert.equal(code(() => roll(old, A)), "old_board");
+  const ended = play(old, B, { type: "resign" });
+  assert.ok(ludo.finished(ended)); assert.equal(ended.winner, null);
+  assert.deepEqual(ludo.stats([{ state: ended }]).wins, {});
+});
+
 test("飞行棋: nothing is hidden between them but the tasks still to come", (t) => {
-  rig(t, [6, 2]);
+  rig(t, [6, 3]);
   let state = roll(roll(fresh(), A), A);
   const forA = ludo.view(state, A), forB = ludo.view(state, B);
   assert.deepEqual(forA, forB, "both see the same board");
@@ -208,8 +251,8 @@ test("飞行棋: Pinky writes the tasks at the start, in each player's language"
   assert.equal(typeof calls[0].input.game, "number", "each game's request differs, so the budget's repeat guard lets it through");
   assert.deepEqual(calls[0].languages.sort(), ["en", "es"], "written in Ziwei's English and Mia's Spanish");
   assert.equal(ready.tasks, null, "the list stays a surprise");
-  // Launch, then 2 steps: square 2, a heart.
-  rig(t, [6, 2]);
+  // Launch, then 3 steps: square 4, a heart.
+  rig(t, [6, 3]);
   await request(`/matches/${match.id}/actions`, "POST", { type: "roll" });
   const landed = (await request(`/matches/${match.id}/actions`, "POST", { type: "roll" })).body.match;
   assert.equal(landed.state.phase, "task");
@@ -226,7 +269,7 @@ test("飞行棋: without a model the built-in tasks are used", async (t) => {
   const { request } = await couple(t, { mediator: null });
   const { match } = (await request("/matches", "POST", { game: "ludo" })).body;
   await until(async () => (await request(`/matches/${match.id}`)).body.match.state.tasksReady);
-  rig(t, [6, 2]);
+  rig(t, [6, 3]);
   await request(`/matches/${match.id}/actions`, "POST", { type: "roll" });
   const task = (await request(`/matches/${match.id}/actions`, "POST", { type: "roll" })).body.match.state.task;
   assert.ok(TASKS.some(([zh, en, es]) => task.text.zh === zh && task.text.en === en && task.text.es === es), "a built-in task, in all three languages");
@@ -245,7 +288,7 @@ async function playOut(request, matchId, me, act = (body) => request(`/matches/$
     if (match.status !== "active") return { match, step };
     if (match.turn !== me) { await new Promise((r) => setTimeout(r, 5)); continue; }
     const { phase, planes, die } = match.state;
-    const body = phase === "task" ? { type: "task", done: step % 3 !== 0 } : phase === "move" ? { type: "move", plane: planes[me].findIndex((p) => (p === HANGAR ? die.value === 6 : p >= 0 && p < HOME && p + die.value <= HOME)) } : { type: "roll" };
+    const body = phase === "task" ? { type: "task", done: step % 3 !== 0 } : phase === "move" ? { type: "move", plane: planes[me].findIndex((p) => landing(p, die.value).to !== null) } : { type: "roll" };
     const reply = await act(body);
     assert.equal(reply.status, 200, JSON.stringify(reply.body));
   }
@@ -281,4 +324,17 @@ test("飞行棋: the two of them play a whole game through the router", async (t
   const stats = (await request("/matches")).body.stats.ludo;
   assert.equal(stats.played, 1); assert.equal(Object.values(stats.wins)[0], 1);
   assert.equal((await request("/matches", "POST", { game: "ludo" })).status, 201, "and play again");
+});
+
+test("飞行棋: 小家伙 on a long run of 6s keeps rolling and the reply still comes back", async (t) => {
+  const { request } = await couple(t, { mediator: null });
+  const { match } = (await request("/matches", "POST", { game: "ludo", with: "pet" })).body;
+  await until(async () => (await request(`/matches/${match.id}`)).body.match.state.tasksReady);
+  // My 1 passes the turn; then nothing but 6s, so 小家伙's turn never ends by itself: more moves than one round of its play.
+  const real = dice.roll; let rolls = 0; dice.roll = () => (rolls++ === 0 ? 1 : 6); t.after(() => { dice.roll = real; });
+  const reply = await request(`/matches/${match.id}/actions`, "POST", { type: "roll" });
+  assert.equal(reply.status, 200, JSON.stringify(reply.body));
+  assert.ok(rolls > 9, "it played past its first round of moves");
+  assert.ok(reply.body.match.state.planes[PET].some((progress) => progress > 0), "and its planes moved");
+  assert.equal(reply.body.match.turn, PET, "still its turn: it stops after a few rounds instead of looping forever");
 });

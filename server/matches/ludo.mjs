@@ -1,20 +1,29 @@
 import { randomInt } from "node:crypto";
 import { HOST, matchError, PET } from "./errors.mjs";
 
-// 情侣飞行棋 (founder 11-06): a simplified two-player ludo for couples. Each player has 2 planes; both race once around one
-// shared loop of 30 squares, from their own take-off square, and fly home from the square before it with an exact roll.
-// - The die is rolled here (action "roll"); the client never says what came up.
-// - A 6 launches a plane from the hangar onto its take-off square. When nothing of yours is on the loop, every roll without a
-//   6 counts as a failed try; the third in a row launches a plane anyway, so nobody gets stuck. A 6 gives another roll.
-// - When more than one plane can move (to a different square), the player chooses ("move" with the plane index); one choice
-//   moves by itself, and no choice passes the turn.
-// - Landing exactly on the other player's plane(s) sends them back to their hangar. Whoever gets both planes home wins.
-// - Every 5th square has a heart: landing there shows a small task for the one who landed, and their turn waits until they
-//   tap 做到了 ("task", done: true) or 跳过 (done: false). Pinky writes ~12 tasks at the start, in each player's language;
-//   without a model the built-in list below is used. 小家伙 does its tasks by itself, with a cute line.
-export const LOOP = 30, HOME = LOOP, HANGAR = -1, PLANES = 2, FORCED_AFTER = 3, TASK_COUNT = 12;
-export const ENTRY = [0, 15];
-export const isHeart = (square) => square % 5 === 2;
+// 情侣飞行棋 (founder 11-06; the bigger board the same day: "地图做复杂一点"). A two-player 飞行棋 for couples on a cross-shaped board:
+// - One shared loop of 52 squares around the cross. Each player starts from their own take-off square (ENTRY), flies once
+//   around (progress 0..50), turns into their own 5-square runway (51..55) and lands in the centre (HOME = 56).
+// - Each player has 4 planes. The die is rolled here (action "roll"); the client never says what came up.
+// - A 6 launches a plane from the hangar onto its take-off square and gives another roll. When nothing of yours is out,
+//   every roll without a 6 counts as a failed try; the third in a row launches a plane anyway, so nobody gets stuck.
+// - Every other square of the loop is one player's colour. Landing on your own colour (by the die) jumps you 4 squares on,
+//   to your next one. Each player also has one flight square: landing there flies you along the dashed line 12 squares on.
+//   Only one jump or flight per move.
+// - Landing (after any jump or flight) on the other player's plane(s) sends them back to their hangar. Planes on the runway
+//   are safe. A roll past the centre bounces back the extra squares. Whoever gets all 4 planes home wins.
+// - 8 heart squares: landing on one shows a small task for the one who landed, and their turn waits until they tap 做到了
+//   ("task", done: true) or 跳过 (done: false). Pinky writes ~12 tasks at the start, in each player's language; without a
+//   model the built-in list below is used. 小家伙 does its tasks by itself, with a cute line.
+// States from the first, 30-square board (no `board`) can't go on; they can only be ended.
+export const BOARD = 2, LOOP = 52, LAST = 50, HOME = 56, HANGAR = -1, PLANES = 4, FORCED_AFTER = 3, TASK_COUNT = 12;
+export const ENTRY = [1, 27];
+export const JUMP = 4, FLIGHT_FROM = 31, FLIGHT = 12;
+// Loop squares (absolute) with a heart: none is a colour square, a flight square or a take-off square.
+export const HEARTS = [4, 10, 16, 22, 30, 36, 42, 48];
+export const isHeart = (square) => HEARTS.includes(square);
+/** Whose colour a loop square is: the first player's (index 0), the second's (1), or nobody's (null). */
+export const colourOf = (square) => square % 4 === 1 ? 0 : square % 4 === 3 ? 1 : null;
 const KEEP_LOG = 8, MAX_TASKS = 20, MAX_TASK_LENGTH = 160;
 export const LANGS = ["zh", "en", "es"];
 
@@ -63,22 +72,42 @@ export const PET_LINES = [
   ["{name}跳了一小段舞", "{name} did a tiny dance", "{name} bailó un poquito"],
 ];
 
+
 const seedOf = (...parts) => [...parts.join(":")].reduce((hash, char) => (hash * 31 + char.codePointAt(0)) | 0, 7);
 const other = (state, userId) => state.players.find((id) => id !== userId);
 const builtin = (index) => { const [zh, en, es] = TASKS[index]; return { zh, en, es }; };
 /** `count` built-in tasks in an order of this game's own. */
 export const builtinTasks = (seed, count = TASK_COUNT) => TASKS.map((_, index) => index).sort((a, b) => seedOf(seed, a) - seedOf(seed, b)).slice(0, count).map(builtin);
 
-/** Where a plane of `userId` at `progress` (0..29) stands on the loop. */
+/** Where a plane of `userId` at `progress` (0..50) stands on the loop. */
 export const squareOf = (state, userId, progress) => (ENTRY[state.players.indexOf(userId)] + progress) % LOOP;
-const onLoop = (progress) => progress >= 0 && progress < HOME;
+const onLoop = (progress) => progress >= 0 && progress <= LAST;
+const out = (progress) => progress >= 0 && progress < HOME;
 
-/** The planes of `userId` that can move `value`, as [{ plane, to }]; planes that would end on the same square count once. */
+/** Where a plane at `from` ends with `value`, before any jump or flight: off the hangar only with a 6, and a roll past the
+ * centre bounces back. Null when it can't move. */
+export function stepTo(from, value) {
+  if (from === HANGAR) return value === 6 ? 0 : null;
+  if (!out(from)) return null;
+  const to = from + value;
+  return to > HOME ? HOME - (to - HOME) : to;
+}
+
+/** Where the move ends after a jump or a flight from the square the die reached (progress), and which one it was. */
+export function landing(from, value) {
+  const to = stepTo(from, value);
+  if (to === null || from === HANGAR || !onLoop(to)) return { to, via: null };
+  if (to === FLIGHT_FROM) return { to: to + FLIGHT, via: "flight" };
+  if (to % 4 === 0 && to + JUMP <= LAST) return { to: to + JUMP, via: "jump" };
+  return { to, via: null };
+}
+
+/** The planes of `userId` that can move `value`, as [{ plane, from, to, via }]; planes on the same square count once. */
 export function options(state, userId, value) {
   const found = [];
   state.planes[userId].forEach((progress, plane) => {
-    const to = progress === HANGAR ? (value === 6 ? 0 : null) : onLoop(progress) && progress + value <= HOME ? progress + value : null;
-    if (to !== null && !found.some((item) => item.from === progress)) found.push({ plane, from: progress, to });
+    const { to, via } = landing(progress, value);
+    if (to !== null && !found.some((item) => item.from === progress)) found.push({ plane, from: progress, to, via });
   });
   return found;
 }
@@ -102,18 +131,25 @@ function nextTask(state) {
   return { text: list[state.taskCount % list.length], taskCount: state.taskCount + 1 };
 }
 
+/** The other player's planes standing where `userId`'s plane at `to` would land. */
+const caught = (state, userId, to) => {
+  if (!onLoop(to)) return [];
+  const rival = other(state, userId), square = squareOf(state, userId, to);
+  return state.planes[rival].map((progress, index) => onLoop(progress) && squareOf(state, rival, progress) === square ? index : -1).filter((index) => index >= 0);
+};
+
 /** Moves `plane` of the player to move by the die (`forced`: the third try without a 6 launches it), with everything that
- * follows: capture, home, the win, a heart's task, and another roll after a 6. */
+ * follows: a jump or flight, capture, home, the win, a heart's task, and another roll after a 6. */
 function move(state, plane, value, forced = false) {
   const userId = state.current, rival = other(state, userId);
-  const from = state.planes[userId][plane], to = from === HANGAR ? 0 : from + value;
+  const from = state.planes[userId][plane];
+  const { to, via } = forced ? { to: 0, via: null } : landing(from, value);
   const mine = state.planes[userId].map((progress, index) => index === plane ? to : progress);
-  let theirs = state.planes[rival], entries = [{ by: userId, kind: forced ? "forced" : from === HANGAR ? "launch" : to === HOME ? "home" : "move", plane, value }];
-  if (onLoop(to)) {
-    const square = squareOf(state, userId, to);
-    const hit = theirs.map((progress, index) => onLoop(progress) && squareOf(state, rival, progress) === square ? index : -1).filter((index) => index >= 0);
-    if (hit.length) { theirs = theirs.map((progress, index) => hit.includes(index) ? HANGAR : progress); entries.push({ by: userId, kind: "capture", planes: hit }); }
-  }
+  const entries = [{ by: userId, kind: forced ? "forced" : from === HANGAR ? "launch" : to === HOME ? "home" : "move", plane, value }];
+  if (via) entries.push({ by: userId, kind: via, plane });
+  const hit = caught(state, userId, to);
+  let theirs = state.planes[rival];
+  if (hit.length) { theirs = theirs.map((progress, index) => hit.includes(index) ? HANGAR : progress); entries.push({ by: userId, kind: "capture", planes: hit }); }
   let moved = { ...state, planes: { ...state.planes, [userId]: mine, [rival]: theirs }, tries: { ...state.tries, [userId]: from === HANGAR ? 0 : state.tries[userId] } };
   for (const entry of entries) moved = { ...moved, log: log(moved, entry) };
   if (mine.every((progress) => progress === HOME)) return { ...moved, phase: "over", winner: userId, task: null };
@@ -131,11 +167,13 @@ function move(state, plane, value, forced = false) {
   return next(moved, extra);
 }
 
-/** The plane 小家伙 moves: a capture first, then getting home, then the plane furthest along. */
+/** The plane 小家伙 moves: a capture first, then getting home, then the biggest leap (a flight or a jump), then the plane
+ * furthest along that isn't already safe on its runway. */
 export function petChoice(state, userId, value) {
-  const choices = options(state, userId, value), rival = other(state, userId);
-  const captures = (choice) => onLoop(choice.to) && state.planes[rival].some((progress) => onLoop(progress) && squareOf(state, rival, progress) === squareOf(state, userId, choice.to));
-  return (choices.find(captures) || choices.find((choice) => choice.to === HOME) || [...choices].sort((a, b) => b.from - a.from)[0])?.plane;
+  const choices = options(state, userId, value);
+  const rank = (choice) => [caught(state, userId, choice.to).length ? 1 : 0, choice.to === HOME ? 1 : 0, choice.to - Math.max(choice.from, 0) - (choice.from === HANGAR ? 0 : value), onLoop(choice.from) ? 1 : 0, choice.from];
+  const better = (a, b) => { const x = rank(a), y = rank(b); for (let index = 0; index < x.length; index += 1) if (x[index] !== y[index]) return x[index] > y[index]; return false; };
+  return choices.reduce((best, choice) => !best || better(choice, best) ? choice : best, null)?.plane;
 }
 
 export const ludo = {
@@ -145,13 +183,13 @@ export const ludo = {
     const first = players.includes(inviterUserId) ? inviterUserId : players[0];
     const ordered = [first, ...players.filter((id) => id !== first)];
     return {
-      players: ordered, seed: seedOf(matchId), planes: Object.fromEntries(ordered.map((id) => [id, Array(PLANES).fill(HANGAR)])),
+      board: BOARD, players: ordered, seed: seedOf(matchId), planes: Object.fromEntries(ordered.map((id) => [id, Array(PLANES).fill(HANGAR)])),
       current: first, phase: "roll", die: null, rolls: 0, tries: Object.fromEntries(ordered.map((id) => [id, 0])),
       task: null, tasks: null, taskSource: null, taskCount: 0, done: Object.fromEntries(ordered.map((id) => [id, 0])), skipped: Object.fromEntries(ordered.map((id) => [id, 0])),
       log: [], winner: null, resignedBy: null,
     };
   },
-  turn(state) { return state.phase === "over" ? null : state.current; },
+  turn(state) { return state.phase === "over" || state.board !== BOARD ? null : state.current; },
   act(state, { userId, action }) {
     if (action?.type === "tasks") {
       // Pinky's tasks for this game, once, at the start.
@@ -162,6 +200,8 @@ export const ludo = {
     }
     if (!state.players.includes(userId)) throw matchError(409, "not_your_turn");
     if (state.phase === "over") throw matchError(409, "match_over");
+    // A game on the old 30-square board can only be ended, with no winner.
+    if (state.board !== BOARD) { if (action?.type === "resign") return { ...state, phase: "over", winner: null, resignedBy: userId, task: null }; throw matchError(409, "old_board"); }
     if (action?.type === "resign") return { ...state, phase: "over", winner: other(state, userId), resignedBy: userId, task: null };
     if (state.current !== userId) throw matchError(409, "not_your_turn");
     if (action?.type === "roll") {
@@ -172,7 +212,7 @@ export const ludo = {
       let rolled = { ...state, rolls, die: { value, by: userId, n: rolls } };
       const choices = options(rolled, userId, value);
       if (!choices.length) {
-        const stuck = !rolled.planes[userId].some(onLoop) && rolled.planes[userId].includes(HANGAR);
+        const stuck = !rolled.planes[userId].some(out) && rolled.planes[userId].includes(HANGAR);
         const tries = stuck ? rolled.tries[userId] + 1 : rolled.tries[userId];
         if (stuck && tries >= FORCED_AFTER) {
           // Third try without a 6: a plane takes off anyway, and the turn passes.
@@ -187,10 +227,8 @@ export const ludo = {
       if (state.phase !== "move") throw matchError(409, state.phase === "task" ? "task_pending" : "roll_first");
       const plane = action.plane;
       if (!Number.isInteger(plane) || plane < 0 || plane >= PLANES) throw matchError(400, "invalid_action");
-      const progress = state.planes[userId][plane], value = state.die.value;
-      const can = progress === HANGAR ? value === 6 : onLoop(progress) && progress + value <= HOME;
-      if (!can) throw matchError(409, "plane_stuck");
-      return move(state, plane, value);
+      if (landing(state.planes[userId][plane], state.die.value).to === null) throw matchError(409, "plane_stuck");
+      return move(state, plane, state.die.value);
     }
     if (action?.type === "task") {
       if (state.phase !== "task" || state.task?.by !== userId) throw matchError(409, "roll_first");
