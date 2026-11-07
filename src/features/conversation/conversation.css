@@ -118,7 +118,9 @@
 .page-back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--jian-blue); font-size: 16px; font-weight: 600; cursor: pointer; }
 .page-back:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
 .page-header h1 { flex: 1; min-width: 0; margin: 0 64px 0 0; overflow: hidden; color: var(--jian-ink); font-size: 18px; font-weight: 650; letter-spacing: 0; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.relationship-shell > .page-header ~ .relationship-main { top: calc(var(--page-top) + 54px); padding: 8px 18px calc(40px + env(safe-area-inset-bottom)); }
+/* Pages under a back header have no bottom nav: scroll to the bottom of the screen instead of stopping 58px short of it,
+   which cut cards off above an empty strip (founder 11-06). */
+.relationship-shell > .page-header ~ .relationship-main { top: calc(var(--page-top) + 54px); bottom: 0; padding: 8px 18px calc(40px + env(safe-area-inset-bottom)); }
 .home-columns.page-sections { grid-template-columns: 1fr; gap: 16px; width: 100%; max-width: none; margin: 0; }
 .settings-language { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; margin-bottom: 18px; padding: 6px 2px 14px; border-bottom: 1px solid rgba(37,37,37,.1); }
 .settings-language .language-switch { position: static; gap: 4px; color: #8a837a; font-size: 16px; }
