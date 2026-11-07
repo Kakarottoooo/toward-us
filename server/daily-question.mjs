@@ -1,6 +1,7 @@
 import { appendTogetherMessage, previousDailyQuestions } from "./together-domain.mjs";
 import { clean, decisionError } from "./agreement-actions.mjs";
 import { MOMENTS } from "./space-domain.mjs";
+import { markShowedUp } from "./streak.mjs";
 
 // Daily question: once a day Pinky asks both partners the same question in Us. Each answer stays with its author until
 // both have answered (hideUnrevealedAnswers enforces it for every reader); then both see both and Pinky says one line.
@@ -110,6 +111,7 @@ export async function answerDailyQuestion({ store, mediator, relationshipId, use
     if (Object.keys(question.answers || {}).length >= 2) throw decisionError(409, "already_revealed");
     const answers = { ...(question.answers || {}), [userId]: { text: answer, at: new Date().toISOString() } };
     const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === messageId ? { ...item, answers } : item); draft.version += 1; });
+    await markShowedUp(tx, { relationshipId, userId, zone: conversation.zones?.[userId] });
     return { conversation: updated, question: { ...question, answers }, members: context.members };
   });
   emit(result.conversation);

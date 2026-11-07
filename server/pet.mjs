@@ -1,5 +1,6 @@
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { MOMENTS } from "./space-domain.mjs";
+import { markShowedUp } from "./streak.mjs";
 
 // 一起养的小家伙 (founder 11-06): the couple's character grows with what the two of them do together. Nothing new to learn: it
 // earns 亲密值 from things they already do (both answering the daily question, a game round, 想你了, a memory kept together, a
@@ -97,5 +98,6 @@ export async function petIt(tx, { relationshipId, userId, zone, language }) {
     for (const day of Object.keys(pets)) if (between(day, today) > 30) delete pets[day];
     draft.pets = pets;
   });
+  await markShowedUp(tx, { relationshipId, userId, zone });
   return syncPet(tx, { relationshipId, userId, zone, language });
 }
