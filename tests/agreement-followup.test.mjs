@@ -99,7 +99,7 @@ test("a change request says who asked and why, and the version both approve next
   // The card in Us says who and why in every language; the old commitment waits for the new version.
   const card = (await f.conversation()).messages.at(-1);
   assert.equal(card.kind, "agreement_card");
-  assert.match(card.i18n.zh, /^约定「Trash」v2，有人要求修改，等待新版本\nBlair 想改：Tuesdays work better\n/); assert.match(card.i18n.en, /\nBlair wants a change: Tuesdays work better\n/); assert.match(card.i18n.es, /\nBlair quiere cambiar: Tuesdays work better\n/);
+  assert.match(card.i18n.zh, /^约定「Trash」，有人想改，等新的一份\nBlair 想改：Tuesdays work better\n/); assert.match(card.i18n.en, /\nBlair wants a change: Tuesdays work better\n/); assert.match(card.i18n.es, /\nBlair quiere cambiar: Tuesdays work better\n/);
   assert.equal((await f.store.getRelationshipRecordForUser("commitments", first.id, f.a)).status, "renegotiation_requested");
   const revised = await f.draft({ title: "Trash", summary: "Taking out the trash", terms: ["Take out the trash every Tuesday"] });
   assert.equal(revised.id, agreement.id); assert.equal(revised.version, 3);
