@@ -325,3 +325,16 @@ test("飞行棋: the two of them play a whole game through the router", async (t
   assert.equal(stats.played, 1); assert.equal(Object.values(stats.wins)[0], 1);
   assert.equal((await request("/matches", "POST", { game: "ludo" })).status, 201, "and play again");
 });
+
+test("飞行棋: 小家伙 on a long run of 6s keeps rolling and the reply still comes back", async (t) => {
+  const { request } = await couple(t, { mediator: null });
+  const { match } = (await request("/matches", "POST", { game: "ludo", with: "pet" })).body;
+  await until(async () => (await request(`/matches/${match.id}`)).body.match.state.tasksReady);
+  // My 1 passes the turn; then nothing but 6s, so 小家伙's turn never ends by itself: more moves than one round of its play.
+  const real = dice.roll; let rolls = 0; dice.roll = () => (rolls++ === 0 ? 1 : 6); t.after(() => { dice.roll = real; });
+  const reply = await request(`/matches/${match.id}/actions`, "POST", { type: "roll" });
+  assert.equal(reply.status, 200, JSON.stringify(reply.body));
+  assert.ok(rolls > 9, "it played past its first round of moves");
+  assert.ok(reply.body.match.state.planes[PET].some((progress) => progress > 0), "and its planes moved");
+  assert.equal(reply.body.match.turn, PET, "still its turn: it stops after a few rounds instead of looping forever");
+});
