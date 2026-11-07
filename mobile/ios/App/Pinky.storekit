@@ -1,0 +1,237 @@
+{
+  "identifier": "7B061001",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6738100001",
+      "localizations": [
+        {
+          "description": "A bow for your couple's Pinky, seen by both of you.",
+          "displayName": "Bow outfit",
+          "locale": "en_US"
+        },
+        {
+          "description": "给你们俩的 Pinky 换上蝴蝶结，两个人都能看到。",
+          "displayName": "蝴蝶结装扮",
+          "locale": "zh_Hans"
+        },
+        {
+          "description": "Un accesorio para el Pinky de los dos; lo veis ambos.",
+          "displayName": "Atuendo: lazo",
+          "locale": "es_ES"
+        }
+      ],
+      "productID": "us.toward.pinky.outfit.bow",
+      "referenceName": "Outfit bow",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6738100002",
+      "localizations": [
+        {
+          "description": "A crown for your couple's Pinky, seen by both of you.",
+          "displayName": "Crown outfit",
+          "locale": "en_US"
+        },
+        {
+          "description": "给你们俩的 Pinky 换上皇冠，两个人都能看到。",
+          "displayName": "皇冠装扮",
+          "locale": "zh_Hans"
+        },
+        {
+          "description": "Un accesorio para el Pinky de los dos; lo veis ambos.",
+          "displayName": "Atuendo: corona",
+          "locale": "es_ES"
+        }
+      ],
+      "productID": "us.toward.pinky.outfit.crown",
+      "referenceName": "Outfit crown",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6738100003",
+      "localizations": [
+        {
+          "description": "A scarf for your couple's Pinky, seen by both of you.",
+          "displayName": "Scarf outfit",
+          "locale": "en_US"
+        },
+        {
+          "description": "给你们俩的 Pinky 换上围巾，两个人都能看到。",
+          "displayName": "围巾装扮",
+          "locale": "zh_Hans"
+        },
+        {
+          "description": "Un accesorio para el Pinky de los dos; lo veis ambos.",
+          "displayName": "Atuendo: bufanda",
+          "locale": "es_ES"
+        }
+      ],
+      "productID": "us.toward.pinky.outfit.scarf",
+      "referenceName": "Outfit scarf",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6738100004",
+      "localizations": [
+        {
+          "description": "A glasses for your couple's Pinky, seen by both of you.",
+          "displayName": "Glasses outfit",
+          "locale": "en_US"
+        },
+        {
+          "description": "给你们俩的 Pinky 换上眼镜，两个人都能看到。",
+          "displayName": "眼镜装扮",
+          "locale": "zh_Hans"
+        },
+        {
+          "description": "Un accesorio para el Pinky de los dos; lo veis ambos.",
+          "displayName": "Atuendo: gafas",
+          "locale": "es_ES"
+        }
+      ],
+      "productID": "us.toward.pinky.outfit.glasses",
+      "referenceName": "Outfit glasses",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6738100005",
+      "localizations": [
+        {
+          "description": "A flower for your couple's Pinky, seen by both of you.",
+          "displayName": "Flower outfit",
+          "locale": "en_US"
+        },
+        {
+          "description": "给你们俩的 Pinky 换上小花，两个人都能看到。",
+          "displayName": "小花装扮",
+          "locale": "zh_Hans"
+        },
+        {
+          "description": "Un accesorio para el Pinky de los dos; lo veis ambos.",
+          "displayName": "Atuendo: flor",
+          "locale": "es_ES"
+        }
+      ],
+      "productID": "us.toward.pinky.outfit.flower",
+      "referenceName": "Outfit flower",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6738100006",
+      "localizations": [
+        {
+          "description": "A santa hat for your couple's Pinky, seen by both of you.",
+          "displayName": "Santa hat outfit",
+          "locale": "en_US"
+        },
+        {
+          "description": "给你们俩的 Pinky 换上圣诞帽，两个人都能看到。",
+          "displayName": "圣诞帽装扮",
+          "locale": "zh_Hans"
+        },
+        {
+          "description": "Un accesorio para el Pinky de los dos; lo veis ambos.",
+          "displayName": "Atuendo: gorro de Papá Noel",
+          "locale": "es_ES"
+        }
+      ],
+      "productID": "us.toward.pinky.outfit.santa",
+      "referenceName": "Outfit santa",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "21500001",
+      "localizations": [],
+      "name": "Pinky 会员",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "59.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "6738200002",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "One of you subscribes; both of you are members.",
+              "displayName": "Pinky membership (yearly)",
+              "locale": "en_US"
+            },
+            {
+              "description": "一个人订阅，两个人都是会员。",
+              "displayName": "Pinky 会员（年付）",
+              "locale": "zh_Hans"
+            },
+            {
+              "description": "Uno se suscribe y los dos sois miembros.",
+              "displayName": "Pinky miembros (anual)",
+              "locale": "es_ES"
+            }
+          ],
+          "productID": "us.toward.pinky.member.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Member yearly",
+          "subscriptionGroupID": "21500001",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "9.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "6738200001",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "One of you subscribes; both of you are members.",
+              "displayName": "Pinky membership (monthly)",
+              "locale": "en_US"
+            },
+            {
+              "description": "一个人订阅，两个人都是会员。",
+              "displayName": "Pinky 会员（月付）",
+              "locale": "zh_Hans"
+            },
+            {
+              "description": "Uno se suscribe y los dos sois miembros.",
+              "displayName": "Pinky miembros (mensual)",
+              "locale": "es_ES"
+            }
+          ],
+          "productID": "us.toward.pinky.member.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Member monthly",
+          "subscriptionGroupID": "21500001",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

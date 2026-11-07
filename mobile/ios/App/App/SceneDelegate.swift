@@ -85,6 +85,8 @@ final class ChatImportUploader {
 class PinkyBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
+        bridge?.registerPluginInstance(PinkyStorePlugin())
+        bridge?.registerPluginInstance(PinkyWidgetPlugin())
     }
 }
 
