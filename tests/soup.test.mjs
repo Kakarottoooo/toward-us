@@ -27,6 +27,7 @@ async function couple(t, { mediator = null, languages = [] } = {}) {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "x-user": userId, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: await response.json() };
   };
+  request.base = `http://127.0.0.1:${server.address().port}/api`; request.me = ids[0];
   const raw = (matchId) => store.getRelationshipRecordForUser("matches", matchId, ids[0]);
   const look = async (matchId, userId = ids[0]) => (await request(`/matches/${matchId}`, "GET", null, userId)).body.match;
   return { store, ids, request, raw, look };
@@ -239,4 +240,26 @@ test("海龟汤: Pinky's nudges stay a few words, cut at the end of a phrase", (
     assert.ok(!HAN.test(puzzle[field].en) && !HAN.test(puzzle[field].es), `${puzzle.id} ${field} has no Chinese in en/es`);
   }
   assert.ok(PUZZLES.every((puzzle) => puzzle.facts.length >= 3 && puzzle.facts.length <= 6 && puzzle.facts.every((item) => item.keywords.length && !HAN.test(item.text.en) && !HAN.test(item.text.es))));
+});
+
+test("海龟汤 by voice: only a player of that game gets a realtime connection, in the language asked for", async (t) => {
+  const sessions = [];
+  const model = fakeModel();
+  const mediator = { ...model.mediator, createRealtimeSession: async (options) => { sessions.push(options); return "v=0\r\nanswer"; } };
+  const { ids, request } = await couple(t, { mediator });
+  const mine = (await request("/matches", "POST", { game: "soup", with: "pet" })).body.match.id;
+  const sdp = (matchId, userId = ids[0], language = "es") => fetch(`${request.base}/matches/${matchId}/realtime?language=${language}`, { method: "POST", headers: { "x-user": userId, "content-type": "application/sdp" }, body: "v=0\r\noffer" });
+  const ok = await sdp(mine);
+  assert.equal(ok.status, 200); assert.equal(await ok.text(), "v=0\r\nanswer");
+  assert.equal(sessions.length, 1); assert.equal(sessions[0].language, "es"); assert.notEqual(sessions[0].safetyIdentifier, ids[0], "the user id is hashed");
+  assert.equal((await sdp(mine, ids[1])).status, 404, "a game alone is only mine, voice too");
+  assert.equal((await sdp("missing")).status, 404);
+  assert.equal(sessions.length, 1);
+});
+
+test("海龟汤 by voice: without a voice service the App is told, so the phone's own recognition takes over", async (t) => {
+  const { request } = await couple(t, { mediator: null });
+  const id = (await request("/matches", "POST", { game: "soup" })).body.match.id;
+  const response = await fetch(`${request.base}/matches/${id}/realtime`, { method: "POST", headers: { "x-user": request.me, "content-type": "application/sdp" }, body: "v=0\r\noffer" });
+  assert.equal(response.status, 503);
 });

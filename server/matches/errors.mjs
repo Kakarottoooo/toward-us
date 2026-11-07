@@ -22,5 +22,6 @@ export const MATCH_ERRORS = {
   roll_first: ["先掷骰子。", "Roll the die first.", "Primero tira el dado."],
   choose_plane: ["先选一架飞机走。", "Pick a plane to move first.", "Primero elige qué avión mover."],
   task_pending: ["先完成或跳过这个小任务。", "Do or skip the little task first.", "Primero haz o salta la tarea."],
+  voice_unavailable: ["语音暂时用不了，可以先打字。", "Voice is unavailable right now. You can still type.", "La voz no está disponible ahora. Puedes seguir escribiendo."],
   plane_stuck: ["这架飞机这次走不了。", "That plane can't move this time.", "Ese avión no puede moverse esta vez."],
 };

@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash } from "node:crypto";
 import { recordUsage } from "./usage.mjs";
 import { actOnMatch, autoPending, createMatch, gameName, GAMES, listMatches, matchStats, petPlays, viewMatch, withPet } from "./matches/index.mjs";
 import { BOTH, MATCH_ERRORS, matchError } from "./matches/errors.mjs";
@@ -36,6 +37,17 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     }
     if (result.created) match = await autoTurn(req, match);
     res.status(result.created ? 201 : 200).json({ match: viewMatch(match, userId), created: result.created });
+  });
+
+  // Speaking instead of typing in a game (海龟汤 questions): the same realtime transcription as the App conversation. Only the
+  // text comes back to the player's own box; nothing is saved until they send it as a move.
+  router.post("/matches/:id/realtime", express.text({ type: "application/sdp", limit: "128kb" }), async (req, res) => {
+    const userId = req.auth.user.id;
+    if (!(await listMatches(store, userId)).some((item) => item.id === req.params.id)) throw matchError(404, "not_found");
+    if (typeof req.body !== "string" || !req.body.includes("v=0")) throw matchError(400, "invalid_action");
+    if (!mediator?.createRealtimeSession) throw matchError(503, "voice_unavailable");
+    const language = ["zh", "en", "es"].includes(req.query.language) ? req.query.language : "zh";
+    res.type("application/sdp").send(await mediator.createRealtimeSession({ sdp: req.body, language, safetyIdentifier: createHash("sha256").update(userId).digest("hex") }));
   });
 
   router.post("/matches/:id/actions", async (req, res) => {
