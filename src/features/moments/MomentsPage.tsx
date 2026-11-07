@@ -28,7 +28,8 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   // Photos first, like Google Photos (founder 11-05): a wall by month; the switch at the bottom zooms out to years or in to every photo.
   const [scale, setScale] = useState<Scale>("months");
   const [mapOpen, setMapOpen] = useState(false);
-  const [ideasOpen, setIdeasOpen] = useState(false);
+  // 100 件小事 opens straight from the Us menu or Pinky's suggestion (/?view=moments&ideas=1).
+  const [ideasOpen, setIdeasOpen] = useState(() => new URLSearchParams(location.search).get("ideas") === "1");
   const [playing, setPlaying] = useState<{ title: string; slides: Slide[] } | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [openYear, setOpenYear] = useState("");
@@ -113,7 +114,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
 
   if (ideasOpen) return <div className="moments-page" data-testid="moments-ideas">
     {back}
-    <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} />
+    <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} onPlan={(text) => onAsk(text, "us")} />
   </div>;
 
   // The map is its own page, opened from the globe at the top right (founder 11-05).

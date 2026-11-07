@@ -187,3 +187,44 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .find-us-grid button.is-chosen img { opacity: .75; }
 .find-us-grid button.is-chosen { box-shadow: inset 0 0 0 3px #d6708c; }
 .find-us-grid svg { position: absolute; right: 6px; bottom: 6px; color: #d6708c; background: #fff; border-radius: 50%; }
+
+/* 100 件小事 as a scratch-off poster (founder 11-06, design A): ten by ten squares in each idea's colour; done ones turn into
+   the couple's photo from that day. */
+/* Each kind of idea's colour, on the poster and on the sheet an idea opens in (which renders outside the poster). */
+.idea-tone-outdoors { --t: #e1f5ee; --i: #0f6e56; } .idea-tone-home { --t: #faeeda; --i: #854f0b; }
+.idea-tone-food { --t: #faece7; --i: #993c1d; } .idea-tone-town { --t: #e6f1fb; --i: #185fa5; }
+.idea-tone-adventure { --t: #eeedfe; --i: #534ab7; } .idea-tone-create { --t: #eaf3de; --i: #3b6d11; }
+.idea-tone-romance { --t: #fbeaf0; --i: #993556; } .idea-tone-care { --t: #fcebeb; --i: #a32d2d; }
+.ideas-poster { display: grid; gap: 14px; padding: 18px 14px 16px; border-radius: 22px; background: #fffaf3; box-shadow: 0 1px 0 rgba(37,37,37,.06); }
+.ideas-poster-head { display: grid; gap: 6px; text-align: center; }
+.ideas-poster-head h2 { margin: 0; color: #3f3326; font-size: 21px; font-weight: 750; letter-spacing: .02em; }
+.ideas-poster-head p { margin: 0; color: #6d6258; font-size: 14px; line-height: 1.5; }
+.ideas-poster-bar { height: 8px; margin: 4px 8px 0; border-radius: 4px; background: #efe6da; overflow: hidden; }
+.ideas-poster-bar span { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #e0405a, #f08a5d); }
+.ideas-poster-cats { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.ideas-poster-cats button { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 11px; border: 0; border-radius: 17px; background: var(--t, #f1ebe2); color: var(--i, #5d574f); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.ideas-poster-cats button.is-on { box-shadow: inset 0 0 0 2px var(--i, #3f3326); }
+.device-screen .ideas-poster-cats button { min-height: 34px; }
+.ideas-poster-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; margin: 0; padding: 0; list-style: none; }
+.ideas-cell { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 7px; background: var(--t); color: var(--i); cursor: pointer; overflow: hidden; transition: opacity .2s ease, transform .15s ease; }
+.device-screen .ideas-cell { min-height: 0; }
+.ideas-cell b { position: absolute; right: 2px; bottom: 1px; color: var(--i); font-size: 8px; font-weight: 800; line-height: 1; opacity: .7; }
+.ideas-cell.is-done { background: var(--i); color: #fff; }
+.ideas-cell.is-done img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ideas-cell.is-dim { opacity: .22; }
+.ideas-cell:active { transform: scale(.94); }
+.ideas-cell:focus-visible { outline: 2px solid #3f3326; outline-offset: 1px; }
+.ideas-surprise { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 26px; background: #e0405a; color: #fff; font: inherit; font-size: 17px; font-weight: 750; cursor: pointer; }
+.ideas-surprise:disabled { opacity: .5; cursor: default; }
+.ideas-surprise:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
+.ideas-sheet { display: grid; justify-items: center; gap: 12px; padding: 4px 4px 12px; text-align: center; }
+.ideas-sheet-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 20px; background: var(--t); color: var(--i); }
+.ideas-sheet h3 { margin: 0; color: #2f2a25; font-size: 22px; font-weight: 750; line-height: 1.35; }
+.ideas-sheet p { margin: 0; color: #5f5952; font-size: 15px; line-height: 1.55; }
+.ideas-sheet-photo { width: 100%; max-height: 260px; border-radius: 16px; object-fit: cover; }
+.ideas-sheet-actions { display: grid; gap: 8px; width: 100%; }
+.ideas-primary, .ideas-quiet { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 0 16px; border-radius: 16px; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
+.ideas-primary { border: 0; background: #e0405a; color: #fff; }
+.ideas-quiet { border: 1px solid rgba(37,37,37,.16); background: #fffdf8; color: #3f3326; }
+.ideas-primary:focus-visible, .ideas-quiet:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .ideas-cell { transition: none; } }

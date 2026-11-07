@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { PawPrint, GameController, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { isConsentPoint } from "../agreements/AgreementsPage";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
@@ -438,6 +438,7 @@ ${text}` : text, target);
     else if (key === "pet") void relationshipApi<{ pet: PetView }>("/api/together/pet", jsonBody({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", language })).then((result) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet: result.pet }); }).catch(() => {});
     else if (key === "profile") { keyboard.hide(); onPrivacy("profile"); }
     else if (key === "photos") open("/?view=moments");
+    else if (key === "ideas") open("/?view=moments&ideas=1");
     else say({ meetup: t("Pinky，我们下次见面是 ", "Pinky, we next meet on ", "Pinky, nos vemos el "), recap: t("Pinky，给我们做一张最近的回顾", "Pinky, make us a recap of lately", "Pinky, haznos un resumen de estos días"), agreement: t("Pinky，把我们说好的写下来：", "Pinky, write down what we agreed: ", "Pinky, anota lo que acordamos: "), letter: t("帮我给 TA 写一封信，在这天打开：", "Help me write my partner a letter to open on ", "Ayúdame a escribir una carta para abrir el "), hard_words: t("我有句话不知道怎么跟 TA 说：", "There's something I don't know how to tell my partner: ", "Hay algo que no sé cómo decirle a mi pareja: "), reminder: t("提醒我 ", "Remind me to ", "Recuérdame ") }[key as "meetup"] || "", ["meetup", "ledger", "recap", "agreement"].includes(key) ? "us" : "me");
   };
   const answerDaily = async (id: string, text: string) => {
@@ -674,6 +675,7 @@ function ConversationDrawer({ user, paired, language, onPet, onClose, onOpen, on
     ...(paired ? [
       { key: "profile", icon: <UserCircle size={22} />, label: t("关于我们", "About us", "Sobre nosotros"), onClick: onProfile },
       { key: "games", icon: <GameController size={22} />, label: t("小游戏", "Little games", "Juegos"), onClick: onGame },
+      { key: "ideas", icon: <Sparkle size={22} weight="fill" />, label: t("100 件小事", "100 little things", "100 cosas"), onClick: () => onOpen("/?view=moments&ideas=1") },
       ...(onPet ? [{ key: "pet", icon: <PawPrint size={22} />, label: t("小家伙", "Little one", "Pequeño"), onClick: onPet }] : []),
     ] : []),
   ];
