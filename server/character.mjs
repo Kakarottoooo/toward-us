@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
+import { mediaDirectory } from "./media-dir.mjs";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { constants as osConstants, setPriority, tmpdir } from "node:os";
+import { constants as osConstants, setPriority } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -27,7 +28,6 @@ const WORKING = new Set(["cutting", "moving"]);
 const FILES = { "still.png": "image/png", "motion.webp": "image/webp" };
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const recordId = (relationshipId) => `character:${relationshipId}`;
-const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const folderFor = (fileId) => join(mediaDirectory(), "characters", fileId);
 const stale = (making) => WORKING.has(making?.state) && Date.now() - Date.parse(making.startedAt) > STALE_MS;
 

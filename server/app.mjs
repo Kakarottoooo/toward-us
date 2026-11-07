@@ -1,4 +1,5 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import { mediaPersistence } from "./media-dir.mjs";
 import express from "express";
 import helmet from "helmet";
 import {
@@ -95,7 +96,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.get("/api/health", async (_req, res) => {
     try {
       await store.ping();
-      res.json({ ok: true, aiReady: mediator.aiReady, model: mediator.model, audioPersistence: "none", storage: store.kind, commit: process.env.RENDER_GIT_COMMIT || process.env.BUILD_COMMIT || null });
+      res.json({ ok: true, aiReady: mediator.aiReady, model: mediator.model, audioPersistence: "none", storage: store.kind, media: mediaPersistence(), commit: process.env.RENDER_GIT_COMMIT || process.env.BUILD_COMMIT || null });
     } catch {
       res.status(503).json({ ok: false, error: "storage_unavailable" });
     }
