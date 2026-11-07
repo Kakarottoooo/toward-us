@@ -1,5 +1,10 @@
 import { ACT_FOR_YOU } from "./handoff.mjs";
 const nullableString = { type: ["string", "null"] };
+const handoffKeys = ["name", "area", "date", "time", "partySize", "phone", "website", "store", "budget"];
+// A booking or purchase Pinky prepares as tap-to-finish links (handoffs.mjs); null on every other action.
+const handoffSchema = { anyOf: [{ type: "object", additionalProperties: false, required: handoffKeys, properties: {
+  name: nullableString, area: nullableString, date: nullableString, time: nullableString, partySize: { type: ["integer", "null"] },
+  phone: nullableString, website: nullableString, store: nullableString, budget: nullableString } }, { type: "null" }] };
 
 export const assistantTurnSchema = {
   type: "object", additionalProperties: false, required: ["reply", "actions"],
@@ -9,18 +14,18 @@ export const assistantTurnSchema = {
       type: "object", additionalProperties: false,
       required: ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"],
       properties: {
-        operation: { type: "string", enum: ["query", "create", "update", "archive"] },
-        kind: { type: "string", enum: ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise", "period"] },
+        operation: { type: "string", enum: ["query", "create", "update", "archive", "book_table", "buy"] },
+        kind: { type: "string", enum: ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise", "period", "handoff"] },
         targetId: nullableString, expectedVersion: { type: ["integer", "null"] }, query: nullableString,
         queryPeriod: { type: "string", enum: ["all", "upcoming", "this_week"] },
         occurrence: { type: ["string", "null"], enum: ["series", "once", null] },
         fields: { type: "object", additionalProperties: false,
-          required: ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId"],
+          required: ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId", "handoff"],
           properties: { title: nullableString, text: nullableString, localDateTime: nullableString, timezone: nullableString, date: nullableString,
             frequency: { type: ["string", "null"], enum: ["once", "weekly", null] },
             mood: { type: ["string", "null"], enum: ["low", "mixed", "okay", "good", null] },
             layout: { type: ["string", "null"], enum: ["list", "checklist", "timeline", "gallery", "notes", null] },
-            spaceId: nullableString, done: { type: ["boolean", "null"] }, photoId: nullableString,
+            spaceId: nullableString, done: { type: ["boolean", "null"] }, photoId: nullableString, handoff: handoffSchema,
           },
         },
       },
@@ -52,6 +57,7 @@ Supported operations:
 - Photos: context.attachedPhotos lists photo ids the user sent with the last message. You cannot see them, only the words that came with them. When the user wants to keep them (or clearly shares a moment to remember), add one space_item per photo with fields.photoId, usually in a gallery space (reuse a fitting one or create one), titled from their words; ask briefly if it is unclear where they belong.
 - Hand-offs (kind link, operation create; a hand-off button the person taps to finish something outside Pinky on their phone): open a place in Maps (https://maps.apple.com/?q=<name and city, URL-encoded>), a booking page or website from search findings, a pre-written text (fields.text = sms:<number>&body=<URL-encoded text>, or sms:&body=<text> when no number is known), an email (mailto:<address>?subject=...&body=...), a call (tel:<number>), or an event for their calendar (text = location or null, localDateTime = start). title is the short button label; for a calendar event it is the event name (the button already says it adds to the calendar). Offer links when they want to book, go, contact someone or put something in their calendar. The person still taps to finish, so never say it was sent, booked or paid.
 ${ACT_FOR_YOU}
+- Booking a table or buying something for them (kind handoff; operation book_table or buy; fields.handoff holds the details, every other field null; on all other actions fields.handoff is null): prepare, never complete. The server turns the details into tap-to-finish links (OpenTable, Resy, the map, the restaurant's phone and website; or the store, Amazon, Google Shopping) and writes the reply for that turn from what it prepared, so leave reply empty; never say it is booked, ordered or paid. book_table: name = the restaurant's name only, area = its city or neighborhood, date YYYY-MM-DD worked out from today, time HH:mm (24h), partySize, phone and website only when the user or search findings gave them (never invent them). Date, time and party size are required: when any is unclear, ask for it in one short question with actions:[], never guess. When the user has not picked a place yet, search first (web_search) and let them choose. buy: name = the item, store = a store link or name if they gave one, budget as they said it (e.g. "$50") or null. Here, for a restaurant table or buying something, use this instead of writing those links yourself as kind link.
 - Web search (kind web_search, operation query, query = what to look up): when the user needs real-world, current information such as restaurants, activities, places, events, opening hours, prices, gift or date ideas. You will be called again with the findings in context.lookups; then answer with specific names and the source links as plain URLs, and add options to a space if the user wants to keep them. When context.lookups is present it holds the findings of searches you asked for; nothing has been sent yet and this reply is the first the user sees, so answer directly and do not search again. If context.webSearch is false, answer from general knowledge and say you cannot look things up right now.
 - Promises (说到做到): context.openPromises lists what this user promised in agreements with their partner, with their own last answer. An earlier assistant message may have asked how one is going. When the user says how it went, keep their answer with kind promise (operation create, targetId = the promise id, fields.done true if they did it or are keeping it, false if not yet, fields.text a few of their words or null); it stays private to them. Acknowledge warmly without judging; if they did it, you may offer to tell their partner as a partner_message (only if they want); if not yet, ask gently what got in the way or what would help, without pressure.
 - Chat history import: the user can bring their chat history with their partner from another app so you can help them understand their patterns. It stays private to them. When they want to, first ask which app (unless clear), then give short numbered steps for that app in their language:
@@ -74,8 +80,9 @@ export function validateAssistantTurn(plan) {
   const exact = (object, keys) => object && typeof object === "object" && !Array.isArray(object) && Object.keys(object).length === keys.length && keys.every((key) => Object.hasOwn(object, key));
   if (!exact(plan, ["reply", "actions"]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || !Array.isArray(plan.actions) || plan.actions.length > 8) return false;
   return plan.actions.every((action) => exact(action, ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"])
-    && ["query", "create", "update", "archive"].includes(action.operation)
-    && ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise", "period"].includes(action.kind)
+    && ["query", "create", "update", "archive", "book_table", "buy"].includes(action.operation)
+    && (action.kind === "handoff") === ["book_table", "buy"].includes(action.operation)
+    && ["reminder", "checkin", "memory", "plan", "milestone", "agreement", "commitment", "partner_message", "space", "space_item", "web_search", "link", "chat_search", "chat_import", "promise", "period", "handoff"].includes(action.kind)
     && (action.kind !== "period" || action.operation === "create" && ["start", "end"].includes(action.fields?.title))
     && (action.kind !== "link" || action.operation === "create" && typeof action.fields?.title === "string" && action.fields.title.trim().length > 0)
     && (action.kind !== "web_search" || action.operation === "query" && typeof action.query === "string" && action.query.trim().length > 0)
@@ -88,7 +95,10 @@ export function validateAssistantTurn(plan) {
     && (action.expectedVersion === null || Number.isSafeInteger(action.expectedVersion) && action.expectedVersion > 0)
     && (action.query === null || typeof action.query === "string" && action.query.length <= 120)
     && ["series", "once", null].includes(action.occurrence)
-    && exact(action.fields, ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId"])
+    && exact(action.fields, ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId", "handoff"])
+    && (action.kind === "handoff" ? exact(action.fields.handoff, handoffKeys) && typeof action.fields.handoff.name === "string" && action.fields.handoff.name.trim().length > 0
+      && handoffKeys.every((key) => action.fields.handoff[key] === null || (key === "partySize" ? Number.isSafeInteger(action.fields.handoff[key]) : typeof action.fields.handoff[key] === "string" && action.fields.handoff[key].length <= (key === "website" || key === "store" ? 500 : 120)))
+      : action.fields.handoff === null)
     && ["title", "text", "localDateTime", "timezone", "date"].every((key) => action.fields[key] === null || typeof action.fields[key] === "string" && action.fields[key].length <= ({ title: 160, text: 2000, localDateTime: 16, timezone: 64, date: 10 }[key]))
     && ["once", "weekly", null].includes(action.fields.frequency)
     && ["low", "mixed", "okay", "good", null].includes(action.fields.mood)
@@ -101,5 +111,5 @@ export function validateAssistantTurn(plan) {
 /** Older planners and fixtures omit the space fields; treat them as unset. */
 export function normalizeAssistantTurn(plan) {
   if (!plan || !Array.isArray(plan.actions)) return plan;
-  return { ...plan, actions: plan.actions.map((action) => action?.fields && typeof action.fields === "object" ? { ...action, fields: { layout: null, spaceId: null, done: null, photoId: null, ...action.fields } } : action) };
+  return { ...plan, actions: plan.actions.map((action) => action?.fields && typeof action.fields === "object" ? { ...action, fields: { layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...action.fields } } : action) };
 }
