@@ -44,6 +44,11 @@ const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",
  * the couple's together conversation). Every rule lives on the server; this screen only renders and forwards explicit taps. */
+/** Us is there by default; each member may hide it on their own screen (founder 11-06, "不一定用户喜欢这个界面"). Only this
+ * device's view changes: the relationship, TA's side and everything shared stay as they are. */
+export const usHiddenKey = (userId: string) => `pinky-us-hidden:${userId}`;
+export const readUsHidden = (userId: string) => { try { return localStorage.getItem(usHiddenKey(userId)) === "1"; } catch { return false; } };
+
 export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: (page?: "character" | "profile") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
@@ -51,7 +56,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // A channel named in the URL (a page handing a sentence back) wins over the one remembered from last time.
   // Just me is the main entry (founder 11-06): the App opens there unless a link asks for Us; Pinky brings what concerns both of
   // them over to Us with a card to confirm.
-  const [channel, setChannel] = useState<Channel>(() => { try { const asked = new URLSearchParams(location.search).get("channel"); return asked === "us" ? "us" : "me"; } catch { return "me"; } });
+  const [usHidden] = useState(() => readUsHidden(user.id));
+  const [channel, setChannel] = useState<Channel>(() => { if (usHidden) return "me"; try { const asked = new URLSearchParams(location.search).get("channel"); return asked === "us" ? "us" : "me"; } catch { return "me"; } });
   const [session, setSession] = useState<Session | null>(null);
   const [together, setTogether] = useState<Together | null>(null);
   // 想你了 (founder 11-06): hearts float up when one is sent from here or arrives from the partner while Us is open.
@@ -380,7 +386,7 @@ ${text}` : text, target);
     try { const active = await ensureSession(); await realtime.start(`/api/assistant/sessions/${active!.id}/realtime`); }
     catch (error) { if (browserSpeechAvailable()) { phoneSpeech.current = true; speech.start(); } else setNotice(errorText(error as ApiError)); }
   };
-  const switchChannel = (next: Channel) => { if (next === channel) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); setAttachments([]); if (next === "me") setUnreadMe(false); setChannel(next); };
+  const switchChannel = (next: Channel) => { if (next === channel || (next === "us" && usHidden)) return; keyboard.hide(); voice.stop(); setNotice(""); setRevising(false); setAttachments([]); if (next === "me") setUnreadMe(false); setChannel(next); };
   // The drawer is modal navigation: dismiss the keyboard and voice before it covers the conversation.
   const openDrawer = () => { keyboard.hide(); voice.stop(); setDrawer(true); };
   const open = (url: string) => { keyboard.hide(); voice.stop(); onOpen(url); };
@@ -585,10 +591,10 @@ ${text}` : text, target);
       {/* One row: menu, the two channels, and a live voice call with Pinky (privately in Just me, for everyone in the room in Us). */}
       <div className="conversation-topline">
         <button className="conversation-menu" onClick={openDrawer} aria-label={t("打开菜单", "Open menu", "Abrir menú")} aria-expanded={drawer} data-testid="open-drawer"><List size={24} /></button>
-        <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
+        {usHidden ? <div className="conversation-segments single"><button type="button" className="active" aria-current="page"><LockKey size={17} />{t("只有我", "Just me", "Solo yo")}</button></div> : <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
           <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={17} />{t("只有我", "Just me", "Solo yo")}{unreadMe && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
           <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={17} />{t("我们俩", "Us", "Nosotros")}{unreadUs && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
-        </div>
+        </div>}
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>

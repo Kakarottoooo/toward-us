@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bell, Brain, CaretRight, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus } from "@phosphor-icons/react";
+import { Bell, Brain, CaretRight, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
-import { PageHeader } from "../conversation/ConversationHome";
+import { PageHeader, readUsHidden, usHiddenKey } from "../conversation/ConversationHome";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { ProfilePage } from "../profile/ProfilePage";
 import { NotificationSettings } from "./NotificationSettings";
@@ -39,6 +39,8 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
   // The couple's character: made by either of them, shown to both; showing it on this screen is each member's own choice.
   const { character, setCharacter } = useCoupleCharacter(Boolean(relationshipId));
   const [characterNotice, setCharacterNotice] = useState("");
+  const [usShown, setUsShown] = useState(() => !readUsHidden(user.id));
+  const toggleUs = () => { const next = !usShown; setUsShown(next); try { if (next) localStorage.removeItem(usHiddenKey(user.id)); else localStorage.setItem(usHiddenKey(user.id), "1"); } catch { /* the switch still applies for this visit */ } };
   const toggleCharacter = async () => {
     if (!character) return; setCharacterNotice("");
     try { setCharacter(await setCharacterVisible(!character.visible)); } catch (error) { setCharacterNotice(characterError((error as Error).message, language)); }
@@ -102,6 +104,9 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       </Row>
       <Row icon={<Bell size={18} weight="bold" />} tone="red" label={titles.notifications} onClick={() => open("notifications")} testId="settings-notifications" />
       <Row icon={<Sticker size={18} weight="bold" />} tone="pink" label={titles.character} value={characterValue} onClick={() => open("character")} testId="settings-character" />
+    </Group>
+    <Group note={usShown ? t("“我们俩”是你、TA 和 Pinky 一起的对话。不喜欢可以关掉，只影响你自己的屏幕。", "Us is the chat for you, your partner and Pinky. If it isn't for you, turn it off; it only changes your own screen.", "Nosotros es el chat de ti, tu pareja y Pinky. Si no te gusta, apágalo; solo cambia tu pantalla.") : t("已隐藏：顶部只剩“只有我”，TA 在“我们俩”里说的话你在这里看不到。你们的关系、日历和共享内容都不变，随时可以再打开。", "Hidden: the top shows only Just me, and you won't see what your partner says in Us here. Your relationship, calendar and shared things stay the same; turn it back on anytime.", "Oculto: arriba solo queda Solo yo y aquí no verás lo que tu pareja diga en Nosotros. Su relación, calendario y lo compartido siguen igual; vuelve a activarlo cuando quieras.")}>
+      <label className="settings-row settings-switch-row"><span className="settings-icon tone-pink"><UsersThree size={18} weight="bold" /></span><span className="settings-switch-text"><span>{t("显示“我们俩”", "Show Us", "Mostrar Nosotros")}</span></span><input type="checkbox" role="switch" className="settings-switch" checked={usShown} onChange={toggleUs} data-testid="show-us" /></label>
     </Group>
     <Group title={t("隐私", "Privacy", "Privacidad")} note={t("退出关系或管理自己的数据，都不需要对方批准。", "Leaving a relationship or managing your own data never needs your partner's approval.", "Salir de una relación o gestionar tus datos nunca requiere la aprobación de tu pareja.")}>
       <Row icon={<Brain size={18} weight="bold" />} tone="pink" label={titles.memory} onClick={() => open("memory")} testId="settings-memory" />
