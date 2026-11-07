@@ -52,7 +52,8 @@ final class PinkyStoreTests: XCTestCase {
 
     func testPageListsTheContractProductsFromStoreKit() async throws {
         let result = try await js("return await Capacitor.Plugins.PinkyStore.products({ ids })", ["ids": Self.allIds])
-        print("PINKY_EVIDENCE products " + String(data: try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!)
+        let json = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+        print("PINKY_EVIDENCE products " + String(decoding: json, as: UTF8.self))
         let products = try XCTUnwrap(result["products"] as? [[String: Any]])
         XCTAssertEqual(Set(products.compactMap { $0["id"] as? String }), Set(Self.allIds))
         let monthly = try XCTUnwrap(products.first { $0["id"] as? String == "us.toward.pinky.member.monthly" })
