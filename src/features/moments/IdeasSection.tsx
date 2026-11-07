@@ -18,9 +18,9 @@ const LOOK: Record<IdeaCategory, { icon: (size: number) => ReactNode; tone: stri
   care: { icon: (size) => <Gift size={size} weight="fill" />, tone: "care" },
 };
 
-/** "100 small things to do together" as a scratch-off poster (founder 11-06, design A): all hundred at a glance in their colours,
- * each square turning into the couple's own photo once they have done it. "今天做什么" picks one they haven't done. A square opens
- * the idea: tell Pinky you did it (it keeps the memory and ticks the square) or that you want to (it helps plan it). */
+/** "100 small things to do together" (founder 11-06, design A, then readable cards): all hundred by kind, each card with its words
+ * and turning into the couple's own photo once they have done it. "今天做什么" picks one they haven't done. A card opens the
+ * idea: tell Pinky you did it (it keeps the memory and ticks the card) or that you want to (it helps plan it). */
 export function IdeasSection({ language, done, onDid, onPlan }: { language: Language; done: Done; onDid: (text: string) => void; onPlan?: (text: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [category, setCategory] = useState<IdeaCategory | "all">("all");
@@ -36,7 +36,7 @@ export function IdeasSection({ language, done, onDid, onPlan }: { language: Lang
   return <section className="ideas-poster" data-testid="ideas">
     <header className="ideas-poster-head">
       <h2>{t("我们的 100 件小事", "Our 100 little things", "Nuestras 100 cosas")}</h2>
-      <p>{done.size ? t(`已经一起做了 ${done.size} 件，还有 ${100 - done.size} 件等你们`, `${done.size} done together, ${100 - done.size} to go`, `${done.size} hechas juntos, faltan ${100 - done.size}`) : t("一起做完一件，这一格就会变成你们那天的照片。", "Do one together and its square becomes your photo from that day.", "Hagan una juntos y su casilla se vuelve su foto de ese día.")}</p>
+      <p>{done.size ? t(`已经一起做了 ${done.size} 件，还有 ${100 - done.size} 件等你们`, `${done.size} done together, ${100 - done.size} to go`, `${done.size} hechas juntos, faltan ${100 - done.size}`) : t("一起做完一件，这一张就会换成你们那天的照片。", "Do one together and its card becomes your photo from that day.", "Hagan una juntos y su tarjeta se vuelve su foto de ese día.")}</p>
       <div className="ideas-poster-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={done.size} aria-label={t("完成进度", "Progress", "Progreso")}><span style={{ width: `${done.size}%` }} /></div>
     </header>
 
@@ -45,19 +45,26 @@ export function IdeasSection({ language, done, onDid, onPlan }: { language: Lang
       {IDEA_CATEGORIES.map((item) => <button key={item.id} type="button" className={`idea-tone-${LOOK[item.id].tone} ${category === item.id ? "is-on" : ""}`} aria-pressed={category === item.id} onClick={() => setCategory(item.id)}>{LOOK[item.id].icon(13)}{label(item.id)}</button>)}
     </div>
 
-    <ol className="ideas-poster-grid" aria-label={t("100 件小事", "100 little things", "100 cosas")}>
-      {IDEAS.map((idea) => {
-        const done_ = done.get(idea.number), dim = category !== "all" && idea.category !== category;
-        return <li key={idea.number}>
-          <button type="button" className={`ideas-cell idea-tone-${LOOK[idea.category].tone} ${done_ ? "is-done" : ""} ${dim ? "is-dim" : ""}`} onClick={() => { setPicked(false); setOpen(idea); }} aria-label={`${idea.number}. ${ideaText(idea, language)}${done_ ? t("（做过了）", " (done)", " (hecha)") : ""}`} data-testid={`idea-${idea.number}`}>
-            {done_?.photo ? <img decoding="async" src={`/api/photos/${encodeURIComponent(done_.photo)}?w=120`} alt="" draggable={false} /> : done_ ? <Check size={16} weight="bold" /> : LOOK[idea.category].icon(15)}
-            {!done_ && <b>{idea.number}</b>}
-          </button>
-        </li>;
-      })}
-    </ol>
-
     <button type="button" className="ideas-surprise" onClick={surprise} disabled={!left.length} data-testid="ideas-surprise"><Shuffle size={18} weight="bold" />{t("今天做什么？抽一件", "Pick one for today", "Elige una para hoy")}</button>
+
+    {/* Every idea readable at a glance (founder 11-06: the squares were too small to tell what they were): a card with its words,
+        three to a row, by kind; once done it shows that day's photo under the words. */}
+    {IDEA_CATEGORIES.filter((item) => category === "all" || item.id === category).map((item) => {
+      const ideas = IDEAS.filter((idea) => idea.category === item.id), count = ideas.filter((idea) => done.has(idea.number)).length;
+      return <section key={item.id} className={`ideas-group idea-tone-${LOOK[item.id].tone}`} aria-label={label(item.id)}>
+        <h3>{LOOK[item.id].icon(16)}{label(item.id)}<small>{count}/{ideas.length}</small></h3>
+        <ol className="ideas-cards">{ideas.map((idea) => {
+          const done_ = done.get(idea.number);
+          return <li key={idea.number}>
+            <button type="button" className={`ideas-card ${done_ ? "is-done" : ""} ${done_?.photo ? "has-photo" : ""}`} onClick={() => { setPicked(false); setOpen(idea); }} data-testid={`idea-${idea.number}`}>
+              {done_?.photo && <img decoding="async" src={`/api/photos/${encodeURIComponent(done_.photo)}?w=240`} alt="" draggable={false} />}
+              <span className="ideas-card-top">{done_ ? <Check size={14} weight="bold" /> : LOOK[idea.category].icon(14)}<b>{idea.number}</b></span>
+              <span className="ideas-card-text">{ideaText(idea, language)}</span>
+            </button>
+          </li>;
+        })}</ol>
+      </section>;
+    })}
 
     <BottomSheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }} title={open ? `#${open.number} · ${label(open.category)}` : ""}>
       {open && <div className={`ideas-sheet idea-tone-${LOOK[open.category].tone}`} data-testid="idea-sheet">
@@ -67,7 +74,7 @@ export function IdeasSection({ language, done, onDid, onPlan }: { language: Lang
           {mark.photo && <img className="ideas-sheet-photo" decoding="async" src={`/api/photos/${encodeURIComponent(mark.photo)}?w=640`} alt="" draggable={false} />}
           <p>{t(`你们在 ${day(mark.date)} 一起做过了 ♡`, `You did this together on ${day(mark.date)} ♡`, `Lo hicieron juntos el ${day(mark.date)} ♡`)}</p>
         </> : <>
-          <p>{t("做过了就告诉 Pinky，发几张那天的照片，它会存进你们的回忆，这一格就会变成你们的照片。", "Done it? Tell Pinky and send a few photos from that day: it keeps them in your memories and this square becomes your photo.", "¿Ya lo hicieron? Díganselo a Pinky con unas fotos de ese día: las guarda en sus recuerdos y esta casilla será su foto.")}</p>
+          <p>{t("做过了就告诉 Pinky，发几张那天的照片，它会存进你们的回忆，这一张就会换成你们的照片。", "Done it? Tell Pinky and send a few photos from that day: it keeps them in your memories and this card becomes your photo.", "¿Ya lo hicieron? Díganselo a Pinky con unas fotos de ese día: las guarda en sus recuerdos y esta tarjeta será su foto.")}</p>
           <div className="ideas-sheet-actions">
             <button type="button" className="ideas-primary" onClick={() => { setOpen(null); plan(open); }} data-testid="idea-plan"><CalendarPlus size={18} weight="bold" />{t("就做这件，帮我们安排", "Let's do it: help us plan", "Hagámoslo: ayúdanos a planearlo")}</button>
             <button type="button" className="ideas-quiet" onClick={() => { setOpen(null); did(open); }} data-testid="idea-did"><Camera size={18} />{t("我们做过了", "We did it", "Ya lo hicimos")}</button>
