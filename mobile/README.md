@@ -151,9 +151,11 @@ npm ci --ignore-scripts
 TOWARD_US_APP_URL=https://example.com npm run sync   # 测试只需要一个能打开的网页让 Capacitor 注入桥
 cd ios/App
 xcodebuild -project App.xcodeproj -scheme App -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' \
   TEST_RUNNER_PINKY_SNAPSHOT_DIR=$PWD/widget-snapshots test
 ```
+
+2026-11-06 在创始人的 Mac（Xcode 26.4）上 9 个测试全过，用的是 iOS 18.3 模拟器。iOS 26.4 模拟器上经 SSH 跑时，`SKTestSession` 报 `SKInternalErrorDomain Code=3`，3 个 StoreKit 测试拿不到商品，其余都过；在 Xcode 图形界面里跑是否正常还没试过。
 
 ### 创始人要做的事
 
