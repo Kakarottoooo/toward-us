@@ -146,3 +146,17 @@ test("outfits: locked until bought, the couple shares what one buys, members wea
   assert.equal((await request("/membership/outfit", "POST", { outfit: null })).body.outfits.equipped, null, "and can take it off");
   assert.equal((await request("/membership/outfit", "POST", { outfit: "bow" }, ids[2])).status, 409, "an unpaired person has no little one to dress");
 });
+
+test("deleting your private data keeps the couple's membership and clears your streak days; deleting the account ends it", async (t) => {
+  const { store, ids, webhook } = await setup(t);
+  const { markShowedUp } = await import("../server/streak.mjs");
+  const relationshipId = (await store.getRelationshipContext(ids[0])).relationship.id;
+  await store.transaction(`relationship:${relationshipId}`, (tx) => markShowedUp(tx, { relationshipId, userId: ids[0], zone: "UTC" }));
+  assert.equal(await webhook(subscription(ids[0])), 200);
+  await store.deletePrivateData(ids[0]);
+  assert.equal((await membershipFor(store, ids[1])).plan, "member", "a payment is a billing record, not private data to wipe");
+  assert.equal((await store.listRecordsForJob("accountSettings")).some((record) => record.id.startsWith("showedup:") && record.ownerUserId === ids[0]), false, "the showed-up days go with private data");
+  await store.deleteAccount(ids[0]);
+  assert.equal((await store.listRecordsForJob("purchases")).some((record) => record.ownerUserId === ids[0]), false);
+  assert.equal((await membershipFor(store, ids[1])).plan, "free");
+});

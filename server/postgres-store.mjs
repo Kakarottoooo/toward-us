@@ -135,9 +135,11 @@ export async function createPostgresStore(databaseUrl) {
       return store.transaction(`user:${userId}`, async () => {
         let deleted = 0;
         for (const collection of GRAPH_COLLECTIONS) {
-          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices"].includes(collection)) continue;
+          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
         }
+        // The streak's showed-up days (accountSettings "showedup:…") are this person's activity: they go with private data.
+        deleted += (await pool.query(`delete from ${graphTable("accountSettings")} where owner_user_id=$1 and id like 'showedup:%'`, [userId])).rowCount;
         await pool.query("update rooms set payload=jsonb_set(payload,'{analysis,private}',(payload#>'{analysis,private}') - $1) where payload#>'{analysis,private}' ? $1", [userId]);
         return deleted;
       });
@@ -148,7 +150,7 @@ export async function createPostgresStore(databaseUrl) {
         await store.getUserForUpdate(userId);
         await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
         await pool.query("delete from phone_links where phone=(select phone from user_phones where user_id=$1)", [userId]); await store.unbindPhone(userId);
-        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
+        for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
         const snapshot = await store.getPrivacySnapshot(userId);
         for (const room of snapshot.rooms) {
           const participantIds = new Set((room.participants || []).filter((person) => person.userId === userId).map((person) => person.id));
