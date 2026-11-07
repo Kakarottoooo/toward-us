@@ -188,8 +188,7 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .find-us-grid button.is-chosen { box-shadow: inset 0 0 0 3px #d6708c; }
 .find-us-grid svg { position: absolute; right: 6px; bottom: 6px; color: #d6708c; background: #fff; border-radius: 50%; }
 
-/* 100 件小事 as a scratch-off poster (founder 11-06, design A): ten by ten squares in each idea's colour; done ones turn into
-   the couple's photo from that day. */
+/* 100 件小事 (founder 11-06, design A, then readable cards): the poster's header, filters and the sheet an idea opens in. */
 /* Each kind of idea's colour, on the poster and on the sheet an idea opens in (which renders outside the poster). */
 .idea-tone-outdoors { --t: #e1f5ee; --i: #0f6e56; } .idea-tone-home { --t: #faeeda; --i: #854f0b; }
 .idea-tone-food { --t: #faece7; --i: #993c1d; } .idea-tone-town { --t: #e6f1fb; --i: #185fa5; }
@@ -205,15 +204,6 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .ideas-poster-cats button { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 11px; border: 0; border-radius: 17px; background: var(--t, #f1ebe2); color: var(--i, #5d574f); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
 .ideas-poster-cats button.is-on { box-shadow: inset 0 0 0 2px var(--i, #3f3326); }
 .device-screen .ideas-poster-cats button { min-height: 34px; }
-.ideas-poster-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; margin: 0; padding: 0; list-style: none; }
-.ideas-cell { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 7px; background: var(--t); color: var(--i); cursor: pointer; overflow: hidden; transition: opacity .2s ease, transform .15s ease; }
-.device-screen .ideas-cell { min-height: 0; }
-.ideas-cell b { position: absolute; right: 2px; bottom: 1px; color: var(--i); font-size: 8px; font-weight: 800; line-height: 1; opacity: .7; }
-.ideas-cell.is-done { background: var(--i); color: #fff; }
-.ideas-cell.is-done img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.ideas-cell.is-dim { opacity: .22; }
-.ideas-cell:active { transform: scale(.94); }
-.ideas-cell:focus-visible { outline: 2px solid #3f3326; outline-offset: 1px; }
 .ideas-surprise { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 26px; background: #e0405a; color: #fff; font: inherit; font-size: 17px; font-weight: 750; cursor: pointer; }
 .ideas-surprise:disabled { opacity: .5; cursor: default; }
 .ideas-surprise:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
@@ -227,4 +217,20 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .ideas-primary { border: 0; background: #e0405a; color: #fff; }
 .ideas-quiet { border: 1px solid rgba(37,37,37,.16); background: #fffdf8; color: #3f3326; }
 .ideas-primary:focus-visible, .ideas-quiet:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .ideas-cell { transition: none; } }
+
+/* The ideas as readable cards, three to a row by kind (founder 11-06); a done one shows its photo under the words. */
+.ideas-group { display: grid; gap: 8px; }
+.ideas-group h3 { display: flex; align-items: center; gap: 6px; margin: 4px 2px 0; color: var(--i); font-size: 16px; font-weight: 750; }
+.ideas-group h3 small { margin-left: auto; color: var(--i); font-size: 13px; font-weight: 700; opacity: .8; }
+.ideas-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ideas-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; width: 100%; min-height: 92px; padding: 8px 8px 9px; border: 0; border-radius: 14px; background: var(--t); color: var(--i); font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
+.device-screen .ideas-card { min-height: 92px; }
+.ideas-card-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; }
+.ideas-card-top b { font-size: 11px; font-weight: 800; opacity: .65; }
+.ideas-card-text { position: relative; z-index: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: #2f2a25; font-size: 13.5px; font-weight: 650; line-height: 1.35; }
+.ideas-card.is-done { background: var(--i); color: #fff; }
+.ideas-card.is-done .ideas-card-text { color: #fff; }
+.ideas-card.has-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ideas-card.has-photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.55)); }
+.ideas-card:active { transform: scale(.97); }
+.ideas-card:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
