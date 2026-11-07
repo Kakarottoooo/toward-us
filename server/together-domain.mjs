@@ -202,7 +202,10 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   // Each open commitment says whose it is, so an answer to a check-in is recorded against the writer's own part only.
   const owner = (ownerType) => ownerType === "both" ? "both" : (membership?.members || []).find((member) => ownerType === `member_${String(member.role).toLowerCase()}`)?.user?.name || "";
   const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), notTriedYet: await notTriedYet(store, actorUserId, "us").catch(() => []) };
-  let turn = await mediator.continueTogether({ ...context, webSearch: Boolean(mediator.webSearch) }, language);
+  // Today in the writer's time zone, with its weekday, so "this Sunday" becomes the right date on the calendar (founder 11-06).
+  const zone = await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, actorUserId)).catch(() => null) || "UTC";
+  const today = `${new Date().toLocaleDateString("en-CA", { timeZone: zone })} (${new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: zone })})`;
+  let turn = await mediator.continueTogether({ ...context, today, webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
   if (searches.length) {
@@ -213,7 +216,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
       ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
       : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));
     progress("writing");
-    turn = await mediator.continueTogether({ ...context, webSearch: true, lookups }, language);
+    turn = await mediator.continueTogether({ ...context, today, webSearch: true, lookups }, language);
   }
   turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.

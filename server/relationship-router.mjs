@@ -455,6 +455,7 @@ const DECISION_ERRORS = {
   evaluation_submitted: ["你已评价过这个方案，可以在共同对话提出新的修改。", "You already evaluated this option. Propose further changes in the shared conversation.", "Ya evaluaste esta opción. Propón nuevos cambios en la conversación compartida."],
   both_evaluations: ["双方分别评价后才能起草。", "Both people must evaluate the option first.", "Ambos deben evaluar la opción primero."],
   both_summaries: ["双方确认可共享摘要后才能共同讨论。", "Both shareable summaries must be confirmed before the shared discussion.", "Ambos resúmenes compartibles deben confirmarse antes de la conversación compartida."],
+  plan_without_days: ["这份安排里没有写哪天，放不进日历。", "This plan has no days in it, so it can't go on the calendar.", "Este plan no tiene días, así que no puede ir al calendario."],
   agreement_not_editable: ["当前协议不能修改；请重新提出方案。", "This agreement cannot be edited. Propose a new option.", "Este acuerdo no puede editarse. Propón otra opción."],
   agreement_not_pending: ["当前协议不等待批准。", "This agreement is not awaiting approval.", "Este acuerdo no está pendiente de aprobación."],
   confirm_draft: ["请先检查并明确确认草稿。", "Review and explicitly confirm the draft first.", "Revisa y confirma explícitamente el borrador primero."],
