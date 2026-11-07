@@ -1,0 +1,23 @@
+.membership { display: grid; gap: 16px; padding-bottom: 24px; }
+.membership-loading { margin: 24px 16px; color: var(--jian-muted); font-size: 15px; }
+.membership-hero { display: grid; justify-items: center; gap: 8px; padding: 24px 20px 20px; border-radius: 22px; background: #fbeae9; color: #5c2a2a; text-align: center; }
+.membership-hero.is-member { background: linear-gradient(160deg, #fde7c8, #f9d3d6); }
+.membership-crown { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: #fff7ef; color: #d5576b; box-shadow: 0 2px 8px rgba(92, 42, 42, .12); }
+.membership-hero h2 { margin: 4px 0 0; font-size: 22px; font-weight: 700; color: #3d1d1d; }
+.membership-hero p { margin: 0; font-size: 15px; line-height: 1.5; }
+.membership-perks { display: grid; gap: 10px; margin: 0; padding: 16px 18px; border-radius: 18px; background: var(--jian-paper-bright); list-style: none; }
+.membership-perks li { display: flex; align-items: flex-start; gap: 10px; color: var(--jian-ink); font-size: 15px; line-height: 1.45; }
+.membership-perks svg { flex: none; margin-top: 3px; color: #d5576b; }
+.membership-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.membership-plan { position: relative; display: grid; gap: 4px; justify-items: start; min-height: 88px; padding: 16px; border: 2px solid var(--jian-line); border-radius: 18px; background: var(--jian-paper-bright); color: var(--jian-ink); text-align: left; cursor: pointer; }
+.membership-plan.featured { border-color: #d5576b; background: #fff4f2; }
+.membership-plan strong { font-size: 16px; }
+.membership-plan span { font-size: 15px; color: #514c46; }
+.membership-plan:disabled { opacity: .55; cursor: default; }
+.membership-plan:focus-visible, .membership-link:focus-visible { outline: 3px solid #d5576b; outline-offset: 2px; }
+.membership-badge { position: absolute; top: -10px; right: 12px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; background: #d5576b; color: #fff !important; font-size: 12px !important; font-weight: 700; }
+.membership-link { justify-self: center; min-height: 44px; padding: 0 16px; border: 0; background: transparent; color: #b8475a; font-size: 15px; font-weight: 600; cursor: pointer; }
+.membership-link:disabled { opacity: .55; }
+.membership-note, .membership-notice, .membership-fine { margin: 0 8px; color: #6f6860; font-size: 14px; line-height: 1.5; text-align: center; }
+.membership-notice { color: #7a3b2e; }
+.membership-fine { font-size: 13px; color: #8a837b; }
