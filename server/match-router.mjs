@@ -60,7 +60,7 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     const partner = match.players.find((id) => id !== userId);
     // The partner hears about it when it becomes their move, or when the game ends, unless they are looking at the App.
     const theirs = (turn) => turn === partner || turn === BOTH;
-    if (partner && !online(partner) && (match.status !== "active" || (theirs(match.turn) && !theirs(before)))) {
+    if (partner && !online(partner) && match.status !== "ended" && (match.status !== "active" || (theirs(match.turn) && !theirs(before)))) {
       const context = await store.getRelationshipContext(userId), me = context?.members.find((member) => member.userId === userId)?.user?.name || "";
       const drawn = match.game === "draw" && match.state.rounds.at(-1)?.strokes && match.status === "active";
       const body = (language) => {

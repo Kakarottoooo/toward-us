@@ -5,7 +5,7 @@ export const BOTH = "both";
 export const HOST = "host";
 
 // What /api/matches sends (server/matches/index.mjs viewMatch); `state` is each game's own view of itself.
-export type MatchView<State = unknown> = { id: string; game: string; status: "active" | "finished"; players: string[]; turn: string | null; createdByUserId: string; createdAt: string; updatedAt: string; finishedAt: string | null; version: number; state: State };
+export type MatchView<State = unknown> = { id: string; game: string; status: "active" | "finished" | "ended"; endedBy?: string | null; players: string[]; turn: string | null; createdByUserId: string; createdAt: string; updatedAt: string; finishedAt: string | null; version: number; state: State };
 export type Member = { id: string; name: string };
 export type Hall = {
   games: string[]; matches: MatchView[]; members: Member[]; readOnly: boolean;

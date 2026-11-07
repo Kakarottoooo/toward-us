@@ -220,3 +220,34 @@ test("小家伙: without a model it still guesses, and passes its turn to draw",
   assert.equal(rounds[1].outcome, "skipped");
   assert.equal(rounds[2].drawer, ids[0], "my turn to draw again");
 });
+
+test("结束这局: either of them stops a game; no winner, no stats, a line in Us, no push, and a new game can start", async (t) => {
+  const { ids, request, notices } = await couple(t);
+  const { match } = (await request("/matches", "POST", { game: "gomoku" })).body;
+  await request(`/matches/${match.id}/actions`, "POST", { type: "move", x: 7, y: 7 });
+  const before = notices.length;
+  const ended = await request(`/matches/${match.id}/actions`, "POST", { type: "abandon" }, ids[1]);
+  assert.equal(ended.status, 200);
+  assert.equal(ended.body.match.status, "ended"); assert.equal(ended.body.match.turn, null); assert.equal(ended.body.match.endedBy, ids[1]);
+  assert.equal(notices.length, before, "no push: the line in Us says it");
+  assert.equal((await request(`/matches/${match.id}/actions`, "POST", { type: "move", x: 0, y: 0 })).body.code, "match_over");
+  assert.equal((await request(`/matches/${match.id}/actions`, "POST", { type: "abandon" })).body.code, "match_over");
+  const us = (await request("/together?language=zh")).body.conversation;
+  const line = us.messages.find((message) => message.text?.includes("结束了这局"));
+  assert.equal(line.i18n.en, "Mia ended your game of Gomoku. It doesn't count for anyone.");
+  const hall = (await request("/matches")).body;
+  assert.equal(hall.stats.gomoku.played, 0, "an ended game counts for nobody");
+  assert.equal(hall.matches.find((item) => item.id === match.id).status, "ended");
+  const next = await request("/matches", "POST", { game: "gomoku" });
+  assert.equal(next.status, 201); assert.notEqual(next.body.match.id, match.id);
+});
+
+test("结束这局: a game with 小家伙 ends quietly, only by the one playing it", async (t) => {
+  const { ids, request } = await couple(t);
+  const { match } = (await request("/matches", "POST", { game: "connect4", with: "pet" })).body;
+  assert.equal((await request(`/matches/${match.id}/actions`, "POST", { type: "abandon" }, ids[1])).status, 404, "Mia can't see it");
+  const ended = await request(`/matches/${match.id}/actions`, "POST", { type: "abandon" });
+  assert.equal(ended.body.match.status, "ended");
+  const us = (await request("/together?language=zh")).body.conversation;
+  assert.ok(!us?.messages?.some((message) => message.text?.includes("结束了这局")), "nothing in Us");
+});

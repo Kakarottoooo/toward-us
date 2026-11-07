@@ -40,7 +40,7 @@ const activePair = (context) => context?.relationship.status === "active" && con
 
 export function viewMatch(match, userId) {
   const module = GAMES[match.game];
-  return { id: match.id, game: match.game, status: match.status, players: match.players, turn: match.turn, createdByUserId: match.createdByUserId, createdAt: match.createdAt, updatedAt: match.updatedAt, finishedAt: match.finishedAt || null, version: match.version, state: module ? module.view(match.state, userId) : null };
+  return { id: match.id, game: match.game, status: match.status, players: match.players, turn: match.turn, createdByUserId: match.createdByUserId, createdAt: match.createdAt, updatedAt: match.updatedAt, finishedAt: match.finishedAt || null, endedBy: match.endedBy || null, version: match.version, state: module ? module.view(match.state, userId) : null };
 }
 
 export async function listMatches(store, userId) {
@@ -90,6 +90,8 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
     if (match.status !== "active") throw matchError(409, "match_over");
     const context = await tx.getRelationshipContext(userId);
     if (!activePair(context)) throw matchError(409, "pairing_required");
+    // "abandon", not "end": 你画我猜, 两个真相 and 石头剪刀布 finish normally with their own "end".
+    if (action?.type === "abandon") return endMatch(tx, { match, userId, as, context });
     const state = module.act(match.state, { userId: as, action });
     const finished = module.finished(state);
     const updated = await tx.updateRelationshipRecordForUser(COLLECTION, match.id, userId, (draft) => {
@@ -105,6 +107,21 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
     }
     return { match: updated, before: match.turn, conversation };
   });
+}
+
+/** Either player stops a game that isn't over (founder 11-06: games left hanging kept saying "轮到你了"). It ends with no
+ * winner and counts for nobody; a game with the partner gets a line in Us so they know where it went. 小家伙 and Pinky never
+ * end a game. */
+async function endMatch(tx, { match, userId, as, context }) {
+  if (as !== userId) throw matchError(409, "invalid_action");
+  const updated = await tx.updateRelationshipRecordForUser(COLLECTION, match.id, userId, (draft) => {
+    draft.status = "ended"; draft.turn = null; draft.endedBy = userId; draft.finishedAt = new Date().toISOString(); draft.version += 1;
+  });
+  if (withPet(updated)) return { match: updated, before: match.turn, conversation: null };
+  const me = context.members.find((member) => member.userId === userId)?.user?.name || "";
+  const i18n = togetherI18n((language) => language === "en" ? `${me} ended your game of ${gameName(match.game, language)}. It doesn't count for anyone.` : language === "es" ? `${me} terminó su partida de ${gameName(match.game, language)}. No cuenta para nadie.` : `${me} 结束了这局${gameName(match.game, language)}，没下完，不算输赢。`);
+  const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: i18n.zh, i18n, handle: `match-end:${updated.id}` });
+  return { match: updated, before: match.turn, conversation: posted.duplicate ? null : posted.conversation };
 }
 
 /** What the hall shows per game, from all of this couple's matches of it. */
