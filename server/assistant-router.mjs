@@ -9,6 +9,7 @@ import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent
 import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, listSpaces, spaceContext, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
 import { handoffUrl, isCalendar } from "./handoff.mjs";
+import { prepareHandoff } from "./handoffs.mjs";
 import { appendTogetherMessage, memberLanguage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
@@ -192,7 +193,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
       if (latest.version !== session.version) throw fail(409, say(session.language, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const currentRecords = await available(tx, userId);
-      const cards = []; const replies = []; let createdSpace = null;
+      const cards = []; const replies = []; let createdSpace = null; const handoffLines = []; let askBack = "";
       for (const action of plan.actions) {
         if (action.kind === "promise") {
           if (!context.openPromises.some((promise) => promise.id === action.targetId)) throw fail(404, "This promise is no longer open.");
@@ -207,6 +208,14 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
 ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt: null, messageId: null };
           cards.push({ id: partnerMessage.cardId, kind: "partner_message", version: 1, text, digest: partnerMessage.digest, ...(openOn ? { openOn } : {}) });
           replies.push(say(session.language, "已为你起草好想对 TA 说的话。你确认之前不会分享，也不会分享你的原话。", "I drafted what you would like your partner to hear. Nothing is shared, and your own words never are, until you confirm.", "Redacté lo que quieres que tu pareja escuche. No se comparte nada, ni tus palabras originales, hasta que lo confirmes.")); continue;
+        }
+        if (action.kind === "handoff") {
+          // Prepared, never completed (founder 11-06): links into the real services with everything filled in; the last tap is
+          // the member's own. A missing date, time or party size is asked for, never guessed.
+          const prepared = prepareHandoff(action.operation, action.fields.handoff, { language, today: context.localDateTime.slice(0, 10) });
+          if (prepared.missing) { askBack = askBack || prepared.question; continue; }
+          cards.push(...prepared.cards.map((link) => ({ id: randomUUID(), version: 1, ...link })));
+          handoffLines.push(prepared.summary, prepared.script); continue;
         }
         if ((!Object.hasOwn(collections, action.kind) && action.kind !== "link" && action.kind !== "period") || !["create", "update", "archive", "query"].includes(action.operation)) throw fail(502, "Unsupported assistant operation. Nothing was changed.");
         if (action.operation === "query") {
@@ -336,8 +345,11 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         } else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "已保存私人记录，未授权 AI 在其他对话中使用。", "Saved privately, without permission for AI use in other conversations.", "Se guardó en privado, sin autorizar el uso de la IA en otras conversaciones."));
       }
       // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
-      const reply = clean(plan.reply, 1200) || replies.join("\n") || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      // A prepared booking or purchase is summarized by the server from what it actually prepared, never by the model, which
+      // tends to restate the details or call it booked.
+      const own = handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
+      const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
