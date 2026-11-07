@@ -194,7 +194,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
       if (latest.version !== session.version) throw fail(409, say(session.language, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const currentRecords = await available(tx, userId);
-      const cards = []; const replies = []; let createdSpace = null; const handoffLines = []; let askBack = "";
+      const cards = []; const replies = []; let createdSpace = null; const handoffLines = []; let askBack = ""; const searched = [];
       for (const action of plan.actions) {
         if (action.kind === "promise") {
           if (!context.openPromises.some((promise) => promise.id === action.targetId)) throw fail(404, "This promise is no longer open.");
@@ -233,6 +233,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
             return action.queryPeriod === "upcoming" ? date >= today : action.queryPeriod === "this_week" ? date >= monday.toISOString().slice(0, 10) && date <= sunday.toISOString().slice(0, 10) : true;
           }).slice(0, 20);
           cards.push(...results.map(({ kind, record }) => card(kind, record, session.language)));
+          searched.push(results.length);
           replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, `Found ${results.length} records you can view.`, `Se encontraron ${results.length} registros que puedes ver.`)); continue;
         }
         // Just me is where everything can start (founder 11-06): a plan or date for the two of them prepares a card, and only the
@@ -348,7 +349,11 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
       // A prepared booking or purchase is summarized by the server from what it actually prepared, never by the model, which
       // tends to restate the details or call it booked.
-      const own = handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
+      // A turn that only looked things up and found nothing says so plainly: the model's own line often promised results
+      // ("我来找找…结果会直接显示给你"), which left the person waiting for nothing, or invited a made-up memory (founder 11-07).
+      const foundNothing = searched.length && searched.length === plan.actions.length && searched.every((count) => count === 0);
+      const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
+        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
