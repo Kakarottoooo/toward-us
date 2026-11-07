@@ -21,6 +21,17 @@ const GRACE_MS = 24 * 60 * 60 * 1000;
 
 const purchase = (userId, relationshipId, data) => createRelationshipRecord({ relationshipId: relationshipId || null, userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "active", provenanceSource: data.source, ...data });
 
+// Purchases are read at most once a minute per store for hot paths (AI caps, the pet in every Us load); a verified payment
+// clears the cache so the buyer sees it at once.
+const purchaseCache = new WeakMap();
+export async function cachedPurchases(store, now = new Date()) {
+  const cached = purchaseCache.get(store);
+  if (cached && now.getTime() - cached.at < 60_000 && now.getTime() >= cached.at) return cached.records;
+  const records = await store.listRecordsForJob(COLLECTION).catch(() => []);
+  purchaseCache.set(store, { at: now.getTime(), records }); return records;
+}
+export const forgetPurchases = (store) => purchaseCache.delete(store);
+
 /** The couple's (or, unpaired, the person's) plan, from active purchase records of either member. */
 export async function membershipFor(store, userId, { now = new Date(), purchases } = {}) {
   const pairing = await store.getRelationshipContext(userId);
@@ -88,7 +99,7 @@ const form = (data, prefix = "", out = new URLSearchParams()) => {
 const LIMIT = { zh: "开通会员", en: "Become a member", es: "Hazte miembro" };
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
-export function createMembershipRouter({ store, production = false, fetchImpl = (...args) => fetch(...args), now = () => new Date(), env = process.env }) {
+export function createMembershipRouter({ store, production = false, fetchImpl = (...args) => fetch(...args), now = () => new Date(), env = process.env, onOutfit }) {
   const stripeOn = () => Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
   const stripe = async (method, path, body) => {
     const response = await fetchImpl(`https://api.stripe.com/v1/${path}`, { method, headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) }, ...(body ? { body: form(body).toString() } : {}) });
@@ -99,7 +110,8 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
   const relationshipOf = async (userId) => { const pairing = await store.getRelationshipContext(userId); return pairing?.relationship?.status === "active" ? pairing.relationship.id : null; };
   const findBy = async (field, value) => value ? (await store.listRecordsForJob(COLLECTION)).find((record) => record[field] === value) || null : null;
   /** Creates or updates the purchase record for an external id (a subscription, an Apple original transaction, a session). */
-  const upsert = async (ownerUserId, externalId, fields) => store.transaction(`purchase:${externalId}`, async (tx) => {
+  const upsert = async (ownerUserId, externalId, fields) => { try { return await write(ownerUserId, externalId, fields); } finally { forgetPurchases(store); } };
+  const write = async (ownerUserId, externalId, fields) => store.transaction(`purchase:${externalId}`, async (tx) => {
     const existing = (await tx.listRecordsForJob(COLLECTION)).find((record) => record.externalId === externalId);
     if (existing) return tx.updateRelationshipRecordForUser(COLLECTION, existing.id, existing.ownerUserId, (record) => { Object.assign(record, fields); record.version += 1; });
     if (!ownerUserId || !(await tx.getUserById(ownerUserId))) return null;
@@ -161,6 +173,18 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
   const router = express.Router();
   const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "请先登录。" });
   router.get("/membership", auth, async (req, res, next) => { try { res.setHeader("Cache-Control", "no-store"); res.json(await view(req.auth.user.id)); } catch (error) { next(error); } });
+  // Dress the couple's little one: any outfit the couple owns (all of them for members), or null to take it off.
+  router.post("/membership/outfit", auth, async (req, res) => {
+    const userId = req.auth.user.id, outfit = req.body?.outfit ?? null;
+    const pairing = await store.getRelationshipContext(userId);
+    const relationshipId = pairing?.relationship?.status === "active" ? pairing.relationship.id : null;
+    if (!relationshipId) return res.status(409).json({ error: "Your little one lives in Us; invite your partner first.", code: "not_paired" });
+    if (outfit !== null && !(await membershipFor(store, userId, { now: now() })).outfits.includes(outfit)) return res.status(402).json({ error: "This outfit isn't yours yet.", code: "outfit_locked" });
+    const saved = await store.transaction(`relationship:${relationshipId}`, (tx) => tx.updateRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId, (draft) => { draft.petOutfit = outfit; }));
+    if (!saved) return res.status(404).json({ error: "Not found." });
+    onOutfit?.(saved);
+    res.json(await view(userId));
+  });
   router.post("/membership/apple/verify", auth, async (req, res) => {
     try { await applyApple(req.auth.user.id, req.body?.signedTransaction); res.json(await view(req.auth.user.id)); }
     catch (error) { res.status(error?.statusCode || 500).json({ error: error?.message || "Could not check this purchase.", code: error?.code }); }
@@ -202,8 +226,8 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
   return { router, webhooks, membershipFor: (userId) => membershipFor(store, userId, { now: now() }), view, grant: upsert };
 }
 
-/** The outfit the couple's little one wears; kept on the couple's character record by outfits (see character router). */
+/** The outfit the couple's little one wears, kept on their shared Us conversation as `petOutfit`. */
 async function equippedOutfit(store, userId) {
-  try { const pairing = await store.getRelationshipContext(userId); const id = pairing?.relationship?.id; if (!id) return null; const record = (await store.listRecordsForJob("characters")).find((item) => item.relationshipId === id && item.outfit); return record?.outfit || null; } catch { return null; }
+  try { const pairing = await store.getRelationshipContext(userId); const id = pairing?.relationship?.status === "active" ? pairing.relationship.id : null; if (!id) return null; return (await store.getRelationshipRecordForUser("togetherConversations", `together:${id}`, userId))?.petOutfit || null; } catch { return null; }
 }
 export const MEMBER_CTA = LIMIT;
