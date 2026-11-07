@@ -145,7 +145,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   });
 
   // Payment webhooks verify their own signatures over the raw body and come from Stripe/Apple, not from the app's origin.
-  const membership = createMembershipRouter({ store, production });
+  const membership = createMembershipRouter({ store, production, onOutfit: (conversation) => emitTogether(conversation, "together.updated") });
   app.use(membership.webhooks);
   // A connected photo album sends the times and places of every photo it holds (thousands; no pictures) in one plan.
   app.use("/api/photo-memories/plan", express.json({ limit: "8mb" }));

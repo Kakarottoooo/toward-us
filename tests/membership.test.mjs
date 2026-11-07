@@ -128,3 +128,21 @@ test("membership lapses after its period (with a day's grace) and an unpaired pa
   assert.equal((await membershipFor(store, ids[1])).plan, "free");
   assert.equal((await membershipFor(store, ids[0], { now: new Date(Date.now() + 2 * 86400000) })).plan, "free");
 });
+
+test("outfits: locked until bought, the couple shares what one buys, members wear any, and nobody unpaired can dress a pet", async (t) => {
+  const { store, ids, request, webhook } = await setup(t);
+  const { ensureTogetherConversation } = await import("../server/together-domain.mjs");
+  const relationshipId = (await store.getRelationshipContext(ids[0])).relationship.id;
+  await store.transaction(`relationship:${relationshipId}`, (tx) => ensureTogetherConversation(tx, { relationshipId, userId: ids[0] }));
+  const worn = async () => (await store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, ids[0])).petOutfit ?? null;
+  assert.equal((await request("/membership/outfit", "POST", { outfit: "crown" })).status, 402, "not bought yet");
+  assert.equal((await request("/membership/outfit", "POST", { outfit: "cape" })).status, 402, "not an outfit");
+  assert.equal(await webhook({ type: "checkout.session.completed", data: { object: { id: "cs_2", mode: "payment", payment_status: "paid", metadata: { userId: ids[1], outfit: "crown" } } } }), 200);
+  const dressed = await request("/membership/outfit", "POST", { outfit: "crown" });
+  assert.equal(dressed.status, 200, JSON.stringify(dressed.body)); assert.equal(dressed.body.outfits.equipped, "crown"); assert.equal(await worn(), "crown", "Mia bought it; Ziwei can put it on");
+  assert.equal((await request("/membership/outfit", "POST", { outfit: "santa" })).status, 402);
+  assert.equal(await webhook(subscription(ids[1])), 200);
+  assert.equal((await request("/membership/outfit", "POST", { outfit: "santa" })).status, 200, "members wear any outfit");
+  assert.equal((await request("/membership/outfit", "POST", { outfit: null })).body.outfits.equipped, null, "and can take it off");
+  assert.equal((await request("/membership/outfit", "POST", { outfit: "bow" }, ids[2])).status, 409, "an unpaired person has no little one to dress");
+});
