@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { PawPrint, GameController, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { isConsentPoint } from "../agreements/AgreementsPage";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -35,7 +36,7 @@ type Session = { id: string; language: Language; timezone: string; version: numb
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite"; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
-type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
+type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
 const AGENT_CALL = /\bpinky\b|@agent/i;
@@ -501,9 +502,10 @@ ${text}` : text, target);
       const ref = message.refs.find((item) => item.type === "agreement");
       const live = ref && pendingAgreement && pendingAgreement.id === ref.id && pendingAgreement.version === ref.version && !together?.readOnly;
       const version = ref?.version || 1;
-      return <article key={message.id} className={`conversation-card agreement-card ${live ? "is-live" : ""}`} data-testid="agreement-card"><header><UsersThree size={16} />{t(`约定 v${version}`, `Agreement v${version}`, `Acuerdo v${version}`)}</header>{live ? <AgreementBody agreement={pendingAgreement!} language={language} /> : <p>{text}</p>}
-        {live && (approved.includes(`${ref!.id}:${version}`) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t(`你已批准 v${version}，等 TA 批准`, `You approved v${version}. Waiting for your partner.`, `Aprobaste la v${version}. Esperando a tu pareja.`)}</small> :
-          <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t(`批准 v${version}`, `Approve v${version}`, `Aprobar v${version}`)}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("要改", "Request change", "Pedir cambio")}</button></div>)}
+      return <article key={message.id} className={`conversation-card agreement-card ${live ? "is-live" : ""}`} data-testid="agreement-card"><header><UsersThree size={16} />{t("约定", "Agreement", "Acuerdo")}</header>{live ? <AgreementBody agreement={pendingAgreement!} language={language} /> : <p>{text}</p>}
+        {live && (approved.includes(`${ref!.id}:${version}`) || pendingAgreement!.approvedBy?.includes(user.id) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t(`你同意了，等 ${partnerName} 点头`, `You said yes. Waiting for ${partnerName}.`, `Dijiste que sí. Esperando a ${partnerName}.`)}</small> : <>
+          {pendingAgreement!.approvedBy?.some((id) => id !== user.id) && <small className="card-state">{t(`${partnerName} 已经同意了，就差你`, `${partnerName} already said yes. It's up to you.`, `${partnerName} ya dijo que sí. Falta tu respuesta.`)}</small>}
+          <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t("我同意", "I agree", "Estoy de acuerdo")}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("我想改一下", "I'd change something", "Quiero cambiar algo")}</button></div></>)}
       </article>;
     }
     if (message.kind === "match_invite" && message.match) return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
@@ -755,7 +757,8 @@ function AgreementBody({ agreement, language }: { agreement: Draft & { status: s
   return <>
     {showTitle && <strong>{agreement.title}</strong>}
     <ol>{agreement.terms.map((term, index) => <li key={index}>{term}</li>)}</ol>
-    {!!agreement.unresolvedPoints?.length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{agreement.unresolvedPoints.map((point, index) => <li key={index}>{point}</li>)}</ul></div>}
-    <small>{t("等你们两人批准同一版本", "Waiting for both of you to approve this version", "Esperando que ambos aprueben esta versión")}</small>
+    {/* Points that only ask whether the other one agrees are what the buttons below ask. */}
+    {!!agreement.unresolvedPoints?.filter((point) => !isConsentPoint(point)).length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{agreement.unresolvedPoints.filter((point) => !isConsentPoint(point)).map((point, index) => <li key={index}>{point}</li>)}</ul></div>}
+    <small>{t("两个人都同意才算数。", "It counts once you both agree.", "Cuenta cuando los dos aceptan.")}</small>
   </>;
 }

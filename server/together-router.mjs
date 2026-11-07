@@ -1,5 +1,5 @@
 import express from "express";
-import { approveAgreement, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
+import { answerAgreementPoint, approveAgreement, phrasePoint, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
@@ -9,7 +9,7 @@ import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
 import { careNoteFor } from "./cycle.mjs";
 import { petIt, syncPet } from "./pet.mjs";
-import { announceAgreement, appendTogetherMessage, buildTogetherContext, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
+import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { createSharedTranslator } from "./shared-translate.mjs";
 
@@ -145,6 +145,25 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
   router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active", "agreement_approved", true));
   router.post("/together/agreements/:id/reject", decide(rejectAgreement, "agreement.rejected"));
   router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested", () => true));
+  // A point still open, settled on the card: a new version both approve, and a line in Us so the other one sees what changed.
+  router.post("/together/agreements/:id/answer", async (req, res) => {
+    const userId = req.auth.user.id;
+    // Worded by Pinky before the change is made; the transaction then checks the version and the point again.
+    const current = await store.getRelationshipRecordForUser("agreements", req.params.id, userId);
+    const point = Number.isInteger(req.body?.index) ? current?.unresolvedPoints?.[req.body.index] : null, answer = clean(req.body?.text, 300);
+    const term = current?.version === req.body?.version && point && answer ? await phrasePoint({ mediator, terms: current.terms || [], point, answer }) : null;
+    const result = await transaction(req, async (tx, context) => {
+      const done = await answerAgreementPoint(tx, { agreementId: req.params.id, version: req.body?.version, userId, index: req.body?.index, text: req.body?.text, term });
+      const me = context.members.find((member) => member.userId === userId)?.user?.name || "";
+      const i18n = togetherI18n((language) => language === "en" ? `${me} settled "${done.point}": ${done.answer}. It's a new version now, so you both say yes again.` : language === "es" ? `${me} resolvió «${done.point}»: ${done.answer}. Ahora es una versión nueva: los dos tienen que aceptarla otra vez.` : `${me} 补上了「${done.point}」：${done.answer}。这样就是新的一版，你们俩再各点一次同意。`);
+      const posted = await appendTogetherMessage(tx, { relationshipId: done.agreement.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: i18n.zh, i18n, handle: `agreement-answer:${done.agreement.id}:${done.agreement.version}` });
+      // And the new version's card, which is the one to approve now.
+      const card = await announceAgreement(tx, { agreement: done.agreement, userId, language: hint(req) });
+      return { agreement: done.agreement, conversation: card?.conversation || (posted.duplicate ? null : posted.conversation) };
+    });
+    emit(result.agreement, "agreement.updated"); if (result.conversation) emit(result.conversation, "together.updated", null, userId);
+    res.json({ agreement: result.agreement });
+  });
 
   router.post("/together/daily/:id/answer", async (req, res) => {
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");

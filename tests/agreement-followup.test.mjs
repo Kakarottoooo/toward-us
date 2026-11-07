@@ -207,3 +207,40 @@ test("a plan is kept only where it points at a real term, names who, and dates n
   ]);
   assert.deepEqual(verifyPlan(null, terms, "2026-11-05"), []);
 });
+
+test("an open point is settled on the card: a new version, both say yes again, and Us hears what changed; who said yes shows", async (t) => {
+  const f = await fixture(t);
+  const agreement = await f.draft({ title: "This weekend", summary: "Rest Saturday, lunch at my parents' Sunday", terms: ["Saturday: rest at home", "Sunday: lunch at my parents' at 1pm"], unresolvedPoints: ["When do we leave on Sunday?", "Who tells my parents?"] });
+  assert.deepEqual([agreement.proposedBy, agreement.approvedBy], [f.a, []]);
+  const yes = await f.approve(agreement, f.a);
+  assert.deepEqual(yes.approvedBy, [f.a], "the shared agreement says who has said yes to this version");
+  assert.deepEqual((await f.request("/together", "GET", null, f.b)).body.pendingAgreement.approvedBy, [f.a], "so Blair sees Alex already agreed");
+
+  const answer = (body, userId = f.b) => f.request(`/together/agreements/${agreement.id}/answer`, "POST", { version: yes.version, language: "en", ...body }, userId);
+  assert.equal((await answer({ index: 0, text: "  " })).status, 400);
+  assert.equal((await answer({ index: 5, text: "12:30" })).status, 400);
+  assert.equal((await answer({ index: 0, text: "12:30", version: yes.version + 1 })).status, 409);
+  const settled = (await answer({ index: 0, text: "12:30 by taxi" })).body.agreement;
+  assert.equal(settled.version, yes.version + 1);
+  assert.deepEqual(settled.terms.at(-1), "When do we leave on Sunday：12:30 by taxi");
+  assert.deepEqual(settled.unresolvedPoints, ["Who tells my parents?"]);
+  assert.deepEqual(settled.approvedBy, [], "a new version: the earlier yes no longer counts");
+  assert.equal(settled.status, "awaiting_approvals");
+  const us = await f.conversation(f.a);
+  assert.ok(us.messages.some((message) => message.i18n?.en === `Blair settled "When do we leave on Sunday": 12:30 by taxi. It's a new version now, so you both say yes again.`));
+  assert.ok(us.messages.some((message) => message.kind === "agreement_card" && message.refs?.some((ref) => ref.id === agreement.id && ref.version === settled.version)), "with the new version's card to approve");
+
+  assert.equal((await f.request(`/together/agreements/${agreement.id}/approve`, "POST", { version: yes.version }, f.b)).status, 409, "the old version can't be approved any more");
+  await f.approve(settled, f.a);
+  assert.equal((await f.approve(settled, f.b)).status, "active");
+  assert.equal((await f.request(`/together/agreements/${agreement.id}/answer`, "POST", { version: settled.version, index: 0, text: "I will" })).status, 409, "only while it waits for approval");
+});
+
+test("Pinky words a settled point like the other terms; without it, the point and the answer are kept as they are", async (t) => {
+  const asked = [];
+  const f = await fixture(t, { structured: ({ name, input }) => { asked.push({ name, input: JSON.parse(input) }); return { term: "周日：十二点半出发，打车去" }; } });
+  const agreement = await f.draft({ title: "本周末", summary: "周日去爸妈家", terms: ["周日：下午一点到爸妈家吃饭。"], unresolvedPoints: ["周日几点出发，以及怎么去。"] });
+  const settled = (await f.request(`/together/agreements/${agreement.id}/answer`, "POST", { version: agreement.version, index: 0, text: "十二点半出发，打车", language: "zh" })).body.agreement;
+  assert.equal(settled.terms.at(-1), "周日：十二点半出发，打车去");
+  assert.deepEqual(asked, [{ name: "agreement_point", input: { terms: ["周日：下午一点到爸妈家吃饭。"], point: "周日几点出发，以及怎么去。", answer: "十二点半出发，打车" } }], "only the agreement's terms, the point and the answer");
+});

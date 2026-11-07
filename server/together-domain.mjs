@@ -47,7 +47,7 @@ export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo
 export function buildTogetherContext(snapshot, relationshipId, { userId = null, query = "" } = {}) {
   const conversation = (snapshot.togetherConversations || []).find((item) => item.id === togetherId(relationshipId) && item.relationshipId === relationshipId) || null;
   const agreements = (snapshot.agreements || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt && !item.withdrawnAt);
-  const agreement = ({ id, title, summary, terms, unresolvedPoints, status, version }) => ({ id, title, summary, terms, unresolvedPoints: unresolvedPoints || [], status, version });
+  const agreement = ({ id, title, summary, terms, unresolvedPoints, status, version, approvedBy, proposedBy }) => ({ id, title, summary, terms, unresolvedPoints: unresolvedPoints || [], status, version, approvedBy: approvedBy || [], proposedBy: proposedBy || null });
   // One pending agreement per couple, whatever path created it (together, full decision flow).
   const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
@@ -428,10 +428,10 @@ export async function draftAgreementFromTogether(tx, { relationshipId, userId, v
   const revisable = own.filter((item) => item.status === "draft").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   let agreement;
   if (revisable) {
-    agreement = await tx.updateRelationshipRecordForUser("agreements", revisable.id, userId, (draft) => { Object.assign(draft, fields); draft.status = "awaiting_approvals"; draft.effectiveAt = null; draft.version += 1; });
+    agreement = await tx.updateRelationshipRecordForUser("agreements", revisable.id, userId, (draft) => { Object.assign(draft, fields); draft.status = "awaiting_approvals"; draft.effectiveAt = null; draft.approvedBy = []; draft.proposedBy = userId; draft.version += 1; });
     await markCommitmentsForRenegotiation(tx, agreement, userId);
   } else {
-    agreement = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "awaiting_approvals", sourceIssueId: null, proposalId: null, sourceTogetherId: conversation.id, ...fields, effectiveAt: null, reviewAt: null });
+    agreement = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "awaiting_approvals", approvedBy: [], proposedBy: userId, sourceIssueId: null, proposalId: null, sourceTogetherId: conversation.id, ...fields, effectiveAt: null, reviewAt: null });
     await tx.createRelationshipRecord("agreements", agreement);
   }
   await audit(tx, agreement, userId, "agreement.together_drafted");

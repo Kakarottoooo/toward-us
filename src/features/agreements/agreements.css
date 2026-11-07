@@ -24,3 +24,23 @@
 /* Inside Coming up: earlier agreements fold away under one line. */
 .agreements-past { display: grid; gap: 10px; }
 .agreements-past summary { min-height: 44px; display: flex; align-items: center; color: #7a736b; font-size: 14px; font-weight: 600; cursor: pointer; }
+/* Who we're waiting on, then the plan by day, then the points still open, each answerable in place (founder 11-06). */
+.agreement-item .agreement-who { padding: 8px 12px; border-radius: 10px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 15px; font-weight: 650; }
+.agreement-days { display: grid; gap: 8px; }
+.agreement-day { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #f6efe6; }
+.agreement-day h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--jian-ink); font-size: 15px; font-weight: 700; }
+.agreement-day h3 em { margin-left: auto; color: #8a5a12; font-size: 13px; font-style: normal; font-weight: 650; }
+.agreement-item .agreement-day ul { padding-left: 20px; }
+.agreement-item .agreement-open ul { padding-left: 0; list-style: none; display: grid; gap: 6px; margin-top: 6px; }
+.agreement-point { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px dashed rgba(37,37,37,.22); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); font: inherit; font-size: 15px; line-height: 1.45; text-align: left; cursor: pointer; }
+.agreement-point span { flex: none; color: var(--jian-blue); font-size: 14px; font-weight: 700; }
+.agreement-point:focus-visible, .agreement-send:focus-visible, .agreement-mic:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
+.agreement-open li.is-answering > span { display: block; margin-bottom: 6px; color: var(--jian-ink); font-size: 15px; font-weight: 600; }
+.agreement-answer-form { display: flex; gap: 6px; }
+.agreement-answer-form > :first-child { flex: 1; min-width: 0; }
+.agreement-answer-form input { width: 100%; box-sizing: border-box; min-height: 44px; padding: 0 12px; border: 1px solid rgba(37,37,37,.18); border-radius: 12px; background: #fff; color: var(--jian-ink); font: inherit; font-size: 16px; }
+.agreement-mic, .agreement-send { flex: none; display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0; border: 1px solid rgba(37,37,37,.16); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); cursor: pointer; }
+.agreement-mic.is-on { border-color: transparent; background: #e0405a; color: #fff; }
+.agreement-send { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
+.agreement-send:disabled { opacity: .45; cursor: default; }
+.agreement-answer-note, .agreement-rule { color: #7a736b; font-size: 13px; line-height: 1.5; }
