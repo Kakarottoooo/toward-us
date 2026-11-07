@@ -47,7 +47,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
-        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}` } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
+        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.kind === "date" ? "/?view=upcoming" : share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}`, ...(share.kind === "date" ? { shareKind: "date" } : {}) } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, ...(reference.openOn ? { openOn: reference.openOn } : {}), status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         if (!current && reference.title) return { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, `已移走：${reference.title}`, `Removed: ${reference.title}`, `Quitado: ${reference.title}`) };
@@ -225,6 +225,18 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           cards.push(...results.map(({ kind, record }) => card(kind, record, session.language)));
           replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, `Found ${results.length} records you can view.`, `Se encontraron ${results.length} registros que puedes ver.`)); continue;
         }
+        // Just me is where everything can start (founder 11-06): a plan or date for the two of them prepares a card, and only the
+        // member's confirmation puts it on their shared calendar (space-confirm), like a shared memory.
+        if (action.kind === "milestone" && action.operation === "create") {
+          const values = action.fields, title = clean(values.title, 120), date = /^\d{4}-\d{2}-\d{2}$/.test(values.date || "") ? values.date : null;
+          if (!title || !date) throw fail(400, say(session.language, "要放进日历的是哪天、做什么？", "Which day, and what, goes on the calendar?", "¿Qué día y qué pongo en el calendario?"));
+          const pair = await tx.getRelationshipContext(userId);
+          if (!(pair?.relationship?.status === "active" && pair.members.length === 2)) { replies.push(say(session.language, "等 TA 加入后，才有你们俩的日历；我先记在你这里。", "Your shared calendar starts once your partner joins; I'll keep it here for you.", "Su calendario compartido empieza cuando tu pareja se una; lo guardo aquí para ti.")); continue; }
+          const share = { cardId: randomUUID(), kind: "date", spaceId: null, spaceTitle: say(session.language, "你们俩的日历", "your shared calendar", "su calendario compartido"), title, text: "", date };
+          share.digest = shareDigest(share); pendingShares.push(share);
+          cards.push({ id: share.cardId, kind: "space_share", version: 1 });
+          replies.push(say(session.language, "要放进你们俩的日历吗？点一下确认，前一天我会提醒你们俩。", "Put it on your shared calendar? Tap to confirm; I'll remind you both the day before.", "¿Lo pongo en su calendario compartido? Confírmalo y les aviso a los dos un día antes.")); continue;
+        }
         if (["agreement", "commitment", "milestone"].includes(action.kind)) throw fail(502, "Shared records require their existing confirmation flow. Nothing was changed.");
         if (action.kind === "link") {
           const values = action.fields; const calendar = isCalendar(values.text, values.localDateTime);
@@ -383,6 +395,19 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       const latest = await owned(tx, session.id, userId); const share = (latest.pendingShares || []).find((item) => item.cardId === cardId);
       if (!share || share.digest !== digest || shareDigest(share) !== digest) throw fail(409, say(session.language, "内容已经变了，请确认最新的版本。", "This changed. Review and confirm the latest version.", "Esto cambió. Revisa y confirma la última versión."));
       if (share.sharedAt) return { session: latest, item: null };
+      if (share.kind === "date") {
+        // On their shared calendar, with Pinky's reminder in Us the day before, and a line in Us so the other one knows.
+        const milestone = privateRecord(userId, { relationshipId: initial.relationship.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title: share.title, date: share.date, timezone: "UTC", recurringRule: "once", jointlyConfirmed: false, notes: "", provenanceSource: "member_confirmed" });
+        await tx.createRelationshipRecord("milestones", milestone);
+        await tx.createRelationshipRecord("reminders", privateRecord(userId, { relationshipId: initial.relationship.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "owner", status: "active", milestoneId: milestone.id, minutesBefore: 1440, channel: "in_app", provenanceSource: "member_confirmed" }));
+        await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: milestone.id, objectType: "milestone", eventType: "milestone.shared", sourceVersion: latest.version }));
+        const me = (await tx.getRelationshipContext(userId))?.members.find((member) => member.userId === userId)?.user?.name || "";
+        const day = (language) => new Date(`${share.date}T12:00:00Z`).toLocaleDateString(language === "zh" ? "zh-CN" : language, { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" });
+        const i18n = { zh: `${me} 把「${share.title}」放进了你们俩的日历：${day("zh")}。前一天我会提醒你们。`, en: `${me} put "${share.title}" on your calendar: ${day("en")}. I'll remind you both the day before.`, es: `${me} puso «${share.title}» en su calendario: ${day("es")}. Les aviso a los dos un día antes.` };
+        const posted = await appendTogetherMessage(tx, { relationshipId: initial.relationship.id, actorUserId: null, userId, source: "app", kind: "text", text: i18n.zh, i18n, handle: `date-share:${share.cardId}` });
+        const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
+        return { session: saved, item: null, milestone, conversation: posted.duplicate ? null : posted.conversation };
+      }
       const space = await visibleSpace(tx, share.spaceId, userId);
       if (space.visibility !== "shared" || space.relationshipId !== initial.relationship.id) throw fail(409, unpaired(session.language));
       // A private photo becomes a separate shared copy only now, when its owner confirmed this exact card.
@@ -393,6 +418,8 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       return { session: saved, item };
     });
     if (result.item) emit(result.item, "space.updated");
+    if (result.milestone) emit(result.milestone, "milestone.updated");
+    if (result.conversation) emit(result.conversation, "together.updated", null, req.auth.user.id);
     res.json({ session: await output(result.session) });
   });
   router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
