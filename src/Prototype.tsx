@@ -4,6 +4,7 @@ import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { SettingsPage } from "./features/privacy/SettingsPage";
+import { BETA_KEY } from "./features/membership/MembershipPage";
 import { FeedbackPage } from "./features/feedback/FeedbackPage";
 import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
@@ -69,7 +70,7 @@ function AccountPrototype() {
   // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
   const [feedbackFrom, setFeedbackFrom] = useState("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
-  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | undefined>(() => new URLSearchParams(location.search).get("view") === "membership" ? "membership" : undefined);
+  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "membership" ? "membership" : undefined; });
   const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);

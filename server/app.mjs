@@ -49,6 +49,7 @@ import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createMembershipRouter } from "./membership.mjs";
+import { createBetaRouter } from "./beta.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
@@ -510,6 +511,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createFeedbackRouter({ store, mediator }));
   app.use("/api", createCharacterRouter({ store, emit }));
   app.use("/api", membership.router);
+  app.use("/api", createBetaRouter({ store, grant: membership.grant }).router);
   app.use("/api", relationshipRouter);
 
   function broadcastDemoRoom(code) {

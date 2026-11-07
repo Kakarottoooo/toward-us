@@ -12,12 +12,12 @@ const GRAPH_TABLES = Object.freeze({
   outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
   consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations", nativePushDevices: "native_push_devices",
   spaces: "relationship_spaces", spaceItems: "relationship_space_items", photos: "relationship_photos", chatImports: "relationship_chat_imports", feedback: "product_feedback",
-  characters: "relationship_characters", aiUsage: "ai_usage", togetherArchives: "together_archives", matches: "relationship_matches", purchases: "purchases",
+  characters: "relationship_characters", aiUsage: "ai_usage", togetherArchives: "together_archives", matches: "relationship_matches", purchases: "purchases", betaCodes: "beta_codes",
 });
 
 const METERING = new Set(["productEvents", "aiUsage"]);
 // Older Us messages are read on demand (together-domain's history and daily-question lookups), never with every snapshot.
-const ON_DEMAND = new Set(["togetherArchives", "matches", "purchases"]);
+const ON_DEMAND = new Set(["togetherArchives", "matches", "purchases", "betaCodes"]);
 
 export async function createPostgresStore(databaseUrl) {
   const rawPool = new Pool({ connectionString: databaseUrl, max: Number(process.env.DB_POOL_SIZE || 5), ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false } });
