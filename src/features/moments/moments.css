@@ -120,6 +120,11 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .moments-toolbar { display: block; margin: -6px 0 -4px; }
 .moments-top { display: block; }
 .story-bubbles { margin: 0 -16px; }
+/* Scrolled by the phone itself (native, on the compositor), not by touch handlers: smooth and with the platform's momentum.
+   pan-x lets the browser move it sideways; pan-y hands an up/down swipe that starts on it to the page (pan-x alone froze the page). */
+.story-bubbles-native { overflow-x: auto; overflow-y: hidden; touch-action: pan-x pan-y; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.story-bubbles-native::-webkit-scrollbar { display: none; }
+.story-bubbles-native .story-bubbles-track { width: max-content; }
 .story-bubbles-track { display: flex; gap: 12px; padding: 2px 16px; }
 .story-bubble { flex: 0 0 auto; display: grid; justify-items: center; gap: 6px; width: 74px; padding: 0; border: 0; background: none; color: var(--jian-ink); cursor: pointer; }
 .story-bubble-ring { display: grid; place-items: center; width: 68px; height: 68px; padding: 3px; border-radius: 50%; background: conic-gradient(#e46a9a, #f2a65a, #e46a9a); }
@@ -241,6 +246,7 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 
 /* 一起看过的 (founder 11-07): the couple's shelf of shows and films, text cards for now. */
 .story-bubble-ring.is-watched { display: grid; place-items: center; background: #ece5ff; color: #5b3fb5; }
+.story-bubble-ring.is-watched > * { width: 26px; height: 26px; border: 0; }
 .watched { display: grid; gap: 14px; }
 .watched-head { display: flex; align-items: center; gap: 12px; }
 .watched-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: #ece5ff; color: #5b3fb5; }
