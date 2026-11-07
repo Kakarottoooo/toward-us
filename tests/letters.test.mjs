@@ -16,7 +16,7 @@ const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, 
 const action = (patch = {}) => ({ kind: "partner_message", operation: "create", targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
 const LETTER = "Dear Mia, a year ago today we drove to the coast and you sang the whole way.";
 
-test("a letter is written with Pinky, sealed on confirm, unreadable until its day, then delivered into Us and memories", async (t) => {
+test("a letter is written with Pinky and kept privately; on its day Pinky reminds the writer with one tap to send it themselves", async (t) => {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "letters-"));
   const store = await createFileStore(join(directory, "store.json"));
@@ -29,7 +29,8 @@ test("a letter is written with Pinky, sealed on confirm, unreadable until its da
   let planned = action({ fields: fields({ text: LETTER, date: nextYear }) });
   const mediator = { planAssistantTurn: async () => ({ reply: "Here is your letter.", actions: [planned] }), continueTogether: async () => ({ reply: "ok", draftAgreement: null, actions: [] }) };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
-  app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
+  const assistant = createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) });
+  app.use("/api", assistant);
   app.use("/api", createTogetherRouter({ store, mediator }));
   app.use("/api", createSpaceRouter({ store }));
   app.use("/api", createRelationshipRouter({ store, mediator }));
@@ -45,24 +46,30 @@ test("a letter is written with Pinky, sealed on confirm, unreadable until its da
   const card = turn.body.session.messages.at(-1).cards.find((item) => item.kind === "partner_message");
   assert.equal(card.openOn, nextYear, "the draft shows the day it opens");
 
-  const sealed = await request(`/assistant/sessions/${session.id}/share-confirm`, "POST", { confirm: true, cardId: card.id, digest: card.digest });
-  assert.equal(sealed.status, 200, JSON.stringify(sealed.body));
+  const kept = await request(`/assistant/sessions/${session.id}/share-confirm`, "POST", { confirm: true, cardId: card.id, digest: card.digest });
+  assert.equal(kept.status, 200, JSON.stringify(kept.body));
+  assert.equal(kept.body.message, null, "nothing is sent anywhere");
   const us = async (userId) => (await request("/together?language=en&timezone=UTC", "GET", null, userId)).body.conversation;
   const seen = await us(ids[1]);
-  assert.ok(seen.messages.some((message) => message.kind === "letter_sealed"), "the partner sees a letter is waiting");
-  assert.ok(!JSON.stringify(seen).includes("drove to the coast"), "but not a word of it");
+  assert.ok(!seen?.messages?.some((message) => ["letter_sealed", "letter"].includes(message.kind)), "no envelope in Us: it stays a surprise");
+  assert.ok(!JSON.stringify(seen || {}).includes("drove to the coast"), "and not a word of it");
   const home = (await request("/relationship/home", "GET", null, ids[1])).body;
-  assert.ok(home.graph.milestones.some((item) => item.type === "letter" && item.date === nextYear), "the day is on their calendar");
+  assert.ok(!home.graph.milestones.some((item) => item.type === "letter" || item.date === nextYear), "nothing on their shared calendar");
 
-  assert.equal((await deliverLetters({ store })).delivered, 0, "nothing opens before its day");
+  const notes = [], pushes = [];
+  const run = (now) => deliverLetters({ store, now, postNote: async (...args) => { notes.push(args); return assistant.assistant.postNote(...args); }, notify: async (userId, message) => { pushes.push({ userId, ...message }); } });
+  assert.equal((await run(() => new Date())).delivered, 0, "nothing before its day");
   const onTheDay = () => new Date(`${nextYear}T09:00:00Z`);
-  assert.equal((await deliverLetters({ store, now: onTheDay })).delivered, 1);
-  assert.equal((await deliverLetters({ store, now: onTheDay })).delivered, 0, "delivered once");
-  const opened = (await us(ids[1])).messages.find((message) => message.kind === "letter");
-  assert.equal(opened.text, LETTER);
-  assert.equal(opened.actorUserId, ids[0]);
-  const album = (await request("/spaces", "GET", null, ids[1])).body.spaces.find((space) => space.system === "moments" && space.visibility === "shared");
-  assert.ok(album.items.some((item) => item.text === LETTER && item.date === nextYear), "kept in their shared memories");
+  assert.equal((await run(onTheDay)).delivered, 1);
+  assert.equal((await run(onTheDay)).delivered, 0, "handed over once");
+  assert.equal(notes[0][0], ids[0], "to the writer only");
+  assert.deepEqual(pushes.map((push) => [push.userId, push.url]), [[ids[0], "/?channel=me"]]);
+  const mine = (await request(`/assistant/sessions/${session.id}`)).body.session.messages.at(-1);
+  assert.match(mine.text, /drove to the coast/);
+  assert.deepEqual(mine.cards.map((item) => item.kind), ["link", "link"]);
+  assert.equal(mine.cards[0].url, `sms:&body=${encodeURIComponent(LETTER)}`, "their own Messages app, the words already in");
+  assert.match(mine.cards[1].url, /^mailto:\?subject=.+&body=/);
+  assert.ok(!(await us(ids[1]))?.messages?.some((message) => message.kind === "letter"), "Pinky itself sends nothing");
 
   // A message without a later day is still an ordinary one, sent at once.
   planned = action({ fields: fields({ text: "Thank you for today." }) });
