@@ -70,12 +70,12 @@ test("free caps stop one person, then the couple, with a localized 'today's limi
   await asAiUser({ userId: a.id, language: "en" }, async () => {
     await guarded.planAssistantTurn({}); await guarded.planAssistantTurn({});
     const error = await rejectsLimit(() => guarded.continueTogether({}), "person");
-    assert.match(error.message, /today's AI allowance/); assert.equal(error.background, false);
+    assert.match(error.message, /today's free allowance/); assert.equal(error.upgrade, true, "free couples are told about membership"); assert.equal(error.background, false);
   });
   await asAiUser({ userId: b.id, language: "es" }, async () => {
     await guarded.planAssistantTurn({});
     const error = await rejectsLimit(() => guarded.planAssistantTurn({}), "couple");
-    assert.match(error.message, /asignación de IA de hoy/);
+    assert.match(error.message, /asignación gratuita de hoy/);
   });
   assert.equal(calls.length, 3);
 });
@@ -213,7 +213,7 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     const capped = await say("@Pinky one more idea?");
     assert.equal(capped.status, 429);
     assert.equal(capped.body.code, AI_LIMIT);
-    assert.match(capped.body.error, /today's AI allowance/);
+    assert.match(capped.body.error, /today's free allowance/);
     assert.equal(turns.length, AI_CAPS.free.person);
     // The member's own words still reach their partner, and talking without Pinky is untouched.
     const relationshipId = (await store.getRelationshipContext(a.user.id)).relationship.id;
