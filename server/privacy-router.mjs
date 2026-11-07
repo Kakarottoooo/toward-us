@@ -49,7 +49,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       if (!timingSafeEqual(Buffer.from(provided, "hex"), Buffer.from(expected, "hex")) || !current?.recoveryCodeHash) return false;
       await tx.updateUserPassword(user.id, await hashPassword(req.body.password));
       await tx.deleteUserSessions(user.id);
-      await updateSettings(user.id, (record) => { delete record.recoveryCodeHash; record.recoveryUsedAt = new Date().toISOString(); }, tx);
+      await updateSettings(user.id, (record) => { delete record.recoveryCodeHash; delete record.widgetToken; record.recoveryUsedAt = new Date().toISOString(); }, tx);
       await audit(tx, user.id, "account.recovered"); return true;
     });
     if (!result) throw fail(401, local(req, "邮箱或恢复码不正确，或恢复码已被使用。", "Email or recovery code is invalid, or the code was already used.", "El correo o código es incorrecto, o el código ya se utilizó."));
@@ -103,7 +103,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       if (!timingSafeEqual(Buffer.from(hash(secret), "hex"), Buffer.from(reset.hash, "hex"))) return false;
       await tx.updateUserPassword(userId, await hashPassword(req.body.password));
       await tx.deleteUserSessions(userId);
-      await updateSettings(userId, (record) => { delete record.passwordReset; }, tx);
+      await updateSettings(userId, (record) => { delete record.passwordReset; delete record.widgetToken; }, tx);
       await audit(tx, userId, "account.password_reset"); return true;
     });
     if (!done) throw invalid();

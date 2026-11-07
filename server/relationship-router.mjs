@@ -8,6 +8,7 @@ import {
 import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { recordUsage } from "./usage.mjs";
+import { coupleStreak } from "./streak.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
   projectGraph, projectRecord, publicRelationshipEvent,
@@ -27,7 +28,9 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.get("/relationship/home", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
     const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id);
-    res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id), graph: projectGraph(snapshot, req.auth.user.id), relationship: { id: context.relationship.id, members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) }, capabilities: capabilities() });
+    // 连续一起来 on the top card of Coming up, counted from the reader's own "today".
+    const streak = await coupleStreak(store, context.relationship.id, { userId: req.auth.user.id, timezone: String(req.query?.timezone || "").slice(0, 64) || null }).then(({ days, me, partner }) => ({ days, me, partner })).catch(() => null);
+    res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id), graph: projectGraph(snapshot, req.auth.user.id), streak, relationship: { id: context.relationship.id, members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) }, capabilities: capabilities() });
   });
 
   router.get("/relationship/events", async (req, res) => {

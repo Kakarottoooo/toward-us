@@ -14,6 +14,7 @@ import { SpacePage } from "./features/spaces/SpacePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import { CapabilitiesPage } from "./features/capabilities/CapabilitiesPage";
 import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
+import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
 import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
@@ -82,7 +83,7 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); if (state.pairing?.status === "active") autoSyncAlbum(language); }
+      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active") autoSyncAlbum(language); }
     }).catch(() => {});
     listenNativePushTaps();
     registerAppWorker();
@@ -115,12 +116,14 @@ function AccountPrototype() {
     setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(landing(state.pairing));
     // Signing in is the user action that may ask, once, for App notification permission (a no-op in a browser).
     void enableNativePush();
+    // Inside the iPhone App, the home-screen widget gets its own read-only token (a no-op in a browser).
+    void connectHomeWidget();
   };
   const refreshPairing = async () => {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
     setPairing(state.pairing); if (state.pairing?.status === "active") setScreen("conversation");
   };
-  const logout = async () => { keyboard.hide(); await disableNativePush(); await disableWebPush(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setScreen("home"); };
+  const logout = async () => { keyboard.hide(); await disableNativePush(); await disableWebPush(); await disconnectHomeWidget(); await api("/api/auth/logout", { method: "POST" }); setUser(null); setPairing(null); setScreen("home"); };
 
   const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
