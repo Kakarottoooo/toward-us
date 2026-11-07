@@ -4,9 +4,9 @@ import { localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
 type Channel = "me" | "us";
-export type DiscoverKey = "games" | "miss_you" | "pet" | "meetup" | "recap" | "agreement" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
+export type DiscoverKey = "ideas" | "games" | "miss_you" | "pet" | "meetup" | "recap" | "agreement" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
 // The order things are shown in, one a day per conversation, skipping what is already in use.
-const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "miss_you", "pet", "meetup", "recap", "agreement"], me: ["letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
+const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "ideas", "miss_you", "pet", "meetup", "recap", "agreement"], me: ["letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
 
 type Memory = { dismissed: DiscoverKey[]; current: Partial<Record<Channel, DiscoverKey>>; day: Partial<Record<Channel, string>> };
 const keyFor = (userId: string) => `pinky-discover:${userId}`;
@@ -35,6 +35,7 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
   const done = (chosen: DiscoverKey) => { const next = { ...memory, dismissed: [...memory.dismissed, chosen], current: { ...memory.current, [channel]: undefined } }; setMemory(next); save(userId, next); };
   const partner = partnerName || t("TA", "your partner", "tu pareja");
   const cards: Record<DiscoverKey, { icon: ReactNode; title: string; text: string; button?: string }> = {
+    ideas: { icon: <Sparkle size={20} weight="fill" />, title: t("不知道一起做点什么？", "Not sure what to do together?", "¿No saben qué hacer juntos?"), text: t("一张 100 件小事的海报：看日落、做大餐、去没去过的地方……做过的格子会变成你们那天的照片。", "A poster of 100 little things: a sunset, a big dinner, somewhere new… Each one you do becomes your photo from that day.", "Un póster de 100 cosas: un atardecer, una gran cena, un sitio nuevo… Cada una que hagan se vuelve su foto de ese día."), button: t("打开海报", "Open the poster", "Abrir el póster") },
     games: { icon: <GameController size={20} weight="fill" />, title: t("来玩个小游戏", "Play a little game", "Jueguen un juego"), text: t("象棋、五子棋、情侣飞行棋、海龟汤、你画我猜……十几个双人小游戏，挑一个一起玩。TA 不在时也能和小家伙玩。", "Chinese chess, gomoku, couples' ludo, lateral puzzles, draw & guess and more: pick one to play together, or play your little one.", "Ajedrez chino, gomoku, parchís, acertijos, dibuja y adivina y más: elijan uno para jugar juntos, o juega con tu pequeñín."), button: t("去看看", "Take a look", "Ver juegos") },
     miss_you: { icon: <Heart size={20} weight="fill" />, title: t(`想 ${partner} 了？`, `Thinking of ${partner}?`, `¿Piensas en ${partner}?`), text: t(`点上面的爱心，${partner} 那边会飘起爱心。`, `Tap the heart at the top and hearts float up on ${partner}'s side.`, `Toca el corazón de arriba y a ${partner} le aparecen corazones.`), button: t("发一个想你了", "Send one now", "Enviar uno") },
     pet: { icon: <PawPrint size={20} weight="fill" />, title: t("你们一起养的小家伙", "Your little one", "Su pequeño"), text: t("你们一起答题、玩游戏、存回忆，它都会长大。每人每天能摸它一次。", "It grows with everything you do together; each of you can pet it once a day.", "Crece con lo que hacen juntos; cada uno puede acariciarlo una vez al día."), button: t("摸摸它", "Pet it", "Acariciarlo") },
