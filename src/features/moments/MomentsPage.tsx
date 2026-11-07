@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, GlobeHemisphereWest, LockKey, Plus, Sparkle, Trash, UsersThree } from "@phosphor-icons/react";
+import { ArrowLeft, FilmSlate, GlobeHemisphereWest, LockKey, Plus, Sparkle, Trash, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { Carousel } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
 import { IdeasSection } from "./IdeasSection";
+import { WatchedShelf, type WatchedItem } from "./WatchedShelf";
 import { PhotoAlbumCard } from "./PhotoAlbumCard";
 import { photoPlugin } from "./photoAlbum";
 import { StoryViewer, type Slide } from "./StoryViewer";
@@ -13,7 +14,7 @@ import "./moments.css";
 // The map library is only loaded when someone opens the map.
 const MemoriesMap = lazy(() => import("./MemoriesMap").then((module) => ({ default: module.MemoriesMap })));
 
-type Item = { id: string; title: string; text: string; date: string | null; photoId?: string | null; idea?: number; photoEvent?: string; createdAt: string; ownerUserId: string };
+type Item = { id: string; title: string; text: string; date: string | null; done?: boolean; photoId?: string | null; idea?: number; photoEvent?: string; createdAt: string; ownerUserId: string };
 type Album = { id: string; system?: string; visibility: string; items: Item[] };
 type Checkin = { id: string; text: string; mood?: string | null; createdAt: string; ownerUserId: string; visibility: string };
 type Scale = "years" | "months" | "all";
@@ -30,6 +31,9 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const [mapOpen, setMapOpen] = useState(false);
   // 100 件小事 opens straight from the Us menu or Pinky's suggestion (/?view=moments&ideas=1).
   const [ideasOpen, setIdeasOpen] = useState(() => new URLSearchParams(location.search).get("ideas") === "1");
+  // 一起看过的 opens straight from Pinky's card (/?view=moments&watched=1).
+  const [watchedOpen, setWatchedOpen] = useState(() => new URLSearchParams(location.search).get("watched") === "1");
+  const [watched, setWatched] = useState<WatchedItem[]>([]);
   const [playing, setPlaying] = useState<{ title: string; slides: Slide[] } | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [openYear, setOpenYear] = useState("");
@@ -37,6 +41,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const load = useCallback(async () => {
     try {
       const [{ spaces }, { checkins }] = await Promise.all([relationshipApi<{ spaces: Album[] }>("/api/spaces"), relationshipApi<{ checkins: Checkin[] }>("/api/checkins").catch(() => ({ checkins: [] as Checkin[] }))]);
+      setWatched(spaces.filter((space) => space.system === "watched").flatMap((space) => space.items.map((item) => ({ id: item.id, title: item.title, text: item.text, date: item.date, done: Boolean(item.done), createdAt: item.createdAt }))));
       // Photos of one memory arrive as separate items with the same title and date; they read as one moment.
       const grouped = new Map<string, Moment>();
       for (const album of spaces.filter((space) => space.system === "moments")) for (const item of album.items) {
@@ -112,6 +117,11 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     {timeline(focus.moments)}
   </div>;
 
+  if (watchedOpen) return <div className="moments-page" data-testid="moments-watched">
+    <button type="button" className="moments-back" onClick={() => setWatchedOpen(false)}><ArrowLeft size={18} />{t("回忆", "Memories", "Recuerdos")}</button>
+    <WatchedShelf language={language} items={watched} onAsk={(text) => onAsk(text, "us")} />
+  </div>;
+
   if (ideasOpen) return <div className="moments-page" data-testid="moments-ideas">
     {back}
     <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} onPlan={(text) => onAsk(text, "us")} />
@@ -178,6 +188,9 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
         </button>)}
         {paired && <button type="button" className="story-bubble" onClick={() => setIdeasOpen(true)} data-testid="open-ideas">
           <span className="story-bubble-ring is-ideas"><Sparkle size={26} weight="fill" /></span><span className="story-bubble-label">{t("100 件小事", "100 little things", "100 cosas")}</span>
+        </button>}
+        {paired && <button type="button" className="story-bubble" onClick={() => setWatchedOpen(true)} data-testid="open-watched">
+          <span className="story-bubble-ring is-watched"><FilmSlate size={26} weight="fill" /></span><span className="story-bubble-label">{t("一起看过的", "Watched", "Vistos")}</span>
         </button>}
       </Carousel>
     </div>

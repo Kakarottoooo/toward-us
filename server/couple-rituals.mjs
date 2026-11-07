@@ -3,6 +3,7 @@ import { celebrationOn, composeStory, occasionLabel } from "./story.mjs";
 import { memberLanguage } from "./together-domain.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
 import { asAiUser } from "./ai-budget.mjs";
+import { askWatchChecks, WATCH_HOUR } from "./watched.mjs";
 
 // The daily question and the celebration card (100 days, anniversaries) used to start only when one partner opened Us, so a
 // couple who did not open the App that day was never told by push. The maintenance tick (every 5 minutes) now starts them at a
@@ -53,6 +54,8 @@ export function createCoupleRituals({ store, mediator, reachable, emit = () => {
     if (occasion && once(`story:${relationshipId}:${occasion.key}`)) {
       started += Number(await composeStory({ store, mediator, relationshipId, userId, language, key: occasion.key, occasion: occasionLabel(occasion, language), emit: publish }));
     }
+    // 看完了吗: the morning after a plan to watch something together (no model call).
+    if (hour >= WATCH_HOUR && once(`watch:${relationshipId}:${day}`)) started += await askWatchChecks({ store, relationshipId, userId, day, emit: publish });
     if (hour >= DAILY_HOUR) {
       const last = (conversation.messages || []).filter((message) => message.kind === DAILY).at(-1);
       // After a question neither of them answered, the next one waits until one of them opens Us: a couple who stopped

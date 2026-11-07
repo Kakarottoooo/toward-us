@@ -13,7 +13,7 @@ import { createChatImportRouter } from "../server/chat-import.mjs";
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, ...patch });
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
 const whatsapp = ["[1/2/24, 9:00:00 PM] Alex: are you coming home soon", "[1/2/24, 9:20:00 PM] Blair: running late, sorry", "[1/2/24, 9:21:00 PM] Alex: you always say that", "[1/3/24, 8:00:00 AM] Blair: I'm sorry about last night", "[1/3/24, 8:05:00 AM] Alex: thank you, I love you"].join("\n");
-const report = { message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
+const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "each on a laptop, episode 12" }], message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
 
 async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }) } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
@@ -71,6 +71,7 @@ test("an imported chat is analyzed privately and reported back into the owner's 
   assert.deepEqual(item.people.map(({ name, role }) => [name, role]), [["Alex", "me"], ["Blair", "partner"]]);
   assert.equal(item.stats.perPerson.me.messages, 3);
   assert.equal(item.analysis.overview, report.overview);
+  assert.deepEqual(item.analysis.watched, report.watched, "shows they watched together come through for the shelf");
   assert.ok(!JSON.stringify(item).includes("running late"), "the API never returns the raw messages");
   assert.ok(f.calls.structured.some((call) => call.name === "chat_history_part" && call.input.includes("Blair: running late")), "the model reads the transcript with the chosen names");
   // The import is marked ready just before the report is posted, so wait for the report itself.

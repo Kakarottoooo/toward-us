@@ -13,7 +13,7 @@ export type ChatImport = {
     message: string; overview: string; conflictCycle: string | null;
     patterns: Array<{ title: string; detail: string; evidence: Array<{ date: string | null; speaker: string | null; quote: string }> }>;
     strengths: Array<{ title: string; detail: string }>; hurts: Array<{ speaker: string; detail: string }>; suggestions: Array<{ title: string; detail: string }>;
-    moments: Array<{ date: string | null; title: string; text: string }>; dates: Array<{ date: string; title: string; yearly: boolean }>;
+    moments: Array<{ date: string | null; title: string; text: string }>; watched?: Array<{ date: string | null; title: string; note: string | null }>; dates: Array<{ date: string; title: string; yearly: boolean }>;
     promises: Array<{ date: string | null; speaker: string; text: string; status: "kept" | "open" | "unclear" }>; safety: { concern: boolean; note: string | null };
   } | null;
 };

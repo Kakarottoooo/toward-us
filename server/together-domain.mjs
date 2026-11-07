@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord, hideUnrevealedAnswers } from "./relationship-domain.mjs";
-import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
+import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, WATCHED, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
@@ -14,7 +14,7 @@ import { markShowedUp } from "./streak.mjs";
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
 // "nudge" is 想你了: one tap, no words (founder 11-06).
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter", "game", "match_invite"]);
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter", "game", "match_invite", "watch_check"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 // The conversation record carries at most MESSAGE_LIMIT messages (the working set every read and prompt sees). What falls off
@@ -64,7 +64,7 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
     noticedPromises: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && item.origin === "conversation" && item.status === "noticed" && !item.archivedAt).slice(0, 20).map(({ id, description, whenText, ownerType }) => ({ id, description, when: whenText || "", ownerType })),
     authorizedMemories: userId ? buildMemoryContext(snapshot.memories || [], { userId, relationshipId, scope: "joint", query }).memories : [],
     spaces: (snapshot.spaces || []).filter((space) => space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt).slice(0, 30).map((space) => ({
-      id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
+      id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.system === WATCHED ? "watched together (一起看过的 / vistos juntos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
       items: (snapshot.spaceItems || []).filter((item) => item.spaceId === space.id && item.visibility === "shared" && !item.archivedAt).slice(-15).map((item) => ({ id: item.id, title: item.title || String(item.text || "").slice(0, 80), date: item.date, done: item.done })),
     })),
     // Chat-history analyses only as the shared copies both partners approved; never a member's private import.
@@ -90,7 +90,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
 // `answersCheckIn`: a member's turn without a `replyTo` of its own answers an open check-in (see openCheckIn).
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, answersCheckIn = false }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, answersCheckIn = false }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -108,6 +108,8 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     // A finished voice call keeps its captions on the message; both partners were part of it.
     ...(kind === "call" && call ? { call } : {}),
     ...(kind === "story" && story ? { story } : {}),
+    // 看完了吗: the show they planned to watch together, asked about the next day (watched.mjs).
+    ...(kind === "watch_check" && watch ? { watch } : {}),
   };
   const appended = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message];
@@ -208,7 +210,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   // Today in the writer's time zone, with its weekday, so "this Sunday" becomes the right date on the calendar (founder 11-06).
   const zone = await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, actorUserId)).catch(() => null) || "UTC";
   const today = `${new Date().toLocaleDateString("en-CA", { timeZone: zone })} (${new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: zone })})`;
-  let turn = await mediator.continueTogether({ ...context, today, webSearch: Boolean(mediator.webSearch) }, language);
+  // Each member's own time zone (异地), so a plan to watch together can name the time on both sides.
+  const zones = Object.fromEntries((await Promise.all(members.map(async (member) => [member.name, await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, member.id)).catch(() => null)]))).filter(([, value]) => value));
+  let turn = await mediator.continueTogether({ ...context, today, ...(Object.keys(zones).length ? { timezones: zones } : {}), webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
   if (searches.length) {

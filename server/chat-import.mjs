@@ -55,7 +55,7 @@ export function importContext(records) {
   // with enough new messages. Until then the agents only learn it exists and search it.
   const analysed = (record) => record.analysis ? {
     overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle, patterns: record.analysis.patterns.map(({ title, detail }) => ({ title, detail })),
-    strengths: record.analysis.strengths, hurts: record.analysis.hurts, moments: record.analysis.moments, dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
+    strengths: record.analysis.strengths, hurts: record.analysis.hurts, moments: record.analysis.moments, watched: record.analysis.watched || [], dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
     analysedThrough: day(record.analyzedThrough || record.lastAt),
   } : {};
   const synced = records.filter((record) => record.sync && record.status === "ready" && !record.rawDeleted).map((record) => ({ ...analysed(record),
@@ -68,7 +68,7 @@ export function importContext(records) {
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
     canSearch: !record.rawDeleted, overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle,
     patterns: record.analysis.patterns.map(({ title, detail }) => ({ title, detail })), strengths: record.analysis.strengths, hurts: record.analysis.hurts,
-    moments: record.analysis.moments, dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
+    moments: record.analysis.moments, watched: record.analysis.watched || [], dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
     stats: record.stats ? { perPerson: record.stats.perPerson, silences: record.stats.silences?.slice(0, 3) } : null,
   }))];
 }
@@ -161,6 +161,8 @@ const list = (items, maxItems) => ({ type: "array", maxItems, items });
 const chunkSchema = object({
   episodes: list(object({ date: nstr, kind: { type: "string", enum: ["conflict", "repair", "affection", "care", "hurt", "milestone", "promise", "plan", "other"] }, title: str, summary: str, speaker: nstr, quote: nstr }), 12),
   themes: list(str, 6), tone: str,
+  // 一起看过的 (founder 11-07): shows and films the two of them watched or followed together, so the shelf need not start empty.
+  shows: list(object({ date: nstr, title: str }), 10),
 });
 const reportSchema = object({
   message: str, overview: str, conflictCycle: nstr,
@@ -171,6 +173,7 @@ const reportSchema = object({
   moments: list(object({ date: nstr, title: str, text: str }), 12),
   dates: list(object({ date: str, title: str, yearly: { type: "boolean" } }), 8),
   promises: list(object({ date: nstr, speaker: str, text: str, status: { type: "string", enum: ["kept", "open", "unclear"] } }), 8),
+  watched: list(object({ date: nstr, title: str, note: nstr }), 20),
   safety: object({ concern: { type: "boolean" }, note: nstr }),
 });
 const screenshotSchema = object({ messages: list(object({ mine: { type: "boolean" }, name: nstr, time: nstr, text: str }), 400) });
@@ -179,13 +182,13 @@ const ground = (names) => `The two people are ${names.me} (who imported this his
 
 function chunkInstructions(names, language) {
   return `You read one part of a couple's chat history so their relationship assistant can later help them understand their patterns. ${ground(names)}
-Extract the episodes that matter for understanding the relationship: conflicts (what set them off, how each person responded, how it ended), repair attempts, moments of affection or care, hurts, milestones (first dates, trips, anniversaries, moving in), promises one made to the other, plans. Skip logistics and small talk unless they show a pattern. date is YYYY-MM-DD from the transcript headings. quote is at most one short verbatim line (under 100 characters) copied exactly from the transcript, or null. Be fair to both people and describe behavior, not character. Write title, summary, themes and tone in ${outputLanguage(language)}; keep quotes in their original language.`;
+Extract the episodes that matter for understanding the relationship: conflicts (what set them off, how each person responded, how it ended), repair attempts, moments of affection or care, hurts, milestones (first dates, trips, anniversaries, moving in), promises one made to the other, plans. Also list in shows the films, series and shows they clearly watched or followed together (title as usually called, date YYYY-MM-DD if known). Skip logistics and small talk unless they show a pattern. date is YYYY-MM-DD from the transcript headings. quote is at most one short verbatim line (under 100 characters) copied exactly from the transcript, or null. Be fair to both people and describe behavior, not character. Write title, summary, themes and tone in ${outputLanguage(language)}; keep quotes in their original language.`;
 }
 
 function reportInstructions(names, language) {
   return `You are Pinky, a warm relationship assistant. You have notes from every part of a couple's chat history plus exact statistics computed by code. ${ground(names)}
 Write an honest, kind analysis that helps them understand themselves, not a score and not a verdict on who is right. Ground every pattern in evidence (dates and short verbatim quotes taken only from the notes). Describe recurring cycles (for example one person pursues while the other withdraws), what each person seems to need, what already works between them, and small concrete things to try. Use the statistics only as facts given (who starts conversations, reply times, quiet periods); do not invent numbers.
-moments are warm or important memories worth keeping; dates are recurring dates worth remembering (anniversary, birthdays) with yearly true when they repeat; promises are things one promised the other, with whether the history shows them kept.
+watched lists the films, series and shows the two of them clearly watched or followed together (from the notes' shows; together in person or each on their own screen at the same time), once each by its usual name, with the date it was first watched or finished if known and note as at most one short line (where or how, the episode they reached), never inventing any; leave it empty when none. moments are warm or important memories worth keeping; dates are recurring dates worth remembering (anniversary, birthdays) with yearly true when they repeat; promises are things one promised the other, with whether the history shows them kept.
 Safety first: if the history shows threats, intimidation, controlling behavior, coercion, stalking or violence, set safety.concern true, explain briefly and kindly in safety.note, do not frame it as a mutual communication problem, and do not suggest compromise with the harm.
 overview is 3 to 4 plain sentences about the relationship as a whole, without repeating the statistics (the app shows them separately). message is what ${names.me} reads first in their private chat with you: 3 to 5 short sentences addressed to them as "you", naming two or three of the most useful findings specifically, then inviting them to ask about anything. No Markdown. Everything except quotes is in ${outputLanguage(language)}.`;
 }

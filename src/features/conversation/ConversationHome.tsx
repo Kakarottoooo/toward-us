@@ -14,6 +14,7 @@ import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
 import { OnboardingTour, characterOwed, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
+import { WatchCheckCard } from "../moments/WatchedShelf";
 import { GameCard, type GameAnswers, type GameRound } from "./GameCard";
 import { DistanceBar } from "./DistanceBar";
 import { DiscoveryCard, type DiscoverKey } from "./DiscoveryCard";
@@ -34,7 +35,7 @@ type PrivateMessage = { id: string; role: "user" | "assistant"; kind?: string; t
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite"; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
@@ -432,6 +433,11 @@ ${text}` : text, target);
     catch { setNotice(`${text} ${url}`); }
   };
   // 小游戏: answer a round, or start another ("再来一局").
+  const answerWatch = async (id: string, finished: boolean) => {
+    setNotice("");
+    try { await relationshipApi(`/api/together/watched/${encodeURIComponent(id)}/answer`, jsonBody({ finished, language })); await loadTogether(); }
+    catch (error) { setNotice((error as Error).message); }
+  };
   const answerGame = async (id: string, answer: { choice?: number; text?: string }) => {
     setNotice("");
     try { await relationshipApi(`/api/together/games/${encodeURIComponent(id)}/answer`, jsonBody({ ...answer, language })); await loadTogether(); return true; }
@@ -519,6 +525,7 @@ ${text}` : text, target);
     }
     if (message.kind === "match_invite" && message.match) return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
     if (message.kind === "game" && message.game) return <GameCard key={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} />;
+    if (message.kind === "watch_check") return <WatchCheckCard key={message.id} language={language} text={text} answer={message.watchAnswer} members={together?.members || []} onAnswer={(finished) => void answerWatch(message.id, finished)} />;
     if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000} askedAt={message.createdAt} listening={dictating === message.id && voiceActive} onVoice={(append) => dictate(message.id, append)} onAnswer={(answer) => answerDaily(message.id, answer)} />;
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
@@ -531,7 +538,7 @@ ${text}` : text, target);
     const handoffs = message.role === "agent" ? message.refs.filter((ref) => ref.type === "link" && ref.url) : [];
     const from = message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner";
     const article = <article className={`conversation-message ${from}`}>{!continued && (author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{text && <p>{message.role === "agent" ? <Linked text={text} /> : text}</p>}
-      {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.system === "moments" ? "/?view=moments" : ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.system === "moments" ? t("回忆", "Moments", "Momentos") : ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
+      {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.system === "watched" ? "/?view=moments&watched=1" : ref.system === "moments" ? "/?view=moments" : ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.system === "watched" ? t("一起看过的", "Watched together", "Vistos juntos") : ref.system === "moments" ? t("回忆", "Moments", "Momentos") : ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
       {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} onOpen={open} />)}</div>}
       {chatRequest && <div className="card-actions">{approvedImports.has(chatRequest.id) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t("已同意一起看", "Agreed to look together", "Aceptado para verlo juntos")}</small> : mine ? <small className="card-state">{t("等 TA 同意", "Waiting for your partner", "Esperando a tu pareja")}</small> : <button className="card-primary" disabled={busy} onClick={() => void approveImport(chatRequest.id)}><CheckCircle size={18} weight="fill" />{t("同意一起看", "Agree to look together", "Aceptar verlo juntos")}</button>}</div>}
       {chatShared && <div className="message-links"><button onClick={() => open(`/?view=import&import=${encodeURIComponent(chatShared.id)}`)}><ChatsCircle size={16} />{t("查看聊天记录分析", "See the chat history analysis", "Ver el análisis del historial")}<ArrowRight size={15} /></button></div>}
