@@ -40,6 +40,11 @@
 .soup-form > :first-child { flex: 1; min-width: 0; }
 .soup-form input { width: 100%; box-sizing: border-box; min-height: 46px; padding: 0 16px; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-size: 16px; }
 .soup-form .game-primary { flex: none; width: 46px; padding: 0; }
+.game-mic { flex: none; display: grid; place-items: center; width: 46px; min-height: 46px; padding: 0; border: 1px solid rgba(37,37,37,.16); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); cursor: pointer; }
+.game-mic.is-on { border-color: transparent; background: #e0405a; color: #fff; }
+.game-mic:disabled { opacity: .45; cursor: default; }
+.game-mic:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
+.soup-listening { margin: 0; padding: 8px 14px; border-radius: 14px; background: #fbe9ec; color: #a32a42; font-size: 15px; line-height: 1.45; }
 
 .soup-truth { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 18px; background: var(--jian-paper-bright); box-shadow: inset 0 0 0 1.5px rgba(224,64,90,.25); }
 .soup-truth h2 { margin: 0; color: #c2344f; font-size: 18px; font-weight: 700; text-align: center; }
