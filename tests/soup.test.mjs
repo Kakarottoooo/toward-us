@@ -22,7 +22,7 @@ async function couple(t, { mediator = null, languages = [] } = {}) {
   app.use("/api", createMatchRouter({ store, mediator, petDelay: 0 }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
-  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); });
   const request = async (path, method = "GET", body, userId = ids[0]) => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "x-user": userId, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: await response.json() };
@@ -246,8 +246,9 @@ test("海龟汤 by voice: only a player of that game gets a realtime connection,
   const sessions = [];
   const model = fakeModel();
   const mediator = { ...model.mediator, createRealtimeSession: async (options) => { sessions.push(options); return "v=0\r\nanswer"; } };
-  const { ids, request } = await couple(t, { mediator });
+  const { ids, request, look } = await couple(t, { mediator });
   const mine = (await request("/matches", "POST", { game: "soup", with: "pet" })).body.match.id;
+  await until(async () => (await look(mine)).state.puzzle); // Pinky has finished writing before the test ends.
   const sdp = (matchId, userId = ids[0], language = "es") => fetch(`${request.base}/matches/${matchId}/realtime?language=${language}`, { method: "POST", headers: { "x-user": userId, "content-type": "application/sdp" }, body: "v=0\r\noffer" });
   const ok = await sdp(mine);
   assert.equal(ok.status, 200); assert.equal(await ok.text(), "v=0\r\nanswer");
@@ -258,8 +259,9 @@ test("海龟汤 by voice: only a player of that game gets a realtime connection,
 });
 
 test("海龟汤 by voice: without a voice service the App is told, so the phone's own recognition takes over", async (t) => {
-  const { request } = await couple(t, { mediator: null });
+  const { request, look } = await couple(t, { mediator: null });
   const id = (await request("/matches", "POST", { game: "soup" })).body.match.id;
+  await until(async () => (await look(id)).state.puzzle);
   const response = await fetch(`${request.base}/matches/${id}/realtime`, { method: "POST", headers: { "x-user": request.me, "content-type": "application/sdp" }, body: "v=0\r\noffer" });
   assert.equal(response.status, 503);
 });
