@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
-import { isConsentPoint } from "../agreements/AgreementsPage";
+import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -503,7 +503,7 @@ ${text}` : text, target);
       const ref = message.refs.find((item) => item.type === "agreement");
       const live = ref && pendingAgreement && pendingAgreement.id === ref.id && pendingAgreement.version === ref.version && !together?.readOnly;
       const version = ref?.version || 1;
-      return <article key={message.id} className={`conversation-card agreement-card ${live ? "is-live" : ""}`} data-testid="agreement-card"><header><UsersThree size={16} />{t("约定", "Agreement", "Acuerdo")}</header>{live ? <AgreementBody agreement={pendingAgreement!} language={language} /> : <p>{text}</p>}
+      return <article key={message.id} className={`conversation-card agreement-card ${live ? "is-live" : ""}`} data-testid="agreement-card"><header><UsersThree size={16} />{t("约定", "Agreement", "Acuerdo")}</header>{live ? <AgreementBody agreement={pendingAgreement!} language={language} onChanged={loadTogether} /> : <p>{text}</p>}
         {live && (approved.includes(`${ref!.id}:${version}`) || pendingAgreement!.approvedBy?.includes(user.id) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t(`你同意了，等 ${partnerName} 点头`, `You said yes. Waiting for ${partnerName}.`, `Dijiste que sí. Esperando a ${partnerName}.`)}</small> : <>
           {pendingAgreement!.approvedBy?.some((id) => id !== user.id) && <small className="card-state">{t(`${partnerName} 已经同意了，就差你`, `${partnerName} already said yes. It's up to you.`, `${partnerName} ya dijo que sí. Falta tu respuesta.`)}</small>}
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t("我同意", "I agree", "Estoy de acuerdo")}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("我想改一下", "I'd change something", "Quiero cambiar algo")}</button></div></>)}
@@ -753,14 +753,15 @@ function Linked({ text }: { text: string }) {
 }
 
 /** The live agreement drawn from its own fields: a distinct title, numbered terms, open points, then the status. */
-function AgreementBody({ agreement, language }: { agreement: Draft & { status: string }; language: Language }) {
+function AgreementBody({ agreement, language, onChanged }: { agreement: Draft & { id: string; version: number; status: string }; language: Language; onChanged: () => void | Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const showTitle = agreement.title && agreement.title !== agreement.terms[0];
+  // Settled here, in Us (founder 11-06: Coming up is for the whole relationship): the plan by day, the points still open to
+  // answer in place, and a one-off plan's way onto the calendar.
   return <>
     {showTitle && <strong>{agreement.title}</strong>}
-    <ol>{agreement.terms.map((term, index) => <li key={index}>{term}</li>)}</ol>
-    {/* Points that only ask whether the other one agrees are what the buttons below ask. */}
-    {!!agreement.unresolvedPoints?.filter((point) => !isConsentPoint(point)).length && <div className="agreement-open"><small>{t("还没定的", "Still open", "Pendiente")}</small><ul>{agreement.unresolvedPoints.filter((point) => !isConsentPoint(point)).map((point, index) => <li key={index}>{point}</li>)}</ul></div>}
+    <PlanTerms terms={agreement.terms} language={language} />
+    <PendingAgreementTools agreement={agreement} language={language} onChanged={onChanged} />
     <small>{t("两个人都同意才算数。", "It counts once you both agree.", "Cuenta cuando los dos aceptan.")}</small>
   </>;
 }

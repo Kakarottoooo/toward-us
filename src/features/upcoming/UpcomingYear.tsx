@@ -37,8 +37,11 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
   const placed = useMemo(() => placeInYear(withHolidays(year), year), [entries, year, showHolidays, language]);
   // What comes next always looks from today, across the turn of the year.
   const ahead = useMemo(() => [...placeInYear(withHolidays(thisYear), thisYear), ...placeInYear(withHolidays(thisYear + 1), thisYear + 1)].filter((entry) => entry.day >= today && daysBetween(today, entry.day) < 366), [entries, showHolidays, language, today]);
+  // Coming up is for the whole relationship, not next week (founder 11-06): "next" and the list ahead are the dates that come
+  // back (anniversaries, birthdays, holidays); one-off plans and reminders stay as dots on the calendar and in their month.
+  const lasting = ahead.filter((entry) => entry.kind === "date" || entry.kind === "holiday");
   // A date already counted down above (the next meeting) is not shown twice as "next".
-  const next = ahead.find((entry) => entry.id !== counted);
+  const next = lasting.find((entry) => entry.id !== counted);
   const byDay = new Map<string, Placed[]>(); for (const entry of placed) byDay.set(entry.day, [...(byDay.get(entry.day) || []), entry]);
   const mondayFirst = language !== "en";
   const weekdays = Array.from({ length: 7 }, (_, index) => new Date(Date.UTC(2024, 0, mondayFirst ? 1 + index : 7 + index)).toLocaleDateString(languageTag(language), { weekday: "narrow", timeZone: "UTC" }));
@@ -88,7 +91,7 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
     </section>
 
     <section className="upcoming-ahead"><h2>{t("接下来", "Coming up", "Próximamente")}</h2>
-      {ahead.length ? <ul className="upcoming-list">{ahead.slice(0, 8).map((entry) => row(entry, true))}</ul> : <p className="upcoming-empty">{t("接下来还没有安排。", "Nothing planned yet.", "Aún no hay nada planeado.")}</p>}
+      {lasting.length ? <ul className="upcoming-list">{lasting.slice(0, 8).map((entry) => row(entry, true))}</ul> : <p className="upcoming-empty">{t("接下来还没有安排。", "Nothing planned yet.", "Aún no hay nada planeado.")}</p>}
       <button type="button" className="space-ask" onClick={() => onAsk(t("帮我记下一个日子：", "Add a date for us: ", "Añade una fecha: "))}><ChatCircleDots size={20} weight="fill" />{t("跟 Pinky 说一个日子", "Tell Pinky a date", "Dile una fecha a Pinky")}</button>
     </section>
   </div>;

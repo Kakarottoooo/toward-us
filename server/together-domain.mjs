@@ -390,17 +390,18 @@ export async function memberLanguage(tx, userId, hint = null) {
   return LANGUAGES.has(preference?.language) ? preference.language : "zh";
 }
 
+// Plain words, no version numbers (founder 11-06: "第 5 版" read like a contract); the card itself shows who has said yes.
 const CARD_COPY = {
-  zh: { title: (t, v) => `约定「${t}」v${v}`, plain: (v) => `约定 v${v}`, awaiting_approvals: "等你们两人批准同一版本", active: "已生效", draft: "有人要求修改，等待新版本", open: "待定：", change: (who, why) => why ? `${who || "有人"} 想改：${why}` : `${who || "有人"} 想改这一版` },
-  en: { title: (t, v) => `Agreement "${t}" v${v}`, plain: (v) => `Agreement v${v}`, awaiting_approvals: "waiting for both of you to approve this version", active: "now active", draft: "a change was requested; waiting for a new version", open: "Still open: ", change: (who, why) => why ? `${who || "Someone"} wants a change: ${why}` : `${who || "Someone"} asked for a change` },
-  es: { title: (t, v) => `Acuerdo "${t}" v${v}`, plain: (v) => `Acuerdo v${v}`, awaiting_approvals: "esperando que ambos aprueben esta versión", active: "ya está activo", draft: "se pidió un cambio; esperando una nueva versión", open: "Pendiente: ", change: (who, why) => why ? `${who || "Alguien"} quiere cambiar: ${why}` : `${who || "Alguien"} pidió un cambio` },
+  zh: { title: (t) => `约定「${t}」`, plain: () => "约定", awaiting_approvals: "等你们俩都点头", active: "你们俩都同意了，已经生效", draft: "有人想改，等新的一份", open: "还没定的：", change: (who, why) => why ? `${who || "有人"} 想改：${why}` : `${who || "有人"} 想改一下` },
+  en: { title: (t) => `Agreement "${t}"`, plain: () => "Agreement", awaiting_approvals: "waiting for both of you to say yes", active: "you both agreed; it's in effect", draft: "someone wants a change; waiting for a new one", open: "Still open: ", change: (who, why) => why ? `${who || "Someone"} wants a change: ${why}` : `${who || "Someone"} asked for a change` },
+  es: { title: (t) => `Acuerdo "${t}"`, plain: () => "Acuerdo", awaiting_approvals: "esperando a que los dos digan que sí", active: "los dos están de acuerdo; ya está en vigor", draft: "alguien quiere cambiarlo; esperando uno nuevo", open: "Pendiente: ", change: (who, why) => why ? `${who || "Alguien"} quiere cambiar: ${why}` : `${who || "Alguien"} pidió un cambio` },
 };
 // The status line comes first so the 4000-character message cap can only ever trim trailing terms. A change request says
 // who asked and why (`changedBy` is that member's name) right under it, so the card never leaves the other partner guessing.
 export function agreementCardText(agreement, language = "zh", { changedBy = "" } = {}) {
   const copy = CARD_COPY[language] || CARD_COPY.zh, status = copy[agreement.status] || copy.awaiting_approvals;
   // Title and summary are dropped when they only repeat the terms, so a card never shows the same words three times.
-  const terms = agreement.terms || [], heading = agreement.title && agreement.title !== terms[0] ? copy.title(agreement.title, agreement.version) : copy.plain(agreement.version);
+  const terms = agreement.terms || [], heading = agreement.title && agreement.title !== terms[0] ? copy.title(agreement.title) : copy.plain();
   const summary = agreement.summary && agreement.summary !== terms.join(" / ") && agreement.summary !== agreement.title ? agreement.summary : null;
   const change = agreement.status === "draft" && (changedBy || agreement.changeReason) ? copy.change(changedBy, clean(agreement.changeReason, 1200)) : null;
   const lines = [`${heading}${language === "zh" ? "，" : ", "}${status}`, change, summary, ...terms.map((term, index) => `${index + 1}. ${term}`)];
