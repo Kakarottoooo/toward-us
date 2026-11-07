@@ -1,0 +1,29 @@
+/* 两个人的家: the top of Us. The two of them first, then at most three small things waiting today. */
+.us-home { display: grid; gap: 8px; margin: 6px 0 2px; }
+.us-home-hero { position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 10px 44px 10px 12px; border-radius: 20px; background: #fbe1d6; color: #5e2414; }
+.us-home-pair { grid-row: 1 / 3; }
+.us-home-pair { display: flex; align-items: center; gap: 5px; }
+.us-home-avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #fffaf6; color: #7d2f17; font-size: 14px; font-weight: 750; letter-spacing: -.02em; }
+.us-home-heart { color: #c2344f; }
+.us-home-pet { display: grid; place-items: center; width: 34px; height: 34px; margin-left: 2px; padding: 0; border: 0; border-radius: 50%; background: #faeeda; color: #8a5a12; cursor: pointer; overflow: hidden; }
+.device-screen .us-home-pet { min-height: 0; }
+.us-home-pet img { width: 100%; height: 100%; object-fit: contain; }
+.us-home-hero strong { align-self: end; font-size: 16px; font-weight: 750; }
+.us-home-hero small { align-self: start; color: #7d2f17; font-size: 13px; }
+.us-home-hero strong:last-of-type:not(:has(+ small)) { grid-row: 1 / 3; align-self: center; }
+.us-home-fold { position: absolute; top: 50%; right: 8px; margin-top: -16px; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: rgba(255,250,246,.6); color: #7d2f17; cursor: pointer; transform: rotate(180deg); }
+.device-screen .us-home-fold { min-height: 0; }
+.us-home-today { display: grid; gap: 6px; }
+.us-home-today > small { padding: 0 4px; color: #6f6860; font-size: 13px; font-weight: 650; }
+.us-home-card { --c-bg: #e1f5ee; --c-ink: #0f6e56; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 12px; border: 1px solid rgba(37,37,37,.1); border-radius: 16px; background: #fffdf8; color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; }
+.us-home-card.tone-game { --c-bg: #eeedfe; --c-ink: #534ab7; }
+.us-home-card.tone-daily { --c-bg: #e1f5ee; --c-ink: #0f6e56; }
+.us-home-card.tone-agreement { --c-bg: #e6f1fb; --c-ink: #185fa5; }
+.us-home-card.tone-pet { --c-bg: #faeeda; --c-ink: #854f0b; }
+.us-home-card-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: var(--c-bg); color: var(--c-ink); }
+.us-home-card-text { flex: 1; display: grid; gap: 1px; min-width: 0; }
+.us-home-card-text b { font-size: 15px; font-weight: 700; }
+.us-home-card-text em { overflow: hidden; color: #6f6860; font-size: 13px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.us-home-card-go { flex: none; color: var(--c-ink); font-size: 14px; font-weight: 750; }
+.us-home-card:focus-visible, .us-home-fold:focus-visible, .us-home-pet:focus-visible, .us-home-folded:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
+.us-home-folded { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 36px; margin: 6px 0 0; padding: 0 12px; border: 0; border-radius: 18px; background: #fbe1d6; color: #7d2f17; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
