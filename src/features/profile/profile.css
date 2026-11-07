@@ -22,3 +22,8 @@
 .profile-share { display: flex; flex-direction: column; gap: 10px; }
 .profile-edit { display: flex; flex-direction: column; gap: 10px; }
 .profile-edit input { min-height: 48px; padding: 0 14px; border: 1px solid rgba(37,37,37,.16); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); font: inherit; font-size: 16px; }
+
+/* 我们一起的 (founder 11-07): the watched-together shelf and 100 little things, reached from 关于我们. */
+.profile-together { margin-bottom: 16px; }
+.settings-icon.tone-watched { background: #ece5ff; color: #5b3fb5; }
+.settings-icon.tone-ideas { background: #e3e7fb; color: #4b5bd6; }

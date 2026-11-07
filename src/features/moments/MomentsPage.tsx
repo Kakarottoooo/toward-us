@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, FilmSlate, GlobeHemisphereWest, LockKey, Plus, Sparkle, Trash, UsersThree } from "@phosphor-icons/react";
+import { ArrowLeft, GlobeHemisphereWest, LockKey, Plus, Trash, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
@@ -180,21 +180,16 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
         <button type="button" className="moments-find" onClick={(event) => { (event.currentTarget.closest(".relationship-main") as HTMLElement | null)?.scrollTo({ top: 0 }); setMapOpen(true); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={18} /><span>{t("地图", "Map", "Mapa")}</span></button>
       </div>
     </div>
-    <div className="moments-top">
+    {!!bubbles.length && <div className="moments-top">
       {/* Native sideways scrolling (founder 11-07, "还是有点卡"): the phone moves this row itself instead of following each touch in
           code, the one exception to using Carousel; vertical swipes on it still scroll the page. */}
       <div role="group" aria-label={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="story-bubbles story-bubbles-native"><div className="story-bubbles-track">
         {bubbles.map((story) => <button key={story.id} type="button" className="story-bubble" onClick={() => play(story)} data-testid={`story-${story.kind}`}>
           <span className="story-bubble-ring">{photo(story.cover, "story-bubble-photo")}</span><span className="story-bubble-label">{story.title}</span>
         </button>)}
-        {paired && <button type="button" className="story-bubble" onClick={() => setIdeasOpen(true)} data-testid="open-ideas">
-          <span className="story-bubble-ring is-ideas"><Sparkle size={26} weight="fill" /></span><span className="story-bubble-label">{t("100 件小事", "100 little things", "100 cosas")}</span>
-        </button>}
-        {paired && <button type="button" className="story-bubble" onClick={() => setWatchedOpen(true)} data-testid="open-watched">
-          <span className="story-bubble-ring is-watched"><FilmSlate size={26} weight="fill" /></span><span className="story-bubble-label">{t("一起看过的", "Watched", "Vistos")}</span>
-        </button>}
+        {/* 100 件小事 and 一起看过的 live in 关于我们 now (founder 11-07): this row is for photo stories only. */}
       </div></div>
-    </div>
+    </div>}
     {error && <p className="space-error" role="alert">{error}</p>}
 
     {scale === "years" && !year && <div className="year-grid">{years.map((item) => <button key={item.year} type="button" onClick={() => setOpenYear(item.year)} data-testid={`year-${item.year}`}>
