@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mediaDirectory } from "./media-dir.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
 import { ImportFormatError, parseChatExport, parsePastedText } from "./chat-import-parsers.mjs";
@@ -25,7 +25,6 @@ export function dueForAnalysis(record, now = Date.now()) {
   if (!record.analysis) return (record.messageCount || 0) >= SYNC_FIRST;
   return (record.messageCount || 0) - (record.analyzedCount || 0) >= SYNC_MORE && now - Date.parse(record.analyzedAt || 0) >= SYNC_EVERY_MS;
 }
-const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.chat.json`);
 /** Where an import's messages are on disk, for account and private-data deletion. */
 export const importFile = fileFor;

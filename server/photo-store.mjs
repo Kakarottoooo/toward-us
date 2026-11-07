@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { mediaDirectory } from "./media-dir.mjs";
 import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
 import { canViewRecord, createRelationshipRecord } from "./relationship-domain.mjs";
@@ -10,7 +10,6 @@ import { canViewRecord, createRelationshipRecord } from "./relationship-domain.m
 const TYPES = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 // A connected phone album adds a few photos per memory over years of photos.
 const MAX_BYTES = 8 * 1024 * 1024, PHOTO_LIMIT = 6000;
-const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.${TYPES[record.mime]}`);
 const THUMB_WIDTHS = new Set([240, 480]);
