@@ -104,7 +104,8 @@ public class PinkyStorePlugin: CAPPlugin, CAPBridgedPlugin {
             "id": product.id,
             "displayName": product.displayName,
             "displayPrice": product.displayPrice,
-            "price": NSDecimalNumber(decimal: product.price).doubleValue,
+            // Through the decimal text, so 59.99 arrives as 59.99 and not 59.989999999999995.
+            "price": Double(product.price.description) ?? NSDecimalNumber(decimal: product.price).doubleValue,
             "currency": product.priceFormatStyle.currencyCode,
             "type": subscription ? "subscription" : "nonConsumable",
         ]
