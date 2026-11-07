@@ -1,30 +1,62 @@
 import { randomInt } from "node:crypto";
 import { HOST, matchError, PET } from "./errors.mjs";
 
-// 情侣飞行棋 (founder 11-06; the bigger board the same day: "地图做复杂一点"). A two-player 飞行棋 for couples on a cross-shaped board:
-// - One shared loop of 52 squares around the cross. Each player starts from their own take-off square (ENTRY), flies once
-//   around (progress 0..50), turns into their own 5-square runway (51..55) and lands in the centre (HOME = 56).
-// - Each player has 4 planes. The die is rolled here (action "roll"); the client never says what came up.
-// - A 6 launches a plane from the hangar onto its take-off square and gives another roll. When nothing of yours is out,
-//   every roll without a 6 counts as a failed try; the third in a row launches a plane anyway, so nobody gets stuck.
-// - Every other square of the loop is one player's colour. Landing on your own colour (by the die) jumps you 4 squares on,
-//   to your next one. Each player also has one flight square: landing there flies you along the dashed line 12 squares on.
-//   Only one jump or flight per move.
-// - Landing (after any jump or flight) on the other player's plane(s) sends them back to their hangar. Planes on the runway
-//   are safe. A roll past the centre bounces back the extra squares. Whoever gets all 4 planes home wins.
-// - 8 heart squares: landing on one shows a small task for the one who landed, and their turn waits until they tap 做到了
-//   ("task", done: true) or 跳过 (done: false). Pinky writes ~12 tasks at the start, in each player's language; without a
-//   model the built-in list below is used. 小家伙 does its tasks by itself, with a cute line.
-// States from the first, 30-square board (no `board`) can't go on; they can only be ended.
-export const BOARD = 2, LOOP = 52, LAST = 50, HOME = 56, HANGAR = -1, PLANES = 4, FORCED_AFTER = 3, TASK_COUNT = 12;
-export const ENTRY = [1, 27];
-export const JUMP = 4, FLIGHT_FROM = 31, FLIGHT = 12;
-// Loop squares (absolute) with a heart: none is a colour square, a flight square or a take-off square.
-export const HEARTS = [4, 10, 16, 22, 30, 36, 42, 48];
-export const isHeart = (square) => HEARTS.includes(square);
-/** Whose colour a loop square is: the first player's (index 0), the second's (1), or nobody's (null). */
-export const colourOf = (square) => square % 4 === 1 ? 0 : square % 4 === 3 ? 1 : null;
-const KEEP_LOG = 8, MAX_TASKS = 20, MAX_TASK_LENGTH = 160;
+// 情侣飞行棋 (founder 11-06). A two-player 飞行棋 for couples with a little 大富翁 in it:
+// - Each player has 2 planes and starts with 200 爱心币. A 6 launches a plane onto its owner's start and gives another roll;
+//   with nothing out, the third roll in a row without a 6 launches one anyway. Whoever gets both planes home wins.
+// - Coins: 30 for every bridge a plane passes, 30 on a coin square, 60 on the inner ring's coin squares.
+// - 约会地点 (8 places on the outer ring): stop on one nobody owns and you may buy it; stop on your own and you may upgrade
+//   it once; stop on the other one's and you pay rent, in coins or (between the two of them) with a little promise that
+//   Pinky writes down in Us.
+// - 心动卡 squares draw a card (move, coins, swap places, a 护身符 against the next capture, a photo or a question to do
+//   together, a free upgrade, or the 冷静角). The 冷静角 holds you for a turn: roll a 6 to get out at once, or the other one
+//   says something nice and bails you out (action "bail").
+// - Your own colour hops 4 squares; your flight square flies 12 along the dashed line; landing on the other one's plane
+//   sends it back to the hangar; a roll past home bounces back. Hearts (on the inner ring) hold a little task Pinky wrote.
+// - Choices wait for the player (phase "decide": buy, upgrade, rent, take the inner ring); 小家伙 makes its own at once.
+
+// ---- The board (B3, founder 11-06: "地图是这样，但是你得多加点功能，参考大富翁") ----
+// Two rings on a 9 x 17 grid. The outer ring is 48 squares; four bridges (at the middle of each side) cross a strip of grass
+// to the inner "爱心内圈" (32 squares). Every plane flies one lap of 48 steps from its owner's start (a bridge square) back
+// to it, which is home. Each quarter (12 steps, bridge to bridge) is flown on the outer ring, or, when a plane stopped on
+// the bridge square at its start, on the inner ring instead: same length, no places to buy and no rent, but hearts and
+// coins. Squares are named by what they are on the board, so planes on the inner ring meet whoever is there too.
+export const BOARD = 3, LOOP = 48, QUARTER = 12, HOME = LOOP, HANGAR = -1, PLANES = 2, FORCED_AFTER = 3, TASK_COUNT = 12;
+export const START = [0, 24];
+export const JUMP = 4, FLIGHT_FROM = 28, FLIGHT = 12;
+export const START_COINS = 200, BRIDGE_PAY = 30, COIN_SQUARE = 30, INNER_COIN = 60, CARD_TASK_PAY = 30, UPGRADE = 100;
+// Outer squares (absolute, 0 = the first player's start, clockwise).
+export const PLACES = [
+  { square: 3, price: 100, name: ["咖啡馆", "Café", "Cafetería"] }, { square: 8, price: 120, name: ["电影院", "Cinema", "Cine"] },
+  { square: 15, price: 140, name: ["公园", "Park", "Parque"] }, { square: 20, price: 160, name: ["游乐园", "Fun fair", "Feria"] },
+  { square: 27, price: 100, name: ["书店", "Bookshop", "Librería"] }, { square: 32, price: 120, name: ["火锅店", "Hot pot", "Hot pot"] },
+  { square: 39, price: 140, name: ["海边", "Seaside", "Playa"] }, { square: 44, price: 160, name: ["摩天轮", "Ferris wheel", "Noria"] },
+];
+export const CARDS_AT = [5, 18, 29, 42], COINS_AT = [2, 10, 26, 34], CALM_AT = [22, 46];
+export const rentOf = (place, level) => Math.round(place.price * (level >= 2 ? 0.9 : 0.4));
+const placeAt = (square) => PLACES.find((place) => place.square === square) || null;
+/** Whose colour an outer square is (index 0 or 1), for the 4-square hop; special squares have none. */
+export function colourOf(square) {
+  if (square % QUARTER === 0 || placeAt(square) || CARDS_AT.includes(square) || COINS_AT.includes(square) || CALM_AT.includes(square)) return null;
+  if (START.some((start) => (start + FLIGHT_FROM) % LOOP === square)) return null;
+  return square % 4 === 1 ? 0 : square % 4 === 3 ? 1 : null;
+}
+// The inner ring: 32 squares, index 8k at the inner end of bridge k; hearts and coins on it.
+export const INNER = 32, INNER_HEARTS = [2, 6], INNER_COINS = [4];
+const innerKind = (index) => INNER_HEARTS.includes(index % 8) ? "heart" : INNER_COINS.includes(index % 8) ? "coin" : null;
+
+/** Where a plane is: an outer square "o<n>", the grass by bridge k "g<k>", an inner square "i<n>", or null (hangar, home). */
+export function cellOf(state, userId, plane) {
+  const { p, inner } = plane;
+  if (p < 0 || p >= HOME) return null;
+  const start = START[state.players.indexOf(userId)], segment = Math.floor(p / QUARTER), step = p % QUARTER;
+  const bridge = (start / QUARTER + segment) % 4;
+  if (inner !== segment || step === 0) return `o${(start + p) % LOOP}`;
+  if (step === 1) return `g${bridge}`;
+  if (step === QUARTER - 1) return `g${(bridge + 1) % 4}`;
+  return `i${(bridge * 8 + step - 2) % INNER}`;
+}
+const KEEP_LOG = 10, MAX_TASKS = 20, MAX_TASK_LENGTH = 160;
 export const LANGS = ["zh", "en", "es"];
 
 // The die. Tests swap `roll` for a fixed sequence; the game itself only ever uses this.
@@ -73,43 +105,219 @@ export const PET_LINES = [
 ];
 
 
+
+// Little promises a rent can be paid with, instead of coins (only between the two of them; Pinky writes it down in Us).
+export const PROMISES = [
+  ["下次奶茶我请", "the next bubble tea is on me", "el próximo té de burbujas lo pago yo"],
+  ["给你按摩十分钟", "a ten-minute massage", "un masaje de diez minutos"],
+  ["这周洗一次碗", "doing the dishes once this week", "lavar los platos una vez esta semana"],
+  ["给你做一顿早餐", "making you breakfast", "prepararte un desayuno"],
+  ["陪你看一部你选的电影", "watching a film of your choice", "ver una película que elijas tú"],
+  ["给你写一张小纸条", "writing you a little note", "escribirte una notita"],
+  ["听你吐槽十分钟不插嘴", "ten minutes of listening without interrupting", "diez minutos de escucharte sin interrumpir"],
+  ["下次出门我拎包", "carrying the bags next time we go out", "llevar las bolsas la próxima vez que salgamos"],
+];
+// Questions a 心动卡 can ask (answered out loud or in Us).
+export const QUESTIONS = [
+  ["说一个你最近想和 TA 一起做的事。", "Name something you'd like to do with your partner soon.", "Di algo que te gustaría hacer pronto con tu pareja."],
+  ["你们第一次约会，你最记得什么？", "What do you remember most from your first date?", "¿Qué recuerdas más de su primera cita?"],
+  ["TA 哪个小习惯让你心动？", "Which little habit of your partner's makes your heart skip?", "¿Qué costumbre de tu pareja te enamora?"],
+  ["如果明天放假一天，你想怎么和 TA 过？", "If tomorrow were a day off, how would you spend it together?", "Si mañana fuera libre, ¿cómo lo pasarían juntos?"],
+  ["说一件 TA 不知道你很感激的事。", "Tell your partner something you're grateful for that they don't know.", "Cuéntale a tu pareja algo que agradeces y no sabe."],
+  ["你最想和 TA 一起去哪里旅行？", "Where would you most like to travel together?", "¿A dónde les gustaría más viajar juntos?"],
+];
+// 心动卡 (the 机会/命运 of this board): what each one does.
+export const CARDS = ["ahead3", "back2", "gift50", "bonus80", "swap", "charm", "photo", "question", "upgrade", "calm"];
+/** The `count`-th card of a game with this seed: a shuffled order of its own, the same for both of them. */
+export const cardAt = (seed, count) => CARDS[Math.abs(seedOf(seed, "card", count)) % CARDS.length];
+
 const seedOf = (...parts) => [...parts.join(":")].reduce((hash, char) => (hash * 31 + char.codePointAt(0)) | 0, 7);
 const other = (state, userId) => state.players.find((id) => id !== userId);
-const builtin = (index) => { const [zh, en, es] = TASKS[index]; return { zh, en, es }; };
+const pick3 = ([zh, en, es]) => ({ zh, en, es });
+const builtin = (index) => pick3(TASKS[index]);
 /** `count` built-in tasks in an order of this game's own. */
 export const builtinTasks = (seed, count = TASK_COUNT) => TASKS.map((_, index) => index).sort((a, b) => seedOf(seed, a) - seedOf(seed, b)).slice(0, count).map(builtin);
+export const outerOf = (state, userId, p) => (START[state.players.indexOf(userId)] + p) % LOOP;
+const onBoard = (plane) => plane.p >= 0 && plane.p < HOME;
+const log = (state, entry) => ({ ...state, log: [...state.log, { ...entry, n: state.rolls }].slice(-KEEP_LOG) });
+const give = (state, userId, amount) => ({ ...state, coins: { ...state.coins, [userId]: Math.max(0, (state.coins[userId] || 0) + amount) } });
+const setPlane = (state, userId, index, plane) => ({ ...state, planes: { ...state.planes, [userId]: state.planes[userId].map((item, at) => at === index ? plane : item) } });
 
-/** Where a plane of `userId` at `progress` (0..50) stands on the loop. */
-export const squareOf = (state, userId, progress) => (ENTRY[state.players.indexOf(userId)] + progress) % LOOP;
-const onLoop = (progress) => progress >= 0 && progress <= LAST;
-const out = (progress) => progress >= 0 && progress < HOME;
-
-/** Where a plane at `from` ends with `value`, before any jump or flight: off the hangar only with a 6, and a roll past the
- * centre bounces back. Null when it can't move. */
+/** Where a plane at `from` ends with the die, before any hop or flight: off the hangar only with a 6, and a roll past home
+ * bounces back. Null when it can't move. */
 export function stepTo(from, value) {
   if (from === HANGAR) return value === 6 ? 0 : null;
-  if (!out(from)) return null;
+  if (from < 0 || from >= HOME) return null;
   const to = from + value;
   return to > HOME ? HOME - (to - HOME) : to;
 }
 
-/** Where the move ends after a jump or a flight from the square the die reached (progress), and which one it was. */
-export function landing(from, value) {
-  const to = stepTo(from, value);
-  if (to === null || from === HANGAR || !onLoop(to)) return { to, via: null };
-  if (to === FLIGHT_FROM) return { to: to + FLIGHT, via: "flight" };
-  if (to % 4 === 0 && to + JUMP <= LAST) return { to: to + JUMP, via: "jump" };
-  return { to, via: null };
-}
-
-/** The planes of `userId` that can move `value`, as [{ plane, from, to, via }]; planes on the same square count once. */
+/** The planes of `userId` that can move `value`, as [{ plane, from, to }]; two planes on the same spot count once. */
 export function options(state, userId, value) {
   const found = [];
-  state.planes[userId].forEach((progress, plane) => {
-    const { to, via } = landing(progress, value);
-    if (to !== null && !found.some((item) => item.from === progress)) found.push({ plane, from: progress, to, via });
+  state.planes[userId].forEach((plane, index) => {
+    const to = stepTo(plane.p, value);
+    if (to !== null && !found.some((item) => item.from === plane.p && item.inner === plane.inner)) found.push({ plane: index, from: plane.p, inner: plane.inner, to });
   });
   return found;
+}
+
+/** Puts plane `index` of the player to move at progress `to` (a die move, a hop, a flight or a card), paying 30 for each
+ * bridge passed on the way forward, and keeping the inner ring only while still in the quarter it was chosen for. */
+function place(state, userId, index, to, { pay = true } = {}) {
+  const plane = state.planes[userId][index], from = plane.p;
+  let next = state;
+  if (pay && from >= 0) for (let bridge = (Math.floor(from / QUARTER) + 1) * QUARTER; bridge <= Math.min(to, HOME - 1); bridge += QUARTER) next = give(next, userId, BRIDGE_PAY);
+  const inner = plane.inner === Math.floor(to / QUARTER) && to % QUARTER !== 0 ? plane.inner : -1;
+  return setPlane(next, userId, index, { p: to, inner });
+}
+
+/** The other player's planes on the same square as plane `index` of `userId` go back to their hangar (a 护身符 saves one). */
+function capture(state, userId, index) {
+  const rival = other(state, userId), cell = cellOf(state, userId, state.planes[userId][index]);
+  if (!cell) return state;
+  let next = state;
+  state.planes[rival].forEach((plane, at) => {
+    if (cellOf(state, rival, plane) !== cell) return;
+    if ((next.charm[rival] || 0) > 0) { next = log({ ...next, charm: { ...next.charm, [rival]: next.charm[rival] - 1 } }, { by: rival, kind: "charmed", plane: at }); return; }
+    next = log(setPlane(next, rival, at, { p: HANGAR, inner: -1 }), { by: userId, kind: "capture", planes: [at] });
+  });
+  return next;
+}
+
+function nextTask(state) {
+  const list = state.tasks?.length ? state.tasks : builtinTasks(state.seed, TASKS.length);
+  return { text: list[state.taskCount % list.length], taskCount: state.taskCount + 1 };
+}
+
+/** What happens on the square plane `index` of the player to move has just reached (`depth` 1 after a hop, flight or card:
+ * no second hop, flight or card). Returns the state, possibly waiting for a decision (phase "decide") or a task. */
+function arrive(state, index, depth = 0) {
+  const userId = state.current, plane = state.planes[userId][index];
+  if (plane.p >= HOME) return log(state, { by: userId, kind: "home", plane: index });
+  let next = capture(state, userId, index);
+  const cell = cellOf(next, userId, plane);
+  if (cell.startsWith("i")) {
+    const kind = innerKind(Number(cell.slice(1)));
+    if (kind === "coin") return log(give(next, userId, INNER_COIN), { by: userId, kind: "coins", amount: INNER_COIN });
+    if (kind === "heart") return task(next, userId, null);
+    return next;
+  }
+  if (cell.startsWith("g")) return next;
+  const square = Number(cell.slice(1)), me = next.players.indexOf(userId);
+  if (depth === 0 && plane.p === FLIGHT_FROM) return arrive(log(place(next, userId, index, FLIGHT_FROM + FLIGHT), { by: userId, kind: "flight", plane: index }), index, 1);
+  if (depth === 0 && colourOf(square) === me && plane.p + JUMP < HOME && (plane.p + JUMP) % QUARTER !== 0) return arrive(log(place(next, userId, index, plane.p + JUMP), { by: userId, kind: "jump", plane: index }), index, 1);
+  if (plane.p > 0 && plane.p % QUARTER === 0) return { ...next, phase: "decide", pending: { kind: "bridge", by: userId, plane: index } };
+  const spot = placeAt(square);
+  if (spot) {
+    const owned = next.owned[square];
+    if (!owned) return next.coins[userId] >= spot.price ? { ...next, phase: "decide", pending: { kind: "buy", by: userId, square, price: spot.price } } : next;
+    if (owned.owner === userId) return owned.level < 2 && next.coins[userId] >= UPGRADE ? { ...next, phase: "decide", pending: { kind: "upgrade", by: userId, square, price: UPGRADE } } : next;
+    return { ...next, phase: "decide", pending: { kind: "rent", by: userId, to: owned.owner, square, rent: rentOf(spot, owned.level) } };
+  }
+  if (COINS_AT.includes(square)) return log(give(next, userId, COIN_SQUARE), { by: userId, kind: "coins", amount: COIN_SQUARE });
+  if (CALM_AT.includes(square)) return log({ ...next, calm: { ...next.calm, [userId]: true } }, { by: userId, kind: "calm" });
+  if (CARDS_AT.includes(square) && depth === 0) return draw(next, index);
+  return next;
+}
+
+function task(state, userId, card, pay = 0) {
+  const { text, taskCount } = card ? { text: card, taskCount: state.taskCount } : nextTask(state);
+  return { ...state, taskCount, phase: "task", task: { by: userId, text, pay, card: Boolean(card) } };
+}
+
+/** A 心动卡: what it says happens at once, or waits for a task. */
+function draw(state, index) {
+  const userId = state.current, rival = other(state, userId);
+  const card = cardAt(state.seed, state.cardCount);
+  let next = log({ ...state, cardCount: state.cardCount + 1, card: { by: userId, id: card, n: state.rolls } }, { by: userId, kind: "card", card });
+  const plane = next.planes[userId][index];
+  switch (card) {
+    case "ahead3": return arrive(place(next, userId, index, Math.min(plane.p + 3, HOME)), index, 1);
+    case "back2": return arrive(place(next, userId, index, Math.max(plane.p - 2, 0), { pay: false }), index, 1);
+    case "gift50": { const paid = Math.min(50, next.coins[rival] || 0); return give(give(next, rival, -paid), userId, paid); }
+    case "bonus80": return give(next, userId, 80);
+    case "swap": {
+      // Trade places with the other's plane furthest along (on the board, not on a runway of its own): only if it is ahead.
+      const theirs = next.planes[rival].map((item, at) => ({ item, at })).filter(({ item }) => onBoard(item)).sort((a, b) => b.item.p - a.item.p)[0];
+      if (!theirs) return next;
+      const mineCell = outerOf(next, userId, plane.p), theirCell = outerOf(next, rival, theirs.item.p);
+      const mineTo = (theirCell - START[next.players.indexOf(userId)] + LOOP) % LOOP, theirTo = (mineCell - START[next.players.indexOf(rival)] + LOOP) % LOOP;
+      if (mineTo <= plane.p) return next;
+      return setPlane(setPlane(next, userId, index, { p: mineTo, inner: -1 }), rival, theirs.at, { p: theirTo, inner: -1 });
+    }
+    case "charm": return { ...next, charm: { ...next.charm, [userId]: (next.charm[userId] || 0) + 1 } };
+    case "photo": return task(next, userId, { zh: "一起拍张合照，发到“我们俩”。", en: "Take a photo together and share it in Us.", es: "Tómense una foto juntos y compártanla en Nosotros." }, CARD_TASK_PAY);
+    case "question": return task(next, userId, pick3(QUESTIONS[next.cardCount % QUESTIONS.length]), CARD_TASK_PAY);
+    case "upgrade": {
+      const mine = Object.entries(next.owned).filter(([, owned]) => owned.owner === userId && owned.level < 2).map(([square]) => Number(square)).sort((a, b) => a - b)[0];
+      return mine === undefined ? give(next, userId, 50) : { ...next, owned: { ...next.owned, [mine]: { owner: userId, level: 2 } } };
+    }
+    case "calm": return { ...next, calm: { ...next.calm, [userId]: true } };
+    default: return next;
+  }
+}
+
+const pass = (state) => ({ ...state, current: other(state, state.current), phase: "roll", task: null, pending: null, extra: false });
+/** After the move and whatever it led to: the game may be won; otherwise another roll after a 6, or the other one's turn. */
+function settle(state) {
+  if (state.phase === "decide" || state.phase === "task") return state;
+  const userId = state.current;
+  if (state.planes[userId].every((plane) => plane.p >= HOME)) return { ...state, phase: "over", winner: userId, task: null, pending: null };
+  return state.extra ? { ...state, phase: "roll", task: null, pending: null } : pass(state);
+}
+
+function move(state, index, value, forced = false) {
+  const userId = state.current, from = state.planes[userId][index].p;
+  const to = forced ? 0 : stepTo(from, value);
+  let next = log(place({ ...state, extra: value === 6 && !forced, tries: { ...state.tries, [userId]: from === HANGAR ? 0 : state.tries[userId] } }, userId, index, to), { by: userId, kind: forced ? "forced" : from === HANGAR ? "launch" : to >= HOME ? "home" : "move", plane: index, value });
+  next = from === HANGAR ? capture(next, userId, index) : arrive(next, index);
+  return autoDecide(settle(next));
+}
+
+/** One choice the player to move makes: buy or not, upgrade or not, pay rent in coins or with a little promise, take the
+ * bridge to the inner ring or not. */
+function decide(state, choice) {
+  const pending = state.pending, userId = pending.by;
+  let next = { ...state, phase: "move", pending: null };
+  if (pending.kind === "buy" && choice === "buy") next = log({ ...give(next, userId, -pending.price), owned: { ...next.owned, [pending.square]: { owner: userId, level: 1 } } }, { by: userId, kind: "buy", square: pending.square });
+  else if (pending.kind === "upgrade" && choice === "upgrade") next = log({ ...give(next, userId, -pending.price), owned: { ...next.owned, [pending.square]: { owner: userId, level: 2 } } }, { by: userId, kind: "upgrade", square: pending.square });
+  else if (pending.kind === "rent") {
+    if (choice === "promise" && pending.to !== PET && userId !== PET) {
+      const promise = pick3(PROMISES[Math.abs(seedOf(state.seed, "promise", state.promises.length)) % PROMISES.length]);
+      next = log({ ...next, promises: [...next.promises, { from: userId, to: pending.to, text: promise, square: pending.square }] }, { by: userId, kind: "promise", square: pending.square });
+    } else {
+      const paid = Math.min(pending.rent, next.coins[userId] || 0);
+      next = log(give(give(next, userId, -paid), pending.to, paid), { by: userId, kind: "rent", square: pending.square, amount: paid });
+    }
+  } else if (pending.kind === "bridge") {
+    const plane = next.planes[userId][pending.plane];
+    if (choice === "inner") next = log(setPlane(next, userId, pending.plane, { p: plane.p, inner: Math.floor(plane.p / QUARTER) }), { by: userId, kind: "inner", plane: pending.plane });
+  } else if (!["skip", "outer"].includes(choice)) throw matchError(400, "invalid_action");
+  return settle({ ...next, phase: "move" });
+}
+
+/** 小家伙 decides by itself: it buys and upgrades when it keeps some coins back, pays rent in coins, and takes the inner ring
+ * when it is short of coins. */
+function autoDecide(state) {
+  let next = state;
+  for (let guard = 0; guard < 6 && next.current === PET && ["decide", "task"].includes(next.phase); guard += 1) {
+    if (next.phase === "task") {
+      const line = Math.abs(seedOf(next.seed, next.taskCount, next.rolls)) % PET_LINES.length;
+      next = settle(log({ ...give(next, PET, next.task.pay || 0), phase: "move", task: null, done: { ...next.done, [PET]: (next.done[PET] || 0) + 1 } }, { by: PET, kind: "task", done: true, line }));
+      continue;
+    }
+    const { kind, price } = next.pending, coins = next.coins[PET] || 0;
+    next = decide(next, kind === "buy" ? (coins - price >= 60 ? "buy" : "skip") : kind === "upgrade" ? (coins - price >= 80 ? "upgrade" : "skip") : kind === "bridge" ? (coins < 150 ? "inner" : "outer") : "coins");
+  }
+  return next;
+}
+
+/** The plane 小家伙 moves: one that sends a plane of mine home, then one that gets home, then the furthest along. */
+export function petChoice(state, userId, value) {
+  const choices = options(state, userId, value), rival = other(state, userId);
+  const hits = (choice) => choice.from >= 0 && choice.to < HOME && state.planes[rival].some((plane) => cellOf(state, rival, plane) && cellOf(state, rival, plane) === cellOf(state, userId, { p: choice.to, inner: choice.inner === Math.floor(choice.to / QUARTER) ? choice.inner : -1 }));
+  return (choices.find(hits) || choices.find((choice) => choice.to === HOME) || [...choices].sort((a, b) => b.from - a.from)[0])?.plane;
 }
 
 function cleanTasks(tasks) {
@@ -122,70 +330,19 @@ function cleanTasks(tasks) {
   }).filter(Boolean);
 }
 
-const log = (state, entry) => [...state.log, { ...entry, n: state.rolls }].slice(-KEEP_LOG);
-const pass = (state) => ({ ...state, current: other(state, state.current), phase: "roll", task: null });
-const next = (state, extra) => extra ? { ...state, phase: "roll", task: null } : pass(state);
-
-function nextTask(state) {
-  const list = state.tasks?.length ? state.tasks : builtinTasks(state.seed, TASKS.length);
-  return { text: list[state.taskCount % list.length], taskCount: state.taskCount + 1 };
-}
-
-/** The other player's planes standing where `userId`'s plane at `to` would land. */
-const caught = (state, userId, to) => {
-  if (!onLoop(to)) return [];
-  const rival = other(state, userId), square = squareOf(state, userId, to);
-  return state.planes[rival].map((progress, index) => onLoop(progress) && squareOf(state, rival, progress) === square ? index : -1).filter((index) => index >= 0);
-};
-
-/** Moves `plane` of the player to move by the die (`forced`: the third try without a 6 launches it), with everything that
- * follows: a jump or flight, capture, home, the win, a heart's task, and another roll after a 6. */
-function move(state, plane, value, forced = false) {
-  const userId = state.current, rival = other(state, userId);
-  const from = state.planes[userId][plane];
-  const { to, via } = forced ? { to: 0, via: null } : landing(from, value);
-  const mine = state.planes[userId].map((progress, index) => index === plane ? to : progress);
-  const entries = [{ by: userId, kind: forced ? "forced" : from === HANGAR ? "launch" : to === HOME ? "home" : "move", plane, value }];
-  if (via) entries.push({ by: userId, kind: via, plane });
-  const hit = caught(state, userId, to);
-  let theirs = state.planes[rival];
-  if (hit.length) { theirs = theirs.map((progress, index) => hit.includes(index) ? HANGAR : progress); entries.push({ by: userId, kind: "capture", planes: hit }); }
-  let moved = { ...state, planes: { ...state.planes, [userId]: mine, [rival]: theirs }, tries: { ...state.tries, [userId]: from === HANGAR ? 0 : state.tries[userId] } };
-  for (const entry of entries) moved = { ...moved, log: log(moved, entry) };
-  if (mine.every((progress) => progress === HOME)) return { ...moved, phase: "over", winner: userId, task: null };
-  const extra = value === 6 && !forced;
-  if (onLoop(to) && isHeart(squareOf(state, userId, to))) {
-    const { text, taskCount } = nextTask(moved);
-    moved = { ...moved, taskCount };
-    if (userId === PET) {
-      // 小家伙 does it by itself, no tap needed.
-      const line = Math.abs(seedOf(state.seed, taskCount)) % PET_LINES.length;
-      return next({ ...moved, log: log(moved, { by: PET, kind: "task", done: true, line }), done: { ...moved.done, [PET]: (moved.done[PET] || 0) + 1 } }, extra);
-    }
-    return { ...moved, phase: "task", task: { by: userId, text, extra } };
-  }
-  return next(moved, extra);
-}
-
-/** The plane 小家伙 moves: a capture first, then getting home, then the biggest leap (a flight or a jump), then the plane
- * furthest along that isn't already safe on its runway. */
-export function petChoice(state, userId, value) {
-  const choices = options(state, userId, value);
-  const rank = (choice) => [caught(state, userId, choice.to).length ? 1 : 0, choice.to === HOME ? 1 : 0, choice.to - Math.max(choice.from, 0) - (choice.from === HANGAR ? 0 : value), onLoop(choice.from) ? 1 : 0, choice.from];
-  const better = (a, b) => { const x = rank(a), y = rank(b); for (let index = 0; index < x.length; index += 1) if (x[index] !== y[index]) return x[index] > y[index]; return false; };
-  return choices.reduce((best, choice) => !best || better(choice, best) ? choice : best, null)?.plane;
-}
-
 export const ludo = {
   id: "ludo",
   category: "casual",
   start({ players, inviterUserId, matchId }) {
     const first = players.includes(inviterUserId) ? inviterUserId : players[0];
     const ordered = [first, ...players.filter((id) => id !== first)];
+    const each = (value) => Object.fromEntries(ordered.map((id) => [id, typeof value === "function" ? value() : value]));
     return {
-      board: BOARD, players: ordered, seed: seedOf(matchId), planes: Object.fromEntries(ordered.map((id) => [id, Array(PLANES).fill(HANGAR)])),
-      current: first, phase: "roll", die: null, rolls: 0, tries: Object.fromEntries(ordered.map((id) => [id, 0])),
-      task: null, tasks: null, taskSource: null, taskCount: 0, done: Object.fromEntries(ordered.map((id) => [id, 0])), skipped: Object.fromEntries(ordered.map((id) => [id, 0])),
+      board: BOARD, players: ordered, seed: seedOf(matchId),
+      planes: each(() => Array.from({ length: PLANES }, () => ({ p: HANGAR, inner: -1 }))),
+      coins: each(START_COINS), owned: {}, charm: each(0), calm: each(false), promises: [],
+      current: first, phase: "roll", die: null, rolls: 0, extra: false, tries: each(0), pending: null, card: null, cardCount: 0,
+      task: null, tasks: null, taskSource: null, taskCount: 0, done: each(0), skipped: each(0),
       log: [], winner: null, resignedBy: null,
     };
   },
@@ -200,42 +357,58 @@ export const ludo = {
     }
     if (!state.players.includes(userId)) throw matchError(409, "not_your_turn");
     if (state.phase === "over") throw matchError(409, "match_over");
-    // A game on the old 30-square board can only be ended, with no winner.
+    // A game on an older board can only be ended, with no winner.
     if (state.board !== BOARD) { if (action?.type === "resign") return { ...state, phase: "over", winner: null, resignedBy: userId, task: null }; throw matchError(409, "old_board"); }
-    if (action?.type === "resign") return { ...state, phase: "over", winner: other(state, userId), resignedBy: userId, task: null };
+    if (action?.type === "resign") return { ...state, phase: "over", winner: other(state, userId), resignedBy: userId, task: null, pending: null };
+    if (action?.type === "bail") {
+      // Said something nice: the other one leaves the 冷静角 at once. Any time, not only on your turn.
+      const rival = other(state, userId);
+      if (!state.calm[rival] || userId === PET) throw matchError(409, "invalid_action");
+      return log({ ...state, calm: { ...state.calm, [rival]: false } }, { by: userId, kind: "bail" });
+    }
     if (state.current !== userId) throw matchError(409, "not_your_turn");
     if (action?.type === "roll") {
       if (state.phase === "task") throw matchError(409, "task_pending");
+      if (state.phase === "decide") throw matchError(409, "decide_first");
       if (state.phase !== "roll") throw matchError(409, "choose_plane");
       // Only the server's die counts; anything the client sends with it is ignored.
       const value = dice.roll(), rolls = state.rolls + 1;
-      let rolled = { ...state, rolls, die: { value, by: userId, n: rolls } };
+      let rolled = { ...state, rolls, die: { value, by: userId, n: rolls }, card: null };
+      if (rolled.calm[userId]) {
+        // In the 冷静角: a 6 gets out and plays on; anything else ends the turn there (and the next one is free).
+        rolled = { ...rolled, calm: { ...rolled.calm, [userId]: false } };
+        if (value !== 6) return autoDecide(pass(log(rolled, { by: userId, kind: "calmed", value })));
+      }
       const choices = options(rolled, userId, value);
       if (!choices.length) {
-        const stuck = !rolled.planes[userId].some(out) && rolled.planes[userId].includes(HANGAR);
+        const stuck = !rolled.planes[userId].some(onBoard) && rolled.planes[userId].some((plane) => plane.p === HANGAR);
         const tries = stuck ? rolled.tries[userId] + 1 : rolled.tries[userId];
-        if (stuck && tries >= FORCED_AFTER) {
-          // Third try without a 6: a plane takes off anyway, and the turn passes.
-          return move(rolled, rolled.planes[userId].indexOf(HANGAR), value, true);
-        }
-        return pass({ ...rolled, tries: { ...rolled.tries, [userId]: tries }, log: log(rolled, { by: userId, kind: stuck ? "try" : "pass", value, tries: stuck ? tries : undefined }) });
+        if (stuck && tries >= FORCED_AFTER) return move(rolled, rolled.planes[userId].findIndex((plane) => plane.p === HANGAR), value, true);
+        return pass(log({ ...rolled, tries: { ...rolled.tries, [userId]: tries } }, { by: userId, kind: stuck ? "try" : "pass", value, tries: stuck ? tries : undefined }));
       }
       if (choices.length === 1 || userId === PET) return move(rolled, userId === PET ? petChoice(rolled, userId, value) : choices[0].plane, value);
       return { ...rolled, phase: "move" };
     }
     if (action?.type === "move") {
-      if (state.phase !== "move") throw matchError(409, state.phase === "task" ? "task_pending" : "roll_first");
+      if (state.phase !== "move") throw matchError(409, state.phase === "task" ? "task_pending" : state.phase === "decide" ? "decide_first" : "roll_first");
       const plane = action.plane;
       if (!Number.isInteger(plane) || plane < 0 || plane >= PLANES) throw matchError(400, "invalid_action");
-      if (landing(state.planes[userId][plane], state.die.value).to === null) throw matchError(409, "plane_stuck");
+      if (stepTo(state.planes[userId][plane].p, state.die.value) === null) throw matchError(409, "plane_stuck");
       return move(state, plane, state.die.value);
+    }
+    if (action?.type === "decide") {
+      if (state.phase !== "decide" || state.pending?.by !== userId) throw matchError(409, "roll_first");
+      const allowed = { buy: ["buy", "skip"], upgrade: ["upgrade", "skip"], rent: ["coins", "promise"], bridge: ["inner", "outer"] }[state.pending.kind];
+      if (!allowed.includes(action.choice)) throw matchError(400, "invalid_action");
+      if (action.choice === "promise" && state.pending.to === PET) throw matchError(400, "invalid_action");
+      return decide(state, action.choice);
     }
     if (action?.type === "task") {
       if (state.phase !== "task" || state.task?.by !== userId) throw matchError(409, "roll_first");
       if (typeof action.done !== "boolean") throw matchError(400, "invalid_action");
       const key = action.done ? "done" : "skipped";
-      const settled = { ...state, [key]: { ...state[key], [userId]: (state[key][userId] || 0) + 1 }, log: log(state, { by: userId, kind: "task", done: action.done }) };
-      return next(settled, state.task.extra);
+      const settled = log({ ...(action.done ? give(state, userId, state.task.pay || 0) : state), [key]: { ...state[key], [userId]: (state[key][userId] || 0) + 1 }, phase: "move", task: null }, { by: userId, kind: "task", done: action.done });
+      return settle(settled);
     }
     throw matchError(400, "invalid_action");
   },
@@ -257,8 +430,15 @@ export const ludo = {
     }
     return { wins, played, tasks };
   },
+  /** A rent paid with a little promise is written down in Us, so it is remembered after the game. */
+  said(before, after, { name }) {
+    return (after.promises || []).slice((before.promises || []).length).map(({ from, to, text, square }) => {
+      const where = placeAt(square)?.name || ["", "", ""];
+      return { zh: `${name(from)} 在${name(to)}的${where[0]}欠下一个小承诺：${text.zh}。`, en: `${name(from)} owes ${name(to)} a little promise from the ${where[1]}: ${text.en}.`, es: `${name(from)} le debe a ${name(to)} una promesa por la ${where[2]}: ${text.es}.` };
+    });
+  },
   // Pinky hosts: the game's tasks, written once at the start in each player's language.
-  hostPending(state) { return state.phase !== "over" && !state.tasks; },
+  hostPending(state) { return state.board === BOARD && state.phase !== "over" && !state.tasks; },
 };
 
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
@@ -280,5 +460,5 @@ ludo.hostActions = async ({ state, mediator, language, languages = [] }) => {
 };
 
 // 小家伙 as the other player: it just rolls; the plane it moves is chosen with the roll (petChoice), and it does its own tasks.
-ludo.petActions = async ({ state }) => state.phase === "roll" && state.current === PET ? [{ type: "roll" }] : [];
+ludo.petActions = async ({ state }) => state.board === BOARD && state.phase === "roll" && state.current === PET ? [{ type: "roll" }] : [];
 ludo.petInstant = true;

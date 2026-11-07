@@ -27,6 +27,7 @@ import { soup } from "./soup.mjs";
 //   hostActions({ state, mediator, language, languages }) -> what Pinky does, applied as player HOST; `languages` are the
 //     players' interface languages, so text both read can be written in each of them
 //   announce(state, { name }) -> { zh, en, es } said in Us when a game between the two of them ends (name(id) -> their name)
+//   said(before, after, { name }) -> [{ zh, en, es }] said in Us after a move of a game between the two of them
 // turn(state) may be BOTH when either player may act.
 // A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
 // pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
@@ -103,6 +104,13 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
     const said = finished && !withPet(updated) && module.announce?.(state, { name: (id) => context.members.find((member) => member.userId === id)?.user?.name || "" });
     if (said?.zh && said.en && said.es) {
       const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: said.zh, i18n: said, handle: `match-end:${updated.id}` });
+      if (!posted.duplicate) conversation = posted.conversation;
+    }
+    // And lines a move itself asks for (飞行棋: a rent paid with a little promise).
+    const lines = withPet(updated) ? [] : module.said?.(match.state, state, { name: (id) => context.members.find((member) => member.userId === id)?.user?.name || "" }) || [];
+    for (const [index, line] of lines.entries()) {
+      if (!line?.zh || !line.en || !line.es) continue;
+      const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: line.zh, i18n: line, handle: `match-say:${updated.id}:${updated.version}:${index}` });
       if (!posted.duplicate) conversation = posted.conversation;
     }
     return { match: updated, before: match.turn, conversation };
