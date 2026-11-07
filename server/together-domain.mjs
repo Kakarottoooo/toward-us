@@ -37,10 +37,21 @@ export function openCheckIn(messages, actorUserId, now = Date.now()) {
   return messages.slice(index + 1).some((item) => item.role === "member" && item.actorUserId === actorUserId) ? null : messages[index];
 }
 
-/** `repliedTo` is the message `message.replyTo` points at: Pinky answers a reply to its last message or to a check-in. */
-export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null } = {}) {
+/** Pinky's latest message, when it is waiting to hear from this member (founder 11-07: Pinky asked to hear Mia's side, Mia
+ * answered, and Pinky stayed silent because she did not @ it). Open for the same window as a check-in, until the member
+ * has written once after it. `earlier` are the messages before the member's new one. */
+export function awaitedBy(earlier, actorUserId, now = Date.now()) {
+  const index = earlier.findLastIndex((item) => item.role === "agent");
+  const asked = index >= 0 ? earlier[index] : null;
+  if (!asked || !actorUserId || !(asked.awaiting || []).includes(actorUserId) || now - Date.parse(asked.createdAt) > CHECK_IN_REPLY_MS) return null;
+  return earlier.slice(index + 1).some((item) => item.role === "member" && item.actorUserId === actorUserId) ? null : asked;
+}
+
+/** `repliedTo` is the message `message.replyTo` points at: Pinky answers a reply to its last message or to a check-in, and
+ * the member it is waiting to hear from (`awaited`). */
+export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null, awaited = null } = {}) {
   if (!message || message.role !== "member") return false;
-  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo));
+  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo)) || Boolean(awaited);
 }
 
 /** Reads only the shared conversation, shared agreements/commitments and jointly approved memories. Never private threads,
@@ -90,7 +101,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
 // `answersCheckIn`: a member's turn without a `replyTo` of its own answers an open check-in (see openCheckIn).
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, answersCheckIn = false }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, awaiting = null, answersCheckIn = false }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -110,6 +121,8 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     ...(kind === "story" && story ? { story } : {}),
     // 看完了吗: the show they planned to watch together, asked about the next day (watched.mjs).
     ...(kind === "watch_check" && watch ? { watch } : {}),
+    // Members Pinky asked to hear from; their next message reaches Pinky without @ (awaitedBy).
+    ...(!actorUserId && Array.isArray(awaiting) && awaiting.length ? { awaiting: awaiting.slice(0, 2) } : {}),
   };
   const appended = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message];
@@ -195,7 +208,8 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
   if (!saved.duplicate) emit(saved.conversation);
   const repliedTo = message.replyTo ? messages.find((item) => item.id === message.replyTo) || null : null;
-  if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  const awaited = awaitedBy(messages.slice(0, messages.findIndex((item) => item.id === message.id)), message.actorUserId);
+  if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo, awaited }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
   progress("thinking");
   await ensureMomentSpaces(store, actorUserId);
@@ -230,7 +244,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
     progress("mediating");
     const mediation = await mediator.mediateTogether(context, members, language);
-    if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
+    // A partner who has not said anything yet in this exchange is who the reflection waits to hear from.
+    const quiet = members.filter((member) => member.id !== actorUserId && !messages.slice(-12).some((item) => item.role === "member" && item.actorUserId === member.id)).map((member) => member.id);
+    if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, awaiting: quiet, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
   }
   // A recap card is made after the reply, in the background (it takes a little while), and posted here when ready.
   const recaps = turn.actions.filter((action) => action.kind === "recap");
@@ -242,7 +258,8 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
     const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked, timezone, language });
-    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: outcome.reply, i18n: outcome.i18n || null, refs: [...made, ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
+    const awaiting = outcome.awaiting || (outcome.waitingFor || []).map((name) => members.find((member) => member.name && member.name.toLowerCase() === String(name).toLowerCase())?.id).filter(Boolean);
+    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: outcome.reply, i18n: outcome.i18n || null, awaiting, refs: [...made, ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
     if (!outcome.draftAgreement) return result;
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });
     return { ...result, conversation };
