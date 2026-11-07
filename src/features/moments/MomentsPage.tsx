@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, FilmSlate, GlobeHemisphereWest, LockKey, Plus, Sparkle, Trash, UsersThree } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
-import { Carousel } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
 import { IdeasSection } from "./IdeasSection";
@@ -182,7 +181,9 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
       </div>
     </div>
     <div className="moments-top">
-      <Carousel ariaLabel={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="story-bubbles" contentClassName="story-bubbles-track">
+      {/* Native sideways scrolling (founder 11-07, "还是有点卡"): the phone moves this row itself instead of following each touch in
+          code, the one exception to using Carousel; vertical swipes on it still scroll the page. */}
+      <div role="group" aria-label={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="story-bubbles story-bubbles-native"><div className="story-bubbles-track">
         {bubbles.map((story) => <button key={story.id} type="button" className="story-bubble" onClick={() => play(story)} data-testid={`story-${story.kind}`}>
           <span className="story-bubble-ring">{photo(story.cover, "story-bubble-photo")}</span><span className="story-bubble-label">{story.title}</span>
         </button>)}
@@ -192,7 +193,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
         {paired && <button type="button" className="story-bubble" onClick={() => setWatchedOpen(true)} data-testid="open-watched">
           <span className="story-bubble-ring is-watched"><FilmSlate size={26} weight="fill" /></span><span className="story-bubble-label">{t("一起看过的", "Watched", "Vistos")}</span>
         </button>}
-      </Carousel>
+      </div></div>
     </div>
     {error && <p className="space-error" role="alert">{error}</p>}
 

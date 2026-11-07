@@ -58,6 +58,7 @@ When implementing from a selected generated mock, treat that image as the source
 
 - Use `Carousel` for horizontally draggable cards, images, media, chips, or other horizontal collections. Do not recreate these with `overflow-x`, custom pointer handlers, or a generic div.
 - `Carousel` can be nested directly inside `MobileScroll`. It owns horizontal gestures and automatically yields vertical gestures to the parent.
+- Exception (founder 11-07, "这一排圆形小图标还是有点卡"): the Moments story-bubble row (`.story-bubbles-native` in `MomentsPage`) scrolls natively (`overflow-x: auto; touch-action: pan-x pan-y`, so a vertical swipe on it still scrolls the page) instead of using `Carousel`, because native compositor scrolling measured smoother. Do not convert other rows without the founder asking.
 - Never put `data-scroll-drag="ignore"` on or around a `Carousel`; doing so prevents vertical parent scrolling when a gesture begins inside it.
 - Do not add CSS scroll snapping to `Carousel`; its runtime owns momentum and release motion.
 - Use `data-scroll-drag="ignore"` only when a control must prevent parent scrolling in every drag direction.
