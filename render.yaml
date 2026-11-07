@@ -2,21 +2,16 @@ services:
   - type: web
     name: toward-us-private-beta
     runtime: node
-    # Paid (founder 11-06, "确认升级"): never sleeps, and keeps photos on the disk below. Free slept after 15 minutes
-    # and lost every uploaded file on restart.
-    plan: starter
+    # Free for now (founder 11-07: "暂时不充钱，还不能上线"). Before inviting real users, switch to `plan: starter` and
+    # add the disk below (≈ $13.25/month with the database): free sleeps after 15 minutes and loses uploads on restart.
+    #   disk: { name: pinky-media, mountPath: /var/data, sizeGB: 1 }  plus env TOWARD_US_MEDIA_DIR=/var/data/media
+    plan: free
     region: oregon
     buildCommand: npm ci --include=dev && npm run build && npm run test:app
     startCommand: npm start
     autoDeploy: true
     healthCheckPath: /api/health
-    disk:
-      name: pinky-media
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: TOWARD_US_MEDIA_DIR
-        value: /var/data/media
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
@@ -65,8 +60,8 @@ databases:
   - name: toward-us-private-beta-db
     databaseName: toward_us_private_beta
     user: toward_us_app
-    # Paid: the free database expires 30 days after creation and is deleted 14 days later, with no backups.
-    plan: basic-256mb
+    # Free for now; it expires 30 days after creation and is deleted 14 days later, with no backups. basic-256mb before launch.
+    plan: free
     region: oregon
     postgresMajorVersion: "18"
     ipAllowList: []
