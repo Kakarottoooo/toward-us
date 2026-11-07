@@ -11,6 +11,8 @@
 .conversation-segments { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-width: 0; max-width: 300px; margin: 0 auto; padding: 0; border-radius: 14px; background: rgba(37,37,37,.06); }
 .conversation-segments button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; min-height: 44px; padding: 0 6px; border: 3px solid transparent; border-radius: 14px; background-clip: padding-box; background: transparent; color: #514c46; font-size: 15px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 /* The lit half is drawn 3px inside the 44px tap target, so the row stays 44px tall. */
+.conversation-segments.single { grid-template-columns: 1fr; max-width: 160px; background: transparent; }
+.conversation-segments.single button, .conversation-segments.single button.active { background: transparent; filter: none; cursor: default; }
 .conversation-segments button.active { background: var(--jian-paper-bright); color: var(--jian-ink); filter: drop-shadow(0 1px 2px rgba(44,36,27,.14)); }
 .conversation-segments button.active svg { color: var(--jian-blue); }
 .conversation-stream { position: relative; flex: 1 1 auto; min-height: 0; }
