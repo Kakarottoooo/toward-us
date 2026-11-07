@@ -9,7 +9,7 @@ import "./membership.css";
 // PinkyStore StoreKit plugin); on the web through Stripe Checkout. The server decides who is a member from verified payments.
 export type Membership = { plan: "free" | "member"; until: string | null; source: string | null; paidBy: string | null; outfits: { owned: string[]; equipped: string | null }; providers: { stripe: boolean; apple: boolean }; prices: { monthly: { usd: number }; yearly: { usd: number }; outfit: { usd: number } } };
 type StoreProduct = { id: string; displayPrice: string };
-type StorePlugin = { products(args: { ids: string[] }): Promise<{ products: StoreProduct[] }>; purchase(args: { id: string; appAccountToken: string }): Promise<{ status: string; signedTransaction?: string }>; restore(args?: { sync?: boolean }): Promise<{ signedTransactions: string[] }> };
+type StorePlugin = { products(args: { ids: string[] }): Promise<{ products: StoreProduct[] }>; purchase(args: { id: string; appAccountToken: string }): Promise<{ status: string; signedTransaction?: string }>; restore(args?: { sync?: boolean }): Promise<{ signedTransactions: string[] }>; addListener?(event: "transaction", callback: (data: { signedTransaction?: string }) => void): unknown };
 // A beta invite link (/?beta=CODE) keeps its code here until the person is signed in and it is redeemed.
 export const BETA_KEY = "pinky-beta-code";
 export const readBetaCode = () => { try { return localStorage.getItem(BETA_KEY) || ""; } catch { return ""; } };
@@ -19,6 +19,15 @@ export const APPLE_IDS = { monthly: "us.toward.pinky.member.monthly", yearly: "u
 /** The StoreKit bridge inside the iPhone app, or null in a browser. */
 export function storePlugin(): StorePlugin | null {
   try { const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string; Plugins?: { PinkyStore?: StorePlugin } } }).Capacitor; return cap?.isNativePlatform?.() && cap.getPlatform?.() === "ios" ? cap.Plugins?.PinkyStore || null : null; } catch { return null; }
+}
+let renewalsBound = false;
+/** Inside the iPhone app, hands every transaction StoreKit reports while the app runs (renewals, Ask to Buy approvals) to the
+ * server, which verifies it; App Store Server Notifications cover the times the app is closed. A no-op in a browser. */
+export function listenAppleTransactions() {
+  try {
+    const store = storePlugin(); if (!store?.addListener || renewalsBound) return; renewalsBound = true;
+    void Promise.resolve(store.addListener("transaction", (data) => { if (data?.signedTransaction) void fetch("/api/membership/apple/verify", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ signedTransaction: data.signedTransaction }) }).catch(() => {}); })).catch(() => {});
+  } catch { /* never break the app over purchases */ }
 }
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 

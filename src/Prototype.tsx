@@ -4,7 +4,7 @@ import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { SettingsPage } from "./features/privacy/SettingsPage";
-import { BETA_KEY } from "./features/membership/MembershipPage";
+import { BETA_KEY, listenAppleTransactions } from "./features/membership/MembershipPage";
 import { FeedbackPage } from "./features/feedback/FeedbackPage";
 import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
@@ -86,6 +86,7 @@ function AccountPrototype() {
       if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active") autoSyncAlbum(language); }
     }).catch(() => {});
     listenNativePushTaps();
+    listenAppleTransactions();
     registerAppWorker();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
