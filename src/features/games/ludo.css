@@ -1,44 +1,69 @@
-/* 情侣飞行棋 */
-.ludo { --ludo-me: #e0405a; --ludo-me-soft: #fde3e6; --ludo-them: #3a72d6; --ludo-them-soft: #e1eafb; --ludo-pet: #c27a12; --ludo-pet-soft: #f8ead2; display: flex; flex-direction: column; gap: 12px; }
-.ludo-board { display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(8, 1fr); gap: 3px; width: 100%; max-width: 420px; aspect-ratio: 9 / 8; margin: 0 auto; padding: 6px; border-radius: 18px; background: #f3e4cf; box-sizing: border-box; }
-.ludo-square { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0; min-width: 0; min-height: 0; padding: 0; border: 1px solid rgba(138,90,18,.18); border-radius: 8px; background: var(--jian-paper-bright, #fffdf8); color: inherit; font: inherit; overflow: hidden; }
-.device-screen .ludo-square, .device-screen .ludo-launch { min-height: 0; }
-.ludo-square.is-heart { background: #fff1f3; border-color: rgba(224,64,90,.28); }
-.ludo-square.is-entry.is-me { background: var(--ludo-me-soft); }
-.ludo-square.is-entry.is-them { background: var(--ludo-them-soft); }
-.ludo-square.is-entry.is-pet { background: var(--ludo-pet-soft); }
-.ludo-mark { position: absolute; inset: 0; margin: auto; opacity: .3; pointer-events: none; }
-.ludo-square.is-heart .ludo-mark { color: #e0405a; opacity: .45; }
-.ludo-square.is-entry.is-me .ludo-mark { color: var(--ludo-me); }
-.ludo-square.is-entry.is-them .ludo-mark { color: var(--ludo-them); }
-.ludo-square.is-entry.is-pet .ludo-mark { color: var(--ludo-pet); }
-.ludo-square.is-choice { cursor: pointer; box-shadow: 0 0 0 2px var(--ludo-me); animation: ludo-pulse 1s ease-in-out infinite alternate; }
+/* 情侣飞行棋: a 15 x 15 cross-shaped board, a yard in each corner */
+.ludo { --ludo-me: #e0405a; --ludo-me-soft: #fde3e6; --ludo-me-mid: #f6b3bd; --ludo-them: #3a72d6; --ludo-them-soft: #e1eafb; --ludo-them-mid: #a9c3f0; --ludo-pet: #c27a12; --ludo-pet-soft: #f8ead2; --ludo-pet-mid: #ebc88f; display: flex; flex-direction: column; gap: 12px; }
+.ludo-board { position: relative; display: grid; grid-template-columns: repeat(15, 1fr); grid-template-rows: repeat(15, 1fr); gap: 1px; width: 100%; max-width: 420px; aspect-ratio: 1; margin: 0 auto; padding: 4px; border-radius: 18px; background: #f3e4cf; box-sizing: border-box; }
+.ludo-square { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; padding: 0; border: 1px solid rgba(138,90,18,.16); border-radius: 4px; background: var(--jian-paper-bright, #fffdf8); color: inherit; font: inherit; overflow: visible; }
+.device-screen .ludo-square, .device-screen .ludo-slot { min-height: 0; }
+.ludo-square.is-tone.is-me { background: var(--ludo-me-soft); border-color: rgba(224,64,90,.3); }
+.ludo-square.is-tone.is-them { background: var(--ludo-them-soft); border-color: rgba(58,114,214,.3); }
+.ludo-square.is-tone.is-pet { background: var(--ludo-pet-soft); border-color: rgba(194,122,18,.3); }
+.ludo-square.is-entry.is-me, .ludo-square.is-flight.is-me, .ludo-square.is-runway.is-me { background: var(--ludo-me-mid); }
+.ludo-square.is-entry.is-them, .ludo-square.is-flight.is-them, .ludo-square.is-runway.is-them { background: var(--ludo-them-mid); }
+.ludo-square.is-entry.is-pet, .ludo-square.is-flight.is-pet, .ludo-square.is-runway.is-pet { background: var(--ludo-pet-mid); }
+.ludo-square.is-runway { border-color: transparent; }
+.ludo-square.is-quiet { background: rgba(255,253,248,.45); border-style: dashed; }
+.ludo-square.is-heart { background: #fff1f3; border-color: rgba(224,64,90,.3); }
+.ludo-mark { position: absolute; inset: 0; margin: auto; opacity: .5; pointer-events: none; }
+.ludo-square.is-heart .ludo-mark { color: #e0405a; opacity: .55; }
+.ludo-square.is-me .ludo-mark { color: #b02a43; }
+.ludo-square.is-them .ludo-mark { color: #234f9e; }
+.ludo-square.is-pet .ludo-mark { color: #7d4f0c; }
+.ludo-square.is-choice { z-index: 2; cursor: pointer; box-shadow: 0 0 0 2px var(--ludo-me); animation: ludo-pulse 1s ease-in-out infinite alternate; }
 .ludo-square.is-choice:disabled { cursor: default; animation: none; }
+.ludo-square.is-choice:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
 @keyframes ludo-pulse { from { box-shadow: 0 0 0 2px rgba(224,64,90,.9); } to { box-shadow: 0 0 0 4px rgba(224,64,90,.35); } }
 
-.ludo-plane { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 22px; height: 22px; margin: -2px; color: var(--ludo-me); filter: drop-shadow(0 1px 0 #fff); }
-.ludo-plane b { position: absolute; right: -2px; bottom: -3px; color: #4d4740; font-size: 9px; font-weight: 800; line-height: 1; }
+.ludo-lines { position: absolute; top: 4px; left: 4px; width: calc(100% - 8px); height: calc(100% - 8px); pointer-events: none; overflow: visible; }
+.ludo-flight { stroke-width: .13; stroke-dasharray: .3 .22; stroke-linecap: round; stroke: var(--ludo-me); }
+.ludo-flight.is-them { stroke: var(--ludo-them); }
+.ludo-flight.is-pet { stroke: var(--ludo-pet); }
+
+.ludo-plane { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--ludo-me); filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 1px #fff); }
+.ludo-plane b { position: absolute; right: -4px; bottom: -4px; padding: 0 2px; border-radius: 6px; background: rgba(255,255,255,.9); color: #4d4740; font-size: 9px; font-weight: 800; line-height: 1.2; }
 .ludo-plane.is-them { color: var(--ludo-them); }
 .ludo-plane.is-pet { color: var(--ludo-pet); }
 .ludo-plane.is-pick { animation: ludo-bob .6s ease-in-out infinite alternate; }
 @keyframes ludo-bob { from { transform: translateY(0); } to { transform: translateY(-2px); } }
 
-.ludo-center { grid-row: 2 / 8; grid-column: 2 / 9; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; padding: 4px 2px; min-height: 0; }
-.ludo-dock { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 2px 10px; border-radius: 12px; background: rgba(255,253,248,.7); font-size: 14px; font-weight: 650; color: #5d574f; }
-.ludo-dock.is-turn.is-me { box-shadow: inset 0 0 0 1.5px var(--ludo-me); color: #c2344f; }
-.ludo-dock.is-turn.is-them { box-shadow: inset 0 0 0 1.5px var(--ludo-them); color: #2a5aae; }
-.ludo-dock.is-turn.is-pet { box-shadow: inset 0 0 0 1.5px var(--ludo-pet); color: #8a5a12; }
-.ludo-dock-name { display: inline-flex; flex: 1; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ludo-dock-name img { width: 20px; height: 20px; object-fit: contain; }
-.ludo-hangar { display: inline-flex; gap: 6px; }
-.ludo-launch { display: inline-grid; place-items: center; width: 40px; height: 40px; margin: -4px 0; padding: 0; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--ludo-me); cursor: pointer; }
-.ludo-home { display: inline-flex; align-items: center; gap: 3px; color: #5d574f; font-size: 13px; }
+.ludo-yard { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; margin: 3px; padding: 6px; border-radius: 14px; background: rgba(255,253,248,.75); box-shadow: inset 0 0 0 1.5px rgba(224,64,90,.25); min-width: 0; min-height: 0; }
+.ludo-yard.is-them { box-shadow: inset 0 0 0 1.5px rgba(58,114,214,.25); }
+.ludo-yard.is-pet { box-shadow: inset 0 0 0 1.5px rgba(194,122,18,.25); }
+.ludo-yard.is-turn.is-me { background: var(--ludo-me-soft); box-shadow: inset 0 0 0 2px var(--ludo-me); }
+.ludo-yard.is-turn.is-them { background: var(--ludo-them-soft); box-shadow: inset 0 0 0 2px var(--ludo-them); }
+.ludo-yard.is-turn.is-pet { background: var(--ludo-pet-soft); box-shadow: inset 0 0 0 2px var(--ludo-pet); }
+.ludo-yard-name { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; overflow: hidden; color: #4d4740; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.ludo-yard-name img { width: 20px; height: 20px; object-fit: contain; }
+.ludo-hangar { display: grid; grid-template-columns: repeat(2, 30px); gap: 4px; }
+.ludo-slot { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1.5px dashed rgba(138,90,18,.25); border-radius: 50%; background: transparent; box-sizing: border-box; }
+.ludo-launch { border: 0; background: #fff; box-shadow: 0 0 0 2px var(--ludo-me); cursor: pointer; }
+.ludo-launch:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
+.ludo-home { display: inline-flex; align-items: center; gap: 3px; color: #5d574f; font-size: 13px; font-weight: 650; }
 
-.ludo-dice { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.ludo-dice small { color: var(--jian-muted); font-size: 13px; font-weight: 600; }
-.ludo-die { display: grid; place-items: center; width: 72px; height: 72px; padding: 0; border: 0; border-radius: 20px; background: #fff; color: #b9ada0; box-shadow: 0 2px 0 rgba(138,90,18,.25); cursor: default; }
+.ludo-legend { display: flex; flex-direction: column; justify-content: center; gap: 5px; margin: 3px; padding: 6px 8px; color: #5d574f; font-size: 12px; font-weight: 600; line-height: 1.25; }
+.ludo-legend span { display: flex; align-items: center; gap: 5px; }
+.ludo-legend svg { flex: none; }
+.ludo-legend .is-heart { color: #e0405a; }
+.ludo-legend .is-me { color: var(--ludo-me); }
+.ludo-legend .is-them { color: var(--ludo-them); }
+.ludo-swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; background: var(--ludo-me-soft); box-shadow: inset 0 0 0 1px rgba(224,64,90,.4); }
+.ludo-centre { --ludo-rival-mid: var(--ludo-them-mid); display: grid; place-items: center; margin: 1px; border-radius: 8px; background: linear-gradient(135deg, var(--ludo-rival-mid) 0 50%, var(--ludo-me-mid) 50% 100%); color: #fff; }
+.ludo-centre.is-pet { --ludo-rival-mid: var(--ludo-pet-mid); }
+
+.ludo-dice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 0; }
+.ludo-dice small { color: var(--jian-muted); font-size: 13px; font-weight: 600; text-align: center; }
+.ludo-die { display: grid; place-items: center; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 18px; background: #fff; color: #b9ada0; box-shadow: 0 2px 0 rgba(138,90,18,.25); cursor: default; }
 .ludo-die.is-ready { color: var(--ludo-me); box-shadow: 0 0 0 3px rgba(224,64,90,.35), 0 3px 0 rgba(138,90,18,.25); cursor: pointer; }
 .ludo-die.is-ready:not(:disabled):active { transform: translateY(2px) scale(.97); }
+.ludo-die:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }
 .ludo-die.is-rolling { color: #4d4740; animation: ludo-tumble .45s ease-in-out; }
 @keyframes ludo-tumble { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(-14deg) scale(1.08); } 75% { transform: rotate(10deg) scale(1.02); } 100% { transform: rotate(0) scale(1); } }
 
