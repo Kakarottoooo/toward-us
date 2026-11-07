@@ -69,7 +69,7 @@ function AccountPrototype() {
   // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
   const [feedbackFrom, setFeedbackFrom] = useState("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
-  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | undefined>(undefined);
+  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | undefined>(() => new URLSearchParams(location.search).get("view") === "membership" ? "membership" : undefined);
   const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -232,7 +232,7 @@ function Wordmark({ language }: { language: Language }) { return <div className=
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
-function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "capabilities" ? "capabilities" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "capabilities" ? "capabilities" : params.get("view") === "membership" ? "privacy" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 // The server words account errors in Chinese; English and Spanish screens show their own words instead.
 const ACCOUNT_ERRORS: Record<string, [en: string, es: string]> = {
   "请输入有效邮箱。": ["Enter a valid email address.", "Introduce un correo electrónico válido."],
