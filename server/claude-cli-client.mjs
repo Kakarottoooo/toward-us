@@ -12,6 +12,19 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 const textOf = (content) => typeof content === "string" ? content
   : Array.isArray(content) ? content.map((part) => part?.text || "").join("\n") : String(content ?? "");
 
+// Structured answers are asked for as plain JSON text in one turn. The CLI's own --json-schema mode retries inside the call
+// when the model first answers in prose, and the retry then said "抱歉…建议还是上面那几条" about a first answer the person
+// never saw (found by role-play testing, founder 11-07). --json-schema stays as the fallback when the text is not JSON.
+export const jsonInstruction = (schema) => `Answer with exactly one JSON object that matches this JSON Schema, and nothing else: no prose before or after it, no code fences. Every word the person should read goes inside the object (for example its reply field).\nJSON Schema: ${JSON.stringify(schema)}`;
+/** The JSON object in a model's text answer (code fences and stray prose around it tolerated), or null. */
+export function jsonFromText(text) {
+  const body = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  for (const candidate of [body, body.slice(body.indexOf("{"), body.lastIndexOf("}") + 1)]) {
+    try { const value = JSON.parse(candidate); if (value && typeof value === "object" && !Array.isArray(value)) return value; } catch { /* try the next shape */ }
+  }
+  return null;
+}
+
 export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "haiku", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
   // An empty working folder keeps project CLAUDE.md files and settings out of the call.
   const cwd = join(tmpdir(), "pinky-claude-cli");
@@ -47,13 +60,17 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         const prompt = input.filter((item) => item.role === "user" || item.role === "assistant").map((item) => `${item.role === "assistant" ? "Assistant: " : ""}${textOf(item.content)}`).join("\n\n");
         const schema = params.text?.format?.type === "json_schema" ? params.text.format.schema : null;
         const args = ["-p", "--output-format", "json", "--model", model, "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "project"];
-        if (system) args.push("--system-prompt", system);
-        if (schema) args.push("--json-schema", JSON.stringify(schema));
-        const stdout = await run(command, args, prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
-        let result;
-        try { result = JSON.parse(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
-        if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
-        return { output_text: schema ? JSON.stringify(result.structured_output ?? {}) : String(result.result ?? "") };
+        const call = async (extra, systemText) => {
+          const stdout = await run(command, [...args, ...(systemText ? ["--system-prompt", systemText] : []), ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
+          let result;
+          try { result = JSON.parse(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
+          if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
+          return result;
+        };
+        if (!schema) return { output_text: String((await call([], system)).result ?? "") };
+        const parsed = jsonFromText((await call([], [system, jsonInstruction(schema)].filter(Boolean).join("\n\n"))).result);
+        if (parsed) return { output_text: JSON.stringify(parsed) };
+        return { output_text: JSON.stringify((await call(["--json-schema", JSON.stringify(schema)], system)).structured_output ?? {}) };
       },
     },
   };
