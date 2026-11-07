@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CaretDown, PawPrint, Play, User } from "@phosphor-icons/react";
+import { ArrowLeft, CaretDown, PawPrint, Play, User, X } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -14,7 +14,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   const keyboard = useKeyboard();
   const [hall, setHall] = useState<Hall | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState("");
   const [open, setOpen] = useState<string | null>(initialMatch), [category, setCategory] = useState<CategoryId | "all">("all"), [rules, setRules] = useState<string | null>(null);
-  const [changed, setChanged] = useState<{ id: string; at: number } | null>(null);
+  const [changed, setChanged] = useState<{ id: string; at: number } | null>(null), [ending, setEnding] = useState<string | null>(null);
   const load = useCallback(async () => { try { setHall(await relationshipApi<Hall>(`/api/matches?language=${language}`)); setError(""); } catch (caught) { setError((caught as Error).message); } }, [language]);
   useEffect(() => { void load(); }, [load]);
   // A move by the other one shows up right away while either screen is open.
@@ -33,6 +33,27 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   const petName = t("小家伙", "Little one", "Pequeñín");
   const vsPet = (match: MatchView) => match.players.includes(PET);
   const going = (hall?.matches || []).filter((match) => match.status === "active");
+  // A game nobody has touched for a week stops asking: it folds away under "很久没动的" (founder 11-06).
+  const daysIdle = (match: MatchView) => Math.floor((Date.now() - Date.parse(match.updatedAt)) / 86_400_000);
+  const fresh = going.filter((match) => daysIdle(match) < 7), stale = going.filter((match) => daysIdle(match) >= 7);
+  const end = async (ids: string[]) => {
+    setEnding(null); setError("");
+    try { for (const id of ids) await relationshipApi(`/api/matches/${encodeURIComponent(id)}/actions`, jsonBody({ type: "abandon", language })); }
+    catch (caught) { setError((caught as Error).message); }
+    await load();
+  };
+  // The End button on a row and "end them all": the first tap asks, the second ends.
+  const confirmEnd = (key: string, ids: string[]) => { if (ending !== key) { setEnding(key); return; } void end(ids); };
+  const row = (match: MatchView, idle = false) => <div key={match.id} className={`game-going-row ${!idle && (match.turn === userId || match.turn === BOTH) ? "is-mine" : ""}`}>
+    <button type="button" className="game-going-open" onClick={() => setOpen(match.id)} data-testid="game-going">
+      <span>{catalog.find((game) => game.id === match.game)?.icon}</span>
+      <b>{nameOf(match.game)}{vsPet(match) && <em> · {t(`和${petName}`, `with ${petName}`, `con ${petName}`)}</em>}</b>
+      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${daysIdle(match)} days`, `Parada ${daysIdle(match)} días`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
+    </button>
+    <button type="button" className={`game-going-end ${ending === match.id ? "is-confirm" : ""}`} onClick={() => confirmEnd(match.id, [match.id])} onBlur={() => setEnding((value) => value === match.id ? null : value)} aria-label={ending === match.id ? t("确定结束这局", "End this game", "Terminar esta partida") : t(`结束这局${nameOf(match.game)}`, `End this game of ${nameOf(match.game)}`, `Terminar esta partida de ${nameOf(match.game)}`)} data-testid="game-going-end">
+      {ending === match.id ? t("结束？", "End?", "¿Fin?") : <X size={16} weight="bold" />}
+    </button>
+  </div>;
   const start = async (game: GameEntry, pet = false) => {
     if (game.kind === "card") { keyboard.hide(); onPlayCard(game.cardType!); return; }
     const existing = going.find((match) => match.game === game.id && vsPet(match) === pet);
@@ -67,13 +88,12 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     <header className="game-top"><button type="button" className="page-back" onClick={onClose} data-testid="game-hall-close" autoFocus><ArrowLeft size={20} />{t("对话", "Chat", "Chat")}</button><h1>{t("小游戏", "Games", "Juegos")}</h1></header>
     <div className="game-stream"><MobileScroll className="game-scroll"><div className="game-body">
       {error && <p className="space-error" role="alert">{error}</p>}
-      {going.length > 0 && <section className="game-going" aria-label={t("还没玩完", "Still going", "En curso")}>
-        {going.map((match) => <button key={match.id} type="button" className={`game-going-row ${match.turn === userId || match.turn === BOTH ? "is-mine" : ""}`} onClick={() => setOpen(match.id)} data-testid="game-going">
-          <span>{catalog.find((game) => game.id === match.game)?.icon}</span>
-          <b>{nameOf(match.game)}{vsPet(match) && <em> · {t(`和${petName}`, `with ${petName}`, `con ${petName}`)}</em>}</b>
-          <small>{match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
-        </button>)}
-      </section>}
+      {fresh.length > 0 && <section className="game-going" aria-label={t("还没玩完", "Still going", "En curso")}>{fresh.map((match) => row(match))}</section>}
+      {stale.length > 0 && <details className="game-stale" data-testid="game-stale">
+        <summary>{t(`很久没动的（${stale.length}）`, `Not touched in a while (${stale.length})`, `Sin tocar hace tiempo (${stale.length})`)}</summary>
+        <div className="game-going">{stale.map((match) => row(match, true))}</div>
+        <button type="button" className={`game-quiet ${ending === "stale" ? "is-confirm" : ""}`} onClick={() => confirmEnd("stale", stale.map((match) => match.id))} onBlur={() => setEnding((value) => value === "stale" ? null : value)} data-testid="game-stale-end">{ending === "stale" ? t(`确定结束这 ${stale.length} 局？`, `End all ${stale.length}?`, `¿Terminar las ${stale.length}?`) : t("全部结束", "End them all", "Terminarlas todas")}</button>
+      </details>}
       {sections.length > 1 && <div className="game-tabs" role="tablist" aria-label={t("分类", "Categories", "Categorías")}>
         {[{ id: "all" as const, name: t("全部", "All", "Todos") }, ...sections].map((item) => <button key={item.id} type="button" role="tab" aria-selected={category === item.id} className={category === item.id ? "is-on" : ""} onClick={() => setCategory(item.id)} data-testid={`game-tab-${item.id}`}>{item.name}</button>)}
       </div>}
