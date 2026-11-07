@@ -48,7 +48,8 @@ export async function startGame({ store, mediator, relationshipId, userId, type 
     const { conversation, previous, profile } = material(snapshot, relationshipId);
     const games = (conversation?.messages || []).filter((message) => message.kind === GAME);
     // Unasked, the kinds take turns.
-    const kind = GAME_TYPES.includes(type) ? type : GAME_TYPES[(GAME_TYPES.indexOf(games.at(-1)?.game?.type) + 1) % GAME_TYPES.length];
+    let kind = GAME_TYPES.includes(type) ? type : GAME_TYPES[(GAME_TYPES.indexOf(games.at(-1)?.game?.type) + 1) % GAME_TYPES.length];
+
     const byRole = (role) => context.members.find((member) => member.role === role);
     const roleOf = (id) => context.members.find((member) => member.userId === id)?.role || null;
     let round = null;
@@ -60,8 +61,11 @@ export async function startGame({ store, mediator, relationshipId, userId, type 
     } catch { round = null; }
     const valid = (item) => item?.prompt && !previous.includes(item.prompt) && (kind === "truth" ? true : kind === "choice" ? item.options.length === 2 : item.options.length >= 3);
     if (!valid(round)) {
-      const pool = (FALLBACK[kind][language] || FALLBACK[kind].zh).map((item) => typeof item === "string" ? { prompt: item, options: [] } : { prompt: item[0], options: item[1] });
-      round = pool.find((item) => !previous.includes(item.prompt)) || pool[games.length % pool.length];
+      const pool = (type) => (FALLBACK[type][language] || FALLBACK[type].zh).map((item) => typeof item === "string" ? { prompt: item, options: [] } : { prompt: item[0], options: item[1] });
+      // Every fixed question of this kind already played (a day without AI allowance): a fresh one of another kind beats a repeat.
+      const other = GAME_TYPES.find((type) => pool(type).some((item) => !previous.includes(item.prompt)));
+      if (!pool(kind).some((item) => !previous.includes(item.prompt)) && other) kind = other;
+      round = pool(kind).find((item) => !previous.includes(item.prompt)) || pool(kind)[games.length % pool(kind).length];
       round.about = kind === "guess" ? (games.filter((game) => game.game?.type === "guess").length % 2 ? "B" : "A") : "none";
     }
     const aboutUserId = kind === "guess" ? (byRole(round.about === "B" ? "B" : "A")?.userId || null) : null;

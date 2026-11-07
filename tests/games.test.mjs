@@ -82,3 +82,29 @@ test("小游戏: a card in Us, answers hidden until both answered, then revealed
   assert.deepEqual(Object.values(opened.answers).map((answer) => answer.text).sort(), ["你笑起来很好看", "觉得你很安静"].sort());
   assert.equal(opened.game.result, undefined, "真心话 has no score");
 });
+
+test("小游戏: with the model unavailable, the fixed questions never repeat while any is unplayed", async (t) => {
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "games-"));
+  const store = await createFileStore(join(directory, "store.json"));
+  const ids = [randomUUID(), randomUUID()];
+  for (const [index, id] of ids.entries()) await store.createUser({ id, email: `${id}@example.invalid`, name: ["Ziwei", "Mia"][index], passwordHash: "test", createdAt: new Date().toISOString() });
+  const relationshipId = randomUUID();
+  await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
+  await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
+  // 11-06: the day's AI allowance ran out and "再来一局" as 默契问答 showed the same fixed question twice.
+  const mediator = { structured: async () => { throw new Error("Pinky has used up today's AI allowance."); } };
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id: ids[0] } }; next(); });
+  app.use("/api", createTogetherRouter({ store, mediator }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  const url = (path) => `http://127.0.0.1:${server.address().port}/api${path}`;
+  for (let index = 0; index < 4; index += 1) {
+    const response = await fetch(url("/together/games?language=en"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "guess", language: "en" }) });
+    assert.equal(response.status, 201);
+  }
+  const conversation = (await (await fetch(url("/together?language=en&timezone=UTC"))).json()).conversation;
+  const prompts = conversation.messages.filter((message) => message.kind === "game").map((message) => message.text);
+  assert.equal(prompts.length, 4);
+  assert.equal(new Set(prompts).size, 4, `no repeats: ${prompts.join(" | ")}`);
+});
