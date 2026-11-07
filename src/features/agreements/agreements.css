@@ -44,3 +44,6 @@
 .agreement-send { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
 .agreement-send:disabled { opacity: .45; cursor: default; }
 .agreement-answer-note, .agreement-rule { color: #7a736b; font-size: 13px; line-height: 1.5; }
+.agreement-to-calendar { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px dashed rgba(37,37,37,.25); border-radius: 12px; background: transparent; color: #5f5952; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.agreement-to-calendar:disabled { opacity: .5; cursor: default; }
+.agreement-to-calendar:focus-visible { outline: 2px solid var(--jian-ink); outline-offset: 2px; }

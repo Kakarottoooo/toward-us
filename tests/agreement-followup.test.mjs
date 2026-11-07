@@ -244,3 +244,26 @@ test("Pinky words a settled point like the other terms; without it, the point an
   assert.equal(settled.terms.at(-1), "周日：十二点半出发，打车去");
   assert.deepEqual(asked, [{ name: "agreement_point", input: { terms: ["周日：下午一点到爸妈家吃饭。"], point: "周日几点出发，以及怎么去。", answer: "十二点半出发，打车" } }], "only the agreement's terms, the point and the answer");
 });
+
+test("计划 not 约定: a plan written as an agreement goes onto the shared calendar, a reminder the day before, the agreement taken away", async (t) => {
+  const { datedTerms } = await import("../server/plan-to-calendar.mjs");
+  // Written on Monday 2 November 2026: 周六 is the 7th, 周日 the 8th, 明天 the 3rd; a term with no day isn't dated.
+  assert.deepEqual(datedTerms(["周六：在家休息。", "周日：下午一点到爸妈家吃饭。", "Sunday: back by 7pm", "明天：买水果", "一起早点睡"], "2026-11-02"),
+    [{ date: "2026-11-07", label: "周六", text: "在家休息" }, { date: "2026-11-08", label: "周日", text: "下午一点到爸妈家吃饭" }, { date: "2026-11-08", label: "Sunday", text: "back by 7pm" }, { date: "2026-11-03", label: "明天", text: "买水果" }]);
+  const f = await fixture(t);
+  const agreement = await f.draft({ title: "本周末安排", summary: "周末", terms: ["周六：在家休息。", "周日：下午一点到爸妈家吃饭。"] });
+  const move = (body, userId = f.b) => f.request(`/together/agreements/${agreement.id}/to-calendar`, "POST", { version: agreement.version, language: "zh", ...body }, userId);
+  assert.equal((await move({ version: agreement.version + 1 })).status, 409);
+  const moved = await move({});
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.equal(moved.body.agreement.status, "archived"); assert.ok(moved.body.agreement.archivedAt, "archived, never deleted");
+  const dates = (await f.store.listRelationshipRecordsForUser("milestones", f.a)).filter((item) => item.sourceAgreementId === agreement.id);
+  assert.deepEqual(dates.map((item) => [item.title, item.recurringRule, item.visibility]).sort(), [["周六 · 在家休息", "once", "shared"], ["周日 · 下午一点到爸妈家吃饭", "once", "shared"]]);
+  const reminders = (await f.store.listRelationshipRecordsForUser("reminders", f.a)).filter((item) => dates.some((date) => date.id === item.milestoneId));
+  assert.deepEqual(reminders.map((item) => item.minutesBefore), [1440, 1440], "a reminder the day before each");
+  assert.equal((await f.request("/together", "GET", null, f.a)).body.pendingAgreement, null, "no agreement waiting any more");
+  assert.ok((await f.conversation(f.a)).messages.some((message) => /^Blair 把「本周末安排」放进了日历：/.test(message.i18n?.zh || "")));
+  // One with no days can't go on the calendar.
+  const rule = await f.draft({ title: "做饭", summary: "轮流做饭", terms: ["我们轮流做饭"] });
+  assert.equal((await f.request(`/together/agreements/${rule.id}/to-calendar`, "POST", { version: rule.version })).status, 400);
+});

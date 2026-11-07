@@ -4,6 +4,8 @@ import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
+import { planToCalendar } from "./plan-to-calendar.mjs";
+import { memberTimezone } from "./reminder-service.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
@@ -145,6 +147,20 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
   router.post("/together/agreements/:id/approve", decide(approveAgreement, "agreement.updated", (agreement) => agreement.status === "active", "agreement_approved", true));
   router.post("/together/agreements/:id/reject", decide(rejectAgreement, "agreement.rejected"));
   router.post("/together/agreements/:id/request-change", decide(requestAgreementChange, "agreement.change_requested", () => true));
+  // A one-off plan written as an agreement goes onto the shared calendar instead (founder 11-06), counted from the day its
+  // current version was written in this member's time zone.
+  router.post("/together/agreements/:id/to-calendar", async (req, res) => {
+    const userId = req.auth.user.id, zone = (await memberTimezone(store, userId).catch(() => null)) || "UTC";
+    const result = await transaction(req, async (tx, context) => {
+      const current = await tx.getRelationshipRecordForUser("agreements", req.params.id, userId);
+      const from = new Date(current?.updatedAt || Date.now()).toLocaleDateString("en-CA", { timeZone: zone });
+      const name = context.members.find((member) => member.userId === userId)?.user?.name || "";
+      return planToCalendar(tx, { agreementId: req.params.id, version: req.body?.version, userId, from, name });
+    });
+    for (const milestone of result.milestones) emit(milestone, "milestone.updated");
+    emit(result.agreement, "agreement.updated"); if (result.conversation) emit(result.conversation, "together.updated", null, userId);
+    res.json({ agreement: result.agreement, milestones: result.milestones });
+  });
   // A point still open, settled on the card: a new version both approve, and a line in Us so the other one sees what changed.
   router.post("/together/agreements/:id/answer", async (req, res) => {
     const userId = req.auth.user.id;

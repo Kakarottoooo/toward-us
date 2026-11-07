@@ -55,6 +55,12 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
     try { await relationshipApi(`/api/together/agreements/${agreement.id}/${action}`, jsonBody({ version: agreement.version, language })); await onChanged(); }
     catch (error) { setNotice((error as Error).message); } finally { setBusy(""); }
   };
+  // A one-off plan written as an agreement goes onto the calendar instead (founder 11-06: "计划可以变成日历上的事情").
+  const toCalendar = async (agreement: GraphRecord) => {
+    setBusy(agreement.id); setNotice("");
+    try { await relationshipApi(`/api/together/agreements/${agreement.id}/to-calendar`, jsonBody({ version: agreement.version, language })); await onChanged(); }
+    catch (error) { setNotice((error as Error).message); } finally { setBusy(""); }
+  };
   const settle = async (agreement: GraphRecord, index: number) => {
     const text = answer.trim(); if (!text) return;
     keyboard.hide(); speech.stop(); setBusy(agreement.id); setNotice("");
@@ -125,6 +131,7 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
       {!!mine.length && <ul className="agreement-commitments">{mine.map((item) => <li key={item.id}>{String(item.description || "")}{answers[item.id] && <small className={`agreement-answer ${answers[item.id].done ? "done" : ""}`}>{answers[item.id].done ? t("你说做到了", "You said you did it", "Dijiste que lo cumpliste") : t("你说还没做到", "You said not yet", "Dijiste que aún no")} · {new Date(answers[item.id].at).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" })} · {t("只有你看得到", "only you see this", "solo tú lo ves")}</small>}</li>)}</ul>}
       <footer>{!waiting && <span className="card-state">{agreement.status === "active" && <CheckCircle size={16} weight="fill" />}{status(agreement)}</span>}
         {waiting && !approvedByMe(agreement) && <div className="card-actions"><button className="card-primary" disabled={busy === agreement.id} onClick={() => void decide(agreement, "approve")} data-testid="agreement-approve"><CheckCircle size={18} weight="fill" />{t("我同意", "I agree", "Estoy de acuerdo")}</button><button disabled={busy === agreement.id} onClick={() => void decide(agreement, "request-change")}>{t("我想改一下", "I'd change something", "Quiero cambiar algo")}</button></div>}
+        {(waiting || agreement.status === "draft") && plan.days.length > 0 && <button type="button" className="agreement-to-calendar" disabled={busy === agreement.id} onClick={() => void toCalendar(agreement)} data-testid="agreement-to-calendar"><CalendarBlank size={16} />{t("这是个计划，放进日历", "It's just a plan: put it on the calendar", "Es solo un plan: al calendario")}</button>}
         {waiting && <small className="agreement-rule">{plan.days.length ? t("两个人都同意才算数。同意后，有日子的事 Pinky 会提前一天提醒你们。", "It counts once you both agree. Then Pinky reminds you the day before anything with a day.", "Cuenta cuando los dos aceptan. Luego Pinky les recuerda un día antes lo que tenga fecha.") : t("两个人都同意才算数。", "It counts once you both agree.", "Cuenta cuando los dos aceptan.")}</small>}
       </footer>
     </article>;
