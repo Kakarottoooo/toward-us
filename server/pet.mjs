@@ -1,5 +1,6 @@
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { MOMENTS } from "./space-domain.mjs";
+import { markShowedUp } from "./streak.mjs";
 
 // 一起养的小家伙 (founder 11-06): the couple's character grows with what the two of them do together. Nothing new to learn: it
 // earns 亲密值 from things they already do (both answering the daily question, a game round, 想你了, a memory kept together, a
@@ -66,7 +67,7 @@ export function petView(pet, conversation, userId, today) {
   const last = days.at(-1);
   const quiet = last ? between(last, today) : 99;
   const petted = conversation?.pets?.[today] || [];
-  return { points: pet?.points || 0, level, floor: floorOf(level), next: floorOf(level + 1), mood: quiet <= 1 ? "happy" : quiet <= 3 ? "calm" : "sleepy", pettedByMe: petted.includes(userId), pettedByPartner: petted.some((id) => id !== userId), gains: (pet?.gains || []).slice(-6).reverse() };
+  return { outfit: conversation?.petOutfit || null, points: pet?.points || 0, level, floor: floorOf(level), next: floorOf(level + 1), mood: quiet <= 1 ? "happy" : quiet <= 3 ? "calm" : "sleepy", pettedByMe: petted.includes(userId), pettedByPartner: petted.some((id) => id !== userId), gains: (pet?.gains || []).slice(-6).reverse() };
 }
 
 /** Brings the couple's pet up to date (and announces a new level in Us once). Call inside the relationship lock. */
@@ -97,5 +98,6 @@ export async function petIt(tx, { relationshipId, userId, zone, language }) {
     for (const day of Object.keys(pets)) if (between(day, today) > 30) delete pets[day];
     draft.pets = pets;
   });
+  await markShowedUp(tx, { relationshipId, userId, zone });
   return syncPet(tx, { relationshipId, userId, zone, language });
 }

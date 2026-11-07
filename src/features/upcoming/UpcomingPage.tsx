@@ -3,7 +3,7 @@ import { ChatCircleDots, Trash } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet } from "../../mobile";
 import { relationshipApi } from "../relationship/api";
-import type { GraphRecord } from "../relationship/types";
+import type { CoupleStreak, GraphRecord } from "../relationship/types";
 import { RemindersPanel } from "../reminders/RemindersPanel";
 import { UpcomingYear, type CalendarEntry } from "./UpcomingYear";
 import { TogetherCard } from "../moments/TogetherCard";
@@ -15,7 +15,7 @@ const localDay = (iso: string) => { const date = new Date(iso); return Number.is
 
 /** Coming up for one member: the couple's shared dates and deadlines (when paired) with their own reminders, on one calendar.
  * Tapping a shared date shows its details; changes are asked of Pinky, and whoever added a date can delete it. */
-export function UpcomingPage({ language, userId = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { top?: ReactNode; language: Language; userId?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
+export function UpcomingPage({ language, userId = "", streak = null, partnerName = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { top?: ReactNode; language: Language; userId?: string; streak?: CoupleStreak | null; partnerName?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState<GraphRecord | null>(null);
@@ -45,7 +45,7 @@ export function UpcomingPage({ language, userId = "", milestones = [], reminders
     {top}
     {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${meetDays} days to go`, `Faltan ${meetDays} días`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
     {cycle.view && <CycleCard language={language} view={cycle.view} onChanged={cycle.reload} showEmpty={new URLSearchParams(location.search).get("focus") === "cycle"} />}
-    {onSince && <TogetherCard language={language} since={since} onSave={onSince} />}
+    {onSince && <TogetherCard language={language} since={since} onSave={onSince} streak={streak} partnerName={partnerName} />}
     <UpcomingYear language={language} entries={entries} onAsk={onAsk} counted={meetup?.id} />
     <details className="upcoming-manage"><summary>{t("管理我的提醒和通知", "Manage my reminders and notifications", "Gestionar mis recordatorios y avisos")}</summary><RemindersPanel language={language} onChanged={onChanged} compose={false} /></details>
     <BottomSheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }} title={String(open?.title || "")} snap={0.5}>

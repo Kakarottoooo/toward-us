@@ -4,8 +4,10 @@ import { localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import type { Character } from "./character";
+import { OutfitLayer, type OutfitId } from "./Outfit";
+import { Wardrobe } from "./Wardrobe";
 
-export type PetView = { points: number; level: number; floor: number; next: number; mood: "happy" | "calm" | "sleepy"; pettedByMe: boolean; pettedByPartner: boolean; gains: Array<{ type: string; points: number; day: string }> };
+export type PetView = { outfit?: OutfitId | null; points: number; level: number; floor: number; next: number; mood: "happy" | "calm" | "sleepy"; pettedByMe: boolean; pettedByPartner: boolean; gains: Array<{ type: string; points: number; day: string }> };
 type Spot = { side: "left" | "right"; y: number };
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -51,7 +53,7 @@ export function FloatingPet({ userId, language, pet, character, onOpen }: { user
   return <button ref={ref} type="button" className={`floating-pet is-${spot.side} is-${pet.mood}${drag ? " is-dragging" : ""}${keyboard.visible ? " is-away" : ""}`} style={style}
     onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={() => { if (!moved.current) onOpen(); moved.current = false; }}
     aria-label={t(`我们的小家伙 Lv.${pet.level}，打开它的小窝`, `Our little one, Lv.${pet.level}. Open its room`, `Nuestro pequeño, Nv.${pet.level}. Abrir su cuarto`)} data-testid="floating-pet">
-    <span className="floating-pet-figure" data-testid={image ? "couple-mascot" : undefined}>{image ? <img src={image} alt="" draggable={false} onError={() => setBroken(true)} /> : <PawPrint size={30} weight="fill" />}</span>
+    <span className="floating-pet-figure" data-testid={image ? "couple-mascot" : undefined}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} onError={() => setBroken(true)} /><OutfitLayer id={pet.outfit} /></span> : <PawPrint size={30} weight="fill" />}</span>
     {pet.mood === "sleepy" && <b className="floating-pet-z" aria-hidden="true">z</b>}
     {!pet.pettedByMe && <i className="floating-pet-dot" aria-hidden="true" />}
     <small>Lv.{pet.level}</small>
@@ -60,7 +62,7 @@ export function FloatingPet({ userId, language, pet, character, onOpen }: { user
 
 /** Its room, a whole page like Douyin's 精灵空间: the two of you and your closeness on top, the little one on its rug in the
  * middle with a bubble to pet it, its level right under it, and how it grows below. Rules and options sit in the ··· menu. */
-export function PetRoom({ language, pet, character, members, userId, hidden, onHiddenChange, onPetted, onMakeCharacter, onClose }: { language: Language; pet: PetView; character: Character | null; members: Array<{ id: string; name: string }>; userId: string; hidden: boolean; onHiddenChange: (hidden: boolean) => void; onPetted: (pet: PetView) => void; onMakeCharacter: () => void; onClose: () => void }) {
+export function PetRoom({ language, pet, character, members, userId, hidden, onHiddenChange, onPetted, onMakeCharacter, onMembership, onClose }: { language: Language; pet: PetView; character: Character | null; members: Array<{ id: string; name: string }>; userId: string; hidden: boolean; onHiddenChange: (hidden: boolean) => void; onPetted: (pet: PetView) => void; onMakeCharacter: () => void; onMembership: () => void; onClose: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [menu, setMenu] = useState(false), [hop, setHop] = useState(0);
   const howRef = useRef<HTMLElement>(null);
@@ -94,7 +96,7 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
     <div className="pet-room-stream"><MobileScroll className="pet-room-scroll"><div className="pet-room-body">
       <section className="pet-stage">
         <button type="button" className={`pet-bubble${pet.pettedByMe ? " is-done" : ""}`} disabled={busy} onClick={() => void pat()} data-testid="pet-pat"><span className="pet-bubble-ball"><HandHeart size={26} weight="fill" /><b>{pet.pettedByMe ? "✓" : `+${pet.pettedByPartner ? 4 : 1}`}</b></span><small>{pet.pettedByMe ? t("今天摸过了", "Petted today", "Ya lo acariciaste") : t("摸摸它", "Pet it", "Acarícialo")}</small></button>
-        <button type="button" key={hop} className={`pet-figure${hop ? " is-hop" : ""}`} onClick={() => void pat()} aria-label={t("摸摸它", "Pet it", "Acarícialo")}>{image ? <img src={image} alt="" draggable={false} /> : <PawPrint size={88} weight="fill" />}</button>
+        <button type="button" key={hop} className={`pet-figure${hop ? " is-hop" : ""}`} onClick={() => void pat()} aria-label={t("摸摸它", "Pet it", "Acarícialo")}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} /><OutfitLayer id={pet.outfit} /></span> : <PawPrint size={88} weight="fill" />}</button>
         <span className="pet-rug" aria-hidden="true" />
       </section>
       <strong className="pet-name">{t("我们的小家伙", "Our little one", "Nuestro pequeño")}</strong>
@@ -103,6 +105,7 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
       <small className="pet-partner">{pet.pettedByPartner ? t(`${partnerName} 今天也摸过它了`, `${partnerName} petted it today too`, `${partnerName} también lo acarició hoy`) : t(`${partnerName} 今天还没来，两个人都摸会多 +3`, `${partnerName} hasn't come by today; both of you earns +3`, `${partnerName} aún no pasó hoy; si ambos lo acarician, +3`)}</small>
       {!image && <button type="button" className="pet-make" onClick={onMakeCharacter}>{t("给它做一个样子", "Give it a look", "Dale un aspecto")}</button>}
       {error && <p className="space-error" role="alert">{error}</p>}
+      {image && <Wardrobe language={language} userId={userId} onWear={(outfit) => onPetted({ ...pet, outfit })} onMembership={onMembership} />}
       <section className="pet-how" ref={howRef}><h3><Sparkle size={15} weight="fill" />{t("怎么让它长大", "How it grows", "Cómo crece")}</h3>
         <ul>{(["daily", "game", "letter", "agreement", "moment", "nudge"] as const).map((type) => <li key={type}><span>{label[type]}</span><b>+{{ daily: 10, game: 5, letter: 20, agreement: 10, moment: 3, nudge: 2 }[type]}</b></li>)}</ul></section>
       {!!pet.gains.length && <section className="pet-how"><h3>{t("最近", "Recently", "Recientemente")}</h3><ul>{pet.gains.map((gain, index) => <li key={index}><span>{label[gain.type] || gain.type}</span><b>+{gain.points}</b></li>)}</ul></section>}

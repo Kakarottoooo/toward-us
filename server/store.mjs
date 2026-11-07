@@ -158,15 +158,17 @@ export async function createFileStore(filePath) {
     async deletePrivateData(userId) {
       let deleted = 0;
       for (const collection of GRAPH_COLLECTIONS) {
-        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices"].includes(collection)) continue;
+        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
         for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) { delete state().relationshipGraph[collection][id]; deleted += 1; }
       }
+      // The streak's showed-up days (accountSettings "showedup:…") are this person's activity: they go with private data.
+      for (const [id, record] of Object.entries(state().relationshipGraph.accountSettings)) if (record.ownerUserId === userId && id.startsWith("showedup:")) { delete state().relationshipGraph.accountSettings[id]; deleted += 1; }
       for (const room of Object.values(state().rooms)) if (room.analysis?.private) delete room.analysis.private[userId];
       await persist(); return deleted;
     },
     async deleteAccount(userId) {
       await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
-      for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
+      for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
       const phone = implementation.getPhoneForUser(userId);
       for (const [hash, link] of Object.entries(state().phoneLinks)) if (link.phone === phone) delete state().phoneLinks[hash];
       await store.unbindPhone(userId);
@@ -323,7 +325,7 @@ export async function createFileStore(filePath) {
     async relationshipSnapshotForUser(userId) {
       const relationshipId = state().memberships[userId]?.relationshipId;
       // Metering rows and archived Us history stay out of every snapshot; archives are read on demand by together-domain.
-      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage", "togetherArchives", "matches"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map((record) => structuredClone(record))]));
+      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage", "togetherArchives", "matches", "purchases", "betaCodes"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map((record) => structuredClone(record))]));
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,

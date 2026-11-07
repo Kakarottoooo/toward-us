@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { cachedPurchases, membershipFor } from "./membership.mjs";
 
 // Cost guard (founder, 11-04): "普通用户不能用这么多后台模型额度，只用他需要用到的" and "不能反复调用模型，只运行必要的运行".
 // Every model call is counted per person, per couple and per feature per UTC day, in the app's own store (file or Postgres).
@@ -21,8 +22,8 @@ export const AI_CAPS = Object.freeze({
 });
 // Signed-out calls (the public demo room) share one in-memory allowance per server per day.
 export const ANONYMOUS_DAILY_CAP = 60;
-// No billing yet: a user is on the paid plan when their id or email is listed in AI_PAID_USERS (comma-separated).
-// A couple gets the paid couple and background caps when either member is paid.
+// Paid = a Pinky membership (membership.mjs: one member pays, the couple is members), or an id/email listed in AI_PAID_USERS
+// (comma-separated, for the founder's own accounts). A couple gets the paid couple and background caps when either is paid.
 const paidList = () => new Set(String(process.env.AI_PAID_USERS || "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));
 
 // Which pool each model feature draws from. Anything unlisted counts as interactive and keeps the main model.
@@ -54,8 +55,14 @@ const LIMIT_TEXT = {
   en: "Pinky has used up today's AI allowance. It resets tomorrow; everything else keeps working.",
   es: "Pinky ya usó la asignación de IA de hoy. Se renueva mañana; todo lo demás sigue funcionando.",
 };
+// Free couples hear that a membership gives more each day (Settings → Pinky 会员); members only hear when it resets.
+const FREE_LIMIT_TEXT = {
+  zh: "今天 Pinky 的免费额度用完了，明天会自动恢复。开通 Pinky 会员（设置里）每天可以多用一些。其他功能照常可用。",
+  en: "Pinky has used up today's free allowance. It resets tomorrow, and a Pinky membership (in Settings) gives you more each day. Everything else keeps working.",
+  es: "Pinky ya usó la asignación gratuita de hoy. Se renueva mañana y la membresía Pinky (en Ajustes) da más cada día. Todo lo demás sigue funcionando.",
+};
 export const isAiLimit = (error) => error?.code === AI_LIMIT;
-const limitError = (language, feature, scope) => Object.assign(new Error(LIMIT_TEXT[language] || LIMIT_TEXT.zh), { statusCode: 429, code: AI_LIMIT, i18n: LIMIT_TEXT, feature, scope, background: featureKind(feature) === "background" });
+const limitError = (language, feature, scope, free = false) => { const text = free ? FREE_LIMIT_TEXT : LIMIT_TEXT; return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, upgrade: free, background: featureKind(feature) === "background" }); };
 
 // Who a model call is for. Set once per signed-in request (and around channel turns and import jobs), so every call made
 // while serving it, including background work it starts, is counted for that person.
@@ -85,7 +92,8 @@ async function take(store, { userId, language }, feature, now, anonymous, caps) 
   const pairing = await store.getRelationshipContext(userId);
   const relationshipId = pairing?.relationship?.id || null, members = pairing?.members?.length ? pairing.members : null;
   const paid = paidList();
-  const isPaid = async (id, user) => paid.size > 0 && (paid.has(id.toLowerCase()) || paid.has(String((user || await store.getUserById(id))?.email || "").toLowerCase()));
+  const member = (await membershipFor(store, userId, { now, purchases: await cachedPurchases(store, now) })).plan === "member";
+  const isPaid = async (id, user) => member || (paid.size > 0 && (paid.has(id.toLowerCase()) || paid.has(String((user || await store.getUserById(id))?.email || "").toLowerCase())));
   const plan = caps[await isPaid(userId, members?.find((member) => member.userId === userId)?.user) ? "paid" : "free"];
   const couplePlan = members && (await Promise.all(members.map((member) => isPaid(member.userId, member.user)))).some(Boolean) ? caps.paid : plan;
   const id = usageId(relationshipId || `user-${userId}`, day(now)), kind = featureKind(feature);
@@ -101,7 +109,7 @@ async function take(store, { userId, language }, feature, now, anonymous, caps) 
     const over = kind === "interactive" ? (sum(mine, kind) >= plan.person ? "person" : relationshipId && total((counts) => sum(counts, kind)) >= couplePlan.couple ? "couple" : null)
       : kind === "background" ? (total((counts) => sum(counts, kind)) >= couplePlan.background ? "background" : null)
         : sum(mine, kind) >= plan.chatImport ? "chat_import" : null;
-    if (over || (plan.features[feature] !== undefined && (mine[feature] || 0) >= plan.features[feature])) throw limitError(language, feature, over || feature);
+    if (over || (plan.features[feature] !== undefined && (mine[feature] || 0) >= plan.features[feature])) throw limitError(language, feature, over || feature, couplePlan === caps.free);
     await tx.updateRelationshipRecordForUser(COLLECTION, id, userId, (draft) => { draft.counts = { ...draft.counts, [userId]: { ...mine, [feature]: (mine[feature] || 0) + 1 } }; });
   });
 }

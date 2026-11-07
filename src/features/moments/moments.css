@@ -45,6 +45,10 @@
 .together-edit { justify-self: start; padding: 4px 0; border: 0; background: none; color: #993c1d; font-size: 13px; font-weight: 600; cursor: pointer; }
 .together-note { color: #993c1d; font-size: 13px !important; }
 .together-error { color: #903e38; }
+/* 连续一起来: a small line under the counter; the state of today on its own line so it never truncates at phone width. */
+.together-card .together-streak { display: grid; gap: 2px; margin-top: 4px; padding-top: 10px; border-top: 1px solid rgba(125,47,23,.14); font-size: 15px; }
+.together-streak b { font-weight: 750; }
+.together-streak span { color: #993c1d; font-size: 14px; }
 /* 100 little things: a quiet, collapsible source of ideas above the album. */
 .ideas { display: grid; gap: 12px; padding: 14px 16px; border-radius: 20px; background: #eef0fb; color: #2c3477; }
 .ideas-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }

@@ -3,6 +3,7 @@ import { answerAgreementPoint, approveAgreement, phrasePoint, clean, decisionErr
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
+import { cachedPurchases, membershipFor } from "./membership.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { planToCalendar } from "./plan-to-calendar.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
@@ -53,6 +54,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       const synced = await transaction(req, (tx) => syncPet(tx, { relationshipId, userId, zone: validZone(timezone) ? timezone : "UTC", language: language(req) })).catch(() => null);
       if (synced?.leveled) emit(synced.conversation, "together.updated");
       pet = synced?.view || null;
+      // An outfit stays on only while the couple still owns it (a lapsed membership takes the members' outfits off).
+      if (pet?.outfit) { const plan = await membershipFor(store, userId, { purchases: await cachedPurchases(store) }).catch(() => null); if (!plan?.outfits.includes(pet.outfit)) pet = { ...pet, outfit: null }; }
       const recalled = await recallOnThisDay(store, { relationshipId, userId, today }).catch(() => null);
       if (recalled) emit(recalled, "together.updated", null, userId);
       // On a day worth celebrating, the first one to open Us starts the recap card; it arrives a little later.

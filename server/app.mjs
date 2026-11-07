@@ -46,7 +46,10 @@ import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
+import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
+import { createMembershipRouter } from "./membership.mjs";
+import { createBetaRouter } from "./beta.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
@@ -143,6 +146,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     }
   });
 
+  // Payment webhooks verify their own signatures over the raw body and come from Stripe/Apple, not from the app's origin.
+  const membership = createMembershipRouter({ store, production, onOutfit: (conversation) => emitTogether(conversation, "together.updated") });
+  app.use(membership.webhooks);
   // A connected photo album sends the times and places of every photo it holds (thousands; no pictures) in one plan.
   app.use("/api/photo-memories/plan", express.json({ limit: "8mb" }));
   app.use(express.json({ limit: "256kb" }));
@@ -456,6 +462,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   app.use(createPhoneRouter({ store, onBound: (userId) => void imessage?.ensureCoupleGroup(userId) }));
   app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
+  // The home-screen widget reads with its own Bearer token (no cookie), so it is mounted before any router that turns away
+  // requests without a session.
+  app.use("/api", createWidgetRouter({ store }));
   // Every published "我们俩" change is mirrored to the couple's iMessage group and, without one, nudges the other member's phone.
   const relationshipRouter = createRelationshipRouter({ store, mediator, onTogether: (conversation, actorUserId) => {
     imessage?.mirror(conversation);
@@ -501,6 +510,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createSuggestionsRouter({ store, mediator }));
   app.use("/api", createFeedbackRouter({ store, mediator }));
   app.use("/api", createCharacterRouter({ store, emit }));
+  app.use("/api", membership.router);
+  app.use("/api", createBetaRouter({ store, grant: membership.grant }).router);
   app.use("/api", relationshipRouter);
 
   function broadcastDemoRoom(code) {
