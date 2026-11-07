@@ -23,6 +23,12 @@
 3. App Store Connect → App 信息 → App Store 服务器通知 V2，地址填：`https://<你的域名>/api/membership/apple/notifications`（续费、退款会自动同步）。
 4. 如果正式 Bundle ID 不是 `us.toward.app`，在服务器设 `APPLE_BUNDLE_IDS`（逗号分隔）。
 
+## 内测码和内测看板
+
+- 在服务器环境变量设 `FOUNDER_EMAILS=你的登录邮箱`（逗号分隔可以放几个），重启后“设置”里会出现“内测看板”。
+- 在看板里点“生成”，复制邀请链接发给情侣：`https://<你的域名>/?view=membership&beta=PINKY-XXXXXX`。他们注册、连上另一半后，在“Pinky 会员”页点“使用”，两个人就有 90 天会员。
+- 看板只显示次数（来了几个人、操作次数、AI 次数、反馈数），不显示任何内容和邮箱。
+
 ## 怎么判断谁是会员
 
 - 一个人付款，两个人都是会员；付款人退出关系或到期（多给一天宽限），两个人都回到免费版。

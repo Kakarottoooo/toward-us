@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Crown, Sparkle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
+import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./membership.css";
 
@@ -9,6 +10,10 @@ import "./membership.css";
 export type Membership = { plan: "free" | "member"; until: string | null; source: string | null; paidBy: string | null; outfits: { owned: string[]; equipped: string | null }; providers: { stripe: boolean; apple: boolean }; prices: { monthly: { usd: number }; yearly: { usd: number }; outfit: { usd: number } } };
 type StoreProduct = { id: string; displayPrice: string };
 type StorePlugin = { products(args: { ids: string[] }): Promise<{ products: StoreProduct[] }>; purchase(args: { id: string; appAccountToken: string }): Promise<{ status: string; signedTransaction?: string }>; restore(args?: { sync?: boolean }): Promise<{ signedTransactions: string[] }> };
+// A beta invite link (/?beta=CODE) keeps its code here until the person is signed in and it is redeemed.
+export const BETA_KEY = "pinky-beta-code";
+export const readBetaCode = () => { try { return localStorage.getItem(BETA_KEY) || ""; } catch { return ""; } };
+export const forgetBetaCode = () => { try { localStorage.removeItem(BETA_KEY); } catch { /* private mode */ } };
 export const APPLE_IDS = { monthly: "us.toward.pinky.member.monthly", yearly: "us.toward.pinky.member.yearly" } as const;
 
 /** The StoreKit bridge inside the iPhone app, or null in a browser. */
@@ -23,6 +28,13 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
   const [apple, setApple] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(""); const [notice, setNotice] = useState("");
   const store = storePlugin();
+  const keyboard = useKeyboard();
+  const [code, setCode] = useState(readBetaCode);
+  const redeem = async () => {
+    keyboard.hide(); setBusy("redeem"); setNotice("");
+    try { await relationshipApi("/api/membership/redeem", jsonBody({ code, language })); forgetBetaCode(); setCode(""); await load(); setNotice(t("内测码已用上，谢谢你们来试 Pinky！", "Beta code applied. Thanks for trying Pinky!", "Código aplicado. ¡Gracias por probar Pinky!")); }
+    catch (error) { setNotice((error as Error).message); } finally { setBusy(""); }
+  };
   const load = async () => { try { setData(await relationshipApi<Membership>("/api/membership")); } catch (error) { setNotice((error as Error).message); } };
   useEffect(() => { void load(); }, []);
   useEffect(() => { if (!store) return; void store.products({ ids: Object.values(APPLE_IDS) }).then(({ products }) => setApple(Object.fromEntries(products.map((item) => [item.id, item.displayPrice])))).catch(() => {}); }, []);
@@ -80,6 +92,7 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
       <button type="button" className="membership-plan featured" disabled={!canPay || Boolean(busy)} onClick={() => void buy("yearly")} data-testid="buy-yearly"><span className="membership-badge"><Sparkle size={12} weight="fill" />{t("省一半", "Save 50%", "Ahorra 50%")}</span><strong>{t("按年", "Yearly", "Anual")}</strong><span>{price("yearly")}{t(" / 年", " / year", " / año")}</span></button>
       <button type="button" className="membership-plan" disabled={!canPay || Boolean(busy)} onClick={() => void buy("monthly")} data-testid="buy-monthly"><strong>{t("按月", "Monthly", "Mensual")}</strong><span>{price("monthly")}{t(" / 月", " / month", " / mes")}</span></button>
     </div>}
+    {!member && <form className="membership-code" onSubmit={(event) => { event.preventDefault(); if (code.trim()) void redeem(); }}><KeyboardInput value={code} maxLength={20} placeholder={t("有内测码？填在这里", "Have a beta code?", "¿Tienes un código de beta?")} onChange={(event) => setCode(event.target.value.toUpperCase())} onBlur={() => keyboard.hide()} aria-label={t("内测码", "Beta code", "Código de beta")} data-testid="beta-code" /><button type="submit" disabled={!code.trim() || Boolean(busy)}>{t("使用", "Apply", "Usar")}</button></form>}
     {!member && !canPay && <p className="membership-note">{t("付款功能还在准备，很快就能开通。", "Payment is almost ready; it opens soon.", "El pago está casi listo; abrirá pronto.")}</p>}
     {member && mine && data.source === "stripe" && <button type="button" className="membership-link" disabled={Boolean(busy)} onClick={() => void manage()}>{t("管理或取消订阅", "Manage or cancel", "Gestionar o cancelar")}</button>}
     {member && mine && data.source === "apple" && <p className="membership-note">{t("在 iPhone 的“设置 → 你的名字 → 订阅”里可以管理或取消。", "Manage or cancel in iPhone Settings → your name → Subscriptions.", "Gestiona o cancela en Ajustes del iPhone → tu nombre → Suscripciones.")}</p>}
