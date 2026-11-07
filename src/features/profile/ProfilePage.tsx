@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChatCircleDots, PencilSimple, ShareFat, Trash } from "@phosphor-icons/react";
+import { CaretRight, ChatCircleDots, FilmSlate, PencilSimple, ShareFat, Sparkle, Trash } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -8,6 +8,40 @@ import "./profile.css";
 type Category = "food" | "likes" | "dislikes" | "wishes" | "traits" | "people" | "other";
 type Fact = { id: string; version: number; text: string; category: Category; subject: "me" | "partner" | "us"; source: "mine" | "together" | "i_shared" | "partner_shared"; quote: string | null; sharedAt: string | null; updatedAt: string };
 const CATEGORIES: Category[] = ["food", "likes", "dislikes", "wishes", "traits", "people", "other"];
+
+type Shelf = { system?: string; visibility: string; items: Array<{ done?: boolean; idea?: number; archivedAt?: string | null }> };
+/** 我们一起的 (founder 11-07: "放在关于我们"): the couple's watched-together shelf and their 100 little things, counted, each one
+ * tap from here. They used to sit among the photo stories in Memories, which is for photos. */
+function TogetherShelves({ language }: { language: Language }) {
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const [counts, setCounts] = useState<{ watched: number; watching: number; ideas: number } | null>(null);
+  useEffect(() => {
+    void relationshipApi<{ spaces: Shelf[] }>("/api/spaces").then(({ spaces }) => {
+      const shelf = spaces.find((space) => space.system === "watched");
+      if (!shelf) { setCounts(null); return; }
+      const ideas = new Set(spaces.filter((space) => space.system === "moments" && space.visibility === "shared").flatMap((space) => space.items.map((item) => item.idea).filter(Boolean)));
+      setCounts({ watched: shelf.items.filter((item) => item.done).length, watching: shelf.items.filter((item) => !item.done).length, ideas: ideas.size });
+    }).catch(() => setCounts(null));
+  }, []);
+  if (!counts) return null;
+  return <section className="settings-group profile-together" data-testid="profile-together">
+    <h2>{t("我们一起的", "Ours, together", "Lo nuestro")}</h2>
+    <div className="settings-card">
+      <button type="button" className="settings-row" onClick={() => location.assign("/?view=moments&watched=1")} data-testid="profile-watched">
+        <span className="settings-icon tone-watched"><FilmSlate size={18} weight="fill" /></span>
+        <span className="settings-label">{t("一起看过的", "Watched together", "Vistos juntos")}</span>
+        <span className="settings-value">{t(`${counts.watched} 部`, `${counts.watched}`, `${counts.watched}`)}{counts.watching ? t(` · 在追 ${counts.watching}`, ` · ${counts.watching} in progress`, ` · ${counts.watching} en curso`) : ""}</span>
+        <CaretRight size={16} weight="bold" className="settings-chevron" />
+      </button>
+      <button type="button" className="settings-row" onClick={() => location.assign("/?view=moments&ideas=1")} data-testid="profile-ideas">
+        <span className="settings-icon tone-ideas"><Sparkle size={18} weight="fill" /></span>
+        <span className="settings-label">{t("100 件小事", "100 little things", "100 cosas")}</span>
+        <span className="settings-value">{counts.ideas} / 100</span>
+        <CaretRight size={16} weight="bold" className="settings-chevron" />
+      </button>
+    </div>
+  </section>;
+}
 
 /** 关于我们 (喜好档案, founder 11-06): what Pinky keeps about each of them, kept by itself from their conversations. Each
  * person's notes are their own; a line about yourself can be shared, and what was said together in Us belongs to both. */
@@ -52,6 +86,7 @@ export function ProfilePage({ language, onAsk }: { language: Language; onAsk?: (
   const ask = shown === "partner" ? t(`跟你说说 ${partner}：`, `Let me tell you about ${partner}: `, `Te cuento sobre ${partner}: `) : shown === "me" ? t("跟你说说我自己：", "Let me tell you about me: ", "Te cuento sobre mí: ") : t("我们俩：", "About the two of us: ", "Sobre nosotros dos: ");
 
   return <div className="profile-page" data-testid="profile-page">
+    <TogetherShelves language={language} />
     {tabs.length > 1 && <div className="profile-tabs" role="tablist" aria-label={t("关于谁", "About whom", "Sobre quién")}>{tabs.map(([value, name]) => <button key={value} type="button" role="tab" aria-selected={shown === value} className={shown === value ? "active" : ""} onClick={() => setTab(value)} data-testid={`profile-tab-${value}`}>{name}</button>)}</div>}
     <p className="settings-intro">{intro}</p>
     {facts === null ? <p className="profile-empty" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>
