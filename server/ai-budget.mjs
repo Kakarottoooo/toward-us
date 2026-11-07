@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { membershipFor } from "./membership.mjs";
+import { cachedPurchases, membershipFor } from "./membership.mjs";
 
 // Cost guard (founder, 11-04): "普通用户不能用这么多后台模型额度，只用他需要用到的" and "不能反复调用模型，只运行必要的运行".
 // Every model call is counted per person, per couple and per feature per UTC day, in the app's own store (file or Postgres).
@@ -82,16 +82,6 @@ const sum = (counts, kind) => Object.entries(counts || {}).reduce((total, [featu
 const digest = (feature, args) => createHash("sha256").update(feature).update("\0").update(JSON.stringify(args ?? null)).digest("hex").slice(0, 32);
 const RECENT_INPUTS = 20;
 
-// Purchases are read at most once a minute per store for the caps: a model call must not scan every purchase each time.
-const purchaseCache = new WeakMap();
-async function recentPurchases(store, now) {
-  const cached = purchaseCache.get(store);
-  if (cached && now.getTime() - cached.at < 60_000 && now.getTime() >= cached.at) return cached.records;
-  const records = await store.listRecordsForJob("purchases").catch(() => []);
-  purchaseCache.set(store, { at: now.getTime(), records }); return records;
-}
-export const forgetPurchases = (store) => purchaseCache.delete(store);
-
 /** Counts one call for this person, or throws the "today's limit" error if a cap is reached. */
 async function take(store, { userId, language }, feature, now, anonymous, caps) {
   if (!userId) {
@@ -102,7 +92,7 @@ async function take(store, { userId, language }, feature, now, anonymous, caps) 
   const pairing = await store.getRelationshipContext(userId);
   const relationshipId = pairing?.relationship?.id || null, members = pairing?.members?.length ? pairing.members : null;
   const paid = paidList();
-  const member = (await membershipFor(store, userId, { now, purchases: await recentPurchases(store, now) })).plan === "member";
+  const member = (await membershipFor(store, userId, { now, purchases: await cachedPurchases(store, now) })).plan === "member";
   const isPaid = async (id, user) => member || (paid.size > 0 && (paid.has(id.toLowerCase()) || paid.has(String((user || await store.getUserById(id))?.email || "").toLowerCase())));
   const plan = caps[await isPaid(userId, members?.find((member) => member.userId === userId)?.user) ? "paid" : "free"];
   const couplePlan = members && (await Promise.all(members.map((member) => isPaid(member.userId, member.user)))).some(Boolean) ? caps.paid : plan;

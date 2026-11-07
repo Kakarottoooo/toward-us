@@ -67,7 +67,7 @@ export function petView(pet, conversation, userId, today) {
   const last = days.at(-1);
   const quiet = last ? between(last, today) : 99;
   const petted = conversation?.pets?.[today] || [];
-  return { points: pet?.points || 0, level, floor: floorOf(level), next: floorOf(level + 1), mood: quiet <= 1 ? "happy" : quiet <= 3 ? "calm" : "sleepy", pettedByMe: petted.includes(userId), pettedByPartner: petted.some((id) => id !== userId), gains: (pet?.gains || []).slice(-6).reverse() };
+  return { outfit: conversation?.petOutfit || null, points: pet?.points || 0, level, floor: floorOf(level), next: floorOf(level + 1), mood: quiet <= 1 ? "happy" : quiet <= 3 ? "calm" : "sleepy", pettedByMe: petted.includes(userId), pettedByPartner: petted.some((id) => id !== userId), gains: (pet?.gains || []).slice(-6).reverse() };
 }
 
 /** Brings the couple's pet up to date (and announces a new level in Us once). Call inside the relationship lock. */
