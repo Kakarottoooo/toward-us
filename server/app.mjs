@@ -46,6 +46,7 @@ import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
+import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createMembershipRouter } from "./membership.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
@@ -460,6 +461,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   app.use(createPhoneRouter({ store, onBound: (userId) => void imessage?.ensureCoupleGroup(userId) }));
   app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
+  // The home-screen widget reads with its own Bearer token (no cookie), so it is mounted before any router that turns away
+  // requests without a session.
+  app.use("/api", createWidgetRouter({ store }));
   // Every published "我们俩" change is mirrored to the couple's iMessage group and, without one, nudges the other member's phone.
   const relationshipRouter = createRelationshipRouter({ store, mediator, onTogether: (conversation, actorUserId) => {
     imessage?.mirror(conversation);

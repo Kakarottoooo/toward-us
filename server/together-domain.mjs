@@ -8,6 +8,7 @@ import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
 import { startGame } from "./games.mjs";
 import { notTriedYet } from "./discover.mjs";
+import { markShowedUp } from "./streak.mjs";
 
 // The relationship-level "together" conversation. App, iMessage group and relay all write through these functions, so
 // channel adapters stay thin and every privacy rule lives here once.
@@ -113,6 +114,8 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     if (message.role === "agent") draft.agentLastMessageId = message.id;
     draft.version += 1;
   });
+  // 连续一起来: saying anything in Us is showing up that day (streak.mjs), in the member's own time zone.
+  if (message.role === "member") await markShowedUp(tx, { relationshipId, userId: actorUserId, zone: conversation.zones?.[actorUserId] });
   const updated = appended.messages.length > MESSAGE_LIMIT ? await archiveOldestMessages(tx, appended, userId) : appended;
   return { conversation: updated, message, duplicate: false };
 }
