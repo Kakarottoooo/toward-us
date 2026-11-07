@@ -16,7 +16,6 @@ import { OnboardingTour, characterOwed, tourSeen } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswers } from "./DailyQuestionCard";
 import { GameCard, type GameAnswers, type GameRound } from "./GameCard";
 import { DistanceBar } from "./DistanceBar";
-import { UsHome } from "./UsHome";
 import { DiscoveryCard, type DiscoverKey } from "./DiscoveryCard";
 import { FloatingPet, PetRoom, petHiddenKey, type PetView } from "../character/PetPanel";
 import { useCoupleCharacter } from "../character/character";
@@ -593,15 +592,7 @@ ${text}` : text, target);
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      {/* 两个人的家 (founder 11-06): the two of them and what waits today, above the chat. */}
-      {channel === "us" && paired && together && !together.readOnly && <UsHome language={language} userId={user.id} members={together.members} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} nextMeeting={together.nextMeeting || null} refreshKey={together.conversation.messages.length}
-        daily={dailyWaiting ? { partnerAnswered: Object.keys(todayQuestion?.answers || {}).some((id) => id !== user.id) } : null}
-        agreementWaiting={Boolean(pendingAgreement && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`) && !pendingAgreement.approvedBy?.includes(user.id))}
-        petWaiting={Boolean(together.pet && !together.pet.pettedByMe)}
-        onDaily={() => { keyboard.hide(); [...document.querySelectorAll('[data-testid="daily-question"]')].at(-1)?.scrollIntoView({ block: "center", behavior: "smooth" }); }}
-        onAgreement={() => { keyboard.hide(); [...document.querySelectorAll('[data-testid="agreement-card"].is-live')].at(-1)?.scrollIntoView({ block: "center", behavior: "smooth" }); }}
-        onPet={() => openPetRoom()} onGame={(id) => openGames(id)} />}
-      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={null} care={Boolean(together.care)} /> : null; })()}
+      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
