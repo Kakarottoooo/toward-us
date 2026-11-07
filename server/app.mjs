@@ -76,7 +76,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   // test service: those tests drive delivery themselves).
   const rituals = reminderService ? null : createCoupleRituals({ store, mediator, reachable: (userId) => reminders.reachable(userId), emit: (conversation) => emitTogether(conversation, "together.updated") });
   const runDue = reminders.runDue.bind(reminders);
-  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); await deliverLetters({ store, emit: (conversation) => emitTogether(conversation, "together.updated") }).catch(() => console.error("Letters will retry on the next tick.")); return result; };
+  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); await deliverLetters({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Letters will retry on the next tick.")); return result; };
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");

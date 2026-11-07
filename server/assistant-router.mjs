@@ -2,7 +2,7 @@ import { profileContext } from "./profile.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { openingDay, sealLetter } from "./letters.mjs";
+import { openingDay } from "./letters.mjs";
 import express from "express";
 import { canViewRecord, createRelationshipRecord, projectRecord, nextOccurrence } from "./relationship-domain.mjs";
 import { normalizeAssistantTurn, validateAssistantTurn } from "./assistant-agent.mjs";
@@ -350,18 +350,17 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
 ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(session.language, "这段话已经修改，请确认最新的版本。", "This message changed. Review and confirm the latest version.", "Este mensaje cambió. Revisa y confirma la última versión."));
       // Already shared: answer from the durable stamp instead of the handle, which only dedupes within the last 200 messages.
       if (draft.sharedAt) return { duplicate: true, message: { id: draft.messageId, text: draft.text, createdAt: draft.sharedAt }, session: latest };
-      // A letter is sealed instead: Us gets only that it is waiting; the words stay here until the day (letters.mjs delivers them).
+      // A letter is kept instead (founder 11-06): nothing goes to Us or the shared calendar; on its day Pinky reminds the writer
+      // privately and hands it over to send themselves (letters.mjs).
       if (draft.openOn) {
-        const { sent, milestone } = await sealLetter(tx, { relationshipId: initial.relationship.id, userId, draft, language: session.language });
-        if (sent.duplicate) return { ...sent, session: latest };
-        await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: draft.cardId, objectType: "letter", eventType: "letter.sealed", sourceVersion: latest.version }));
+        await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: draft.cardId, objectType: "letter", eventType: "letter.kept", sourceVersion: latest.version }));
+        const at = new Date().toISOString();
         const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => {
-          const at = new Date().toISOString();
-          record.partnerMessage = { ...record.partnerMessage, sharedAt: at, messageId: sent.message.id };
-          record.letters = [...(Array.isArray(record.letters) ? record.letters : []), { cardId: draft.cardId, text: draft.text, openOn: draft.openOn, relationshipId: initial.relationship.id, sealedAt: at, sealedMessageId: sent.message.id, milestoneId: milestone.id, deliveredAt: null }];
+          record.partnerMessage = { ...record.partnerMessage, sharedAt: at, messageId: null };
+          record.letters = [...(Array.isArray(record.letters) ? record.letters : []), { cardId: draft.cardId, text: draft.text, openOn: draft.openOn, relationshipId: initial.relationship.id, sealedAt: at, deliveredAt: null }];
           record.version += 1;
         });
-        return { ...sent, session: saved };
+        return { duplicate: false, kept: true, message: null, conversation: null, session: saved };
       }
       const sent = await appendTogetherMessage(tx, { relationshipId: initial.relationship.id, actorUserId: userId, source: "relay", kind: "relay", text: draft.text, handle: `partner_message:${draft.cardId}`, refs: [{ type: "partner_message", id: draft.cardId }] });
       if (sent.duplicate) return { ...sent, session: latest };
@@ -369,7 +368,8 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.partnerMessage = { ...record.partnerMessage, sharedAt: new Date().toISOString(), messageId: sent.message.id }; record.version += 1; });
       return { ...sent, session: saved };
     });
-    if (!result.duplicate) { emit(result.conversation, "together.updated"); void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "partner_message_shared", channel }); }
+    if (!result.duplicate && result.conversation) { emit(result.conversation, "together.updated"); void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "partner_message_shared", channel }); }
+    if (result.kept) void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "letter_kept", channel });
     return result;
   };
   // A prepared item enters a shared space only when its owner confirms the exact card they saw.
@@ -397,7 +397,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
   });
   router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
     const result = await confirmShare(req.auth.user.id, req.params.id, req.body);
-    res.json({ session: await output(result.session), message: { id: result.message.id, text: result.message.text, createdAt: result.message.createdAt }, duplicate: result.duplicate });
+    res.json({ session: await output(result.session), message: result.message ? { id: result.message.id, text: result.message.text, createdAt: result.message.createdAt } : null, duplicate: result.duplicate });
   });
   router.post("/assistant/sessions/:id/messages", append);
   router.post("/assistant/sessions/:id/transcripts", append);
@@ -408,12 +408,12 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
   });
   // Background work (a finished chat import) reports into the member's App conversation: the one it started from if it
   // still exists, else their latest, else a new one.
-  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, call = null }) {
+  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null }) {
     let session = sessionId ? await owned(store, sessionId, userId).catch(() => null) : null;
     if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!session) session = await createSession(userId, { language, timezone: "UTC" });
     const saved = await store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(card ? { cards: [card] } : {}), ...(call ? { call } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
+      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(cards?.length ? { cards } : card ? { cards: [card] } : {}), ...(call ? { call } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
     }));
     // Private sessions carry no relationship id; route the event through the member's couple so their open app refreshes.
     const context = await store.getRelationshipContext(userId);
