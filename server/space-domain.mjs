@@ -24,6 +24,10 @@ export async function createSpace(tx, { userId, relationshipId = null, shared = 
 }
 
 export const MOMENTS = "moments";
+// 一起看过的 (founder 11-07): every couple has one shared shelf of shows and films. An item's done = watched (false = still
+// watching or want to watch together); its date is when they finished or watched it; its text keeps where/how, the episode
+// they are on and what each of them thought. Pinky fills it from what they say; nothing is detected from streaming apps.
+export const WATCHED = "watched";
 /** Every member has a private moments album, and every couple one shared album: the Moments page and where Pinky keeps memories.
  * Created on first need; the re-check inside each lock keeps exactly one even when both partners arrive at once. */
 export async function ensureMomentSpaces(store, userId) {
@@ -37,6 +41,19 @@ export async function ensureMomentSpaces(store, userId) {
   const relationshipId = context?.relationship.status === "active" && context.members.length === 2 ? context.relationship.id : null;
   if (relationshipId && !existing.some((space) => space.visibility === "shared" && space.relationshipId === relationshipId)) await store.transaction(`relationship:${relationshipId}`, async (tx) => {
     if (!(await albums(tx)).some((space) => space.visibility === "shared" && space.relationshipId === relationshipId)) await tx.createRelationshipRecord("spaces", album(relationshipId));
+  });
+  if (relationshipId) await ensureWatchedSpace(store, userId, relationshipId);
+}
+
+/** The couple's one shared "watched together" shelf, made on first need (re-checked inside the lock, like the album). */
+export async function ensureWatchedSpace(store, userId, relationshipId) {
+  const shelf = async (db) => (await db.listRelationshipRecordsForUser("spaces", userId)).find((space) => space.system === WATCHED && space.relationshipId === relationshipId && canViewRecord(space, userId));
+  const found = await shelf(store);
+  if (found) return found;
+  return store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    const again = await shelf(tx); if (again) return again;
+    const record = createRelationshipRecord({ relationshipId, userId, visibility: "shared", aiAccessScope: "joint", title: "Watched together", layout: "timeline", description: "", system: WATCHED, provenanceSource: "system" });
+    await tx.createRelationshipRecord("spaces", record); return record;
   });
 }
 
@@ -121,7 +138,7 @@ export async function listSpaces(db, userId) {
 /** What an agent may know about spaces in a given scope: titles and recent item titles, never another person's private space. */
 export function spaceContext(spaces, { shared }) {
   return spaces.filter((space) => shared ? space.visibility === "shared" : space.visibility === "private").slice(0, 30).map((space) => ({
-    id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
+    id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.system === WATCHED ? "watched together (一起看过的 / vistos juntos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
     items: space.items.slice(-15).map((item) => ({ id: item.id, title: item.title || item.text.slice(0, 80), date: item.date, done: item.done })),
   }));
 }

@@ -4,6 +4,7 @@ import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { cachedPurchases, membershipFor } from "./membership.mjs";
+import { answerWatchCheck } from "./watched.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { planToCalendar } from "./plan-to-calendar.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
@@ -188,6 +189,14 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text: req.body?.text, language: language(req), emit: (updated) => emit(updated, "together.updated") });
     void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "daily_answered" });
+    res.json({ conversation: projectRecord(conversation, userId) });
+  });
+
+  // 看完了吗: one tap answers Pinky's next-day question about a show they planned to watch together (watched.mjs).
+  router.post("/together/watched/:id/answer", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const conversation = await answerWatchCheck({ store, relationshipId: initial.relationship.id, userId, messageId: req.params.id, finished: req.body?.finished, emit: (updated) => emit(updated, "together.updated") });
+    void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "watch_answered" });
     res.json({ conversation: projectRecord(conversation, userId) });
   });
 
