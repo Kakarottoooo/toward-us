@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-for (const language of ["zh", "en", "es"]) test(`daily answers keep private tab drafts through interruptions (${language})`, async ({ browser, baseURL }, testInfo) => {
+for (const language of ["zh", "en", "es"]) test(`daily questions are optional and keep private drafts through interruptions (${language})`, async ({ browser, baseURL }, testInfo) => {
   const a = await browser.newContext({ baseURL, viewport: { width: 375, height: 812 } });
   const b = await browser.newContext({ baseURL });
   try {
@@ -23,9 +23,45 @@ for (const language of ["zh", "en", "es"]) test(`daily answers keep private tab 
     }).toBe(true);
     const page = await a.newPage(); await page.goto("/?channel=us");
     const card = page.getByTestId("daily-question").last(), input = card.getByRole("textbox");
-    await expect(input).toBeVisible();
     const together = await (await a.request.get(`/api/together?language=${language}`)).json();
     const question = together.conversation.messages.filter((item: { kind: string }) => item.kind === "daily_question").at(-1);
+    // Optional prompts must be dismissible without submitting an answer or changing the partner's view.
+    const answerRequests: string[] = [];
+    page.on("request", (request) => { if (request.url().includes(`/daily/${question.id}/answer`)) answerRequests.push(request.url()); });
+    await expect(card.getByRole("button")).toHaveCount(2);
+    await expect(input).toHaveCount(0);
+    const defer = card.getByTestId("daily-defer");
+    await defer.focus(); await expect(defer).toBeFocused(); await defer.hover();
+    expect(await defer.evaluate((el) => getComputedStyle(el).borderTopStyle)).toBe("solid");
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+      await page.screenshot({ path: testInfo.outputPath(`optional-${language}-${width}.png`), fullPage: true });
+    }
+    await defer.click();
+    await expect(card.getByTestId("daily-resume")).toBeVisible();
+    await expect(card.getByRole("button")).toHaveCount(1);
+    await expect(card.locator("strong")).toHaveCount(0);
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+      await card.getByTestId("daily-resume").focus();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`deferred-${language}-${width}.png`), fullPage: true });
+    }
+    await page.reload(); await page.getByRole("tab").nth(1).click();
+    await expect(card.getByTestId("daily-resume")).toBeVisible();
+    const partnerPage = await b.newPage(); await partnerPage.goto("/?channel=us");
+    await expect(partnerPage.getByTestId("daily-question").last().getByTestId("daily-defer")).toBeVisible();
+    await expect(partnerPage.getByTestId("daily-resume")).toHaveCount(0);
+    const unchanged = await (await a.request.get(`/api/together?language=${language}`)).json();
+    expect(unchanged.conversation.messages.find((item: { id: string }) => item.id === question.id).answers).toEqual(question.answers);
+    expect(answerRequests).toHaveLength(0);
+    await partnerPage.close();
+    await card.getByTestId("daily-resume").click();
+    await expect(card.locator("strong")).toHaveText(question.translations?.[language]?.text || question.i18n?.[language] || question.text);
+    await card.locator(".card-primary").click();
+    await expect(input).toBeVisible();
+    await expect(card.locator(".card-primary")).toBeDisabled();
+    await page.setViewportSize({ width: 375, height: 812 });
     const key = `pinky:daily-draft:${owner.user.id}:${question.id}`;
     const text = { zh: "谢谢你昨天耐心听我说完。", en: "Thank you for listening patiently yesterday.", es: "Gracias por escucharme con paciencia ayer." }[language]!;
     await input.fill(text);

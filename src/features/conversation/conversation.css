@@ -58,6 +58,7 @@
 .card-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 16px; border: 1px solid rgba(37,37,37,.26); border-radius: 999px; background: transparent; color: var(--jian-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
 .card-actions .card-primary { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
 .card-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.daily-card .card-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 3px; }
 .conversation-empty { margin: clamp(18px, 8vh, 72px) 0 8px; text-align: left; }
 .conversation-empty h1 { margin: 0 0 10px; font-family: var(--jian-serif); font-size: 28px; font-weight: 500; line-height: 1.35; }
 .conversation-empty p { margin: 0; color: #4f4a44; font-size: 16px; line-height: 1.75; }
