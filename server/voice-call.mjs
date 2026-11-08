@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
 import { appendTogetherMessage, buildTogetherContext, continueTogetherTurn, togetherI18n } from "./together-domain.mjs";
+import { profileContext, scanInterview } from "./profile.mjs";
 
 // Live voice calls with Pinky. Audio flows directly between the phone and OpenAI over WebRTC; this server only creates and
 // ends the session (the key never leaves it), runs requests Pinky delegates through the same code as typed turns, and
@@ -19,6 +20,15 @@ Safety first: if anyone describes or shows threats, intimidation, controlling be
 
 export function privateInstructions(language, name) {
   return `You are Pinky, ${name || "the user"}'s private relationship assistant, on a live voice call. Only ${name || "the user"} should be in this conversation; it is private to them. Help them think things through warmly and honestly, without judging their partner. ${COMMON(language)}`;
+}
+
+/** 让 Pinky 认识你: a short private interview Pinky leads, so it knows this member (and how they see their partner) from day one. */
+export function interviewInstructions(language, name, partnerName, known) {
+  const who = name || "the user", partner = partnerName || "their partner";
+  return `You are Pinky, ${who}'s private relationship assistant, on a short private voice call whose purpose is to get to know ${who}, and how they see ${partner} and the two of them, so you can help them better later. Only ${who} is here; everything stays private to them.
+Lead the conversation. Greet them in one sentence, say it takes about five minutes and they can skip any question or stop at any time, then ask one short question at a time and follow up on what they say (ask why, or for an example) before moving on. Cover, in a natural order and skipping what is already known: how they like to be cared for and comforted; what upsets or hurts them; what they need after a fight; what they love doing together and what they want more of; small things that make them happy; wishes (places, gifts); people and days that matter. Never push on painful topics: if they hesitate, move on. Do not give advice or judge either of them during the interview. After about five minutes, or as soon as they want to stop, thank them, say in one or two sentences what you learned, and tell them that when they hang up the notes go into About us, only they can see them, and they can choose any line about themselves to share with ${partner}.
+${COMMON(language)}
+Already known (data, do not ask again): ${JSON.stringify(known).slice(0, 3000)}`;
 }
 
 export function sharedInstructions(language, names, context) {
@@ -93,6 +103,7 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
   router.post("/voice/start", async (req, res) => {
     const user = req.auth.user, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
     const sdp = req.body?.sdp, channel = req.body?.channel === "us" ? "us" : "me", requestId = clean(req.body?.requestId, 100);
+    const mode = channel === "me" && req.body?.mode === "interview" ? "interview" : "call";
     if (typeof sdp !== "string" || sdp.length > 64_000 || !sdp.startsWith("v=0")) throw fail(400, "voice_invalid_offer");
     if (!ID.test(requestId)) throw fail(400, "voice_invalid_request");
     const repeat = [...calls.values()].find((call) => call.requestId === requestId && call.userId === user.id);
@@ -111,13 +122,22 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
       sessionId = clean(req.body?.sessionId, 80);
       const session = await assistant.session(user.id, sessionId);
       usageKey = `user:${user.id}`;
-      input = historyInput(session.messages);
-      instructions = privateInstructions(language, user.name);
+      if (mode === "interview") {
+        // Facts are kept per couple, so the interview needs a partner; it starts fresh, without the chat's history.
+        const pairing = await store.getRelationshipContext(user.id);
+        if (!(pairing?.relationship.status === "active" && pairing.members.length === 2)) throw fail(409, "pairing_required");
+        const known = await profileContext(store, user.id), facts = (list) => list.map((item) => item.fact);
+        input = [];
+        instructions = interviewInstructions(language, user.name, pairing.members.find((member) => member.userId !== user.id)?.user?.name || "", { me: facts(known.me), partner: facts(known.partner), us: facts(known.us) });
+      } else {
+        input = historyInput(session.messages);
+        instructions = privateInstructions(language, user.name);
+      }
     }
     if ([...calls.values()].some((call) => call.usageKey === usageKey && call.status === "active")) throw fail(409, "voice_already_active");
     if (usedToday(usageKey) + 60 > DAILY_SECONDS) throw fail(429, "voice_daily_limit");
     const started = await provider.start({ sdp, instructions, input, voice: process.env.OPENAI_LIVE_VOICE || "" });
-    const call = { id: randomUUID().replace(/-/g, ""), requestId, userId: user.id, userName: user.name, channel, language, relationshipId, sessionId, usageKey, providerId: started.providerId, answer: started.sdp, startedAt: clock(), status: "active", turns: new Map(), saved: false };
+    const call = { id: randomUUID().replace(/-/g, ""), requestId, userId: user.id, userName: user.name, channel, mode, language, relationshipId, sessionId, usageKey, providerId: started.providerId, answer: started.sdp, startedAt: clock(), status: "active", turns: new Map(), saved: false };
     call.deadline = call.startedAt + Math.min(MAX_SECONDS, DAILY_SECONDS - usedToday(usageKey)) * 1000;
     call.timer = setTimeout(() => void close(call, "time_limit"), call.deadline - clock()); call.timer.unref?.();
     calls.set(call.id, call);
@@ -160,7 +180,20 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     if (!rows.length) return res.json({ saved: false });
     const minutes = Math.max(1, Math.round((clock() - call.startedAt) / 60_000));
     const transcript = { minutes, rows: rows.reduce((kept, row) => kept.total + row.text.length > 20_000 ? kept : { total: kept.total + row.text.length, list: [...kept.list, row] }, { total: 0, list: [] }).list };
-    if (call.channel === "me") await assistant.postNote(call.userId, { sessionId: call.sessionId, language: call.language, text: "", call: transcript });
+    if (call.channel === "me") {
+      const saved = await assistant.postNote(call.userId, { sessionId: call.sessionId, language: call.language, text: "", call: call.mode === "interview" ? { ...transcript, interview: true } : transcript });
+      // 让 Pinky 认识你: once saved, the answers are read in the background and kept as the member's own private notes.
+      if (call.mode === "interview" && saved) {
+        const note = saved.messages.at(-1);
+        void scanInterview({ store, mediator, userId: call.userId, sessionId: saved.id, noteId: note.id, rows: transcript.rows })
+          .then(async (changed) => {
+            for (const record of changed) emit(record, "profile.updated", call.userId);
+            const pairing = await store.getRelationshipContext(call.userId);
+            if (pairing?.relationship) emit({ id: saved.id, relationshipId: pairing.relationship.id }, "assistant.updated", call.userId);
+          })
+          .catch((error) => console.error("Interview notes failed:", error?.message || error));
+      }
+    }
     else {
       const saved = await store.transaction(`relationship:${call.relationshipId}`, (tx) => appendTogetherMessage(tx, { relationshipId: call.relationshipId, actorUserId: null, userId: call.userId, source: "voice", kind: "call", text: callTitle(call.language, minutes), i18n: togetherI18n((language) => callTitle(language, minutes)), call: { ...transcript, recordedByUserId: call.userId }, handle: `call:${call.id}` }));
       emit(saved.conversation, "together.updated");

@@ -31,7 +31,7 @@ type Channel = "me" | "us";
 type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string; openOn?: string; shareKind?: "date" | "agreement" };
 type SpaceSummary = { id: string; title: string; layout: string; visibility: string; system?: string };
 type CallTranscript = { minutes: number; rows: Array<{ role: string; text: string }> };
-type PrivateMessage = { id: string; role: "user" | "assistant"; kind?: string; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript };
+type PrivateMessage = { id: string; role: "user" | "assistant"; kind?: string; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript; dateCheck?: { title: string; date: string }; dateAnswer?: { rating: "great" | "ok" | "meh"; told: boolean } };
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
@@ -93,7 +93,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
+  const [call, setCall] = useState<{ channel: Channel; sessionId: string | null; mode?: "interview" } | null>(null);
+  // 让 Pinky 认识你 asked for from About us (?interview=1): a card here starts it, so the call begins with a tap.
+  const [interviewAsk, setInterviewAsk] = useState(() => { try { return new URLSearchParams(location.search).get("interview") === "1"; } catch { return false; } });
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // The couple's own character, shared by both; it floats under the top row once one of them has made it.
@@ -313,6 +315,23 @@ ${text}` : text, target);
     if (channel === "us") { setCall({ channel: "us", sessionId: null }); return; }
     try { const active = await ensureSession(); setCall({ channel: "me", sessionId: active?.id || null }); } catch (error) { setNotice((error as Error).message); }
   };
+  // 让 Pinky 认识你 (founder 11-07): a few-minute private voice interview Pinky leads; what it learns lands in About us.
+  const startInterview = async () => {
+    keyboard.hide(); voice.stop(); setNotice(""); setInterviewAsk(false); switchChannel("me");
+    const params = new URLSearchParams(location.search); if (params.has("interview")) { params.delete("interview"); history.replaceState(history.state, "", `${location.pathname}${params.toString() ? `?${params}` : ""}`); }
+    try { const active = await ensureSession(); setCall({ channel: "me", sessionId: active?.id || null, mode: "interview" }); } catch (error) { setNotice((error as Error).message); }
+  };
+  // 约会之后问一句: one tap answers privately; "tell them" sends the member's own words in Us.
+  const answerDate = async (messageId: string, rating: "great" | "ok" | "meh") => {
+    const active = sessionRef.current; if (!active) return; setBusy(true); setNotice("");
+    try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}/date-check`, jsonBody({ messageId, rating }))).session); }
+    catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
+  };
+  const tellPartner = async (message: PrivateMessage) => {
+    const active = sessionRef.current; if (!active || !message.dateCheck) return;
+    await sendShared(t(`「${message.dateCheck.title}」我很开心，谢谢你 ❤️`, `I loved "${message.dateCheck.title}". Thank you ❤️`, `Me encantó «${message.dateCheck.title}». Gracias ❤️`));
+    try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}/date-check`, jsonBody({ messageId: message.id, told: true }))).session); } catch { /* The button stays; the message went. */ }
+  };
   const reloadSession = async () => { const active = sessionRef.current; if (!active) return; try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}`)).session); } catch { /* The next event or poll refreshes it. */ } };
   const importChat = async (run: (session: string | null) => Promise<unknown>) => {
     setNotice(""); setPending((count) => ({ ...count, me: count.me + 1 }));
@@ -462,6 +481,7 @@ ${text}` : text, target);
     else if (key === "miss_you") void missYou();
     else if (key === "pet") void relationshipApi<{ pet: PetView }>("/api/together/pet", jsonBody({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", language })).then((result) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet: result.pet }); }).catch(() => {});
     else if (key === "profile") { keyboard.hide(); onPrivacy("profile"); }
+    else if (key === "interview") void startInterview();
     else if (key === "photos") open("/?view=moments");
     else if (key === "ideas") open("/?view=moments&ideas=1");
     else say({ meetup: t("Pinky，我们下次见面是 ", "Pinky, we next meet on ", "Pinky, nos vemos el "), recap: t("Pinky，给我们做一张最近的回顾", "Pinky, make us a recap of lately", "Pinky, haznos un resumen de estos días"), agreement: t("Pinky，把我们说好的写下来：", "Pinky, write down what we agreed: ", "Pinky, anota lo que acordamos: "), letter: t("帮我给 TA 写一封信，在这天打开：", "Help me write my partner a letter to open on ", "Ayúdame a escribir una carta para abrir el "), hard_words: t("我有句话不知道怎么跟 TA 说：", "There's something I don't know how to tell my partner: ", "Hay algo que no sé cómo decirle a mi pareja: "), reminder: t("提醒我 ", "Remind me to ", "Recuérdame ") }[key as "meetup"] || "", ["meetup", "ledger", "recap", "agreement"].includes(key) ? "us" : "me");
@@ -624,7 +644,7 @@ ${text}` : text, target);
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "noted" ? <button key={message.id} type="button" className="conversation-noted" onClick={() => { keyboard.hide(); onPrivacy("profile"); }} data-testid="profile-noted"><Heart size={14} weight="fill" /><span>{message.text}</span></button> : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}</div>)}</> :
+      {channel === "me" ? <>{!privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "noted" ? <button key={message.id} type="button" className="conversation-noted" onClick={() => { keyboard.hide(); onPrivacy("profile"); }} data-testid="profile-noted"><Heart size={14} weight="fill" /><span>{message.text}</span></button> : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}{message.dateCheck && !message.dateAnswer && <div className="card-actions date-check-answers" data-testid="date-check-answers">{([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([rating, zh, en, es]) => <button key={rating} disabled={busy} onClick={() => void answerDate(message.id, rating)}>{t(zh, en, es)}</button>)}</div>}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>)}</> :
         !paired ? invite : <>{!sharedMessages.length && usEmpty}
           {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()} data-testid="earlier-messages">{loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
           {sharedMessages.slice(0, olderMessages.length).map(sharedMessage)}<div ref={olderRef} className="conversation-seam" aria-hidden="true" />{sharedMessages.slice(olderMessages.length).map((message, index) => sharedMessage(message, index + olderMessages.length))}
@@ -633,7 +653,8 @@ ${text}` : text, target);
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
-      {!readOnly && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} />}
+      {channel === "me" && interviewAsk && paired && !call && <article className="discovery-card" data-testid="interview-offer"><span className="discovery-icon"><Phone size={20} weight="fill" /></span><div><strong>{t("让 Pinky 认识你", "Let Pinky get to know you", "Deja que Pinky te conozca")}</strong><p>{t(`私下语音聊 5 分钟左右：Pinky 问，你答，哪题都能跳过，随时能挂断。聊完记下的只有你能看到，想让 ${partnerName || "TA"} 知道哪条由你挑。`, `A private voice chat of about five minutes: Pinky asks, you answer, skip anything, hang up any time. Only you see the notes; you pick what ${partnerName || "your partner"} gets to see.`, `Una charla privada de unos cinco minutos: Pinky pregunta, tú respondes, puedes saltar o colgar cuando quieras. Solo tú ves las notas; tú eliges qué ve ${partnerName || "tu pareja"}.`)}</p><span className="discovery-actions"><button type="button" className="discovery-go" onClick={() => void startInterview()} data-testid="interview-start">{t("开始聊", "Start", "Empezar")}</button><button type="button" className="discovery-later" onClick={() => setInterviewAsk(false)}>{t("以后再说", "Later", "Más tarde")}</button></span></div></article>}
+      {!readOnly && !(channel === "me" && interviewAsk && paired && !call) && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=upcoming")} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />

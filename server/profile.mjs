@@ -117,6 +117,43 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
   });
 }
 
+// 让 Pinky 认识你 (founder 11-07, borrowed from Known): a few-minute private voice interview where Pinky asks and the member
+// answers on purpose. Their answers are read once when the call ends and kept as their own private notes (About us), where
+// they choose any line about themselves to share with their partner. Pinky's questions are context only.
+const INTERVIEW = `
+This chat is a getting-to-know-you voice interview: Pinky asked A questions so it can help A and B later, and A answered on purpose. Here being selective means skipping only small talk and hesitation: keep every clear, lasting thing A says about themselves, about B or about the two of them (how A likes to be cared for and comforted, what upsets or hurts them, what they need after a fight, what they love doing together and want more of, small things that make them happy, wishes, people and days that matter), each as its own fact, up to 20. Lines are speech captions and may hold small recognition errors: quote them exactly as written anyway. Pinky's lines are only context: never take a fact from Pinky's question itself.`;
+const interviewSchema = object({ facts: { type: "array", maxItems: 20, items: schema.properties.facts.items } });
+
+/** Reads the member's answers from a finished interview call and keeps what they reveal, privately for that member. */
+export async function scanInterview({ store, mediator, userId, sessionId, noteId, rows, at = new Date().toISOString() }) {
+  if (!mediator?.structured) return [];
+  const context = await store.getRelationshipContext(userId);
+  if (!activePair(context)) return [];
+  const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
+  if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
+  const relationshipId = context.relationship.id, me = context.members.find((member) => member.userId === userId), partner = context.members.find((member) => member.userId !== userId);
+  const lines = (rows || []).map((row, index) => ({ id: `${noteId}:${index}`, from: row.role === "agent" ? "Pinky" : "A", text: squash(row.text).slice(0, 1200), createdAt: at })).filter((line) => line.text);
+  const answers = lines.filter((line) => line.from === "A");
+  if (!answers.length) return [];
+  const label = (subjectUserId) => subjectUserId === userId ? "A" : subjectUserId === partner.userId ? "B" : "both";
+  const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
+  const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, text: line.text, isNew: line.from === "A" })) };
+  const result = await mediator.structured({ name: "couple_profile", schema: interviewSchema, instructions: instructions({ a: me?.user?.name || "", b: partner?.user?.name || "", privateChat: true }) + INTERVIEW, input: JSON.stringify(input), maxOutputTokens: 1800 });
+  const findings = verifyFacts(result?.facts, answers, () => true);
+  return store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    if (!activePair(await tx.getRelationshipContext(userId), relationshipId)) return [];
+    const changed = await keepFacts(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partner.userId : null, findings, channel: "private", sessionId });
+    const language = session.language || "zh", partnerName = partner?.user?.name || say(language, "TA", "your partner", "tu pareja");
+    const text = changed.length
+      ? `${notedText(language, changed, { userId, partnerName: partner?.user?.name || "" })}${say(language, `。这些只有你能看到；想让 ${partnerName} 知道哪条，点这里去「关于我们」分享。`, `. Only you see these; tap here to choose any to share with ${partnerName} in About us.`, `. Solo tú los ves; toca aquí para elegir cuáles compartir con ${partnerName} en Sobre nosotros.`)}`
+      : say(language, "这次通话没记下新的东西；想补充的，随时跟我说。", "Nothing new to keep from this call; tell me more any time.", "Nada nuevo que guardar de esta llamada; cuéntame más cuando quieras.");
+    await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
+      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text, noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+    });
+    return Object.assign(changed, { sessionId });
+  });
+}
+
 /** Reads the new lines of Us and keeps what they reveal as shared facts that belong to both. */
 export async function scanTogetherProfile({ store, mediator, relationshipId, userId }) {
   if (!mediator?.structured) return [];
