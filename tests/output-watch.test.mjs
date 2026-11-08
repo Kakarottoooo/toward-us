@@ -110,6 +110,14 @@ test("replies are judged by the interface language the founder picked, not the l
   state.relationshipGraph.privateAgentThreads["thread-me"].messages.unshift({ id: "r0", role: "assistant", text: "你们的记录里最温暖的部分是彼此很会照顾。", createdAt: at(7) });
 }));
 
+test("a Pinky line written in the partner's language is reported as the translation the founder actually sees", () => withFixture(async ({ data }) => {
+  const report = await outputWatch({ data, user: "founder@example.test", state: {} });
+  assert.equal(report.outputs.find((item) => item.ref.endsWith("#t1")).text, "Would you rather binge a show or cook together slowly?");
+}, (state) => {
+  state.users.me.language = "en";
+  state.relationshipGraph.togetherConversations[`together:${relationshipId}`].messages.push({ id: "t1", role: "agent", kind: "daily_question", text: "你们更想窝在沙发看剧，还是一起慢慢做顿饭？", translations: { en: { text: "Would you rather binge a show or cook together slowly?" } }, answers: {}, createdAt: at(8) });
+}));
+
 test("flags fire on the watched failure shapes", () => {
   assert.deepEqual(flagText("好的，已经帮你加到清单里了。"), []);
   assert.ok(flagText("").includes("empty"));
