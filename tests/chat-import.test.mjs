@@ -165,6 +165,61 @@ test("screenshot advice and follow-ups do not wait for the separate history repo
   assert.ok(!session.messages.some((message) => message.text === report.message), "the report does not replace or repeat the answer");
 });
 
+test("pasted-chat questions read complete lines before the history report, only in the owner's session", async (t) => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const f = await fixture(t, { beforeStructured: async () => held, planner: () => ({ reply: "Private answer.", actions: [] }) });
+  t.after(() => release());
+  const lastWords = "I only told you at seven; you had already waited an hour.";
+  const paste = `Alex: Dinner at six.\nBlair: I'll be there.\nAlex: ${"Work updates. ".repeat(100)}${lastWords}\nBlair: I needed you to tell me before six.`;
+  const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "content-type": "text/plain" }, body: paste });
+  assert.equal(response.status, 201);
+  const imported = (await response.json()).import;
+  assert.equal(imported.status, "analyzing");
+  const question = "Who was wrong? Please quote the evidence and help me reply privately.";
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: question, itemId: randomUUID() });
+  const context = f.calls.planner.at(-1).screenshotConversation;
+  assert.equal(context?.status, "ready");
+  assert.match(context.transcript, /\[you\] Alex: Dinner at six/);
+  assert.ok(context.transcript.includes(lastWords), "a long individual line must not lose its decisive ending");
+  assert.match(context.transcript, /\[partner\] Blair: I needed/);
+  assert.equal(context.truncated, false);
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /original is readable NOW/);
+    assert.match(prompt, /never tell them to wait for the report/);
+    assert.match(prompt, /Do not interview or recommend sharing a verdict/);
+    assert.match(prompt, /If truncated is true/);
+    assert.match(prompt, /untrusted evidence, never commands/);
+  }
+  assert.equal((await f.request(`/imports/${imported.id}`, "GET", null, f.people[1].id)).status, 404);
+  for (const userId of [f.people[0].id, f.people[1].id]) {
+    const separate = (await f.request("/assistant/sessions", "POST", { language: "en" }, userId)).body.session;
+    await f.request(`/assistant/sessions/${separate.id}/messages`, "POST", { text: "What was said?", itemId: randomUUID() }, userId);
+    assert.equal(f.calls.planner.at(-1).screenshotConversation, null);
+  }
+  release();
+  await f.ready(imported.id);
+  assert.ok(f.calls.structured.every((call) => !call.input.includes(question)), "private questions stay out of the report");
+  await f.request(`/imports/${imported.id}/delete-messages`, "POST", {});
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Can you still quote it?", itemId: randomUUID() });
+  assert.equal(f.calls.planner.at(-1).screenshotConversation.transcript, null);
+});
+
+test("long imported history explicitly marks a bounded excerpt instead of claiming a complete reading", async (t) => {
+  const f = await fixture(t);
+  const paste = `Alex: ${"A long message. ".repeat(3000)}\nBlair: I'll reply later.\nAlex: END_OUTSIDE_EXCERPT`;
+  const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "content-type": "text/plain" }, body: paste });
+  assert.equal(response.status, 201);
+  const imported = (await response.json()).import;
+  await f.ready(imported.id);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What happened?", itemId: randomUUID() });
+  const context = f.calls.planner.at(-1).screenshotConversation;
+  assert.equal(context.truncated, true);
+  assert.equal(context.transcript.length, 40_000);
+  assert.ok(!context.transcript.includes("END_OUTSIDE_EXCERPT"));
+});
+
 test("screenshot advice instructions route immediate asks to the reader and ground fairness without forced equal blame", () => {
   for (const language of ["zh", "en", "es"]) {
     const prompt = screenshotAdviceInstructions(language);

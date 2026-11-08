@@ -335,17 +335,20 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   }
   router.importScreenshots = importScreenshots;
 
-  // Follow-ups in the same private session need the reading state and the actual exchange, not just pattern notes.
+  // Legacy name shared with screenshot follow-ups. Pasted/exported chats are already readable before their report finishes.
+  // Keep the actual exchange scoped to its owner's session, not just the lossy pattern notes.
   router.screenshotContext = async (userId, sessionId) => {
     const record = (await store.listRelationshipRecordsForUser(COLLECTION, userId))
-      .filter((item) => item.ownerUserId === userId && item.visibility === "private" && !item.archivedAt && item.platform === "screenshots" && item.sessionId === sessionId && item.screenshotMessageId)
+      .filter((item) => item.ownerUserId === userId && item.visibility === "private" && !item.archivedAt && item.sessionId === sessionId && !item.sync)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (!record) return null;
     const names = { me: record.people.find((person) => person.role === "me")?.name, partner: record.people.find((person) => person.role === "partner")?.name };
     // Transcription is already complete even while the separate report is running (or if that report later fails).
     const source = names.me && names.partner && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
-    const transcript = source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : "[partner]"} ${line(message)}`).join("\n").slice(0, 40_000) || null;
-    return { status: transcript ? "ready" : record.status, names, transcript };
+    // Reporting's 400-character line preview can omit the very words the user needs judged. Keep full lines here.
+    const full = source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : message.sender === names.partner ? "[partner]" : "[other]"} ${message.at ? `${message.at} ` : ""}${message.sender}: ${message.text || "[media]"}`).join("\n") || "";
+    const transcript = full.slice(0, 40_000) || null;
+    return { status: transcript ? "ready" : record.status, names, transcript, truncated: full.length > 40_000 };
   };
 
   const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : "zh";
