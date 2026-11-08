@@ -173,6 +173,12 @@ test("threatening screenshots prioritize safe support without inferring location
   }
 });
 
+test("Spanish screenshot advice uses natural Spanish partner references instead of TA", () => {
+  assert.match(screenshotAdviceInstructions("es"), /partner as "tu pareja"/);
+  assert.match(screenshotAdviceInstructions("es"), /never use "TA"/);
+  assert.match(screenshotAdviceInstructions("es"), /placeholders, not actual names/);
+});
+
 test("an imported chat is analyzed privately and reported back into the owner's conversation", async (t) => {
   const f = await fixture(t);
   const created = await f.upload(whatsapp, undefined, undefined, f.session.id);
