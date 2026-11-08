@@ -164,6 +164,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       cycle: await cycleContext(store, userId, localTime(new Date(), session.timezone).slice(0, 10)).catch(() => null),
       profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
+      screenshotConversation: chatImports?.screenshotContext ? await chatImports.screenshotContext(userId, session.id) : null,
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     // Pinky answers in the interface language this member picked, whatever language they type in (founder 11-06: one language everywhere, the one each member picked).

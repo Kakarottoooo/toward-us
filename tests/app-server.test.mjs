@@ -49,6 +49,39 @@ test("without the model Pinky only says it is unavailable, in every language, an
   });
 });
 
+test("CLI interactive care uses Sonnet by default, keeps background reads cheap and honors an explicit model", async () => {
+  await withProvider({ AI_PROVIDER: "claude-cli" }, async () => {
+    const previous = process.env.CLAUDE_CLI_MODEL, background = process.env.CLAUDE_CLI_BACKGROUND_MODEL;
+    try {
+      delete process.env.CLAUDE_CLI_MODEL; delete process.env.CLAUDE_CLI_BACKGROUND_MODEL;
+      const mediator = createMediator({ apiKey: "" });
+      assert.equal(mediator.model, "claude-cli:sonnet");
+      assert.equal(mediator.backgroundModel, "claude-cli:haiku");
+      process.env.CLAUDE_CLI_MODEL = "haiku";
+      assert.equal(createMediator({ apiKey: "" }).model, "claude-cli:haiku");
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CLI_MODEL; else process.env.CLAUDE_CLI_MODEL = previous;
+      if (background === undefined) delete process.env.CLAUDE_CLI_BACKGROUND_MODEL; else process.env.CLAUDE_CLI_BACKGROUND_MODEL = background;
+    }
+  });
+});
+
+test("screenshot advice grounds the verdict in observations and unknowns in one model call", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    let calls = 0;
+    globalThis.fetch = async (_url, init) => {
+      calls += 1;
+      const schema = JSON.parse(init.body).text.format.schema;
+      assert.deepEqual(schema.required, ["observations", "uncertainties", "reply"]);
+      const answer = { observations: ["Blair reports an earlier promise."], uncertainties: ["The original promise is not visible."], reply: "I cannot verify that promise from this screenshot." };
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(answer) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const answer = await createMediator({ apiKey: "test-key" }).answerScreenshot({ question: "Who's right?", transcript: "[partner] Blair: You promised yesterday." }, "en");
+    assert.match(answer.reply, /cannot verify/);
+    assert.equal(calls, 1);
+  });
+});
+
 test("a person waits at most about 45 seconds for a reply; only background work may take minutes", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     const seen = [];

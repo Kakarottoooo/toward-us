@@ -107,7 +107,11 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
       const response = await client.responses.create({
         model, store: false, max_output_tokens: 900,
-        text: { format: { type: "json_schema", name: "private_screenshot_advice", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply"], properties: { reply: { type: "string" } } } } },
+        text: { format: { type: "json_schema", name: "private_screenshot_advice", strict: true, schema: { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply"], properties: {
+          observations: { type: "array", items: { type: "string" }, maxItems: 3 },
+          uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
+          reply: { type: "string" },
+        } } } },
         input: [{ role: "developer", content: screenshotAdviceInstructions(language) }, { role: "user", content: JSON.stringify(context) }],
       }, INTERACTIVE);
       return JSON.parse(response.output_text);

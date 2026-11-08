@@ -8,6 +8,29 @@ import { createFileStore } from "../server/store.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { jsonFromText, jsonInstruction } from "../server/claude-cli-client.mjs";
+import { assistantInstructions } from "../server/assistant-agent.mjs";
+
+test("a concrete apology request gets ordinary private wording without invented feelings or an interview", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /give a copyable draft now/);
+    assert.match(prompt, /without excuses, therapist language, assumed feelings or setting/);
+    assert.match(prompt, /"Don't send" means private wording only, actions:\[\]/);
+    assert.match(prompt, /Put the COMPLETE apology itself inside reply/);
+    assert.match(prompt, /Do not demand forgiveness or add an interview question/);
+    assert.match(prompt, /private draft are not an agreed commitment/);
+  }
+});
+
+test("missing a busy partner with little energy gets a quiet activity rather than an interruption", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /ONE small, time-bounded thing they can do alone now/);
+    assert.match(prompt, /Do not offer a call, nudge, game invite or immediate message/);
+    assert.match(prompt, /overrides feature discovery and onboarding/);
+    assert.match(prompt, /No outgoing action unless asked/);
+  }
+});
 
 // Found by role-play testing (founder 11-07): a records search that found nothing promised results that never came, and the
 // CLI model sometimes answered "the suggestions are above" instead of giving them.
