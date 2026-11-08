@@ -332,6 +332,17 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   }
   router.importScreenshots = importScreenshots;
 
+  // Follow-ups in the same private session need the reading state and the actual exchange, not just pattern notes.
+  router.screenshotContext = async (userId, sessionId) => {
+    const record = (await store.listRelationshipRecordsForUser(COLLECTION, userId))
+      .filter((item) => item.ownerUserId === userId && item.visibility === "private" && !item.archivedAt && item.platform === "screenshots" && item.sessionId === sessionId && item.screenshotMessageId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!record) return null;
+    const names = { me: record.people.find((person) => person.role === "me")?.name, partner: record.people.find((person) => person.role === "partner")?.name };
+    const source = record.status === "ready" && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
+    return { status: record.status, names, transcript: source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : "[partner]"} ${line(message)}`).join("\n").slice(0, 40_000) || null };
+  };
+
   const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : "zh";
   // Behind a TLS proxy (Tailscale, Render) the app sees plain http; only a local address keeps it.
   const originOf = (req) => { const host = req.get("x-forwarded-host") || req.get("host"); return `${req.get("x-forwarded-proto") || (/^(localhost|127.|[::1])/.test(host) ? req.protocol : "https")}://${host}`; };

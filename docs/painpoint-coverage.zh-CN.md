@@ -45,4 +45,7 @@
 - `node --test --test-concurrency=1 tests/*.test.mjs`：314 通过、6 跳过、1 失败。失败是 `web-push-delivery.test.mjs:223`：按实际时间跑，上海凌晨的默认免打扰拦住了预期推送；未修改该服务端逻辑或测试。`npx tsc --noEmit` 及 `npx vite build` + `node scripts/prepare-sites-build.mjs` 通过。runtime 哈希检查仍受本地已知 CRLF 问题阻挡，未更改受保护运行时或锁。
 - 草稿仅保留在当前标签页的会话存储，不同步设备，不保证关闭标签页后恢复；浏览器禁用存储时仍可在当前界面写和提交，但不能承诺恢复。此次未验证原生 App 被系统结束后的恢复，也未调用真实模型或发送真实消息。
 
+| 27 | 模糊争执被武断分责，接着追问却又说截图“还在读”（来源：[同一截图得到偏向提问者的判决](https://www.reddit.com/r/ChatGPTPro/comments/1k95ldf/my_husband_and_i_had_an_argument_over_text_to_do/)、[双方视角与上下文影响判断](https://www.reddit.com/r/therapyGPT/comments/1s163qm/used_gpt_to_analyze_text_argument_from_both/)） | 区分截图事实、对旧承诺的转述和未知时间线；同一私人会话的后续回合携带已读状态和原文，改写仍是私下建议 | 本地修复（11-08） | 真实模型复现了武断分责与“还在读”；定向回归覆盖同会话原文、跨会话与跨用户隔离、删除原文后不恢复 |
+| 28 | 截图含控制、砸门与吞药威胁，回复草稿可能刺激对方，并按中文猜急救号码（来源：[伴侣以自伤相威胁](https://www.thehotline.org/resources/when-my-partner-threatens-suicide/)） | 优先安全与可信支持；紧急自伤交给当地紧急救助或能安全接近的人，不要求用户回去安抚；地点不明不猜号码，可能增险时不必回复 | 本地修复（11-08） | 用虚构定位控制、砸门和吞药截图复现；提示词回归覆盖地点、单一安全提问和不以顺从换安全；真实模型重跑结果见本轮 PR |
+
 11-08 测试时还顺手修了一个 bug：模型写长建议时偶尔不按格式返回，系统再问一次，回复里就会出现“我用结构化的方式回复你”这种话。现在模型直接写的那段话会被当作回复本身。

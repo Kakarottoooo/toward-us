@@ -71,7 +71,7 @@ test("screenshot advice reads the actual exchange, answers the original question
     { mine: false, name: "Blair", text: "I waited forty minutes.", time: null },
     { mine: true, name: null, text: "I forgot the time. Stop overreacting.", time: null },
   ], planner: (context) => context.transcript
-    ? { reply: privateReply, actions: [action("milestone", "create", { fields: fields({ title: "Must never execute", date: "2026-11-20" }) })] }
+    ? { observations: ["Internal grounding only"], uncertainties: ["Internal unknowns only"], reply: privateReply, actions: [action("milestone", "create", { fields: fields({ title: "Must never execute", date: "2026-11-20" }) })] }
     : { reply: "I'm reading the screenshots privately.", actions: [action("chat_import", "create")] } });
   const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
   await f.store.createRelationshipRecord("photos", photo);
@@ -84,6 +84,8 @@ test("screenshot advice reads the actual exchange, answers the original question
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   assert.ok(session.messages.some((message) => message.text === privateReply));
+  assert.ok(!JSON.stringify(session).includes("Internal grounding only"));
+  assert.ok(!JSON.stringify(session).includes("Internal unknowns only"));
   assert.equal(f.calls.screenshots.length, 1);
   const context = f.calls.planner.find((call) => call.transcript);
   assert.equal(context.question, question);
@@ -100,6 +102,16 @@ test("screenshot advice reads the actual exchange, answers the original question
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}`, "GET", null, other)).status, 404);
   assert.equal((await f.store.listRelationshipRecordsForUser("milestones", f.people[0].id)).length, 0);
   assert.equal((await f.store.listRelationshipRecordsForUser("togetherConversations", other)).length, 0);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Make that softer.", itemId: randomUUID() });
+  const followup = f.calls.planner.at(-1).screenshotConversation;
+  assert.equal(followup.status, "ready");
+  assert.match(followup.transcript, /\[you\] Alex: I forgot the time/);
+  assert.match(followup.transcript, /\[partner\] Blair: I waited forty minutes/);
+  for (const userId of [f.people[0].id, other]) {
+    const separate = (await f.request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" }, userId)).body.session;
+    await f.request(`/assistant/sessions/${separate.id}/messages`, "POST", { text: "What did the screenshot say?", itemId: randomUUID() }, userId);
+    assert.equal(f.calls.planner.at(-1).screenshotConversation, null, "screenshot context never crosses sessions or owners");
+  }
   // Even a later explicitly requested shared history copy carries neither private question nor advice.
   assert.equal((await f.request(`/imports/${imports[0].id}/share-request`, "POST", {})).status, 200);
   const shared = await f.request(`/imports/${imports[0].id}/share-approve`, "POST", {}, other);
@@ -109,6 +121,9 @@ test("screenshot advice reads the actual exchange, answers the original question
   assert.ok(!JSON.stringify(copies).includes(question));
   assert.ok(!JSON.stringify(copies).includes(privateReply));
   assert.ok(!JSON.stringify(copies).includes("screenshotMessageId"));
+  await f.request(`/imports/${imports[0].id}/delete-messages`, "POST", {});
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What can you still see?", itemId: randomUUID() });
+  assert.equal(f.calls.planner.at(-1).screenshotConversation.transcript, null, "deleted original messages are not restored to context");
 });
 
 test("screenshot advice instructions route immediate asks to the reader and ground fairness without forced equal blame", () => {
@@ -123,6 +138,38 @@ test("screenshot advice instructions route immediate asks to the reader and grou
     assert.match(prompt, /or invent innocent motives/);
     assert.match(prompt, /Check who actually said each accusation/);
     assert.doesNotMatch(prompt, /never tell them who is right/);
+  }
+});
+
+test("ambiguous screenshot advice separates reported promises and unknown chronology from evidence", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = screenshotAdviceInstructions(language);
+    assert.match(prompt, /a reported promise is not a verified promise/);
+    assert.match(prompt, /timing of learning about a conflict/);
+    assert.match(prompt, /A quote reported INSIDE someone else's bubble is their claim/);
+    assert.match(prompt, /unless you can name a supported harmful behavior by each/);
+    assert.match(prompt, /at most 5 short sentences/);
+  }
+});
+
+test("screenshot follow-ups use completed reading context and keep rewrites private", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /status ready means the screenshots have ALREADY been read/);
+    assert.match(prompt, /rewrite the actual previous draft directly/);
+    assert.match(prompt, /private advice, not permission to share/);
+  }
+});
+
+test("threatening screenshots prioritize safe support without inferring location or demanding appeasement", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = screenshotAdviceInstructions(language);
+    assert.match(prompt, /overrides the usual reply format/);
+    assert.match(prompt, /Do not infer a country from language/);
+    assert.match(prompt, /Take threats to swallow pills/);
+    assert.match(prompt, /without making the user responsible/);
+    assert.match(prompt, /do not have to reply if that could increase danger/);
+    assert.match(prompt, /at most ONE immediate safety question/);
   }
 });
 
