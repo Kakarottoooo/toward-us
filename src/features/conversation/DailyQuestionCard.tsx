@@ -20,8 +20,16 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
   // Unsent words stay in this tab, scoped to their author and question. Never send a draft to the server.
   const draftKey = `pinky:daily-draft:${userId}:${questionId}`;
   const [savedDraft] = useState(() => { try { return sessionStorage.getItem(draftKey)?.slice(0, 600) || ""; } catch { return ""; } });
-  const [editing, setEditing] = useState(Boolean(savedDraft) || (!mine && current));
+  const [editing, setEditing] = useState(Boolean(savedDraft));
   const [draft, setDraft] = useState(savedDraft || mine?.text || "");
+  // Deferring is a view preference on this device, never an answer or a signal to the partner.
+  const deferredKey = `pinky:daily-deferred:${userId}:${questionId}`;
+  const [deferred, setDeferred] = useState(() => { try { return localStorage.getItem(deferredKey) === "1"; } catch { return false; } });
+  const defer = (value: boolean) => {
+    if (listening) onVoice(null);
+    keyboard.hide(); setDeferred(value);
+    try { if (value) localStorage.setItem(deferredKey, "1"); else localStorage.removeItem(deferredKey); } catch { /* Still works for this visit. */ }
+  };
   useEffect(() => {
     try {
       if (editing && !revealed && draft && draft !== mine?.text) sessionStorage.setItem(draftKey, draft);
@@ -42,6 +50,10 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
     try { if (await onAnswer(draft.trim())) setEditing(false); } finally { setBusy(false); }
   };
   const day = new Date(askedAt).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" });
+  if (deferred && !mine && !revealed) return <article className="conversation-card daily-card is-past" data-testid="daily-question">
+    <header><ChatCircleDots size={16} />{t("每日一问 · 已在此设备收起", "Daily question · Hidden on this device", "Pregunta diaria · Oculta en este dispositivo")}</header>
+    <div className="card-actions"><button type="button" onClick={() => defer(false)} data-testid="daily-resume">{t("重新展开", "Show question", "Mostrar pregunta")}</button></div>
+  </article>;
   return <article className={`conversation-card daily-card ${current ? "" : "is-past"}`} data-testid="daily-question">
     <header><ChatCircleDots size={16} />{current ? t("今日一问", "Today's question", "Pregunta del día") : t(`${day} 的问题`, `Question from ${day}`, `Pregunta del ${day}`)}</header>
     <strong>{question}</strong>
@@ -51,7 +63,10 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
       <div className="daily-mine"><p>{mine.text}</p></div>
       <small><LockKey size={14} />{t(`等 ${partner?.name || "TA"} 也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partner?.name || "your partner"} answers too`, `Sus respuestas aparecen juntas cuando ${partner?.name || "tu pareja"} también responda`)}</small>
       <div className="card-actions"><button onClick={() => { setDraft(mine.text); setEditing(true); }}>{t("改一下", "Edit", "Editar")}</button></div>
-    </> : !editing ? <div className="card-actions"><button onClick={() => setEditing(true)}>{t("补上回答", "Answer it now", "Responder ahora")}</button></div> : <>
+    </> : !editing ? <div className="card-actions">
+      <button type="button" className="card-primary" onClick={() => setEditing(true)}>{current ? t("回答", "Answer", "Responder") : t("回答这题", "Answer this question", "Responder esta pregunta")}</button>
+      <button type="button" onClick={() => defer(true)} data-testid="daily-defer">{t("暂时不答", "Not now", "Ahora no")}</button>
+    </div> : <>
       <div className="daily-input"><KeyboardTextarea aria-label={t("你的回答", "Your answer", "Tu respuesta")} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} rows={2} maxLength={600} placeholder={listening ? t("正在听，说完再点一下…", "Listening… tap again when done", "Escuchando… toca otra vez al terminar") : t("写下或说出你的回答…", "Write or say your answer…", "Escribe o di tu respuesta…")} />
         <button type="button" className={`daily-mic ${listening ? "listening" : ""}`} disabled={busy} data-scroll-drag="ignore" aria-pressed={listening} aria-label={listening ? t("结束语音输入", "Stop voice input", "Terminar dictado") : t("用语音回答", "Answer by voice", "Responder por voz")}
           onPointerDown={pressMic} onPointerUp={releaseMic} onClick={(event) => { if (event.detail === 0) onVoice(listening ? null : append); }}>{listening ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button></div>

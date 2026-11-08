@@ -92,7 +92,9 @@ for (const language of ["zh", "en", "es"] as const) test(`profile shows who sees
     expect(partnerFacts.some((fact: { text: string; subject: string }) => fact.subject !== "us")).toBe(false);
     await page.getByTestId("profile-tab-us").click();
     await expect(rows).toHaveCount(2);
-    await expect(rows.getByTestId("profile-visibility")).toHaveText([labels.private, labels.shared]);
+    // The seeded records can share a millisecond timestamp; their order is not a visibility guarantee.
+    await expect(rows.getByTestId("profile-visibility").filter({ hasText: new RegExp(`^${labels.private}$`) })).toHaveCount(1);
+    await expect(rows.getByTestId("profile-visibility").filter({ hasText: new RegExp(`^${labels.shared}$`) })).toHaveCount(1);
     await page.screenshot({ path: testInfo.outputPath(`profile-us-${language}-375.png`) });
     // The adjacent first-use review cards retain all answers with one send action.
     const session = (await (await a.request.get("/api/assistant/sessions/latest")).json()).session;
