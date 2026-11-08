@@ -25,6 +25,25 @@ export function jsonFromText(text) {
   return null;
 }
 
+// For longer advice the model sometimes answers in plain prose instead of JSON, and that prose is the answer itself. Asking
+// again (--json-schema) then produced "好的，我用结构化的方式回复你…" about an answer the person never saw (pain-point testing,
+// founder 11-08). When the only free text a schema has is `reply` and every other required field may be empty, the prose
+// is taken as the reply that does nothing else.
+/** The object a prose answer stands for under `schema`, or null when the schema needs more than a reply. */
+export function proseAsReply(text, schema) {
+  const prose = String(text || "").trim();
+  if (!prose || /"reply"\s*:/.test(prose) || schema?.type !== "object" || schema.properties?.reply?.type !== "string") return null;
+  const value = {};
+  for (const key of schema.required || []) {
+    if (key === "reply") { value.reply = prose; continue; }
+    const property = schema.properties?.[key] || {}, types = [property.type, ...(property.anyOf || []).map((option) => option.type)].flat();
+    if (types.includes("array")) value[key] = [];
+    else if (types.includes("null")) value[key] = null;
+    else return null;
+  }
+  return "reply" in value ? value : null;
+}
+
 export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "haiku", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
   // An empty working folder keeps project CLAUDE.md files and settings out of the call.
   const cwd = join(tmpdir(), "pinky-claude-cli");
@@ -68,7 +87,8 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
           return result;
         };
         if (!schema) return { output_text: String((await call([], system)).result ?? "") };
-        const parsed = jsonFromText((await call([], [system, jsonInstruction(schema)].filter(Boolean).join("\n\n"))).result);
+        const firstText = (await call([], [system, jsonInstruction(schema)].filter(Boolean).join("\n\n"))).result;
+        const parsed = jsonFromText(firstText) || proseAsReply(firstText, schema);
         if (parsed) return { output_text: JSON.stringify(parsed) };
         return { output_text: JSON.stringify((await call(["--json-schema", JSON.stringify(schema)], system)).structured_output ?? {}) };
       },

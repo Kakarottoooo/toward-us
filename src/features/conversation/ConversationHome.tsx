@@ -441,7 +441,10 @@ ${text}` : text, target);
     try { await relationshipApi("/api/partner/invitations", jsonBody({})); await onRefreshPairing(); } catch (error) { setNotice(errorText(error as ApiError)); } finally { setBusy(false); }
   };
   const inviteUrl = pairing?.invitation ? `${location.origin}${location.pathname}?invite=${pairing.invitation.code}` : "";
-  const copyInvite = async () => { try { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setNotice(inviteUrl); } };
+  // The partner who has not joined is the one to win over (founder 11-08, user research): the copied invite says in two lines
+  // what is in it for them and that their own chat stays private, then the link.
+  const inviteText = () => `${t("我在用 Pinky 帮我们记日子、出主意、把说好的事落实。你也有自己的私人对话，只有你能看到，我也看不到；我们俩的事要两个人都同意才算数。点这里加入：", "I'm using Pinky to keep our dates, ideas and agreements in one place. You get your own private chat that only you can see (I can't); anything about us only counts once we both agree. Join here: ", "Uso Pinky para nuestras fechas, ideas y acuerdos. Tú tienes tu propio chat privado que solo tú ves (yo no); lo nuestro solo cuenta si ambos estamos de acuerdo. Únete aquí: ")}${inviteUrl}`;
+  const copyInvite = async () => { try { await navigator.clipboard.writeText(inviteText()); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setNotice(inviteText()); } };
 
   // A letter's opening day, written out ("2027年3月5日", "March 5, 2027").
   const longDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
