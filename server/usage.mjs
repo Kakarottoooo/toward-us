@@ -53,6 +53,12 @@ export async function weeklyUsage(store, { weeks = 4, now = new Date() } = {}) {
 
 export function createUsageRouter({ store, internalSecret = () => "" }) {
   const router = express.Router();
+  // The App opened from a push (its link carries from=push): counted, never with what the push said.
+  router.post("/api/usage/push-opened", async (req, res) => {
+    if (!req.auth?.user?.id) return res.status(401).json({ error: "Please sign in." });
+    await recordUsage(store, { userId: req.auth.user.id, action: "push_opened" });
+    res.status(204).end();
+  });
   router.get("/api/internal/usage", async (req, res, next) => {
     const status = internalBearerStatus(req, internalSecret());
     if (status === 503) return res.status(503).json({ error: "Usage reporting is not configured." });

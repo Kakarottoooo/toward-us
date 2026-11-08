@@ -13,6 +13,7 @@ import { prepareHandoff } from "./handoffs.mjs";
 import { appendTogetherMessage, memberLanguage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
+import { draftAgreementFromTogether } from "./together-domain.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
 import { isAiLimit } from "./ai-budget.mjs";
 
@@ -48,8 +49,11 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
-        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.kind === "date" ? "/?view=upcoming" : share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}`, ...(share.kind === "date" ? { shareKind: "date" } : {}) } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
+        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.kind === "date" ? "/?view=upcoming" : share.kind === "agreement" ? "/?channel=us" : share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}`, ...(["date", "agreement"].includes(share.kind) ? { shareKind: share.kind } : {}) } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, ...(reference.openOn ? { openOn: reference.openOn } : {}), status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
+        // Undone in one tap (founder 11-07, save time): the record is archived and the card says so.
+        const undone = (session.undone || []).find((item) => item.id === reference.id);
+        if (undone) return { id: reference.id, kind: reference.kind, version: reference.version, status: "undone", title: say(session.language, `已撤销：${undone.title}`, `Undone: ${undone.title}`, `Deshecho: ${undone.title}`) };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         if (!current && reference.title) return { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, `已移走：${reference.title}`, `Removed: ${reference.title}`, `Quitado: ${reference.title}`) };
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
@@ -248,6 +252,18 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           cards.push({ id: share.cardId, kind: "space_share", version: 1 });
           replies.push(say(session.language, "要放进你们俩的日历吗？点一下确认，前一天我会提醒你们俩。", "Put it on your shared calendar? Tap to confirm; I'll remind you both the day before.", "¿Lo pongo en su calendario compartido? Confírmalo y les aviso a los dos un día antes.")); continue;
         }
+        // A lasting agreement can start in Just me too (founder 11-07): a card the member confirms, which then drafts it in Us
+        // for both of them to approve. Nothing reaches the partner before that tap.
+        if (action.kind === "agreement" && action.operation === "create") {
+          const values = action.fields, title = clean(values.title, 120), text = clean(values.text, 1000);
+          if (!title || !text) throw fail(400, say(session.language, "想和 TA 说好什么？说说具体怎么做。", "What do you want to agree on? Tell me how it would work.", "¿Qué quieren acordar? Cuéntame cómo sería."));
+          const pair = await tx.getRelationshipContext(userId);
+          if (!(pair?.relationship?.status === "active" && pair.members.length === 2)) { replies.push(say(session.language, "等 TA 加入后，你们才能一起定约定；我先记在你这里。", "Agreements start once your partner joins; I'll keep this here for you.", "Los acuerdos empiezan cuando tu pareja se una; lo guardo aquí.")); continue; }
+          const share = { cardId: randomUUID(), kind: "agreement", spaceId: null, spaceTitle: say(session.language, "我们俩的约定", "an agreement in Us", "un acuerdo en Nosotros"), title, text, date: null };
+          share.digest = shareDigest(share); pendingShares.push(share);
+          cards.push({ id: share.cardId, kind: "space_share", version: 1 });
+          replies.push(say(session.language, "要在“我们俩”里把它起草成约定吗？点一下确认，TA 也同意了才算数。", "Draft it as an agreement in Us? Tap to confirm; it counts once your partner agrees too.", "¿Lo redacto como acuerdo en Nosotros? Confírmalo; cuenta cuando tu pareja también acepte.")); continue;
+        }
         if (["agreement", "commitment", "milestone"].includes(action.kind)) throw fail(502, "Shared records require their existing confirmation flow. Nothing was changed.");
         if (action.kind === "link") {
           const values = action.fields; const calendar = isCalendar(values.text, values.localDateTime);
@@ -413,6 +429,15 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       const latest = await owned(tx, session.id, userId); const share = (latest.pendingShares || []).find((item) => item.cardId === cardId);
       if (!share || share.digest !== digest || shareDigest(share) !== digest) throw fail(409, say(session.language, "内容已经变了，请确认最新的版本。", "This changed. Review and confirm the latest version.", "Esto cambió. Revisa y confirma la última versión."));
       if (share.sharedAt) return { session: latest, item: null };
+      if (share.kind === "agreement") {
+        const terms = String(share.text || "").split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean).slice(0, 8);
+        let agreement;
+        try { agreement = await draftAgreementFromTogether(tx, { relationshipId: initial.relationship.id, userId, values: { title: share.title, summary: share.text || share.title, terms: terms.length ? terms : [share.title] }, language: session.language }); }
+        catch (error) { if (error?.code === "one_pending_agreement") throw fail(409, say(session.language, "“我们俩”里已经有一个约定在等你们点头，先处理完那个，再起草这个。", "There's already an agreement waiting for you both in Us. Settle that one first.", "Ya hay un acuerdo esperando a los dos en Nosotros. Resuelvan ese primero.")); throw error; }
+        await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: agreement.id, objectType: "agreement", eventType: "agreement.drafted_from_private", sourceVersion: latest.version }));
+        const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
+        return { session: saved, item: null, agreement };
+      }
       if (share.kind === "date") {
         // On their shared calendar, with Pinky's reminder in Us the day before, and a line in Us so the other one knows.
         const milestone = privateRecord(userId, { relationshipId: initial.relationship.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title: share.title, date: share.date, timezone: "UTC", recurringRule: "once", jointlyConfirmed: false, notes: "", provenanceSource: "member_confirmed" });
@@ -436,9 +461,34 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       return { session: saved, item };
     });
     if (result.item) emit(result.item, "space.updated");
+    if (result.agreement) {
+      emit(result.agreement, "agreement.updated");
+      let conversation = null; try { conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${result.agreement.relationshipId}`, userId); } catch { conversation = null; }
+      if (conversation) emit(conversation, "together.updated", null, userId);
+    }
     if (result.milestone) { emit(result.milestone, "milestone.updated"); void recordUsage(store, { userId, relationshipId: result.milestone.relationshipId, action: "plan_scheduled" }); }
     if (result.conversation) emit(result.conversation, "together.updated", null, req.auth.user.id);
     res.json({ session: await output(result.session) });
+  });
+  // One tap takes back a private record Pinky made in this conversation (founder 11-07): it is archived, never deleted
+  // outright, and only the member's own private records can be undone this way. Shared ones keep their own flows.
+  const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
+  router.post("/assistant/sessions/:id/undo", async (req, res) => {
+    const userId = req.auth.user.id, cardId = clean(req.body?.cardId, 80), kind = clean(req.body?.kind, 20);
+    if (!UNDOABLE.has(kind)) throw fail(400, "This can't be undone here.");
+    const saved = await store.transaction("reminder-delivery", async (tx) => {
+      await liveUser(tx, userId, true);
+      const session = await owned(tx, req.params.id, userId);
+      const made = session.messages.some((message) => message.role === "assistant" && (message.cards || []).some((item) => item.id === cardId && item.kind === kind));
+      if (!made) throw fail(404, say(session.language, "没有找到这条记录。", "That record wasn't found.", "No se encontró ese registro."));
+      if ((session.undone || []).some((item) => item.id === cardId)) return session;
+      const record = await tx.getRelationshipRecordForUser(collections[kind], cardId, userId);
+      if (!record || record.ownerUserId !== userId || record.visibility !== "private") throw fail(409, say(session.language, "这条已经分享了，要在原来的地方改。", "This one is shared now; change it where it lives.", "Esto ya está compartido; cámbialo donde está."));
+      const title = String(record.title || record.text || record.description || "").slice(0, 60);
+      if (!record.archivedAt) await tx.updateRelationshipRecordForUser(collections[kind], record.id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; });
+      return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => { draft.undone = [...(draft.undone || []), { id: cardId, kind, title }].slice(-100); draft.version += 1; });
+    });
+    res.json({ session: await output(saved) });
   });
   router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
     const result = await confirmShare(req.auth.user.id, req.params.id, req.body);

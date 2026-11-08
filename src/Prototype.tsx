@@ -109,6 +109,15 @@ function AccountPrototype() {
     return () => document.removeEventListener("visibilitychange", check);
   }, []);
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
+  // Opened from a push (its link carries from=push): count the open, content-free, then drop the marker from the address.
+  useEffect(() => {
+    if (!user) return;
+    const params = new URLSearchParams(location.search);
+    if (params.get("from") !== "push") return;
+    params.delete("from");
+    history.replaceState(history.state, "", `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`);
+    void api("/api/usage/push-opened", { method: "POST" }).catch(() => {});
+  }, [user?.id]);
 
   const selectLanguage = (value: Language) => setLanguage(value);
   const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {

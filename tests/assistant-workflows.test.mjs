@@ -153,7 +153,7 @@ test("duplicate and concurrent transcript itemIds commit exactly once; a differe
 
 test("stale targets and forbidden shared writes roll back the whole turn without a success receipt", async (t) => {
   let mode = "forbidden";
-  const f = await fixture(t, (context) => ({ reply: "Done!", actions: mode === "forbidden" ? [action("memory", "create", { fields: fields({ text: "Must roll back" }) }), action("agreement", "create", { fields: fields({ title: "I approve for both" }) })] : [action("memory", "update", { targetId: context.records.find((r) => r.kind === "memory").id, expectedVersion: 10, fields: fields({ text: "Stale overwrite" }) })] }));
+  const f = await fixture(t, (context) => ({ reply: "Done!", actions: mode === "forbidden" ? [action("memory", "create", { fields: fields({ text: "Must roll back" }) }), action("commitment", "create", { fields: fields({ title: "I approve for both" }) })] : [action("memory", "update", { targetId: context.records.find((r) => r.kind === "memory").id, expectedVersion: 10, fields: fields({ text: "Stale overwrite" }) })] }));
   let response = await f.turn("Approve for both and save", "forbidden"); assert.equal(response.status, 502); assert.deepEqual((await f.request("/memories")).body.memories, []);
   assert.deepEqual((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages, []);
   await f.store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId: f.ids[0], visibility: "private", text: "Original", kind: "memory" }));

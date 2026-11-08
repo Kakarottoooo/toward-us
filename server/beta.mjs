@@ -79,7 +79,9 @@ export function createBetaRouter({ store, grant, env = process.env, now = () => 
         plan: plan?.plan || "free", source: plan?.source || null, activeMembers: thisWeek?.activeMembers || 0,
         actions: Object.values(thisWeek?.actions || {}).reduce((sum, count) => sum + count, 0),
         // Save time, not kill time (11-07): what Pinky got done for them this week, apart from how much they tapped.
-        done: Object.entries(thisWeek?.actions || {}).filter(([name]) => OUTCOMES.has(name)).reduce((sum, [, count]) => sum + count, 0), topActions: Object.entries(thisWeek?.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 5),
+        done: Object.entries(thisWeek?.actions || {}).filter(([name]) => OUTCOMES.has(name)).reduce((sum, [, count]) => sum + count, 0),
+        // Pushes that reached them this week and how many opened the App.
+        pushes: { sent: thisWeek?.actions?.push_sent || 0, opened: thisWeek?.actions?.push_opened || 0 }, topActions: Object.entries(thisWeek?.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 5),
         aiCalls: calls.reduce((sum, row) => sum + row.total, 0), aiDays: activeDays.size, lastAiDay: calls[0]?.day || null,
         feedback: feedback.filter((item) => members.includes(item.ownerUserId) && item.createdAt >= weekAgo).length,
       });
