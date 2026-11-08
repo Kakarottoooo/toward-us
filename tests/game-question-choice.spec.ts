@@ -53,8 +53,30 @@ for (const language of ["zh", "en", "es"] as const) test(`game questions can be 
       await expect(card.getByTestId("game-resume")).toBeVisible();
       await card.getByTestId("game-resume").click();
       if (type === "truth") {
-        await card.getByRole("textbox").fill("My local game answer");
+        const draftKey = `pinky:game-draft:${owners[0].id}:${question.id}`;
+        await expect(card.getByRole("textbox")).toHaveValue("Private unsent game draft");
+        await page.getByRole("tab").nth(0).click();
+        await page.getByRole("tab").nth(1).click();
+        await expect(card.getByRole("textbox")).toHaveValue("Private unsent game draft");
+        await expect(partnerCard.getByRole("textbox")).toHaveValue("");
+        expect((await state()).find((message: { id: string }) => message.id === question.id).answers).toEqual({});
+        expect(await page.evaluate(key => sessionStorage.getItem(key), draftKey)).toBe("Private unsent game draft");
+        await card.getByRole("textbox").fill("");
+        await expect(send).toBeDisabled();
+        await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), draftKey)).toBeNull();
+        await card.getByRole("textbox").fill("Private unsent game draft");
+        await page.route(`**/api/together/games/${question.id}/answer`, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Local simulated retry" }) }), { times: 1 });
         await send.click();
+        await expect(send).toBeEnabled();
+        await expect(card.getByRole("textbox")).toHaveValue("Private unsent game draft");
+        await page.reload(); await page.getByRole("tab").nth(1).click();
+        await expect(card.getByRole("textbox")).toHaveValue("Private unsent game draft");
+        for (const width of [375, 1280]) {
+          await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+          await page.screenshot({ path: testInfo.outputPath(`restored-truth-${language}-${width}.png`) });
+        }
+        await send.click();
+        await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), draftKey)).toBeNull();
       } else {
         const answerPath = `**/api/together/games/${question.id}/answer`;
         await page.route(answerPath, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Local simulated retry" }) }), { times: 1 });
@@ -70,8 +92,11 @@ for (const language of ["zh", "en", "es"] as const) test(`game questions can be 
       await expect(card.getByTestId("game-again")).toBeVisible();
       await expect(card.getByRole("button")).toHaveCount(1);
       const result = (await state()).find((message: { id: string }) => message.id === question.id);
-      expect(result.answers[owners[0].id]).toMatchObject(type === "truth" ? { text: "My local game answer" } : { choice: 1 });
+      expect(result.answers[owners[0].id]).toMatchObject(type === "truth" ? { text: "Private unsent game draft" } : { choice: 1 });
       if (type !== "truth") expect(result.game.result.match).toBe(true);
     }
+    expect((await a.request.post("/api/together/games", { data: { type: "truth", language } })).status()).toBe(201);
+    await page.reload(); await page.getByRole("tab").nth(1).click();
+    await expect(page.getByTestId("game-card").last().getByRole("textbox")).toHaveValue("");
   } finally { await a.close(); await b.close(); }
 });
