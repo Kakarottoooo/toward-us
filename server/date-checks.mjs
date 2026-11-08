@@ -32,7 +32,7 @@ export async function askAfterDate(store, { userId, session, now = new Date() })
   if (!session || session.channel || session.status !== "active") return null;
   const today = dayIn(now, session.timezone || "UTC");
   const askedToday = (map) => Object.values(map || {}).some((at) => dayIn(new Date(at), session.timezone || "UTC") === today);
-  if (askedToday(session.dateChecks) || askedToday(session.promiseChecks)) return null;
+  if (askedToday(session.dateChecks) || askedToday(session.promiseChecks) || askedToday({ knowYou: session.knowYouAt })) return null;
   const { context, dates } = await recentDates(store, userId, today);
   if (!dates.length) return null;
   const threads = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((thread) => thread.ownerUserId === userId);

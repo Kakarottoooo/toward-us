@@ -97,7 +97,8 @@ test("asking privately puts the same question in each partner's own chat and now
   const mine = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.at(-1);
   assert.deepEqual([mine.role, mine.text], ["assistant", "Where would you like to spend New Year, and why?"]);
   const theirs = (await f.request("/assistant/sessions/latest", "GET", null, f.ids[1])).body.session;
-  assert.deepEqual(theirs.messages.map((message) => message.text), ["Where would you like to spend New Year, and why?"]);
+  assert.equal(theirs.messages[0].text, "Where would you like to spend New Year, and why?");
+  assert.ok(theirs.messages.slice(1).every((message) => message.role === "assistant" && !/New Year/.test(message.text)), "only Pinky's own opening question may follow, for a member it barely knows");
   assert.ok(!JSON.stringify(theirs).includes("PRIVATE_A"));
   assert.ok(!JSON.stringify((await f.request("/together", "GET", null, f.ids[1])).body).includes("PRIVATE_A"));
 });
