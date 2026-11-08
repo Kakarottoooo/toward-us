@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { languageTag, localized, type Language } from "../../i18n";
@@ -126,6 +126,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const audienceId = useId();
   const endRef = useRef<HTMLDivElement>(null);
   const keyboard = useKeyboard();
   const accessChanged = useRef(onAccessChanged); accessChanged.current = onAccessChanged;
@@ -494,6 +495,8 @@ ${text}` : text, target);
   const unreadUs = channel !== "us" && (dailyWaiting || Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
   const readOnly = channel === "us" && (!paired || Boolean(together?.readOnly));
   const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("跟我说说…", "Talk to me…", "Cuéntame…") : askAgent ? t("问 Pinky…", "Ask Pinky…", "Pregúntale a Pinky…") : t("发给你们俩…", "Write to both…", "Para los dos…");
+  const audience = channel === "me" ? t("只有我 · 与 Pinky 私聊", "Just me · Private with Pinky", "Solo yo · En privado con Pinky") : t(`我们俩 · ${partnerName} 也能看到`, `Us · ${partnerName} can see this too`, `Nosotros · ${partnerName} también lo verá`);
+  const sendLabel = channel === "me" ? t("私下发送给 Pinky", "Send privately to Pinky", "Enviar en privado a Pinky") : t("发送到我们俩", "Send to Us", "Enviar a Nosotros");
 
   const privateCard = (card: Card) => {
     if (card.kind === "chat_import") return <ImportCard key={card.id} id={card.id} language={language} onOpen={open} onFinished={() => void reloadSession()} />;
@@ -664,15 +667,16 @@ ${text}` : text, target);
           : <p>{t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.")}</p>}
       </div>}
       {!!attachments.length && <div className="composer-photos">{attachments.map((item) => <figure key={item.key} className={item.failed ? "failed" : item.id ? "" : "uploading"}><img src={item.preview} alt="" draggable={false} /><button type="button" onClick={() => setAttachments((items) => items.filter((entry) => entry.key !== item.key))} aria-label={t("移除照片", "Remove photo", "Quitar foto")}><X size={14} weight="bold" /></button></figure>)}</div>}
+      {!readOnly && <div className="composer-audience" id={audienceId} data-testid="composer-audience">{channel === "me" ? <LockKey size={16} aria-hidden="true" /> : <UsersThree size={16} aria-hidden="true" />}<span>{audience}</span></div>}
       {readOnly ? <p className="conversation-notice">{t("你们的共同空间已结束，这里只能查看。", "Your shared space has ended; this conversation is read-only.", "Su espacio compartido terminó; esta conversación es de solo lectura.")}</p> :
         <div className="conversation-input">
           {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Pinky 来帮忙", "Ask Pinky to help", "Pedir ayuda a Pinky")}><At size={20} weight="bold" /></button>}
           <button type="button" className="conversation-photo" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} disabled={attachments.length >= 6} aria-label={t("发照片", "Send a photo", "Enviar una foto")} data-testid="conversation-photo"><ImageSquare size={22} /></button>
           {!draft.trim() && <button type="button" className={`conversation-ideas ${showIdeas ? "active" : ""}`} aria-pressed={showIdeas} onClick={() => showIdeas ? dismissIdeas() : setSummoned(channel)} aria-label={t("给我一些建议", "Show suggestions", "Mostrar sugerencias")} data-testid="show-ideas"><Lightbulb size={22} /></button>}
           <input ref={fileRef} type="file" accept="image/*,.txt,.zip,.json,.csv,.xml,.html" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
-          <KeyboardTextarea data-testid="conversation-input" aria-label={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
+          <KeyboardTextarea data-testid="conversation-input" aria-label={placeholder} aria-describedby={audienceId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
-          <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={t("发送", "Send", "Enviar")} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
+          <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={sendLabel} title={sendLabel} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
         </div>}
     </footer>}
     {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
