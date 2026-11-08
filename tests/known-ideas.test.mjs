@@ -9,7 +9,6 @@ import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createVoiceCallRouter } from "../server/voice-call.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
-import { featuresUsed } from "../server/discover.mjs";
 import { profileContext } from "../server/profile.mjs";
 
 // Founder 11-07, after looking at Known: Pinky asks each member privately how a date went (one tap, kept in About us), and a
@@ -17,7 +16,7 @@ import { profileContext } from "../server/profile.mjs";
 const SDP = "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n";
 const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
-async function fixture(t, { structured = null } = {}) {
+async function fixture(t, { structured = null, planner = () => ({ reply: "ok", actions: [] }) } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "known-"));
   const store = await createFileStore(join(directory, "store.json"));
@@ -27,7 +26,7 @@ async function fixture(t, { structured = null } = {}) {
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: people[0].id, role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: people[0].id, expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, people[1].id, new Date().toISOString());
   const provider = { configured: true, started: [], async start(input) { this.started.push(input); return { providerId: `live_${this.started.length}`, sdp: "v=0\r\nanswer" }; }, async hangup() {} };
-  const mediator = { planAssistantTurn: async () => ({ reply: "ok", actions: [] }), ...(structured ? { structured } : {}) };
+  const mediator = { planAssistantTurn: async (context) => planner(context), ...(structured ? { structured } : {}) };
   const app = express(); app.use(express.json());
   app.use((req, _res, next) => { const person = people.find((item) => item.id === req.headers["x-user"]); if (person) req.auth = { user: person }; next(); });
   const assistant = createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) });
@@ -83,11 +82,14 @@ test("the day after a date, each member is asked privately how it went; one tap 
   assert.equal((await f.request(`/assistant/sessions/${mine.id}/date-check`, "POST", { messageId: question.id, rating: "great" }, f.people[1].id)).status, 404, "nobody else answers in this conversation");
 });
 
-test("a private interview call: Pinky leads, needs a partner, and keeps what the member said as their own notes", async (t) => {
-  let seen = null;
+test("the phone button is the interview: while Pinky barely knows a member their private call opens with questions, and every private call is remembered", async (t) => {
+  let seen = null, calls = 0;
   const structured = async ({ name, input, instructions }) => {
-    assert.equal(name, "couple_profile"); assert.match(instructions, /getting-to-know-you voice interview/);
+    assert.equal(name, "couple_profile");
+    calls += 1;
     seen = JSON.parse(input);
+    if (calls === 2) { assert.match(instructions, /captions of a private voice call/); return { facts: [] }; }
+    assert.match(instructions, /getting-to-know-you voice interview/);
     const answer = seen.messages.find((line) => line.from === "A" && /comfort/.test(line.text));
     const question = seen.messages.find((line) => line.from === "Pinky");
     return { facts: [
@@ -96,18 +98,28 @@ test("a private interview call: Pinky leads, needs a partner, and keeps what the
       { messageId: question.id, quote: "how do you like to be comforted", subject: "A", category: "traits", fact: "made up from the question", replaces: "" },
     ] };
   };
-  const f = await fixture(t, { structured });
+  let planned = null;
+  const f = await fixture(t, { structured, planner: (context) => { planned = context; return { reply: "Hi!", actions: [] }; } });
   const session = await f.sessionFor(f.people[0].id);
-  const start = (userId, sessionId) => f.request("/voice/start", "POST", { sdp: SDP, requestId: randomUUID().replace(/-/g, ""), language: "en", channel: "me", sessionId, mode: "interview" }, userId);
+  const start = (userId, sessionId) => f.request("/voice/start", "POST", { sdp: SDP, requestId: randomUUID().replace(/-/g, ""), language: "en", channel: "me", sessionId }, userId);
+
+  // In Just me, Pinky is told it barely knows them, so it offers the questions in the chat itself.
+  await f.request(`/assistant/sessions/${session.id}/messages`, "POST", { text: "I'm new", itemId: randomUUID() });
+  assert.equal(planned.gettingToKnow, true);
+
+  // Someone not connected yet gets an ordinary private call (notes are kept per couple).
   const solo = await f.sessionFor(f.people[2].id);
-  assert.equal((await start(f.people[2].id, solo.id)).status, 409, "the interview needs a partner: notes are kept per couple");
+  const soloCall = await start(f.people[2].id, solo.id);
+  assert.equal(soloCall.status, 200); assert.equal(soloCall.body.interview, undefined);
+  assert.doesNotMatch(f.provider.started.at(-1).instructions, /get to know/);
+
   const started = await start(f.people[0].id, session.id);
   assert.equal(started.status, 200, JSON.stringify(started.body));
+  assert.equal(started.body.interview, true, "the app is told, to show a one-line hint");
   const live = f.provider.started.at(-1);
   assert.match(live.instructions, /get to know Ziwei/); assert.match(live.instructions, /about five minutes/); assert.match(live.instructions, /share with Mia/);
-  assert.deepEqual(live.input, [], "it starts fresh, without the chat's history");
+  assert.match(live.instructions, /help with that first, and offer the questions only afterwards/);
   await f.request("/voice/close", "POST", { id: started.body.id });
-  assert.equal((await featuresUsed(f.store, f.people[0].id)).used.has("interview"), false);
   const rows = [{ role: "agent", text: "Hi Ziwei! How do you like to be comforted?" }, { role: "user", text: "When I'm upset I need a hug and some quiet. Oh and Mia loves night markets. That helps comfort me too." }];
   assert.equal((await f.request("/voice/transcript", "POST", { id: started.body.id, rows })).status, 200);
   let messages = [];
@@ -120,5 +132,18 @@ test("a private interview call: Pinky leads, needs a partner, and keeps what the
   const facts = (await f.store.listRelationshipRecordsForUser("memories", f.people[0].id)).filter((item) => item.kind === "profile");
   assert.deepEqual(facts.map((item) => item.text).sort(), ["loves night markets", "wants a hug and some quiet when upset"], "a fact quoting Pinky's own question is dropped");
   assert.ok(facts.every((item) => item.visibility === "private" && item.ownerUserId === f.people[0].id));
-  assert.equal((await featuresUsed(f.store, f.people[0].id)).used.has("interview"), true, "the card is not offered again");
+
+  // Once interviewed, the next call is an ordinary one, still remembered; nothing new means no extra line.
+  await f.request(`/assistant/sessions/${session.id}/messages`, "POST", { text: "hello again", itemId: randomUUID() });
+  assert.equal(planned.gettingToKnow, false, "no more offers");
+  const next = await start(f.people[0].id, session.id);
+  assert.equal(next.body.interview, undefined);
+  assert.doesNotMatch(f.provider.started.at(-1).instructions, /get to know/);
+  await f.request("/voice/close", "POST", { id: next.body.id });
+  await f.request("/voice/transcript", "POST", { id: next.body.id, rows: [{ role: "user", text: "Just wanted to say hi" }] });
+  for (let attempt = 0; attempt < 40 && calls < 2; attempt += 1) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(calls, 2, "the ordinary call was read too");
+  await new Promise((r) => setTimeout(r, 100));
+  const after = (await f.request(`/assistant/sessions/${session.id}`)).body.session.messages;
+  assert.ok(after.at(-1).call, "no noted line when nothing new was kept");
 });

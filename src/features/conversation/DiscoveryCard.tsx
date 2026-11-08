@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Phone, Sparkle, UserCircle, X } from "@phosphor-icons/react";
+import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle, X } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
 type Channel = "me" | "us";
-export type DiscoverKey = "ideas" | "games" | "miss_you" | "pet" | "meetup" | "recap" | "agreement" | "interview" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
+export type DiscoverKey = "ideas" | "games" | "miss_you" | "pet" | "meetup" | "recap" | "agreement" | "profile" | "letter" | "photos" | "hard_words" | "reminder" | "cycle";
 // The order things are shown in, one a day per conversation, skipping what is already in use.
-const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "ideas", "miss_you", "pet", "meetup", "recap", "agreement"], me: ["interview", "letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
+const ORDER: Record<Channel, DiscoverKey[]> = { us: ["games", "ideas", "miss_you", "pet", "meetup", "recap", "agreement"], me: ["letter", "profile", "photos", "hard_words", "reminder", "cycle"] };
 
 type Memory = { dismissed: DiscoverKey[]; current: Partial<Record<Channel, DiscoverKey>>; day: Partial<Record<Channel, string>> };
 const keyFor = (userId: string) => `pinky-discover:${userId}`;
@@ -21,8 +21,7 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
   const [memory, setMemory] = useState<Memory>(() => load(userId));
   useEffect(() => { relationshipApi<{ used: string[] }>("/api/discover").then((result) => setUsed(new Set(result.used))).catch(() => setUsed(null)); }, [userId, refreshKey]);
   const today = new Date().toLocaleDateString("en-CA");
-  // The interview keeps notes per couple, so it is offered once they are connected.
-  const open = (key: DiscoverKey) => used !== null && !used.has(key) && !memory.dismissed.includes(key) && (key !== "interview" || paired);
+  const open = (key: DiscoverKey) => used !== null && !used.has(key) && !memory.dismissed.includes(key);
   let key: DiscoverKey | null = null;
   if (used && (channel === "me" || paired)) {
     const current = memory.current[channel];
@@ -43,7 +42,6 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
     meetup: { icon: <AirplaneTilt size={20} weight="fill" />, title: t("下次什么时候见面？", "When do you meet next?", "¿Cuándo se ven?"), text: t("跟 Pinky 说日期，你们俩顶部都会倒数“还有几天见面”。", "Tell Pinky the date and you both see the countdown.", "Dile la fecha a Pinky y ambos verán la cuenta atrás."), button: t("说个日期", "Tell the date", "Decir la fecha") },
     recap: { icon: <BookOpenText size={20} weight="fill" />, title: t("做一张回顾卡", "Make a recap", "Hagan un resumen"), text: t("把最近一段时间做成你们的小故事。", "Turn a stretch of time into your little story.", "Conviertan un tiempo en su pequeña historia."), button: t("试试", "Try it", "Probar") },
     agreement: { icon: <Handshake size={20} weight="fill" />, title: t("把说好的写下来", "Write down what you agree", "Anoten lo acordado"), text: t("两个人都同意才算数，Pinky 会帮你们跟进。", "It counts once you both approve, and Pinky follows up.", "Vale cuando ambos aprueban, y Pinky da seguimiento."), button: t("试试", "Try it", "Probar") },
-    interview: { icon: <Phone size={20} weight="fill" />, title: t("让 Pinky 认识你", "Let Pinky get to know you", "Deja que Pinky te conozca"), text: t(`私下语音聊 5 分钟左右：Pinky 问，你答，哪题都能跳过。聊完记下的只有你能看到，想让 ${partner} 知道哪条由你挑。`, `About five minutes of private voice chat: Pinky asks, you answer, skip anything. Only you see the notes; you pick what ${partner} gets to see.`, `Unos cinco minutos de charla privada: Pinky pregunta, tú respondes, puedes saltar. Solo tú ves las notas; tú eliges qué ve ${partner}.`), button: t("开始聊", "Start", "Empezar") },
     profile: { icon: <UserCircle size={20} weight="fill" />, title: t(`Pinky 会记住 ${partner} 的喜好`, `Pinky remembers what ${partner} likes`, `Pinky recuerda lo que le gusta a ${partner}`), text: t("聊到的喜好、雷区、想要的东西，它会自己记下，挑礼物时用上。只有你能看到。", "Likes, sore spots and wishes you mention are kept for gifts and ideas. Only you see them.", "Gustos, puntos sensibles y deseos que mencionas se guardan para regalos. Solo tú los ves."), button: t("看看记了什么", "See what it knows", "Ver qué sabe") },
     letter: { icon: <EnvelopeSimpleOpen size={20} weight="fill" />, title: t("写一封留到那天的信", "A letter for a special day", "Una carta para un día especial"), text: t(`Pinky 帮你写好先存着，${partner} 完全不知道；到了那天提醒你，一键用短信或邮件发给 TA。`, `Pinky helps you write it and keeps it; ${partner} won't know. On the day it reminds you and you send it in one tap by text or email.`, `Pinky te ayuda a escribirla y la guarda; ${partner} no lo sabrá. Ese día te avisa y la envías con un toque por mensaje o correo.`), button: t("写一封", "Write one", "Escribir una") },
     photos: { icon: <Images size={20} weight="fill" />, title: t("把合照变成回忆", "Turn your photos into memories", "Sus fotos en recuerdos"), text: t("连上相册，或让 Pinky 从相册里找你们俩的合照，按日子和地点整理，还有地图。", "Connect an album, or let Pinky find photos of you two; sorted by day and place, with a map.", "Conecta un álbum o deja que Pinky encuentre fotos de ustedes; por día y lugar, con mapa."), button: t("去看看", "Take a look", "Ver") },

@@ -275,3 +275,4 @@
 .discovery-close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent; color: #8a837a; cursor: pointer; }
 .discovery-actions button:focus-visible, .discovery-close:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
 .conversation-suggestions .suggestion-why { display: block; margin-top: 2px; color: rgba(37,37,37,.56); font-size: 12px; line-height: 1.4; }
+.conversation-empty p + p { margin-top: 8px; }

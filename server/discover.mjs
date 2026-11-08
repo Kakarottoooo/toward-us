@@ -14,8 +14,6 @@ export const FEATURES = {
   meetup: { channel: "us", hint: "a countdown to the next time they meet: tell Pinky the date in Us" },
   recap: { channel: "us", hint: "a recap card of a stretch of their time together: \"Pinky, make us a recap\"" },
   agreement: { channel: "us", hint: "writing down what they agreed so both approve it and Pinky follows up" },
-  // 让 Pinky 认识你 (founder 11-07): a few-minute private voice interview; only for a connected couple (facts are per couple).
-  interview: { channel: "me", paired: true, hint: "a few-minute private voice chat where Pinky asks questions to get to know them (the card in Just me, or About us); afterwards they choose what to share" },
   letter: { channel: "me", hint: "a letter or time capsule to the partner, sealed until a chosen day" },
   profile: { channel: "me", hint: "About us in Settings: what Pinky remembers of each of them, editable" },
   photos: { channel: "me", hint: "turning their iPhone photos of the two of them into memories and a map" },
@@ -49,7 +47,6 @@ export async function featuresUsed(store, userId) {
   }
   const threads = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((item) => item.ownerUserId === userId);
   if (threads.some((thread) => (thread.letters || []).length)) used.add("letter");
-  if (threads.some((thread) => (thread.messages || []).some((message) => message.call?.interview))) used.add("interview");
   if (threads.some((thread) => thread.partnerMessage?.sharedAt || (thread.messages || []).some((message) => (message.cards || []).some((card) => card.kind === "partner_message")))) used.add("hard_words");
   if ((await store.listRelationshipRecordsForUser("reminders", userId)).some((item) => item.ownerUserId === userId && item.visibility === "private")) used.add("reminder");
   if ((await store.listRelationshipRecordsForUser("checkins", userId)).some((item) => item.ownerUserId === userId && item.kind === "cycle")) used.add("cycle");
@@ -59,7 +56,7 @@ export async function featuresUsed(store, userId) {
 /** For the agents: a few things this member has not tried, to offer once when the conversation touches them. */
 export async function notTriedYet(store, userId, channel) {
   const { used, paired } = await featuresUsed(store, userId);
-  return Object.entries(FEATURES).filter(([key, feature]) => feature.hint && !used.has(key) && (paired || (feature.channel === "me" && !feature.paired)) && (channel === "us" ? feature.channel === "us" : true)).slice(0, 6).map(([key, feature]) => ({ feature: key, what: feature.hint }));
+  return Object.entries(FEATURES).filter(([key, feature]) => feature.hint && !used.has(key) && (paired || feature.channel === "me") && (channel === "us" ? feature.channel === "us" : true)).slice(0, 6).map(([key, feature]) => ({ feature: key, what: feature.hint }));
 }
 
 export function createDiscoverRouter({ store }) {

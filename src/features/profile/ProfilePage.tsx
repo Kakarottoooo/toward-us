@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CaretRight, ChatCircleDots, FilmSlate, PencilSimple, Phone, ShareFat, Sparkle, Trash } from "@phosphor-icons/react";
+import { CaretRight, ChatCircleDots, FilmSlate, PencilSimple, ShareFat, Sparkle, Trash } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -45,7 +45,7 @@ function TogetherShelves({ language }: { language: Language }) {
 
 /** 关于我们 (喜好档案, founder 11-06): what Pinky keeps about each of them, kept by itself from their conversations. Each
  * person's notes are their own; a line about yourself can be shared, and what was said together in Us belongs to both. */
-export function ProfilePage({ language, onAsk, onInterview }: { language: Language; onAsk?: (text: string) => void; onInterview?: () => void }) {
+export function ProfilePage({ language, onAsk }: { language: Language; onAsk?: (text: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [facts, setFacts] = useState<Fact[] | null>(null);
@@ -98,7 +98,6 @@ export function ProfilePage({ language, onAsk, onInterview }: { language: Langua
         </button>)}</div>
       </section>)}
     {onAsk && <button type="button" className="profile-ask" onClick={() => onAsk(ask)}><ChatCircleDots size={20} weight="fill" />{shown === "partner" ? t(`跟 Pinky 说说 ${partner}`, `Tell Pinky about ${partner}`, `Cuéntale a Pinky sobre ${partner}`) : shown === "me" ? t("跟 Pinky 说说自己", "Tell Pinky about yourself", "Cuéntale a Pinky sobre ti") : t("跟 Pinky 说说你们俩", "Tell Pinky about you two", "Cuéntale a Pinky sobre ustedes")}</button>}
-    {onInterview && partnerName && <button type="button" className="profile-ask" onClick={onInterview} data-testid="profile-interview"><Phone size={20} weight="fill" />{t("语音聊 5 分钟，让 Pinky 认识你", "A 5-minute voice chat so Pinky gets to know you", "5 minutos de voz para que Pinky te conozca")}</button>}
     {notice && !open && <p className="settings-error" role="alert">{notice}</p>}
 
     <BottomSheet open={Boolean(open)} onOpenChange={(value) => { if (!value) close(); }} title={open?.text || ""} description={open ? label[open.category] : undefined}>

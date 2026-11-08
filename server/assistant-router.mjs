@@ -1,4 +1,4 @@
-import { profileContext } from "./profile.mjs";
+import { gettingToKnow, profileContext } from "./profile.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -157,6 +157,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
       openPromises: await openPromises(store, userId, session).catch(() => []),
       notTriedYet: await notTriedYet(store, userId, "me").catch(() => []),
+      gettingToKnow: await gettingToKnow(store, userId).catch(() => false),
       cycle: await cycleContext(store, userId, localTime(new Date(), session.timezone).slice(0, 10)).catch(() => null),
       profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
