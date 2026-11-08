@@ -81,10 +81,11 @@ export async function outputWatch({ data, user: email, state = {}, limit = 80 })
   }
 }
 
-/** What the member actually reads: the Agent's fixed system copy has a variant per interface language. */
+/** What the member actually reads: the Agent's fixed system copy has a variant per interface language, and a Pinky line
+ * written in the partner's language carries a translation for this member (shared-translate.mjs), as ConversationHome shows. */
 function shownText(message, language) {
   if (!message) return null;
-  const text = message.i18n?.[language] || message.text || "";
+  const text = message.i18n?.[language] || message.translations?.[language]?.text || message.text || "";
   return text || null;
 }
 
