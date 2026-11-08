@@ -16,6 +16,10 @@ const say = (language, zh, en, es) => language === "en" ? en : language === "es"
 const founders = (env) => new Set(String(env.FOUNDER_EMAILS || "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));
 const DAY = 86_400_000;
 
+// Things that got done, not activity: an agreement both approved, a plan put on the calendar, a hard message actually sent,
+// a show marked watched, a letter kept, a check-in saved.
+const OUTCOMES = new Set(["agreement_approved", "plan_scheduled", "partner_message_shared", "watch_answered", "letter_kept", "checkin_saved"]);
+
 export function createBetaRouter({ store, grant, env = process.env, now = () => new Date() }) {
   const router = express.Router();
   const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "请先登录。" });
@@ -73,7 +77,9 @@ export function createBetaRouter({ store, grant, env = process.env, now = () => 
       couples.push({
         label: `#${index + 1}`, since: relationship.createdAt || null, beta: Boolean(code), code: code?.code || null, note: code?.note || "",
         plan: plan?.plan || "free", source: plan?.source || null, activeMembers: thisWeek?.activeMembers || 0,
-        actions: Object.values(thisWeek?.actions || {}).reduce((sum, count) => sum + count, 0), topActions: Object.entries(thisWeek?.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 5),
+        actions: Object.values(thisWeek?.actions || {}).reduce((sum, count) => sum + count, 0),
+        // Save time, not kill time (11-07): what Pinky got done for them this week, apart from how much they tapped.
+        done: Object.entries(thisWeek?.actions || {}).filter(([name]) => OUTCOMES.has(name)).reduce((sum, [, count]) => sum + count, 0), topActions: Object.entries(thisWeek?.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 5),
         aiCalls: calls.reduce((sum, row) => sum + row.total, 0), aiDays: activeDays.size, lastAiDay: calls[0]?.day || null,
         feedback: feedback.filter((item) => members.includes(item.ownerUserId) && item.createdAt >= weekAgo).length,
       });

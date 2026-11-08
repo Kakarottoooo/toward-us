@@ -7,6 +7,7 @@ import express from "express";
 import { createFileStore } from "../server/store.mjs";
 import { createMembershipRouter } from "../server/membership.mjs";
 import { createBetaRouter } from "../server/beta.mjs";
+import { recordUsage } from "../server/usage.mjs";
 
 // 内测 (founder 11-06): invite codes give one couple 90 days of membership; only the founder makes codes and sees the board.
 async function setup(t) {
@@ -31,7 +32,7 @@ async function setup(t) {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "x-user": userId, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: await response.json().catch(() => null) };
   };
-  return { ids, request };
+  return { ids, request, store };
 }
 
 test("only the founder makes codes and sees the board", async (t) => {
@@ -61,6 +62,14 @@ test("a code makes one couple members for 90 days; another couple can't reuse it
   assert.equal(board.codes[0].used, true);
   const couple = board.couples.find((item) => item.beta);
   assert.equal(couple.note, "first"); assert.equal(couple.plan, "member");
+});
+
+test("the board counts what got done apart from how much a couple tapped (save time, not kill time, 11-07)", async (t) => {
+  const { ids, request, store } = await setup(t);
+  for (const action of ["together_message", "together_message", "daily_answered", "agreement_approved", "plan_scheduled"]) await recordUsage(store, { userId: ids.a, action });
+  const couple = (await request("/founder/beta")).body.couples.find((item) => item.actions === 5);
+  assert.ok(couple, "the couple with this week's taps is on the board");
+  assert.equal(couple.done, 2, "an approved agreement and a plan on the calendar");
 });
 
 test("guessing codes is limited", async (t) => {

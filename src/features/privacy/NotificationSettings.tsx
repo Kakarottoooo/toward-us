@@ -49,7 +49,7 @@ export function NotificationSettings({ language }: { language: Language }) {
     </section>
     <section className="settings-group"><h2>{t("通知我", "Tell me about", "Avísame de")}</h2><div className="settings-card">
       {row("messages", <ChatsCircle size={18} weight="bold" />, t("“我们俩”里的新消息", "New messages in Us", "Mensajes nuevos en Nosotros"), t("TA 或 Pinky 在“我们俩”里说了话", "When your partner or Pinky writes in Us", "Cuando tu pareja o Pinky escriben en Nosotros"))}
-      {row("pinky", <Sparkle size={18} weight="bold" />, t("Pinky 的惊喜", "Pinky's surprises", "Sorpresas de Pinky"), t("回顾卡、往年的今天", "Recap cards, on this day", "Tarjetas de recuerdos, un día como hoy"))}
+      {row("pinky", <Sparkle size={18} weight="bold" />, t("Pinky 的惊喜", "Pinky's surprises", "Sorpresas de Pinky"), t("回顾卡、往年的今天、小家伙长大（默认关）", "Recap cards, on this day, your little one growing (off by default)", "Tarjetas de recuerdos, un día como hoy, su pequeño creciendo (apagado por defecto)"))}
       {row("reminders", <Clock size={18} weight="bold" />, t("提醒和到期的约定", "Reminders and due promises", "Recordatorios y acuerdos que vencen"), t("你设的提醒、纪念日、该复盘的约定", "Your reminders, special dates, reviews", "Tus recordatorios, fechas, revisiones"))}
     </div></section>
     <section className="settings-group"><div className="settings-card">

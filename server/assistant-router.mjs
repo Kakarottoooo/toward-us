@@ -436,7 +436,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       return { session: saved, item };
     });
     if (result.item) emit(result.item, "space.updated");
-    if (result.milestone) emit(result.milestone, "milestone.updated");
+    if (result.milestone) { emit(result.milestone, "milestone.updated"); void recordUsage(store, { userId, relationshipId: result.milestone.relationshipId, action: "plan_scheduled" }); }
     if (result.conversation) emit(result.conversation, "together.updated", null, req.auth.user.id);
     res.json({ session: await output(result.session) });
   });

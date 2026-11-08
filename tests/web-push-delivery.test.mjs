@@ -149,7 +149,7 @@ test("a promise that comes due is pushed to both partners once, and not to a par
   assert.deepEqual(sent, [["A", "native", "/?channel=us"]], "Blair keeps reminders off");
 });
 
-test("the daily question and a celebration card start at a sensible local hour and reach both partners once", async (t) => {
+test("the daily question and a celebration card start at a sensible local hour; the question reaches both partners once", async (t) => {
   const clock = { now: new Date("2099-12-01T11:30:00Z") }; // 19:30 in Shanghai
   const { store, service, a, b, relationshipId, sent, pending, settle, connectBrowser } = await couple(t, { clock });
   await service.updateNotify(a, { messages: true, timezone: "Asia/Shanghai" });
@@ -167,7 +167,8 @@ test("the daily question and a celebration card start at a sensible local hour a
   clock.now = new Date("2099-12-01T01:30:00Z"); // 09:30: the celebration card
   assert.equal((await rituals()).started, 1); await settle();
   assert.equal((await posted("story")).length, 1);
-  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us"], ["B", "web", "/?channel=us"]]);
+  // Save time, not kill time (11-07): a surprise waits in Us; it pushes only for a member who turned surprises on.
+  assert.deepEqual(sent, [], "surprises do not push by default");
   sent.length = 0;
   assert.equal((await rituals()).started, 0, "one card per occasion");
   clock.now = new Date("2099-12-01T11:30:00Z"); // 19:30: no question yet

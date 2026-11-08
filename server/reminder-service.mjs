@@ -24,14 +24,21 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   const togetherCursors = new Map(), startedAt = new Date().toISOString();
   // 游戏: when each tag (one per game) last reached a member, so a quick back-and-forth sends one notice, not one per move.
   const memberNotices = new Map();
+  // Pushes that only Pinky caused (no partner words, no reminder), per member per day: at most PINKY_DAILY.
+  const pinkyPushes = new Map();
+  const PINKY_DAILY = 3;
   const owned = async (db, collection, userId) => (await db.listRelationshipRecordsForUser(collection, userId)).filter((item) => item.ownerUserId === userId && !item.archivedAt);
   const update = (db, collection, item, patch) => db.updateRelationshipRecordForUser(collection, item.id, item.ownerUserId, (record) => { Object.assign(record, patch); record.version += 1; });
   const privateRecord = (userId, data) => createRelationshipRecord({ userId, relationshipId: null, visibility: "private", aiAccessScope: "none", ...data });
   const preferences = async (db, userId) => (await owned(db, "deliveryPreferences", userId))[0];
   // What a member wants to be told about: messages in Us, Pinky's surprises, reminders and due dates, and a quiet night.
-  const NOTIFY_DEFAULTS = { messages: true, pinky: true, reminders: true, quiet: false };
+  // Save time, not kill time (founder 11-07): Pinky's surprises (recaps, on this day, the little one growing) no longer push
+  // unless a member turns them on, and nights are quiet unless a member turns that off.
+  const NOTIFY_DEFAULTS = { messages: true, pinky: false, reminders: true, quiet: true };
   const notifyOf = (preference) => ({ ...NOTIFY_DEFAULTS, ...(preference?.notify || {}) });
-  const quietNow = (preference) => { if (!notifyOf(preference).quiet) return false; let hour = 12; try { hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: preference?.timezone || "UTC" }).format(now())); } catch { hour = now().getUTCHours(); } return hour >= 22 || hour < 8; };
+  // A quiet night needs the member's own time zone; without it "night" would be a guess (UTC night is a Californian afternoon).
+  const knownZone = (preference) => Boolean(preference?.timezone && preference.timezone !== "UTC");
+  const quietNow = (preference) => { if (!notifyOf(preference).quiet || !knownZone(preference)) return false; let hour = 12; try { hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: preference?.timezone || "UTC" }).format(now())); } catch { hour = now().getUTCHours(); } return hour >= 22 || hour < 8; };
   const cancelJobs = async (db, userId, predicate = () => true) => {
     for (const job of await owned(db, "deliveryJobs", userId)) {
       if (["pending", "retry", "processing"].includes(job.status) && predicate(job)) await update(db, "deliveryJobs", job, { ...(job.status === "processing" ? {} : { status: "cancelled", leaseUntil: null }), cancelRequestedAt: iso(now()) });
@@ -176,7 +183,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       await post(agreement.relationshipId, userId, async (tx, language) => {
         const fresh = await tx.getRelationshipRecordForUser("agreements", agreement.id, userId);
         if (!fresh || fresh.status !== "active" || fresh.version !== agreement.version || fresh.reviewAnnouncedAt) return null;
-        const i18n = togetherI18n((item) => say(item, `到了约定「${fresh.title}」的复盘时间：这周做到了吗？回复我说说看。`, `Time to check in on "${fresh.title}": did you keep it this week? Reply and tell me.`, `Es hora de revisar "${fresh.title}": ¿lo cumplieron esta semana? Respóndanme y cuéntenme.`));
+        const i18n = togetherI18n((item) => say(item, `到了约定「${fresh.title}」的复盘时间：这周做到了吗？点一下就行，想多说也可以。`, `Time to check in on "${fresh.title}": did you keep it this week? One tap is enough, or tell me more.`, `Es hora de revisar "${fresh.title}": ¿lo cumplieron esta semana? Basta un toque, o cuéntenme más.`));
         const result = await announceInTogether(tx, {
           relationshipId: agreement.relationshipId, userId, kind: "review", handle: `agreement-review:${agreement.id}:v${fresh.version}`, refs: [{ type: "agreement", id: agreement.id, version: fresh.version }],
           text: i18n[language], i18n,
@@ -309,11 +316,22 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const authorOf = (item) => item.role === "member" ? item.actorUserId : conversation.messages.find((other) => other.id === item.replyTo)?.actorUserId || actorUserId;
       let sent = 0;
       // Each member hears only the kinds they keep on, and nothing but reminders during their quiet night.
-      const kindOf = (item) => item.role === "member" ? "messages" : item.kind === "story" || String(item.handle || "").startsWith("onthisday:") ? "pinky" : ["reminder", "review"].includes(item.kind) ? "reminders" : "messages";
+      const kindOf = (item) => item.role === "member" ? "messages" : item.kind === "story" || /^(onthisday|pet-level):/.test(String(item.handle || "")) ? "pinky" : ["reminder", "review"].includes(item.kind) ? "reminders" : "messages";
       for (const member of context.members) {
         const preference = await preferences(store, member.userId), notify = notifyOf(preference), quiet = quietNow(preference);
         const mine = fresh.filter((item) => authorOf(item) !== member.userId).filter((item) => notify[kindOf(item)] !== false && (!quiet || kindOf(item) === "reminders"));
-        if (mine.length) sent += await nudge(member.userId, mine.some((item) => item.role === "member"), mine.every((item) => kindOf(item) === "pinky"), mine.every((item) => item.kind === "nudge"));
+        if (!mine.length) continue;
+        const partnerWrote = mine.some((item) => item.role === "member");
+        // Only Pinky, and not a reminder: counts toward the daily cap.
+        if (!partnerWrote && !mine.every((item) => kindOf(item) === "reminders")) {
+          const key = `${member.userId}:${now().toISOString().slice(0, 10)}`, count = pinkyPushes.get(key) || 0;
+          if (count >= PINKY_DAILY) continue;
+          pinkyPushes.set(key, count + 1);
+          if (pinkyPushes.size > 5000) pinkyPushes.clear();
+        }
+        // When all Pinky did was ask this member something they can answer in a tap, the push says what it asks.
+        const ask = !partnerWrote && mine.every((item) => ASKS.has(item.kind)) ? mine.at(-1) : null;
+        sent += await nudge(member.userId, partnerWrote, mine.every((item) => kindOf(item) === "pinky"), mine.every((item) => item.kind === "nudge"), ask);
       }
       return { sent };
     },
@@ -470,7 +488,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
 
   // One member's phones and installed web apps, at most once per 10 minutes across both; respects "turn off all reminder
   // notifications" (and, for browsers, their explicit opt-in, as for personal reminders); best effort, never retried.
-  async function nudge(userId, partnerWrote, surprise = false, missYou = false) {
+  async function nudge(userId, partnerWrote, surprise = false, missYou = false, ask = null) {
     const { phones, browsers } = await store.transaction(LOCK, async (db) => {
       const preference = await preferences(db, userId), none = { phones: [], browsers: [] };
       if (preference?.enabled === false) return none;
@@ -485,7 +503,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       return { phones, browsers };
     });
     const language = phones.length || browsers.length ? await memberLanguage(store, userId) : "zh";
-    const body = missYou ? say(language, "TA 想你了 💗", "Your partner is thinking of you 💗", "Tu pareja está pensando en ti 💗") : surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
+    const asked = ask ? String(ask.i18n?.[language] || ask.text || "").replace(/\s+/g, " ").trim().slice(0, 140) : "";
+    const body = asked ? asked : missYou ? say(language, "TA 想你了 💗", "Your partner is thinking of you 💗", "Tu pareja está pensando en ti 💗") : surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
     for (const device of phones) {
       try { await sendNative(device.token, { title: "Pinky", body, url: "/?channel=us" }); sent += 1; }
@@ -534,6 +553,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   }
 }
 
+// What Pinky posts in Us to ask the members something: the push can carry the question itself.
+const ASKS = new Set(["daily_question", "watch_check", "reminder", "review"]);
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 // A joint milestone reminder is due `minutesBefore` ahead of the milestone's (yearly: nearest) occurrence; ignore ones that went
 // stale. The occurrence is 09:00 on that day in the owner's time zone, so "the day before" lands at 09:00 the day before and
