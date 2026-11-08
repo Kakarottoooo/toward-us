@@ -135,6 +135,8 @@ const INTERVIEW = `
 This chat is a getting-to-know-you voice interview: Pinky asked A questions so it can help A and B later, and A answered on purpose. Here being selective means skipping only small talk and hesitation: keep every clear, lasting thing A says about themselves, about B or about the two of them (how A likes to be cared for and comforted, what upsets or hurts them, what they need after a fight, what they love doing together and want more of, small things that make them happy, wishes, people and days that matter), each as its own fact, up to 20. Lines are speech captions and may hold small recognition errors: quote them exactly as written anyway. Pinky's lines are only context: never take a fact from Pinky's question itself.`;
 const CALL = `
 This chat is the captions of a private voice call between A and Pinky. Lines are speech captions and may hold small recognition errors: quote them exactly as written anyway. Pinky's lines are only context.`;
+const CALL_EVIDENCE = `
+Read the whole answer, including later corrections and negations. Never turn a suggestion in Pinky's question, an uncertain guess about B, or a third person's preference or birthday into A's or B's fact. Keep negations intact. A saying "I like doing X with B" describes A's preference, subject A; it does not establish that B likes X too. Use subject both only when A explicitly describes a mutual habit, preference or arrangement ("we agreed to pause for twenty minutes").`;
 const interviewSchema = object({ facts: { type: "array", maxItems: 20, items: schema.properties.facts.items } });
 
 /** Reads what the member said on a finished private call and keeps what it reveals, privately for that member. */
@@ -145,13 +147,14 @@ export async function scanCall({ store, mediator, userId, sessionId, noteId, row
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
   if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
   const relationshipId = context.relationship.id, me = context.members.find((member) => member.userId === userId), partner = context.members.find((member) => member.userId !== userId);
-  const lines = (rows || []).map((row, index) => ({ id: `${noteId}:${index}`, from: row.role === "agent" ? "Pinky" : "A", text: squash(row.text).slice(0, 1200), createdAt: at })).filter((line) => line.text);
+  // Match the caption router's per-turn limit: a second, shorter cutoff silently lost facts and corrections at the end.
+  const lines = (rows || []).map((row, index) => ({ id: `${noteId}:${index}`, from: row.role === "agent" ? "Pinky" : "A", text: squash(row.text).slice(0, 2000), createdAt: at })).filter((line) => line.text);
   const answers = lines.filter((line) => line.from === "A");
   if (!answers.length) return [];
   const label = (subjectUserId) => subjectUserId === userId ? "A" : subjectUserId === partner.userId ? "B" : "both";
   const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
   const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, text: line.text, isNew: line.from === "A" })) };
-  const result = await mediator.structured({ name: "couple_profile", schema: interviewSchema, instructions: instructions({ a: me?.user?.name || "", b: partner?.user?.name || "", privateChat: true }) + (interview ? INTERVIEW : CALL), input: JSON.stringify(input), maxOutputTokens: 1800 });
+  const result = await mediator.structured({ name: "couple_profile", schema: interviewSchema, instructions: instructions({ a: me?.user?.name || "", b: partner?.user?.name || "", privateChat: true }) + (interview ? INTERVIEW : CALL) + CALL_EVIDENCE, input: JSON.stringify(input), maxOutputTokens: 1800 });
   const findings = verifyFacts(result?.facts, answers, () => true);
   return store.transaction(`relationship:${relationshipId}`, async (tx) => {
     if (!activePair(await tx.getRelationshipContext(userId), relationshipId)) return [];

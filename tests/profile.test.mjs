@@ -6,7 +6,7 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { buildTogetherContext } from "../server/together-domain.mjs";
-import { profileContext, scanPrivateProfile, scanTogetherProfile } from "../server/profile.mjs";
+import { profileContext, scanCall, scanPrivateProfile, scanTogetherProfile } from "../server/profile.mjs";
 
 // 喜好档案 (11-06): kept automatically from conversations, visible afterwards, each person's notes their own.
 let server, base, directory, store, counter = 0;
@@ -39,13 +39,45 @@ async function pair() {
   const context = await store.getRelationshipContext(a.user.id);
   return { a, b, relationshipId: context.relationship.id };
 }
-const fakeModel = (answer) => { const seen = []; return { seen, structured: async ({ name, input }) => { assert.equal(name, "couple_profile"); const parsed = JSON.parse(input); seen.push(parsed); return { facts: answer(parsed) }; } }; };
+const fakeModel = (answer) => { const seen = []; return { seen, structured: async ({ name, input, instructions }) => { assert.equal(name, "couple_profile"); const parsed = JSON.parse(input); seen.push(parsed); return { facts: answer(parsed, instructions) }; } }; };
 const fact = (patch) => ({ subject: "A", category: "food", replaces: "", ...patch });
 async function privateChat(userId, lines) {
   const session = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "private", intentType: "assistant", language: "zh", timezone: "UTC", messages: lines.map(([id, role, text]) => ({ id, role, text, createdAt: new Date().toISOString() })) });
   await store.createRelationshipRecord("privateAgentThreads", session);
   return session;
 }
+
+test("private interview captions preserve the full accepted turn and ground notes only in the owner's words", async () => {
+  const { a, b, relationshipId } = await pair();
+  const session = await privateChat(a.user.id, []);
+  const tail = "我的生日是六月十七号，我最想去的是格陵兰，不是冰岛";
+  const text = "我喜欢和 Mia 一起看老电影。" + "让我想一想。".repeat(230) + tail;
+  assert.ok(text.length > 1200 && text.length <= 2000, "a valid caption with facts after the former cutoff");
+  const rows = [{ role: "agent", text: "你们都想去冰岛，也都爱露营？" }, { role: "user", text }];
+  const model = fakeModel((input, instructions) => {
+    assert.equal(input.messages[1].text, text, "the scanner must read the full caption accepted by the call router");
+    assert.deepEqual(input.messages.map((line) => [line.from, line.isNew]), [["Pinky", false], ["A", true]]);
+    assert.match(instructions, /including later corrections and negations/);
+    assert.match(instructions, /"I like doing X with B" describes A's preference, subject A/);
+    assert.match(instructions, /Use subject both only when A explicitly describes a mutual/);
+    return [
+      fact({ messageId: "caption:1", quote: "我的生日是六月十七号", category: "people", fact: "生日是六月十七号" }),
+      fact({ messageId: "caption:1", quote: "我最想去的是格陵兰，不是冰岛", category: "wishes", fact: "想去格陵兰，不是冰岛" }),
+      fact({ messageId: "caption:1", quote: "我喜欢和 Mia 一起看老电影", category: "likes", fact: "喜欢和 Mia 一起看老电影" }),
+      fact({ messageId: "caption:0", quote: "都爱露营", subject: "both", category: "likes", fact: "爱露营" }),
+      fact({ messageId: "caption:1", quote: "喜欢奶茶", fact: "喜欢奶茶" }),
+    ];
+  });
+  const kept = await scanCall({ store, mediator: model, userId: a.user.id, sessionId: session.id, noteId: "caption", rows, interview: true });
+  assert.deepEqual(kept.map((item) => item.text), ["生日是六月十七号", "想去格陵兰，不是冰岛", "喜欢和 Mia 一起看老电影"]);
+  assert.ok(kept.every((item) => item.visibility === "private" && item.ownerUserId === a.user.id && item.subjectUserId === a.user.id && item.aiAccessScope === "private"));
+  assert.equal((await call(`/assistant/sessions/${session.id}`, a)).session.messages.at(-1).kind, "noted");
+  await call(`/assistant/sessions/${session.id}`, b, undefined, 404);
+  assert.equal((await call("/profile", b)).facts.length, 0);
+  assert.deepEqual((await profileContext(store, b.user.id)).me, []);
+  const shared = buildTogetherContext(await store.relationshipSnapshotForUser(b.user.id), relationshipId, { userId: b.user.id });
+  assert.ok(!/格陵兰|六月十七|老电影/.test(JSON.stringify(shared)));
+});
 
 test("facts from a private chat are kept for their owner alone, noted in the chat, corrected and never duplicated", async () => {
   const { a, b, relationshipId } = await pair();
