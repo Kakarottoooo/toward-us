@@ -208,11 +208,13 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const update = (record, userId, change) => store.transaction(`user:${record.ownerUserId}`, (tx) => tx.updateRelationshipRecordForUser(COLLECTION, record.id, userId, (draft) => { change(draft); draft.version += 1; }));
 
   /** Creates the import from parsed conversations and moves it as far as it can go without asking the member. */
-  async function createImport(user, parsed, { sessionId = null, language = "zh" } = {}) {
+  async function createImport(user, parsed, { sessionId = null, language = "zh", messageId = null } = {}) {
     const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).filter((record) => record.ownerUserId === user.id && !record.archivedAt);
     if (existing.length >= IMPORT_LIMIT) throw fail(409, say(language, "导入的聊天已经很多了，请先删掉一些旧的。", "You have many imports already. Delete an old one first.", "Ya tienes muchas importaciones. Borra alguna antigua primero."));
     const conversations = parsed.conversations.filter((conversation) => conversation.messages.length).sort((a, b) => b.messages.length - a.messages.length);
     const record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "needs_choice", platform: parsed.platform, title: conversations[0]?.title || parsed.platform, fileId: randomUUID(), language, sessionId, conversations: conversations.slice(0, 30).map((conversation) => ({ id: conversation.id, title: conversation.title, count: conversation.messages.length, participants: conversation.participants.slice(0, 8), lastAt: conversation.messages.at(-1)?.at || null })) });
+    // A pointer to the owner's request, never included in views, model reports or shared copies.
+    if (parsed.platform === "screenshots" && messageId) record.screenshotMessageId = messageId;
     await mkdir(mediaDirectory(), { recursive: true });
     // Until the member picks one conversation, every conversation stays in the private file; afterwards only the chosen one.
     await writeFile(fileFor(record), JSON.stringify({ conversations }));
@@ -298,11 +300,27 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); draft.analyzedAt = draft.completedAt; draft.analyzedCount = record.messageCount; draft.analyzedThrough = record.lastAt || null; draft.analysisError = null; });
     // A refresh of the synced history updates what Pinky understands quietly; only the first reading is posted.
     if (record.sync && !first) return;
-    await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
+    let text = analysis.message;
+    if (record.screenshotMessageId && record.sessionId) {
+      const session = await store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, record.ownerUserId);
+      const request = session?.ownerUserId === record.ownerUserId && session.messages?.find((message) => message.id === record.screenshotMessageId && message.role === "user");
+      if (request?.text) {
+        // Keep the private question and advice out of the shareable history analysis. The final pass sees the
+        // transcript itself, not just lossy pattern notes, through a reply-only model call.
+        try {
+          const answer = await mediator.answerScreenshot({ question: request.text, names, transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
+          if (typeof answer?.reply !== "string" || !answer.reply.trim()) throw new Error("Empty screenshot answer");
+          text = answer.reply.trim().slice(0, 2000);
+        } catch (error) {
+          text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
+        }
+      }
+    }
+    await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
   }
 
   /** Screenshots (WeChat, or any app) become an import after the model transcribes them, oldest first. */
-  async function importScreenshots(user, photoIds, { sessionId, language }) {
+  async function importScreenshots(user, photoIds, { sessionId, language, messageId }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
     const photos = [];
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
@@ -310,7 +328,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
     if (messages.length < 2) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
-    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language });
+    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId });
   }
   router.importScreenshots = importScreenshots;
 

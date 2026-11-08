@@ -60,8 +60,9 @@ test("a person waits at most about 45 seconds for a reply; only background work 
     await mediator.planAssistantTurn({ messages: [] }, "en");
     await mediator.continueTogether({ messages: [] }, "en");
     await mediator.mediateTogether({ messages: [] }, [], "en");
+    await mediator.answerScreenshot({ question: "What should I reply?", names: { me: "Alex", partner: "Sam" }, transcript: "[you] Alex: I am here." }, "en");
     await mediator.structured({ name: "daily_question", schema: { type: "object", properties: {} }, instructions: "x", input: "{}" });
-    assert.deepEqual(seen, ["45", "45", "45", "300"]);
+    assert.deepEqual(seen, ["45", "45", "45", "45", "300"]);
   });
   // Claude through the API honours the caller's limit instead of stretching every call to a minute or more.
   await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
@@ -69,6 +70,30 @@ test("a person waits at most about 45 seconds for a reply; only background work 
     const started = Date.now();
     await assert.rejects(createAnthropicClient().responses.create({ model: "m", input: "hi" }, { timeout: 25, maxRetries: 0 }), /timed out/i);
     assert.ok(Date.now() - started < 5_000, "a 25 ms limit is not rounded up to the client's minute");
+  });
+});
+
+test("an explicit screenshot decision starts reading even if the planner returns no actions; normal photos stay ordinary", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    let readChatScreenshots = true, format;
+    globalThis.fetch = async (_url, init) => {
+      format = JSON.parse(init.body).text.format;
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Reading privately", actions: [], readChatScreenshots }) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const mediator = createMediator({ apiKey: "test-key" });
+    const context = { attachedPhotos: ["fictional-photo"], messages: [{ role: "user", text: "What should I reply to this argument?" }] };
+    const turn = await mediator.planAssistantTurn(context, "en");
+    assert.ok(format.schema.required.includes("readChatScreenshots"));
+    assert.equal(turn.actions[0].kind, "chat_import");
+    const { validateAssistantTurn } = await import("../server/assistant-agent.mjs");
+    assert.equal(validateAssistantTurn(turn), true);
+    assert.equal(Object.hasOwn(turn, "readChatScreenshots"), false);
+    readChatScreenshots = false;
+    assert.deepEqual((await mediator.planAssistantTurn(context, "en")).actions, []);
+    readChatScreenshots = undefined;
+    await assert.rejects(mediator.planAssistantTurn(context, "en"), /did not decide/, "missing routing metadata must not silently promise an import");
+    await mediator.planAssistantTurn({ messages: [] }, "en");
+    assert.ok(!format.schema.required.includes("readChatScreenshots"), "text-only requests keep their existing contract");
   });
 });
 
