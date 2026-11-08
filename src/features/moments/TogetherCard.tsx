@@ -24,11 +24,11 @@ export function TogetherCard({ language, since, onSave, streak = null, partnerNa
   };
   const span = stats ? [stats.years && t(`${stats.years} 年`, `${stats.years} yr`, `${stats.years} a`), stats.months && t(`${stats.months} 个月`, `${stats.months} mo`, `${stats.months} m`), stats.restDays && t(`${stats.restDays} 天`, `${stats.restDays} d`, `${stats.restDays} d`)].filter(Boolean).join(" ") : "";
   const name = partnerName || t("TA", "your partner", "tu pareja");
-  // Coming by = answering today's question, saying anything in Us, or petting the little one.
+  // Coming by = answering today's question, saying anything in Us, or petting the little one. Save time, not kill time
+  // (founder 11-07): it only says what happened. No "your turn", no "come by to keep it", and a day that ended it is not shown.
   const streakToday = !streak ? "" : streak.me && streak.partner ? t("今天你们俩都来了", "You both came by today", "Hoy vinieron los dos")
-    : streak.me ? t(`你今天来过了，等 ${name}`, `You came by today. Waiting for ${name}`, `Ya viniste hoy. Falta ${name}`)
-    : streak.partner ? t(`${name} 今天来过了，等你`, `${name} came by today. Your turn`, `${name} ya vino hoy. Te toca`)
-    : streak.days ? t(`今天你们俩都来，就是第 ${streak.days + 1} 天`, `Both come by today to make it ${streak.days + 1}`, `Vengan los dos hoy para llegar a ${streak.days + 1}`) : t("在“我们俩”说句话、答今天的问题或摸摸小家伙，都算来过", "Say something in Us, answer today's question or pet your little one", "Di algo en Nosotros, responde la pregunta de hoy o acaricia a su pequeño");
+    : streak.me ? t("你今天来过了", "You came by today", "Ya viniste hoy")
+    : streak.partner ? t(`${name} 今天来过了`, `${name} came by today`, `${name} vino hoy`) : "";
   const celebrate = (item: NonNullable<NonNullable<typeof stats>["next"]>) => item.kind === "day" ? t(`第 ${item.day} 天`, `day ${item.day}`, `el día ${item.day}`) : t(`${item.years} 周年`, `${item.years}-year anniversary`, `${item.years}.º aniversario`);
   return <section className="together-card" data-testid="together-card">
     {stats && !editing ? <>
@@ -46,6 +46,6 @@ export function TogetherCard({ language, since, onSave, streak = null, partnerNa
       <div className="together-actions"><button type="button" className="together-save" disabled={busy || !date} onClick={() => void save()}>{t("保存", "Save", "Guardar")}</button>{since && <button type="button" className="together-edit" onClick={() => { setDate(since); setEditing(false); }}>{t("取消", "Cancel", "Cancelar")}</button>}</div>
       <p className="together-note">{t("你们俩都能看到和修改，这一天也会成为日历上每年的纪念日。", "You both see and can change it; it also becomes your yearly anniversary on the calendar.", "Los dos pueden verlo y cambiarlo; también será su aniversario anual en el calendario.")}</p>
     </>}
-    {streak && <p className="together-streak" data-testid="couple-streak"><b>{streak.days ? t(`🔥 连续 ${streak.days} 天一起来`, `🔥 ${streak.days} ${streak.days === 1 ? "day" : "days"} in a row together`, `🔥 ${streak.days} ${streak.days === 1 ? "día seguido" : "días seguidos"} juntos`) : t("🔥 同一天都来，就开始连续", "🔥 Both come by on the same day to start a streak", "🔥 Vengan los dos el mismo día para empezar una racha")}</b><span>{streakToday}</span></p>}
+    {streak && (streak.days > 0 || streakToday) && <p className="together-streak" data-testid="couple-streak">{streak.days > 0 && <b>{t(`🔥 连续 ${streak.days} 天一起来`, `🔥 ${streak.days} ${streak.days === 1 ? "day" : "days"} in a row together`, `🔥 ${streak.days} ${streak.days === 1 ? "día seguido" : "días seguidos"} juntos`)}</b>}{streakToday && <span>{streakToday}</span>}</p>}
   </section>;
 }

@@ -531,7 +531,11 @@ ${text}` : text, target);
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {
       const outcome = message.refs.find((item) => item.type === "outcome");
-      return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}</article>;
+      // An agreement's check-in is answered in one tap (save time, not kill time, 11-07): the answer goes to Pinky as this
+      // member's reply, within the check-in's 12 hours and until they have said something after it.
+      const checkIn = message.kind === "review" && message.refs.some((item) => item.type === "agreement") && !together?.readOnly && Date.now() - Date.parse(message.createdAt) < 12 * 3_600_000 && !sharedMessages.slice(index + 1).some((item) => item.role === "member" && item.actorUserId === user.id);
+      const quick = (zh: string, en: string, es: string) => <button key={en} disabled={busy} onClick={() => sendShared(t(zh, en, es))}>{t(zh, en, es)}</button>;
+      return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}{checkIn && <div className="card-actions" data-testid="check-in-answers">{quick("这周做到了", "Kept it this week", "Lo cumplimos esta semana")}{quick("做到了一部分", "Partly", "En parte")}{quick("这周没做到", "Not this week", "Esta semana no")}</div>}</article>;
     }
     const links = message.role === "agent" ? message.refs.filter((ref) => ref.type === "space" || ref.type === "milestone") : [];
     const chatRequest = message.refs.find((ref) => ref.type === "chat_import_request"), chatShared = message.refs.find((ref) => ref.type === "chat_import");

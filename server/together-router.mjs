@@ -53,7 +53,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       }).catch(() => {});
       // 一起养的小家伙: brought up to date with what they did since (and a new level announced once).
       const synced = await transaction(req, (tx) => syncPet(tx, { relationshipId, userId, zone: validZone(timezone) ? timezone : "UTC", language: language(req) })).catch(() => null);
-      if (synced?.leveled) emit(synced.conversation, "together.updated");
+      if (synced?.leveled) emit(synced.conversation, "together.updated", null, userId);
       pet = synced?.view || null;
       // An outfit stays on only while the couple still owns it (a lapsed membership takes the members' outfits off).
       if (pet?.outfit) { const plan = await membershipFor(store, userId, { purchases: await cachedPurchases(store) }).catch(() => null); if (!plan?.outfits.includes(pet.outfit)) pet = { ...pet, outfit: null }; }

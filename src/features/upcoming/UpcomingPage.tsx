@@ -15,7 +15,7 @@ const localDay = (iso: string) => { const date = new Date(iso); return Number.is
 
 /** Coming up for one member: the couple's shared dates and deadlines (when paired) with their own reminders, on one calendar.
  * Tapping a shared date shows its details; changes are asked of Pinky, and whoever added a date can delete it. */
-export function UpcomingPage({ language, userId = "", streak = null, partnerName = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { top?: ReactNode; language: Language; userId?: string; streak?: CoupleStreak | null; partnerName?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
+export function UpcomingPage({ clear = false, language, userId = "", streak = null, partnerName = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { clear?: boolean; top?: ReactNode; language: Language; userId?: string; streak?: CoupleStreak | null; partnerName?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState<GraphRecord | null>(null);
@@ -42,6 +42,8 @@ export function UpcomingPage({ language, userId = "", streak = null, partnerName
   const meetup = milestones.filter((item) => item.type === "meetup" && !item.archivedAt && typeof item.date === "string" && String(item.date) >= today).sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
   const meetDays = meetup ? daysUntil(String(meetup.date), today) : null;
   return <div className="feature-stack">
+    {/* Save time, not kill time (founder 11-07): when nothing waits on this member, say so plainly, so they can close the app. */}
+    {clear && <p className="upcoming-clear" role="status" data-testid="nothing-needs-you">{t("✓ 现在没有需要你做的事", "✓ Nothing needs you right now", "✓ Ahora no hay nada pendiente para ti")}</p>}
     {top}
     {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${meetDays} days to go`, `Faltan ${meetDays} días`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
     {cycle.view && <CycleCard language={language} view={cycle.view} onChanged={cycle.reload} showEmpty={new URLSearchParams(location.search).get("focus") === "cycle"} />}

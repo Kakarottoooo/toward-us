@@ -54,8 +54,6 @@ export function FloatingPet({ userId, language, pet, character, onOpen }: { user
     onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={() => { if (!moved.current) onOpen(); moved.current = false; }}
     aria-label={t(`我们的小家伙 Lv.${pet.level}，打开它的小窝`, `Our little one, Lv.${pet.level}. Open its room`, `Nuestro pequeño, Nv.${pet.level}. Abrir su cuarto`)} data-testid="floating-pet">
     <span className="floating-pet-figure" data-testid={image ? "couple-mascot" : undefined}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} onError={() => setBroken(true)} /><OutfitLayer id={pet.outfit} /></span> : <PawPrint size={30} weight="fill" />}</span>
-    {pet.mood === "sleepy" && <b className="floating-pet-z" aria-hidden="true">z</b>}
-    {!pet.pettedByMe && <i className="floating-pet-dot" aria-hidden="true" />}
     <small>Lv.{pet.level}</small>
   </button>;
 }
@@ -77,7 +75,8 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
   const me = members.find((member) => member.id === userId), partner = members.find((member) => member.id !== userId);
   const partnerName = partner?.name || t("TA", "your partner", "tu pareja");
   const initial = (name?: string) => (name || "?").slice(0, 1).toUpperCase();
-  const mood = pet.mood === "happy" ? t("它今天很开心", "It's happy today", "Hoy está feliz") : pet.mood === "calm" ? t("它在等你们", "It's waiting for you", "Los está esperando") : t("它有点想你们了 💤", "It misses you a little 💤", "Los extraña un poco 💤");
+  // Save time, not kill time (founder 11-07): it never asks to be visited or says it misses them.
+  const mood = pet.mood === "happy" ? t("它今天很开心", "It's happy today", "Hoy está feliz") : t("它在窝里待着", "It's relaxing in its room", "Está descansando en su cuarto");
   const span = Math.max(1, pet.next - pet.floor), progress = Math.min(100, Math.round(((pet.points - pet.floor) / span) * 100));
   const label: Record<string, string> = { daily: t("一起答了今日一问", "Both answered the daily question", "Respondieron la pregunta del día"), game: t("一起玩了一局", "Played a round", "Jugaron una ronda"), nudge: t("想你了", "Thinking of you", "Pienso en ti"), letter: t("拆开了一封信", "Opened a letter", "Abrieron una carta"), moment: t("存了一个回忆", "Kept a memory", "Guardaron un recuerdo"), agreement: t("说好了一件事", "Made an agreement", "Hicieron un acuerdo"), pet: t("摸摸它", "Petted it", "Lo acariciaron"), both: t("今天两个人都摸了它", "Both petted it today", "Ambos lo acariciaron hoy") };
   const image = petImage(character);
@@ -102,7 +101,7 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
       <strong className="pet-name">{t("我们的小家伙", "Our little one", "Nuestro pequeño")}</strong>
       <div className="pet-level-bar" role="progressbar" aria-valuemin={pet.floor} aria-valuemax={pet.next} aria-valuenow={pet.points}><span className="pet-level-badge">Lv.{pet.level}</span><span className="pet-level-fill" style={{ width: `${progress}%` }} /><small>{pet.points} / {pet.next}</small></div>
       <p className="pet-mood">{mood}</p>
-      <small className="pet-partner">{pet.pettedByPartner ? t(`${partnerName} 今天也摸过它了`, `${partnerName} petted it today too`, `${partnerName} también lo acarició hoy`) : t(`${partnerName} 今天还没来，两个人都摸会多 +3`, `${partnerName} hasn't come by today; both of you earns +3`, `${partnerName} aún no pasó hoy; si ambos lo acarician, +3`)}</small>
+      <small className="pet-partner">{pet.pettedByPartner ? t(`${partnerName} 今天也摸过它了`, `${partnerName} petted it today too`, `${partnerName} también lo acarició hoy`) : t("两个人同一天都摸，会多 +3", "Both of you on the same day: +3 more", "Si los dos lo acarician el mismo día: +3 más")}</small>
       {!image && <button type="button" className="pet-make" onClick={onMakeCharacter}>{t("给它做一个样子", "Give it a look", "Dale un aspecto")}</button>}
       {error && <p className="space-error" role="alert">{error}</p>}
       {image && <Wardrobe language={language} userId={userId} onWear={(outfit) => onPetted({ ...pet, outfit })} onMembership={onMembership} />}
