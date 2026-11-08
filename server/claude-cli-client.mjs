@@ -44,7 +44,9 @@ export function proseAsReply(text, schema) {
   return "reply" in value ? value : null;
 }
 
-export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "haiku", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
+// Scenario testing found the lightweight planner invented context and UI paths in ordinary care requests, too.
+// Use the capable model for interactive work; the mediator explicitly selects Haiku for background reads.
+export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "sonnet", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
   // An empty working folder keeps project CLAUDE.md files and settings out of the call.
   const cwd = join(tmpdir(), "pinky-claude-cli");
   mkdirSync(cwd, { recursive: true });

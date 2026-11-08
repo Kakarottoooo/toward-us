@@ -22,6 +22,16 @@ test("a concrete apology request gets ordinary private wording without invented 
   }
 });
 
+test("missing a busy partner with little energy gets a quiet activity rather than an interruption", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /ONE small, time-bounded thing they can do alone now/);
+    assert.match(prompt, /Do not offer a call, nudge, game invite or immediate message/);
+    assert.match(prompt, /overrides feature discovery and onboarding/);
+    assert.match(prompt, /No outgoing action unless asked/);
+  }
+});
+
 // Found by role-play testing (founder 11-07): a records search that found nothing promised results that never came, and the
 // CLI model sometimes answered "the suggestions are above" instead of giving them.
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...patch });

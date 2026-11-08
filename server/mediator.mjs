@@ -68,9 +68,6 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
   // AI_PROVIDER=anthropic (or an ANTHROPIC_API_KEY) uses Claude through the API, for hosted use; both share one surface.
   const cli = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : process.env.AI_PROVIDER === "anthropic" || (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "openai") ? createAnthropicClient() : null;
   const client = cli || openai;
-  // Ambiguous blame and coercion need more judgment than the CLI's default lightweight planner.
-  // Keep transcription/background work cheap; respect an explicitly configured interactive model.
-  const screenshotClient = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient({ model: process.env.CLAUDE_CLI_MODEL || "sonnet" }) : client;
   // Background work and chat-history import run on a cheaper model of the same provider (founder, 11-04: cut cost).
   const cheap = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient({ model: process.env.CLAUDE_CLI_BACKGROUND_MODEL || "haiku" })
     : cli ? createAnthropicClient({ model: process.env.ANTHROPIC_BACKGROUND_MODEL || "claude-haiku-5-5" }) : openai;
@@ -107,8 +104,8 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         prompt: "Transcribe these chat screenshots in order:" });
     },
     async answerScreenshot(context, language = "zh") {
-      if (!screenshotClient) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
-      const response = await screenshotClient.responses.create({
+      if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
+      const response = await client.responses.create({
         model, store: false, max_output_tokens: 900,
         text: { format: { type: "json_schema", name: "private_screenshot_advice", strict: true, schema: { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply"], properties: {
           observations: { type: "array", items: { type: "string" }, maxItems: 3 },
@@ -126,8 +123,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const withPhotos = Boolean(context.attachedPhotos?.length);
       const schema = withPhotos ? { ...assistantTurnSchema, required: [...assistantTurnSchema.required, "readChatScreenshots"], properties: { ...assistantTurnSchema.properties, readChatScreenshots: { type: "boolean" } } } : assistantTurnSchema;
       const instructions = assistantInstructions(language) + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange. Set it false for ordinary photos to keep or other non-chat images. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
-      const turnClient = context.screenshotConversation?.status === "ready" ? screenshotClient : client;
-      const response = await turnClient.responses.create({
+      const response = await client.responses.create({
         model, store: false, max_output_tokens: 1400,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
         input: [{ role: "developer", content: instructions }, { role: "user", content: JSON.stringify(context) }],

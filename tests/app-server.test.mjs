@@ -49,6 +49,23 @@ test("without the model Pinky only says it is unavailable, in every language, an
   });
 });
 
+test("CLI interactive care uses Sonnet by default, keeps background reads cheap and honors an explicit model", async () => {
+  await withProvider({ AI_PROVIDER: "claude-cli" }, async () => {
+    const previous = process.env.CLAUDE_CLI_MODEL, background = process.env.CLAUDE_CLI_BACKGROUND_MODEL;
+    try {
+      delete process.env.CLAUDE_CLI_MODEL; delete process.env.CLAUDE_CLI_BACKGROUND_MODEL;
+      const mediator = createMediator({ apiKey: "" });
+      assert.equal(mediator.model, "claude-cli:sonnet");
+      assert.equal(mediator.backgroundModel, "claude-cli:haiku");
+      process.env.CLAUDE_CLI_MODEL = "haiku";
+      assert.equal(createMediator({ apiKey: "" }).model, "claude-cli:haiku");
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CLI_MODEL; else process.env.CLAUDE_CLI_MODEL = previous;
+      if (background === undefined) delete process.env.CLAUDE_CLI_BACKGROUND_MODEL; else process.env.CLAUDE_CLI_BACKGROUND_MODEL = background;
+    }
+  });
+});
+
 test("screenshot advice grounds the verdict in observations and unknowns in one model call", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     let calls = 0;
