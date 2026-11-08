@@ -225,7 +225,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const text = saved.status === "needs_choice" ? say(language, `这个文件里有 ${conversations.length} 段对话，选一下哪一段是你和 TA 的。`, `This file has ${conversations.length} conversations. Pick the one with your partner.`, `Este archivo tiene ${conversations.length} conversaciones. Elige la de tu pareja.`)
       : saved.status === "needs_people" ? say(language, `收到了 ${count} 条消息${period}。告诉我哪个名字是你、哪个是 TA，我就开始读。`, `Got ${count} messages${period}. Tell me which name is you and which is your partner, and I'll start reading.`, `Recibí ${count} mensajes${period}. Dime qué nombre eres tú y cuál tu pareja, y empiezo a leer.`)
       : say(language, `收到了 ${count} 条消息${period}，我开始读了。大概要几分钟，读完会在这里告诉你。原文只有你能看到。`, `Got ${count} messages${period}. I'm reading them now; it takes a few minutes and I'll tell you here when I'm done. Only you can see them.`, `Recibí ${count} mensajes${period}. Los estoy leyendo; tardaré unos minutos y te avisaré aquí. Solo tú puedes verlos.`);
-    await appendAssistantMessage(user.id, { sessionId, language, text, card: { id: saved.id, kind: "chat_import", version: 1, title: saved.title } }).catch((error) => console.error("Could not post the import note:", error?.message || error));
+    // Screenshots sent with a question get the answer itself in seconds (it carries the same card), so a "this takes a few
+    // minutes" receipt beside it only contradicts it (founder 11-08, reply coach). A step the member must take still posts.
+    const answering = record.screenshotMessageId && !["needs_choice", "needs_people"].includes(saved.status);
+    if (!answering) await appendAssistantMessage(user.id, { sessionId, language, text, card: { id: saved.id, kind: "chat_import", version: 1, title: saved.title } }).catch((error) => console.error("Could not post the import note:", error?.message || error));
     return saved;
   }
 
