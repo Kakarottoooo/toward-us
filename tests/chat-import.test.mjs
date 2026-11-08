@@ -158,6 +158,8 @@ test("screenshot follow-ups use completed reading context and keep rewrites priv
     assert.match(prompt, /status ready means the screenshots have ALREADY been read/);
     assert.match(prompt, /rewrite the actual previous draft directly/);
     assert.match(prompt, /private advice, not permission to share/);
+    assert.match(prompt, /never accuse late notice or ask them to admit disputed fault/);
+    assert.match(prompt, /a future plan is not a missed meeting/);
   }
 });
 

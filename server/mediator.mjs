@@ -126,7 +126,8 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const withPhotos = Boolean(context.attachedPhotos?.length);
       const schema = withPhotos ? { ...assistantTurnSchema, required: [...assistantTurnSchema.required, "readChatScreenshots"], properties: { ...assistantTurnSchema.properties, readChatScreenshots: { type: "boolean" } } } : assistantTurnSchema;
       const instructions = assistantInstructions(language) + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange. Set it false for ordinary photos to keep or other non-chat images. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
-      const response = await client.responses.create({
+      const turnClient = context.screenshotConversation?.status === "ready" ? screenshotClient : client;
+      const response = await turnClient.responses.create({
         model, store: false, max_output_tokens: 1400,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
         input: [{ role: "developer", content: instructions }, { role: "user", content: JSON.stringify(context) }],
