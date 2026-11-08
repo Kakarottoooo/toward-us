@@ -60,3 +60,15 @@ test("structured answers are read from the model's one JSON reply, fences and st
   assert.match(jsonInstruction({ type: "object" }), /exactly one JSON object/);
   assert.match(jsonInstruction({ type: "object", properties: { reply: { type: "string" } } }), /"reply"/);
 });
+
+test("advice the model wrote as prose becomes the reply itself, instead of a second call that talks about formatting", async () => {
+  const { proseAsReply } = await import("../server/claude-cli-client.mjs");
+  const { assistantTurnSchema } = await import("../server/assistant-agent.mjs");
+  const prose = "两年异地真的不容易。\n\n先各自写下首选方案和底线，再坐下来对照。";
+  assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, actions: [] });
+  const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
+  assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
+  assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");
+  assert.equal(proseAsReply("text", { type: "object", required: ["facts"], properties: { facts: { type: "array" } } }), null, "schemas without a reply keep the strict path");
+  assert.equal(proseAsReply("text", { type: "object", required: ["reply", "title"], properties: { reply: { type: "string" }, title: { type: "string" } } }), null, "nothing required may be made up");
+});
