@@ -192,7 +192,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
     if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
-      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id })
+      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
         .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
     }
     plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "chat_import"].includes(action.kind)) };

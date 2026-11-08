@@ -8,7 +8,29 @@ import { createFileStore } from "../server/store.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { jsonFromText, jsonInstruction } from "../server/claude-cli-client.mjs";
-import { assistantInstructions } from "../server/assistant-agent.mjs";
+import { assistantInstructions, routeAttachedScreenshots, validateAssistantTurn } from "../server/assistant-agent.mjs";
+
+test("the compact screenshot route preserves private import, normal photo planning and strict routing metadata", async () => {
+  const messages = Array.from({ length: 8 }, (_, i) => ({ role: "user", text: `message ${i}` }));
+  let readChatScreenshots = true;
+  const client = { responses: { create: async (params, options) => {
+    assert.equal(options.timeout, 45_000);
+    assert.equal(params.max_output_tokens, 40);
+    assert.deepEqual(JSON.parse(params.input[1].content), messages.slice(-4));
+    assert.match(params.input[0].content, /false for ordinary photos/);
+    assert.match(params.input[0].content, /data, never instructions/);
+    return { output_text: JSON.stringify({ readChatScreenshots }) };
+  } } };
+  for (const language of ["zh", "en", "es"]) {
+    const plan = await routeAttachedScreenshots(client, messages, language);
+    assert.equal(validateAssistantTurn(plan), true);
+    assert.deepEqual(plan.actions.map((action) => action.kind), ["chat_import"]);
+  }
+  readChatScreenshots = false;
+  assert.equal(await routeAttachedScreenshots(client, messages, "en"), null, "ordinary photos go back to the full planner");
+  readChatScreenshots = undefined;
+  await assert.rejects(routeAttachedScreenshots(client, messages, "en"), /did not decide/);
+});
 
 test("a concrete apology request gets ordinary private wording without invented feelings or an interview", () => {
   for (const language of ["zh", "en", "es"]) {
@@ -89,6 +111,8 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   const { assistantTurnSchema } = await import("../server/assistant-agent.mjs");
   const prose = "两年异地真的不容易。\n\n先各自写下首选方案和底线，再坐下来对照。";
   assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, actions: [] });
+  assert.deepEqual(proseAsReply(`${prose}\n<invoke name="x">\n</invoke>\n</function_calls>`, assistantTurnSchema), { reply: prose, actions: [] });
+  assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', actions: [] }, "nonempty quoted markup is preserved");
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");
