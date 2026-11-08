@@ -6,7 +6,7 @@ test("private Agent conversations become joint work only after explicit sharing"
   const b = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
   // The first-run tour is covered in personal-lifecycle; here both people have seen it.
   for (const context of [a, b]) await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
-  await register(a.request, { name: "小彼", email: `relationship-a-${suffix}@example.com` });
+  const aState = await register(a.request, { name: "小彼", email: `relationship-a-${suffix}@example.com` });
   await register(b.request, { name: "阿蓝", email: `relationship-b-${suffix}@example.com` });
   const invitation = await postJson(a.request, "/api/partner/invitations", {});
   await postJson(b.request, "/api/partner/accept", { code: invitation.pairing.invitation.code });
@@ -24,7 +24,7 @@ test("private Agent conversations become joint work only after explicit sharing"
   expect((await getJson(b.request, "/api/relationship/home")).graph.milestones).toHaveLength(1);
 
   await pageA.goto("/?view=decide"); await sendToPrivateAgent(pageA, "PRIVATE_TOPIC_A：我在想今年春节去哪里，我希望家人被尊重，也可以轮流安排。"); await expect(pageA.getByText("AI 整理出的可分享观点", { exact: true })).toBeVisible(); await pageA.locator(".private-agent-workspace").screenshot({ path: testInfo.outputPath("decision-agent-desktop.png") });
-  const beforeShare = await getJson(b.request, "/api/relationship/home"); expect(beforeShare.graph.issues).toHaveLength(0); expect(beforeShare.graph.privateAgentThreads).toHaveLength(0); expect(JSON.stringify(beforeShare)).not.toContain("PRIVATE_TOPIC_A");
+  const beforeShare = await getJson(b.request, "/api/relationship/home"); expect(beforeShare.graph.issues).toHaveLength(0); expect(beforeShare.graph.privateAgentThreads.filter((thread: { ownerUserId: string }) => thread.ownerUserId === aState.user.id)).toHaveLength(0); expect(JSON.stringify(beforeShare)).not.toContain("PRIVATE_TOPIC_A");
   await pageA.getByRole("button", { name: "分享给另一半，问问 TA 的意见" }).click();
   expect((await getJson(b.request, "/api/relationship/home")).graph.issues).toHaveLength(0);
   await confirmPreview(pageA, "春节去哪里", "我希望家人被尊重，也愿意轮流安排。");
@@ -65,6 +65,6 @@ async function confirmPreview(page: Page, title: string, summary: string) {
   await preview.getByRole("button", { name: "确认并分享这段内容", exact: true }).click();
   await expect(preview).toHaveCount(0);
 }
-async function register(request: APIRequestContext, account: { name: string; email: string }) { const response = await request.post("/api/auth/register", { data: { ...account, password: "correct-horse-battery" } }); expect(response.status()).toBe(201); }
+async function register(request: APIRequestContext, account: { name: string; email: string }) { const response = await request.post("/api/auth/register", { data: { ...account, password: "correct-horse-battery" } }); expect(response.status()).toBe(201); return response.json(); }
 async function postJson(request: APIRequestContext, path: string, data: unknown) { const response = await request.post(path, { data }); expect(response.ok()).toBeTruthy(); return response.json(); }
 async function getJson(request: APIRequestContext, path: string) { const response = await request.get(path); expect(response.ok()).toBeTruthy(); return response.json(); }
