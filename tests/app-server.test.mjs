@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
 import { createMediator, sanitizeFollowUp } from "../server/mediator.mjs";
@@ -79,6 +79,43 @@ test("screenshot advice grounds the verdict in observations and unknowns in one 
     const answer = await createMediator({ apiKey: "test-key" }).answerScreenshot({ question: "Who's right?", transcript: "[partner] Blair: You promised yesterday." }, "en");
     assert.match(answer.reply, /cannot verify/);
     assert.equal(calls, 1);
+  });
+});
+
+test("screenshot questions use the capable vision model once, while transcription alone stays cheap", async () => {
+  await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const seen = [];
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body); seen.push(body);
+      return new Response(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: JSON.stringify({ messages: [], advice: { observations: [], uncertainties: [], reply: "Private answer." } }) }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+    };
+    const mediator = createMediator({ apiKey: "" });
+    const schema = { type: "object", required: ["messages"], properties: { messages: { type: "array", items: { type: "string" } } } };
+    const input = { paths: [resolve("public/assets/brand/pinky-icon-512.png")], schema, language: "zh" };
+    const answer = await mediator.readScreenshots({ ...input, adviceFor: { question: "How do I reply?", names: { me: "Alex", partner: "Blair" } } });
+    assert.equal(answer.advice.reply, "Private answer.");
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].model, mediator.model.replace(/^anthropic:/, ""));
+    assert.ok(seen[0].output_config.format.schema.required.includes("advice"));
+    assert.match(seen[0].system, /a reported promise is not a verified promise/);
+    await mediator.readScreenshots(input);
+    assert.equal(seen[1].model, mediator.backgroundModel.replace(/^anthropic:/, ""));
+    assert.ok(!seen[1].output_config.format.schema.required.includes("advice"));
+    assert.deepEqual(schema.required, ["messages"], "the shared transcription schema is not mutated");
+  });
+});
+
+test("shared agreement drafting keeps unstated rotation details out of binding terms", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    globalThis.fetch = async (_url, init) => {
+      const instructions = JSON.parse(init.body).input[0].content;
+      assert.match(instructions, /ONLY arrangements the partners actually stated/);
+      assert.match(instructions, /never your advice, moral judgments or invented duties/);
+      assert.match(instructions, /rotation unit and who starts in unresolvedPoints/);
+      assert.match(instructions, /do not pick a day, meal, deadline or fallback/);
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Draft ready.", draftAgreement: null, actions: [], waitingFor: [] }) }] }] }), { headers: { "content-type": "application/json" } });
+    };
+    await createMediator({ apiKey: "test-key" }).continueTogether({ messages: [{ role: "member", text: "Pinky，我们说好以后周末轮流做饭" }] }, "zh");
   });
 });
 

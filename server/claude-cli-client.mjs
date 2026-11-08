@@ -31,7 +31,9 @@ export function jsonFromText(text) {
 // is taken as the reply that does nothing else.
 /** The object a prose answer stands for under `schema`, or null when the schema needs more than a reply. */
 export function proseAsReply(text, schema) {
-  const prose = String(text || "").trim();
+  // A tool-disabled CLI reply once ended with an empty tool-call wrapper during first-day scenario testing.
+  // Drop only that empty trailing transport fragment; preserve the actual advice and any quoted XML with content.
+  const prose = String(text || "").replace(/\s*(?:<function_calls>\s*)?<invoke\b[^>]*>\s*<\/invoke>\s*<\/function_calls>\s*$/i, "").trim();
   if (!prose || /"reply"\s*:/.test(prose) || schema?.type !== "object" || schema.properties?.reply?.type !== "string") return null;
   const value = {};
   for (const key of schema.required || []) {
