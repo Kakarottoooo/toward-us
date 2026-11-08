@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle, X } from "@phosphor-icons/react";
+import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
@@ -54,6 +54,5 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
     <span className="discovery-icon">{card.icon}</span>
     <div><small><Sparkle size={12} weight="fill" />{t("试试看", "Try this", "Prueba esto")}</small><strong>{card.title}</strong><p>{card.text}</p>
       <span className="discovery-actions">{card.button && <button type="button" className="discovery-go" onClick={() => { done(key!); onAction(key!); }}>{card.button}</button>}<button type="button" className="discovery-later" onClick={() => done(key!)}>{t("知道了", "Got it", "Entendido")}</button></span></div>
-    <button type="button" className="discovery-close" aria-label={t("关闭", "Close", "Cerrar")} onClick={() => done(key!)}><X size={16} /></button>
   </article>;
 }

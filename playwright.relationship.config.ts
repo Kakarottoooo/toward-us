@@ -1,10 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
-const port = 5181;
+const port = Number(process.env.PINKY_TEST_PORT || 5181);
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["**/relationship-agent.spec.ts", "**/decision-lifecycle.spec.ts", "**/personal-lifecycle.spec.ts", "**/assistant-workflows.spec.ts"],
+  testMatch: ["**/relationship-agent.spec.ts", "**/decision-lifecycle.spec.ts", "**/personal-lifecycle.spec.ts", "**/assistant-workflows.spec.ts", "**/daily-question-draft.spec.ts"],
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 15_000 },
@@ -14,7 +14,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "node server/index.mjs",
+    command: process.env.PINKY_TEST_SERVER_COMMAND || "node server/index.mjs",
     url: `http://127.0.0.1:${port}/api/health`,
     timeout: 120_000,
     reuseExistingServer: false,
@@ -22,7 +22,7 @@ export default defineConfig({
       OPENAI_API_KEY: "",
       DATABASE_URL: "",
       PORT: String(port),
-      TOWARD_US_DATA_FILE: "data/relationship-agent.e2e.json",
+      TOWARD_US_DATA_FILE: process.env.PINKY_TEST_DATA_FILE || "data/relationship-agent.e2e.json",
     },
   },
 });
