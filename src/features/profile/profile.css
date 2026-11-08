@@ -2,20 +2,26 @@
 .profile-tabs { display: flex; padding: 3px; border-radius: 12px; background: rgba(37,37,37,.08); }
 .profile-tabs button { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; overflow: hidden; border: 0; border-radius: 9px; background: transparent; color: #5f5952; font: inherit; font-size: 15px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
 .profile-tabs button.active { background: #fffdf8; color: var(--jian-ink); box-shadow: 0 1px 3px rgba(37,37,37,.14); }
-.profile-tabs button:focus-visible, .profile-ask:focus-visible, .profile-actions button:focus-visible, .profile-share button:focus-visible, .profile-edit button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-.profile-fact { justify-content: space-between; }
+.profile-tabs button:focus-visible, .profile-actions button:focus-visible, .profile-share button:focus-visible, .profile-edit button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.device-screen .profile-page button:focus-visible, .device-screen .profile-sheet button:focus-visible { outline: 2px solid var(--jian-blue) !important; outline-offset: -2px; }
+.profile-page .profile-fact { justify-content: space-between; margin: 6px 0; border: 1px solid rgba(37,37,37,.13); border-radius: 12px; background: rgba(37,37,37,.025); }
+.profile-fact + .profile-fact::before { display: none; }
+.profile-fact:hover { background: rgba(37,37,37,.05); }
+.profile-fact-content { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; gap: 8px; }
+.profile-fact-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: #5f5952; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.profile-visibility { display: inline-flex; align-self: flex-start; flex-shrink: 0; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 7px; background: #ece8e1; color: #514b44; font-size: 13px; font-weight: 600; line-height: 1.5; }
+.profile-visibility.is-shared { background: #f7e6eb; color: #803c50; }
+.profile-fact > svg { flex-shrink: 0; }
 .profile-fact-text { flex: 1 1 auto; min-width: 0; color: var(--jian-ink); font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
-.profile-fact em { flex: 0 0 auto; max-width: 45%; padding: 3px 8px; border-radius: 999px; background: rgba(214,112,140,.12); color: #8f4458; font-size: 12px; font-style: normal; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .profile-empty { padding: 24px 16px; border-radius: 16px; background: var(--jian-paper-bright); color: #5f5952; text-align: center; }
 .profile-empty strong { display: block; margin-bottom: 6px; color: var(--jian-ink); font-size: 17px; }
 .profile-empty p { margin: 0; font-size: 15px; line-height: 1.6; }
-.profile-ask { align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--jian-ink); color: var(--jian-paper-bright); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
 .profile-sheet { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
 .profile-quote { margin: 0; color: #5f5952; font-size: 15px; line-height: 1.6; }
 .profile-actions { display: flex; flex-direction: column; gap: 8px; }
 .profile-actions button, .profile-share button, .profile-edit button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 16px; border: 0; border-radius: 14px; background: rgba(37,37,37,.06); color: var(--jian-ink); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
-.profile-actions button.danger { color: #903e38; }
-.profile-share button, .profile-edit button[type="submit"] { background: var(--jian-ink); color: var(--jian-paper-bright); }
+.profile-actions button.danger, .profile-edit button.danger { color: #903e38; }
+.profile-share button, .profile-actions button.profile-primary, .profile-edit button[type="submit"] { background: var(--jian-ink); color: var(--jian-paper-bright); }
 .profile-actions button:disabled, .profile-share button:disabled, .profile-edit button:disabled { opacity: .5; cursor: default; }
 .profile-share p { margin: 0; color: #5f5952; font-size: 15px; }
 .profile-share blockquote { margin: 0; padding: 12px 14px; border-radius: 12px; background: rgba(37,37,37,.05); color: var(--jian-ink); font-size: 16px; line-height: 1.5; }
