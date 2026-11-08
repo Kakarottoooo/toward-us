@@ -196,10 +196,16 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .pairing-columns i:first-child { top: 0; left: 0; background-position: left -105px; }
 .pairing-columns i:last-child { right: 0; bottom: 0; background-position: right bottom; }
 .pairing-content { position: relative; z-index: 2; padding: 24px 66px calc(var(--mobile-safe-area-height) + 52px); text-align: center; }
-.pairing-content .vertical-title { height: 235px; }
+.pairing-content .vertical-title { height: 160px; }
 .pairing-lead { margin: 4px auto 26px; max-width: 250px; color: var(--jian-muted); font-family: var(--jian-serif); font-size: 12px; line-height: 1.65; }
 .pairing-content .primary-action { gap: 8px; }
 .pairing-content .editorial-field { text-align: left; }
+.pairing-actions { display: grid; gap: 12px; }
+.pairing-actions button { height: auto; min-height: 54px; padding: 12px; line-height: 1.4; }
+.pairing-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 3px; }
+.device-screen .pairing-screen :is(button, input):focus-visible { outline: 2px solid var(--jian-blue) !important; outline-offset: 3px; }
+.pairing-screen .language-switch button { min-width: 30px; min-height: 32px; padding: 2px 4px; border: 1px solid var(--jian-line); border-radius: 6px; color: #5d574f; }
+.pairing-screen .language-switch button.active { border-color: var(--jian-red); color: var(--jian-red); }
 .invite-code-panel { padding: 18px 15px; border: 1px solid var(--jian-line); background: rgba(251,247,239,.88); text-align: left; }
 .invite-code-panel > span { display: block; color: var(--jian-muted); font-size: 12px; letter-spacing: .12em; }
 .invite-code-panel strong { display: block; margin: 10px 0 15px; color: var(--jian-blue); font-family: Georgia, serif; font-size: 25px; letter-spacing: .18em; }
