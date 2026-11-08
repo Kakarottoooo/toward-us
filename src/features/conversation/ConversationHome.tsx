@@ -142,12 +142,12 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     if (!id) { try { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions/latest"); current(result.session); store(result.session.id); return result.session; } catch { return null; } }
     try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(id)}?opened=1`); current(result.session); return result.session; } catch { store(null); return null; }
   };
-  const create = async () => { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", jsonBody({ language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" })); current(result.session); store(result.session.id); return result.session; };
-  const ensureSession = async (allowCreate = true): Promise<Session | null> => {
+  const create = async (opened = false) => { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", jsonBody({ language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...(opened ? { opened: true } : {}) })); current(result.session); store(result.session.id); return result.session; };
+  const ensureSession = async (allowCreate = true, opened = false): Promise<Session | null> => {
     if (sessionRef.current) return sessionRef.current;
     const restored = await (restoring.current ||= restore().finally(() => { restoring.current = null; }));
     if (restored || !allowCreate) return restored;
-    return creating.current ||= create().finally(() => { creating.current = null; });
+    return creating.current ||= create(opened).finally(() => { creating.current = null; });
   };
 
   const loadTogether = useCallback(async () => {
@@ -175,7 +175,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     } catch (error) { setNotice(errorText(error as ApiError)); } finally { setLoadingOlder(false); }
   };
 
-  useEffect(() => { void ensureSession(false).catch(() => {}); }, [user.id]);
+  // Connected members always get a conversation on open, so Pinky can speak first to someone it barely knows (founder 11-08).
+  useEffect(() => { void ensureSession(paired, true).catch(() => {}); }, [user.id, paired]);
   useEffect(() => { void loadTogether(); }, [loadTogether]);
   useEffect(() => {
     if (!paired) return;
@@ -580,7 +581,7 @@ ${text}` : text, target);
     try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
   const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions" data-testid="composer-ideas">{items.map((text, index) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}{reasons[target][index] && <small className="suggestion-why" data-testid="suggestion-why">{reasons[target][index]}</small>}</button>)}<button type="button" className="conversation-suggestions-all" onClick={() => open("/?view=capabilities")} data-testid="see-capabilities">{t("Pinky 还能做什么 →", "More Pinky can do →", "Más cosas de Pinky →")}</button></div>;
-  const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p><p>{t("刚来？说一句“我是新用户”，Pinky 会问你几个问题认识你；也可以点右上角电话，直接聊。", "New here? Say “I'm new” and Pinky will ask you a few questions to get to know you, or tap the phone at the top right and just talk.", "¿Eres nuevo? Di «soy nuevo» y Pinky te hará unas preguntas para conocerte, o toca el teléfono arriba a la derecha y habla.")}</p><button type="button" className="conversation-empty-link" onClick={() => open("/?view=capabilities")} data-testid="empty-capabilities">{t("看看 Pinky 能做什么", "See what Pinky can do", "Mira lo que puede hacer Pinky")}</button></section>;
+  const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p><button type="button" className="conversation-empty-link" onClick={() => open("/?view=capabilities")} data-testid="empty-capabilities">{t("看看 Pinky 能做什么", "See what Pinky can do", "Mira lo que puede hacer Pinky")}</button></section>;
   const usEmpty = <section className="conversation-empty"><h1>{t("你们俩和 Pinky", "The two of you, plus Pinky", "Ustedes dos y Pinky")}</h1><p>{t("你们两人都能看到这里。Pinky 平时不插话；叫一声“Pinky”或点 @，它就来帮忙。", "You both see everything here. Pinky stays quiet until you say “Pinky” or tap @.", "Los dos ven todo aquí. Pinky no interviene hasta que digan «Pinky» o toquen @.")}</p></section>;
   const invite = <section className="conversation-empty conversation-invite" data-testid="conversation-invite"><h1>{t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja")}</h1><p>{t("“我们俩”是你们两个人和 Pinky 的共同对话。TA 用自己的账号加入后，这里就会打开。", "Us is the shared conversation for the two of you and Pinky. It opens once your partner joins with their own account.", "Nosotros es la conversación compartida entre ustedes dos y Pinky. Se abre cuando tu pareja se une con su propia cuenta.")}</p>
     {pairing?.invitation ? <><div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{pairing.invitation.code}</strong></div><div className="card-actions"><button className="card-primary" onClick={() => void copyInvite()}><Copy size={18} />{copied ? t("已复制", "Copied", "Copiado") : t("复制邀请链接", "Copy invite link", "Copiar enlace")}</button><button disabled={busy} onClick={() => void onRefreshPairing()}>{t("检查是否已加入", "Check connection", "Comprobar conexión")}</button></div></> :

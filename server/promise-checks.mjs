@@ -21,7 +21,7 @@ export async function askAboutPromise(store, { userId, session, now = new Date()
   if (!session || session.channel || session.status !== "active") return null;
   const today = now.toISOString().slice(0, 10), asked = session.promiseChecks || {};
   // One Pinky question a day in Just me: the after-date question (date-checks.mjs) counts too.
-  if ([...Object.values(asked), ...Object.values(session.dateChecks || {})].some((at) => String(at).slice(0, 10) === today)) return null;
+  if ([...Object.values(asked), ...Object.values(session.dateChecks || {}), ...(session.knowYouAt ? [session.knowYouAt] : [])].some((at) => String(at).slice(0, 10) === today)) return null;
   const due = (await openPromises(store, userId, session)).filter((promise) => {
     const last = asked[promise.id] ? Date.parse(asked[promise.id]) : null;
     if (promise.dueAt && Date.parse(promise.dueAt) <= now.getTime() && (!last || last < Date.parse(promise.dueAt))) return true;

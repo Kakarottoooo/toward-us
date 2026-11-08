@@ -39,7 +39,13 @@ async function fixture(t, { structured = null, planner = () => ({ reply: "ok", a
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "x-user": userId, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: await response.json().catch(() => null) };
   };
-  const sessionFor = async (userId, language = "en") => (await request("/assistant/sessions", "POST", { language, timezone: "UTC" }, userId)).body.session;
+  const sessionFor = async (userId, language = "en", { greeted = true } = {}) => {
+    const created = (await request("/assistant/sessions", "POST", { language, timezone: "UTC" }, userId)).body.session;
+    if (!greeted) return created;
+    // As if Pinky's opening question was asked (and answered) on an earlier day, so today's own question can come.
+    await store.transaction("x", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", created.id, userId, (draft) => { draft.messages = []; draft.knowYouAt = "2000-01-01T00:00:00.000Z"; }));
+    return { ...created, messages: [] };
+  };
   const plan = (patch) => store.transaction(`relationship:${relationshipId}`, (tx) => tx.createRelationshipRecord("milestones", createRelationshipRecord({ relationshipId, userId: people[0].id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", timezone: "UTC", recurringRule: "once", jointlyConfirmed: false, notes: "", provenanceSource: "member_confirmed", ...patch })));
   return { store, people, relationshipId, provider, request, sessionFor, plan };
 }
@@ -146,4 +152,42 @@ test("the phone button is the interview: while Pinky barely knows a member their
   await new Promise((r) => setTimeout(r, 100));
   const after = (await f.request(`/assistant/sessions/${session.id}`)).body.session.messages;
   assert.ok(after.at(-1).call, "no noted line when nothing new was kept");
+});
+
+test("Pinky knows by itself whether it knows someone: it speaks first to a member it barely knows, once, and never to one it knows", async (t) => {
+  const f = await fixture(t);
+  // A brand-new connected member: opening Just me creates the conversation, and Pinky's first question is already in it.
+  const typed = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC" })).body.session;
+  assert.equal(typed.messages.length, 0, "a conversation made because they started typing does not open with Pinky's question");
+  await f.store.transaction("x", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", typed.id, f.people[0].id, (draft) => { draft.archivedAt = new Date().toISOString(); }));
+  const fresh = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC", opened: true })).body.session;
+  assert.equal(fresh.messages.length, 1);
+  assert.match(fresh.messages[0].text, /^嗨，我是 Pinky。我还不太了解你/);
+  assert.match(fresh.messages[0].text, /第一个：你不开心的时候，最希望 Mia 怎么对你？/);
+  assert.doesNotMatch(fresh.messages[0].text, /新用户/, "it never asks them to say they are new");
+  assert.equal((await f.request(`/assistant/sessions/${fresh.id}?opened=1`)).body.session.messages.length, 1, "asked once");
+  assert.equal((await f.request("/assistant/sessions/latest")).body.session.messages.length, 1);
+  const another = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC", opened: true })).body.session;
+  assert.equal(another.messages.length, 0, "once per member, not per conversation");
+
+  // Mia has talked with Pinky before but it has kept little about her: she is not greeted as if she had just arrived.
+  const hers = (await f.request("/assistant/sessions", "POST", { language: "en", timezone: "UTC", opened: true }, f.people[1].id)).body.session;
+  assert.match(hers.messages[0].text, /^Hi, I'm Pinky/);
+  const store = f.store;
+  await store.transaction("x", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", hers.id, f.people[1].id, (draft) => { draft.knowYouAt = null; draft.messages = [{ id: randomUUID(), role: "user", text: "hi", createdAt: new Date().toISOString() }]; }));
+  const again = (await f.request(`/assistant/sessions/${hers.id}?opened=1`, "GET", undefined, f.people[1].id)).body.session;
+  assert.match(again.messages.at(-1).text, /^I realize I don't know you very well yet/);
+
+  // Not connected: no couple notes to keep, so no questions.
+  const solo = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC", opened: true }, f.people[2].id)).body.session;
+  assert.equal(solo.messages.length, 0);
+});
+
+test("someone Pinky already knows is not interviewed", async (t) => {
+  const f = await fixture(t);
+  await f.store.transaction(`relationship:${f.relationshipId}`, async (tx) => {
+    for (const text of ["a", "b", "c", "d", "e"]) await tx.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: f.relationshipId, userId: f.people[0].id, ownerUserId: f.people[0].id, visibility: "private", aiAccessScope: "private", status: "active", kind: "profile", subjectUserId: f.people[0].id, category: "likes", text, approvals: [] }));
+  });
+  const session = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC", opened: true })).body.session;
+  assert.equal(session.messages.length, 0);
 });

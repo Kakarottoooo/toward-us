@@ -16,6 +16,7 @@ import { importContext } from "./chat-import.mjs";
 import { draftAgreementFromTogether } from "./together-domain.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
 import { answerDateCheck, askAfterDate } from "./date-checks.mjs";
+import { askToKnow } from "./know-you.mjs";
 import { isAiLimit } from "./ai-budget.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
@@ -76,18 +77,20 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   router.post("/assistant/sessions", async (req, res) => {
     const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
     const session = await createSession(req.auth.user.id, { language, timezone: clean(req.body?.timezone, 64) || "UTC" });
-    res.status(201).json({ session: await output(session) });
+    // Made because they opened Just me (not because they started typing): if Pinky barely knows them yet (judged from what it
+    // has kept), it speaks first with its opening question.
+    res.status(201).json({ session: await output((req.body?.opened === true && await askToKnow(store, { userId: req.auth.user.id, session }).catch(() => null)) || session) });
   });
   // The member's most recent App conversation, for a device that has not remembered one (it may hold a question from Us).
   router.get("/assistant/sessions/latest", async (req, res) => {
     const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
     const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!latest) throw fail(404, "No conversation yet.");
-    res.json({ session: await output((await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
+    res.json({ session: await output((await askToKnow(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
   });
   router.get("/assistant/sessions/:id", async (req, res) => {
     const session = await owned(store, req.params.id, req.auth.user.id);
-    res.json({ session: await output((req.query.opened === "1" && ((await askAfterDate(store, { userId: req.auth.user.id, session }).catch(() => null)) || await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null))) || session) });
+    res.json({ session: await output((req.query.opened === "1" && ((await askToKnow(store, { userId: req.auth.user.id, session }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session }).catch(() => null)) || await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null))) || session) });
   });
   // Each promise's own latest answer, for the Agreements page; private to this member.
   router.get("/assistant/promises", async (req, res) => {
