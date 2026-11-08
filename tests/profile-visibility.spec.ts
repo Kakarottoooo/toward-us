@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import express from "express";
+import { createServer, type ViteDevServer } from "vite";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { resolve, join, sep } from "node:path";
 import type { Server } from "node:http";
@@ -8,13 +8,23 @@ import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 
 let server: Server, directory: string, store: Awaited<ReturnType<typeof createFileStore>>, base: string;
+let vite: ViteDevServer;
 test.beforeAll(async () => {
   const root = resolve("work"); await mkdir(root, { recursive: true });
   directory = await mkdtemp(join(root, "profile-visibility-"));
   store = await createFileStore(join(directory, "state.json"));
-  const app = createApiApp({ store, mediator: { aiReady: false, model: "local-test" } });
-  app.use(express.static(resolve("dist/client")));
-  app.get("/{*path}", (_req, res) => res.sendFile(resolve("dist/client/index.html")));
+  const app = createApiApp({ store, mediator: {
+    aiReady: false, model: "local-test",
+    // A check-in invokes the shared Agent after saving the member's answer. Keep only model output local;
+    // the browser, authenticated API, visibility projection and persistence remain real.
+    continueTogether: async (_context: unknown, language: "zh" | "en" | "es") => ({
+      reply: { zh: "已记下你的回答。", en: "Your answer is recorded.", es: "Tu respuesta está guardada." }[language],
+      draftAgreement: null, actions: [],
+    }),
+  } });
+  // CI runs relationship checks before build; serve current source, never a stale dist bundle.
+  vite = await createServer({ root: resolve("."), appType: "spa", server: { middlewareMode: true, hmr: false } });
+  app.use(vite.middlewares);
   const port = Number(process.env.PINKY_PROFILE_TEST_PORT || 5383);
   if (port < 5300 || port > 5399) throw new Error("Use a local test port between 5300 and 5399.");
   server = app.listen(port, "127.0.0.1");
@@ -23,6 +33,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   if (server) { server.closeAllConnections(); await new Promise<void>((done) => server.close(() => done())); }
+  await vite?.close();
   if (directory && directory.startsWith(resolve("work") + sep)) await rm(directory, { recursive: true, force: true });
 });
 
@@ -125,7 +136,14 @@ for (const language of ["zh", "en", "es"] as const) test(`profile shows who sees
       expect(await review.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`review-${language}-${width}.png`) });
     }
-    await review.getByRole("button").click(); await expect(review).toHaveCount(0);
+    const sent = page.waitForResponse((response) => response.url() === `${base}/api/together/messages` && response.request().method() === "POST");
+    await review.getByRole("button").click();
+    const response = await sent;
+    expect(response.status()).toBe(201);
+    const result = await response.json();
+    expect(result.message).toMatchObject({ actorUserId: owner.id, text: reply, replyTo: `review-${language}` });
+    expect(result.reply).toMatchObject({ role: "agent", replyTo: result.message.id });
+    await expect(review).toHaveCount(0);
     expect((await (await a.request.get("/api/together")).json()).conversation.messages.some((message: { actorUserId: string; text: string }) => message.actorUserId === owner.id && message.text === reply)).toBe(true);
   } finally { await a.close(); await b.close(); }
 });
