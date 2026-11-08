@@ -36,7 +36,7 @@ export function OnboardingTour({ language, userId, paired, onInvite, onCharacter
   const current = steps[step];
   return <div className="onboarding-layer" role="dialog" aria-modal="true" aria-label={t("欢迎来到 Pinky", "Welcome to Pinky", "Bienvenido a Pinky")} data-testid="onboarding">
     <div className="onboarding-card">
-      <button type="button" className="onboarding-skip" onClick={finish} aria-label={t("跳过", "Skip", "Saltar")}><X size={20} /></button>
+      {!current.action && <button type="button" className="onboarding-skip" onClick={finish} aria-label={t("跳过", "Skip", "Saltar")}><X size={20} /></button>}
       <span className="onboarding-icon">{current.icon}</span>
       <h2>{current.title}</h2>
       {current.text && <p>{current.text}</p>}
