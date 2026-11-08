@@ -325,3 +325,6 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .install-hint-primary { background: var(--jian-blue); color: #fff; }
 .install-hint-secondary { background: transparent; color: #5f5952; }
 .install-hint-actions button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+/* Notification privacy guidance is necessary at the existing controls, and readable on phones. */
+.settings-screen .notification-preview-note { color: #5f5952; font-size: 14px; line-height: 1.5; }
+.device-screen .settings-screen .settings-switch:focus-visible { outline: 2px solid var(--jian-blue) !important; outline-offset: 2px; }
