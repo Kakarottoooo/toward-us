@@ -54,6 +54,21 @@ test("missing a busy partner with little energy gets a quiet activity rather tha
   }
 });
 
+test("love letters use personal private drafts and require an explicit scheduling request", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /writing or revising means private wording, actions:\[\], even with an anniversary date/);
+    assert.match(prompt, /Put the COMPLETE letter in reply using only visible facts and the user's voice and length/);
+    assert.match(prompt, /Omit facts with unclear actors; invent no memories, pet names or vows/);
+    assert.match(prompt, /never splice catchphrases/);
+    assert.match(prompt, /No preamble, feature offer, interview or scheduling question when details suffice/);
+    assert.match(prompt, /If no personal detail is available, ask one relevant question/);
+    assert.match(prompt, /Only an explicit request to keep it for a future day creates partner_message/);
+    assert.match(prompt, /awaits writer confirmation, never already saved/);
+    assert.match(prompt, /After confirmation it stays owner-only/);
+  }
+});
+
 test("birthday gift advice uses visible wishes without invented prices, unsuitable DIY or outgoing actions", () => {
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
