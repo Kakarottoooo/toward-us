@@ -162,7 +162,7 @@ test("Pinky knows by itself whether it knows someone: it speaks first to a membe
   await f.store.transaction("x", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", typed.id, f.people[0].id, (draft) => { draft.archivedAt = new Date().toISOString(); }));
   const fresh = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC", opened: true })).body.session;
   assert.equal(fresh.messages.length, 1);
-  assert.match(fresh.messages[0].text, /^嗨，我是 Pinky。我还不太了解你/);
+  assert.match(fresh.messages[0].text, /^嗨，我是 Pinky。不知道怎么回 .+的时候，把 TA 的话或聊天截图发给我.*我还不太了解你/);
   assert.match(fresh.messages[0].text, /第一个：你不开心的时候，最希望 Mia 怎么对你？/);
   assert.doesNotMatch(fresh.messages[0].text, /新用户/, "it never asks them to say they are new");
   assert.equal((await f.request(`/assistant/sessions/${fresh.id}?opened=1`)).body.session.messages.length, 1, "asked once");
