@@ -93,9 +93,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const [call, setCall] = useState<{ channel: Channel; sessionId: string | null; mode?: "interview" } | null>(null);
-  // 让 Pinky 认识你 asked for from About us (?interview=1): a card here starts it, so the call begins with a tap.
-  const [interviewAsk, setInterviewAsk] = useState(() => { try { return new URLSearchParams(location.search).get("interview") === "1"; } catch { return false; } });
+  const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const [openStory, setOpenStory] = useState<Story | null>(null);
   const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // The couple's own character, shared by both; it floats under the top row once one of them has made it.
@@ -315,12 +313,6 @@ ${text}` : text, target);
     if (channel === "us") { setCall({ channel: "us", sessionId: null }); return; }
     try { const active = await ensureSession(); setCall({ channel: "me", sessionId: active?.id || null }); } catch (error) { setNotice((error as Error).message); }
   };
-  // 让 Pinky 认识你 (founder 11-07): a few-minute private voice interview Pinky leads; what it learns lands in About us.
-  const startInterview = async () => {
-    keyboard.hide(); voice.stop(); setNotice(""); setInterviewAsk(false); switchChannel("me");
-    const params = new URLSearchParams(location.search); if (params.has("interview")) { params.delete("interview"); history.replaceState(history.state, "", `${location.pathname}${params.toString() ? `?${params}` : ""}`); }
-    try { const active = await ensureSession(); setCall({ channel: "me", sessionId: active?.id || null, mode: "interview" }); } catch (error) { setNotice((error as Error).message); }
-  };
   // 约会之后问一句: one tap answers privately; "tell them" sends the member's own words in Us.
   const answerDate = async (messageId: string, rating: "great" | "ok" | "meh") => {
     const active = sessionRef.current; if (!active) return; setBusy(true); setNotice("");
@@ -481,7 +473,6 @@ ${text}` : text, target);
     else if (key === "miss_you") void missYou();
     else if (key === "pet") void relationshipApi<{ pet: PetView }>("/api/together/pet", jsonBody({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", language })).then((result) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet: result.pet }); }).catch(() => {});
     else if (key === "profile") { keyboard.hide(); onPrivacy("profile"); }
-    else if (key === "interview") void startInterview();
     else if (key === "photos") open("/?view=moments");
     else if (key === "ideas") open("/?view=moments&ideas=1");
     else say({ meetup: t("Pinky，我们下次见面是 ", "Pinky, we next meet on ", "Pinky, nos vemos el "), recap: t("Pinky，给我们做一张最近的回顾", "Pinky, make us a recap of lately", "Pinky, haznos un resumen de estos días"), agreement: t("Pinky，把我们说好的写下来：", "Pinky, write down what we agreed: ", "Pinky, anota lo que acordamos: "), letter: t("帮我给 TA 写一封信，在这天打开：", "Help me write my partner a letter to open on ", "Ayúdame a escribir una carta para abrir el "), hard_words: t("我有句话不知道怎么跟 TA 说：", "There's something I don't know how to tell my partner: ", "Hay algo que no sé cómo decirle a mi pareja: "), reminder: t("提醒我 ", "Remind me to ", "Recuérdame ") }[key as "meetup"] || "", ["meetup", "ledger", "recap", "agreement"].includes(key) ? "us" : "me");
@@ -589,7 +580,7 @@ ${text}` : text, target);
     try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
   const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions" data-testid="composer-ideas">{items.map((text, index) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}{reasons[target][index] && <small className="suggestion-why" data-testid="suggestion-why">{reasons[target][index]}</small>}</button>)}<button type="button" className="conversation-suggestions-all" onClick={() => open("/?view=capabilities")} data-testid="see-capabilities">{t("Pinky 还能做什么 →", "More Pinky can do →", "Más cosas de Pinky →")}</button></div>;
-  const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p><button type="button" className="conversation-empty-link" onClick={() => open("/?view=capabilities")} data-testid="empty-capabilities">{t("看看 Pinky 能做什么", "See what Pinky can do", "Mira lo que puede hacer Pinky")}</button></section>;
+  const meEmpty = <section className="conversation-empty"><h1>{t("想说什么都可以", "Say anything", "Di lo que quieras")}</h1><p>{t("这里只有你能看到。想记的、想查的、难开口的，都可以跟 Pinky 说；要给 TA 的话，你确认后才会发出。", "Only you can see this. Tell Pinky what to remember, look up or plan, or what is hard to say; nothing reaches your partner until you confirm.", "Solo tú puedes ver esto. Dile a Pinky qué recordar, buscar o planear, o lo que te cuesta decir; nada llega a tu pareja hasta que lo confirmes.")}</p><p>{t("刚来？说一句“我是新用户”，Pinky 会问你几个问题认识你；也可以点右上角电话，直接聊。", "New here? Say “I'm new” and Pinky will ask you a few questions to get to know you, or tap the phone at the top right and just talk.", "¿Eres nuevo? Di «soy nuevo» y Pinky te hará unas preguntas para conocerte, o toca el teléfono arriba a la derecha y habla.")}</p><button type="button" className="conversation-empty-link" onClick={() => open("/?view=capabilities")} data-testid="empty-capabilities">{t("看看 Pinky 能做什么", "See what Pinky can do", "Mira lo que puede hacer Pinky")}</button></section>;
   const usEmpty = <section className="conversation-empty"><h1>{t("你们俩和 Pinky", "The two of you, plus Pinky", "Ustedes dos y Pinky")}</h1><p>{t("你们两人都能看到这里。Pinky 平时不插话；叫一声“Pinky”或点 @，它就来帮忙。", "You both see everything here. Pinky stays quiet until you say “Pinky” or tap @.", "Los dos ven todo aquí. Pinky no interviene hasta que digan «Pinky» o toquen @.")}</p></section>;
   const invite = <section className="conversation-empty conversation-invite" data-testid="conversation-invite"><h1>{t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja")}</h1><p>{t("“我们俩”是你们两个人和 Pinky 的共同对话。TA 用自己的账号加入后，这里就会打开。", "Us is the shared conversation for the two of you and Pinky. It opens once your partner joins with their own account.", "Nosotros es la conversación compartida entre ustedes dos y Pinky. Se abre cuando tu pareja se une con su propia cuenta.")}</p>
     {pairing?.invitation ? <><div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{pairing.invitation.code}</strong></div><div className="card-actions"><button className="card-primary" onClick={() => void copyInvite()}><Copy size={18} />{copied ? t("已复制", "Copied", "Copiado") : t("复制邀请链接", "Copy invite link", "Copiar enlace")}</button><button disabled={busy} onClick={() => void onRefreshPairing()}>{t("检查是否已加入", "Check connection", "Comprobar conexión")}</button></div></> :
@@ -653,8 +644,7 @@ ${text}` : text, target);
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
-      {channel === "me" && interviewAsk && paired && !call && <article className="discovery-card" data-testid="interview-offer"><span className="discovery-icon"><Phone size={20} weight="fill" /></span><div><strong>{t("让 Pinky 认识你", "Let Pinky get to know you", "Deja que Pinky te conozca")}</strong><p>{t(`私下语音聊 5 分钟左右：Pinky 问，你答，哪题都能跳过，随时能挂断。聊完记下的只有你能看到，想让 ${partnerName || "TA"} 知道哪条由你挑。`, `A private voice chat of about five minutes: Pinky asks, you answer, skip anything, hang up any time. Only you see the notes; you pick what ${partnerName || "your partner"} gets to see.`, `Una charla privada de unos cinco minutos: Pinky pregunta, tú respondes, puedes saltar o colgar cuando quieras. Solo tú ves las notas; tú eliges qué ve ${partnerName || "tu pareja"}.`)}</p><span className="discovery-actions"><button type="button" className="discovery-go" onClick={() => void startInterview()} data-testid="interview-start">{t("开始聊", "Start", "Empezar")}</button><button type="button" className="discovery-later" onClick={() => setInterviewAsk(false)}>{t("以后再说", "Later", "Más tarde")}</button></span></div></article>}
-      {!readOnly && !(channel === "me" && interviewAsk && paired && !call) && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} />}
+      {!readOnly && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=upcoming")} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
