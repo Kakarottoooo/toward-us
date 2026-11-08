@@ -54,6 +54,24 @@ test("missing a busy partner with little energy gets a quiet activity rather tha
   }
 });
 
+test("breakup support preserves autonomy and private deliberation instead of default repair work", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /Neither push leaving nor persuade staying/);
+    assert.match(prompt, /distinguish wants from guilt or pressure with at most one question/);
+    assert.match(prompt, /Focus on whether they want the relationship, not rephrasing a boundary/);
+    assert.match(prompt, /No default couples counseling, repair script or requirement to try again/);
+    assert.match(prompt, /Respect a settled decision; for wording give ONLY the complete plain private draft, no preamble or closing/);
+    assert.match(prompt, /3–5 short sentences, overriding onboarding and feature offers/);
+    assert.match(prompt, /Advice\/drafting uses actions:\[\] unless asked for a sharing preview/);
+    assert.match(prompt, /never suggest sharing deliberation/);
+    assert.match(prompt, /Only owner-confirmed wording reaches Us, never private conversation/);
+    assert.match(prompt, /Chat history remains stored; never say nothing is saved/);
+    assert.match(prompt, /safety first, not mutual communication work or couples counseling/);
+    assert.doesNotMatch(prompt, /breaking up, cheating/);
+  }
+});
+
 test("love letters use personal private drafts and require an explicit scheduling request", () => {
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
