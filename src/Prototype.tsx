@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Copy, LinkSimple, SignOut } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
@@ -34,7 +34,7 @@ const copy = {
     displayName: "你的称呼", login: "登录", register: "创建账号", switchRegister: "还没有账号？创建一个",
     switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
-    waitingHint: "邀请已发出。对方用自己的账号接受后，你们才会共享调解与复盘。", acceptInvite: "接受邀请",
+    waitingHint: "对方用自己的账号接受后，共同空间才会打开。", acceptInvite: "接受邀请",
     inviteCode: "八位邀请码", logout: "退出登录",
     joinPartner: "加入伴侣", joinHint: "TA 邀请你一起用 Pinky。接受后，你们俩共同的对话“我们俩”就会打开。",
   },
@@ -151,7 +151,7 @@ function AccountPrototype() {
   if (screen === "privacy" && user) return <SettingsPage initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} />;
   if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
   if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-  if (screen === "pairing" && user) return <PairingScreen user={user} pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} onLogout={logout} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "pairing" && user) return <PairingScreen pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
   return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
 }
@@ -213,26 +213,20 @@ function AuthScreen({ language, onLanguage, onBack, onAuth, onRecover, notice, s
   </MobileScroll>;
 }
 
-function PairingScreen({ user, pairing, language, onLanguage, onRefresh, onBack, onLogout, notice, setNotice, busy, setBusy, t }: {
-  user: User; pairing: Pairing | null; language: Language; onLanguage: (language: Language) => void; onRefresh: () => Promise<void>; onBack: () => void; onLogout: () => void;
+function PairingScreen({ pairing, language, onLanguage, onRefresh, onBack, notice, setNotice, busy, setBusy, t }: {
+  pairing: Pairing | null; language: Language; onLanguage: (language: Language) => void; onRefresh: () => Promise<void>; onBack: () => void;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get("invite")?.toUpperCase() || "");
-  const [copied, setCopied] = useState(false); const keyboard = useKeyboard();
-  // Opened from a partner's invite link: accepting is the one thing to do, even for someone who already made an invite of
-  // their own (accepting ends their solo space on the server).
-  const [invited] = useState(() => pairing?.status !== "active" && code.length === 8 && code !== pairing?.invitation?.code);
-  const createInvite = async () => { setBusy(true); setNotice(""); try { await api("/api/partner/invitations", { method: "POST" }); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
-  // Joining is about the two of them: the conversation opens on Us (the channel is read once, then leaves the URL).
+  const keyboard = useKeyboard();
+  // Joining stays available after making an invite; the server reconciles the two pending spaces.
   const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", `${location.pathname}?channel=us`); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
-  const inviteUrl = pairing?.invitation ? `${location.origin}${location.pathname}?invite=${pairing.invitation.code}` : "";
-  const copyInvite = async () => { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); };
-  return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><button onClick={onLogout} aria-label={t.logout}><SignOut size={20} /></button><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
-    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{invited ? t.joinPartner : pairing ? t.waitingPartner : t.invitePartner}</h1><PauseMark /></div>
-      <button className="secondary-action" onClick={() => { keyboard.hide(); onBack(); }}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button><p className="pairing-lead">{invited ? t.joinHint : pairing ? t.waitingHint : t.inviteHint}</p>
-      {invited || !pairing ? <>{!invited && <><button className="primary-action" onClick={createInvite} disabled={busy}><LinkSimple size={20} />{t.createInvite}</button><div className="join-divider"><span>{localized(language, "或", "OR", "O")}</span></div></>}
-        <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))} maxLength={8} data-testid="invite-code" /></label><button className={invited ? "primary-action" : "secondary-action"} onClick={accept} disabled={busy || code.length !== 8}>{t.acceptInvite}</button></> :
-        <><div className="invite-code-panel"><span>{t.inviteCode}</span><strong>{pairing.invitation?.code}</strong><button onClick={copyInvite}><Copy size={18} />{copied ? t.copied : t.copyInvite}</button></div><div className="waiting-pair"><span>{user.name.slice(0, 1)}</span><i>＋</i><span>?</span></div><button className="secondary-action" onClick={onRefresh}>{localized(language, "检查是否已加入", "Check connection", "Comprobar conexión")}</button></>}
+  return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
+    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{t.joinPartner}</h1><PauseMark /></div>
+      <p className="pairing-lead">{t.joinHint}</p>
+      <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => { setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)); setNotice(""); }} maxLength={8} autoComplete="off" data-testid="invite-code" /></label>
+      <div className="pairing-actions"><button className="primary-action" onClick={accept} disabled={busy || code.length !== 8 || code === pairing?.invitation?.code}>{t.acceptInvite}</button>
+        <button className="secondary-action" disabled={busy} onClick={() => { keyboard.hide(); onBack(); }}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button></div>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
     </main></MobileScroll>;
 }
