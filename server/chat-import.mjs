@@ -208,7 +208,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const update = (record, userId, change) => store.transaction(`user:${record.ownerUserId}`, (tx) => tx.updateRelationshipRecordForUser(COLLECTION, record.id, userId, (draft) => { change(draft); draft.version += 1; }));
 
   /** Creates the import from parsed conversations and moves it as far as it can go without asking the member. */
-  async function createImport(user, parsed, { sessionId = null, language = "zh", messageId = null } = {}) {
+  async function createImport(user, parsed, { sessionId = null, language = "zh", messageId = null, screenshotAdvice = null } = {}) {
     const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).filter((record) => record.ownerUserId === user.id && !record.archivedAt);
     if (existing.length >= IMPORT_LIMIT) throw fail(409, say(language, "导入的聊天已经很多了，请先删掉一些旧的。", "You have many imports already. Delete an old one first.", "Ya tienes muchas importaciones. Borra alguna antigua primero."));
     const conversations = parsed.conversations.filter((conversation) => conversation.messages.length).sort((a, b) => b.messages.length - a.messages.length);
@@ -219,7 +219,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // Until the member picks one conversation, every conversation stays in the private file; afterwards only the chosen one.
     await writeFile(fileFor(record), JSON.stringify({ conversations }));
     await store.transaction(`user:${user.id}`, (tx) => tx.createRelationshipRecord(COLLECTION, record));
-    const saved = conversations.length === 1 ? await choose(user, record, conversations[0].id) : record;
+    const saved = conversations.length === 1 ? await choose(user, record, conversations[0].id, screenshotAdvice) : record;
     // Every way in (file, paste, screenshots, Mac) shows up in the private conversation as a card that carries the next step.
     const count = saved.messageCount, period = saved.firstAt && saved.lastAt ? ` (${day(saved.firstAt)} – ${day(saved.lastAt)})` : "";
     const text = saved.status === "needs_choice" ? say(language, `这个文件里有 ${conversations.length} 段对话，选一下哪一段是你和 TA 的。`, `This file has ${conversations.length} conversations. Pick the one with your partner.`, `Este archivo tiene ${conversations.length} conversaciones. Elige la de tu pareja.`)
@@ -229,7 +229,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     return saved;
   }
 
-  async function choose(user, record, conversationId) {
+  async function choose(user, record, conversationId, screenshotAdvice = null) {
     const data = JSON.parse(await readFile(fileFor(record), "utf8"));
     const conversation = data.conversations?.find((item) => item.id === conversationId);
     if (!conversation) throw fail(404, "Conversation not found.");
@@ -248,7 +248,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     await writeFile(fileFor(record), JSON.stringify({ conversation }));
     const ready = people.some((person) => person.role === "me") && people.some((person) => person.role === "partner");
     const saved = await update(record, user.id, (draft) => { draft.conversations = []; draft.title = conversation.title || draft.title; draft.people = people.map((person) => ({ ...person, role: person.role || "other" })); draft.messageCount = total; draft.firstAt = conversation.messages.find((message) => message.at)?.at || null; draft.lastAt = [...conversation.messages].reverse().find((message) => message.at)?.at || null; draft.status = ready ? "analyzing" : "needs_people"; draft.progress = null; });
-    if (ready) start(saved);
+    if (ready) start(saved, screenshotAdvice);
     return saved;
   }
 
@@ -260,11 +260,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     return saved;
   }
 
-  function start(record) {
+  function start(record, screenshotAdvice = null) {
     if (jobs.has(record.id)) return;
     // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
     // The report is written in the owner's interface language at the time it is read, not the one the import began in (founder 11-06: one language everywhere, the one each member picked).
-    const job = memberLanguage(store, record.ownerUserId).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record)); }).catch(async (error) => {
+    const job = memberLanguage(store, record.ownerUserId).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
       await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
       if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
@@ -272,12 +272,31 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     jobs.set(record.id, job);
   }
 
-  async function analyze(record) {
+  async function analyze(record, screenshotAdvice = null) {
     const source = JSON.parse(await readFile(fileFor(record), "utf8"));
     const roleOf = new Map(record.people.map((person) => [person.name, person.role]));
     const names = { me: record.people.find((person) => person.role === "me").name, partner: record.people.find((person) => person.role === "partner").name };
     const messages = source.conversation.messages.map((message) => ({ ...message, role: roleOf.get(message.sender) || "other" }));
     const data = { messages, names: { me: names.me, partner: names.partner } };
+    // A screenshot question needs the original exchange, not a full history report. Answer first; keep the existing
+    // shareable analysis in this job afterwards. Neither the private question nor its reply enters that analysis.
+    let answeredScreenshot = false;
+    if (record.screenshotMessageId && record.sessionId) {
+      const session = await store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, record.ownerUserId);
+      const request = session?.ownerUserId === record.ownerUserId && session.messages?.find((message) => message.id === record.screenshotMessageId && message.role === "user");
+      if (request?.text) {
+        let text;
+        try {
+          const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
+          if (typeof answer?.reply !== "string" || !answer.reply.trim()) throw new Error("Empty screenshot answer");
+          text = answer.reply.trim().slice(0, 2000);
+        } catch (error) {
+          text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
+        }
+        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
+        answeredScreenshot = true;
+      }
+    }
     const stats = computeStats(messages);
     const { chunks, sampled } = chunkMessages(data);
     await update(record, record.ownerUserId, (draft) => { draft.stats = stats; draft.sampled = sampled; draft.progress = { done: 0, total: chunks.length + 1 }; });
@@ -300,35 +319,19 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); draft.analyzedAt = draft.completedAt; draft.analyzedCount = record.messageCount; draft.analyzedThrough = record.lastAt || null; draft.analysisError = null; });
     // A refresh of the synced history updates what Pinky understands quietly; only the first reading is posted.
     if (record.sync && !first) return;
-    let text = analysis.message;
-    if (record.screenshotMessageId && record.sessionId) {
-      const session = await store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, record.ownerUserId);
-      const request = session?.ownerUserId === record.ownerUserId && session.messages?.find((message) => message.id === record.screenshotMessageId && message.role === "user");
-      if (request?.text) {
-        // Keep the private question and advice out of the shareable history analysis. The final pass sees the
-        // transcript itself, not just lossy pattern notes, through a reply-only model call.
-        try {
-          const answer = await mediator.answerScreenshot({ question: request.text, names, transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
-          if (typeof answer?.reply !== "string" || !answer.reply.trim()) throw new Error("Empty screenshot answer");
-          text = answer.reply.trim().slice(0, 2000);
-        } catch (error) {
-          text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
-        }
-      }
-    }
-    await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
+    if (!answeredScreenshot) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
   }
 
   /** Screenshots (WeChat, or any app) become an import after the model transcribes them, oldest first. */
-  async function importScreenshots(user, photoIds, { sessionId, language, messageId }) {
+  async function importScreenshots(user, photoIds, { sessionId, language, messageId, question = "" }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
     const photos = [];
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
-    const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
+    const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") } } : null });
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
     if (messages.length < 2) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
-    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId });
+    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
   }
   router.importScreenshots = importScreenshots;
 
@@ -339,8 +342,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (!record) return null;
     const names = { me: record.people.find((person) => person.role === "me")?.name, partner: record.people.find((person) => person.role === "partner")?.name };
-    const source = record.status === "ready" && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
-    return { status: record.status, names, transcript: source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : "[partner]"} ${line(message)}`).join("\n").slice(0, 40_000) || null };
+    // Transcription is already complete even while the separate report is running (or if that report later fails).
+    const source = names.me && names.partner && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
+    const transcript = source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : "[partner]"} ${line(message)}`).join("\n").slice(0, 40_000) || null;
+    return { status: transcript ? "ready" : record.status, names, transcript };
   };
 
   const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : "zh";

@@ -17,7 +17,7 @@ const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: nu
 const whatsapp = ["[1/2/24, 9:00:00 PM] Alex: are you coming home soon", "[1/2/24, 9:20:00 PM] Blair: running late, sorry", "[1/2/24, 9:21:00 PM] Alex: you always say that", "[1/3/24, 8:00:00 AM] Blair: I'm sorry about last night", "[1/3/24, 8:05:00 AM] Alex: thank you, I love you"].join("\n");
 const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "each on a laptop, episode 12" }], message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [] } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
   const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
@@ -32,8 +32,8 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
     planAssistantTurn: async (context) => { calls.planner.push(context); return planner(context); },
     answerScreenshot: async (context) => { calls.planner.push(context); return planner(context); },
     continueTogether: async (context) => { calls.shared.push(context); return shared(context); },
-    structured: async ({ name, input }) => { calls.structured.push({ name, input }); return name === "chat_history_part" ? { episodes: [{ date: "2024-01-02", kind: "conflict", title: "Late again", summary: "Blair was late.", speaker: "Alex", quote: "you always say that" }], themes: ["lateness"], tone: "tense" } : report; },
-    readScreenshots: async (context) => { calls.screenshots.push(context); return { messages: screenshots }; },
+    structured: async ({ name, input }) => { calls.structured.push({ name, input }); await beforeStructured(name); return name === "chat_history_part" ? { episodes: [{ date: "2024-01-02", kind: "conflict", title: "Late again", summary: "Blair was late.", speaker: "Alex", quote: "you always say that" }], themes: ["lateness"], tone: "tense" } : report; },
+    readScreenshots: async (context) => { calls.screenshots.push(context); return { messages: screenshots, advice: screenshotAdvice }; },
   };
   const app = express(); app.use(express.json());
   app.use((req, _res, next) => { const person = people.find((item) => item.id === req.headers["x-user"]); if (person) req.auth = { user: person }; next(); });
@@ -124,6 +124,45 @@ test("screenshot advice reads the actual exchange, answers the original question
   await f.request(`/imports/${imports[0].id}/delete-messages`, "POST", {});
   await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What can you still see?", itemId: randomUUID() });
   assert.equal(f.calls.planner.at(-1).screenshotConversation.transcript, null, "deleted original messages are not restored to context");
+});
+
+test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const advice = "Private answer before the report.";
+  const f = await fixture(t, {
+    screenshots: [{ mine: false, name: "Blair", text: "I waited.", time: null }, { mine: true, name: null, text: "Sorry.", time: null }],
+    screenshotAdvice: { observations: ["Visible fact"], uncertainties: [], reply: advice },
+    planner: (context) => context.transcript ? { reply: advice } : context.screenshotConversation ? { reply: "Here is a softer version.", actions: [] } : { reply: "Reading.", actions: [action("chat_import", "create")] },
+    beforeStructured: async () => held,
+  });
+  // Release before fixture teardown, including on an assertion failure.
+  t.after(() => release());
+  const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "How do I reply?", itemId: randomUUID(), photoIds: [photo.id] });
+  let session;
+  for (let index = 0; index < 100; index += 1) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === advice)) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(session.messages.some((message) => message.text === advice), "advice arrives while the history model is blocked");
+  assert.equal(f.calls.screenshots[0].adviceFor.question, "How do I reply?");
+  assert.ok(!f.calls.planner.some((call) => call.transcript), "the vision answer avoids another model call");
+  const imports = (await f.request("/imports")).body.imports;
+  assert.equal(imports[0].status, "analyzing");
+  assert.equal(imports[0].analysis, null);
+  assert.ok(!JSON.stringify(await f.store.listRelationshipRecordsForUser("chatImports", f.people[0].id)).includes(advice), "private advice is never persisted on an import");
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Make it softer.", itemId: randomUUID() });
+  assert.equal(f.calls.planner.at(-1).screenshotConversation.status, "ready");
+  assert.match(f.calls.planner.at(-1).screenshotConversation.transcript, /\[partner\] Blair: I waited/);
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}`, "GET", null, f.people[1].id)).status, 404);
+  release();
+  await f.ready(imports[0].id);
+  session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+  assert.equal(session.messages.filter((message) => message.text === advice).length, 1);
+  assert.ok(!session.messages.some((message) => message.text === report.message), "the report does not replace or repeat the answer");
 });
 
 test("screenshot advice instructions route immediate asks to the reader and ground fairness without forced equal blame", () => {
