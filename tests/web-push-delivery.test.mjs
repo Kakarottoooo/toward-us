@@ -225,7 +225,10 @@ test("opening Us posts the daily question and pushes only the partner, not the o
   const directory = await mkdtemp(join(base, "web-push-app-")); t.after(() => rm(directory, { recursive: true, force: true }));
   const store = await createFileStore(join(directory, "store.json"));
   const sent = [];
-  const service = createReminderService({ store, enabled: true, publicKey: "test-public-key", sendNative: async (token) => { sent.push(["native", token]); }, sendPush: async (device) => { sent.push(["web", device.endpoint]); return { statusCode: 201 }; } });
+  // Noon in Shanghai: the members' quiet night (22:00-08:00 in their own zone) would hold this push whenever the run
+  // happens during a Shanghai night, so the test pinned the wall clock instead of depending on when CI runs (11-08).
+  const noonInShanghai = () => new Date("2026-11-08T04:00:00Z");
+  const service = createReminderService({ store, enabled: true, publicKey: "test-public-key", now: noonInShanghai, sendNative: async (token) => { sent.push(["native", token]); }, sendPush: async (device) => { sent.push(["web", device.endpoint]); return { statusCode: 201 }; } });
   const server = createApiApp({ store, mediator: { aiReady: false, model: "test" }, reminderService: service }).listen(0, "127.0.0.1");
   await new Promise((done) => server.once("listening", done));
   t.after(() => new Promise((done) => { server.closeAllConnections(); server.close(done); }));
