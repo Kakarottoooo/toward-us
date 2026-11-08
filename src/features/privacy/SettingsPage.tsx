@@ -11,12 +11,13 @@ import { CharacterMaker } from "../character/CharacterMaker";
 import { characterError, setCharacterVisible, useCoupleCharacter } from "../character/character";
 import { MembershipPage, type Membership } from "../membership/MembershipPage";
 import { FounderBeta } from "../membership/FounderBeta";
+import { AiAccess } from "./AiAccess";
 import "./settings.css";
 
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character";
+type Page = "main" | "access" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character";
 type SettingsProps = { initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
@@ -94,7 +95,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), membership: t("Pinky 会员", "Pinky membership", "Membresía Pinky"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
+  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), membership: t("Pinky 会员", "Pinky membership", "Membresía Pinky"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), access: t("Pinky 能看到什么", "What Pinky can see", "Qué puede ver Pinky"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
 
   const main = <>
     <section className="settings-profile">
@@ -117,6 +118,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       <label className="settings-row settings-switch-row"><span className="settings-icon tone-pink"><UsersThree size={18} weight="bold" /></span><span className="settings-switch-text"><span>{t("显示“我们俩”", "Show Us", "Mostrar Nosotros")}</span></span><input type="checkbox" role="switch" className="settings-switch" checked={usShown} onChange={toggleUs} data-testid="show-us" /></label>
     </Group>
     <Group title={t("隐私", "Privacy", "Privacidad")} note={t("退出关系或管理自己的数据，都不需要对方批准。", "Leaving a relationship or managing your own data never needs your partner's approval.", "Salir de una relación o gestionar tus datos nunca requiere la aprobación de tu pareja.")}>
+      <Row icon={<Eye size={18} weight="bold" />} tone="blue" label={titles.access} onClick={() => open("access")} testId="settings-access" />
       <Row icon={<Brain size={18} weight="bold" />} tone="pink" label={titles.memory} onClick={() => open("memory")} testId="settings-memory" />
       <Row icon={<ShieldCheck size={18} weight="bold" />} tone="green" label={titles.processors} onClick={() => open("processors")} testId="settings-processors" />
       <Row icon={<ClockCounterClockwise size={18} weight="bold" />} tone="blue" label={t("私人内容保留", "Keep private content", "Conservar lo privado")} value={data ? period(data.privateRetentionDays) : ""} onClick={() => open("retention")} />
@@ -148,6 +150,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
   ];
   const sub: Record<Exclude<Page, "main">, ReactNode> = {
     founder: <FounderBeta language={language} />,
+    access: <AiAccess language={language} onOpen={open} />,
     membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} />,
     profile: <ProfilePage language={language} onAsk={onAsk} />,
     notifications: <NotificationSettings language={language} />,

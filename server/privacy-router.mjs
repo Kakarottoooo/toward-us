@@ -4,7 +4,7 @@ import express from "express";
 import { photoFile } from "./photo-store.mjs";
 import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
-import { createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
+import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { createEmailSender } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
@@ -120,6 +120,30 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       relationships: snapshot.relationships,
       sharedSummaries: snapshot.graph.summaries.filter((record) => record.ownerUserId === userId).map(({ id, relationshipId, issueId, text, version, status, aiAccessScope, withdrawnAt }) => ({ id, relationshipId, issueId, text, version, status, aiAccessScope, withdrawnAt })),
       consentHistory: snapshot.graph.consentEvents.filter((record) => record.ownerUserId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(({ eventType, createdAt, objectId, sourceVersion }) => ({ eventType, createdAt, objectId, sourceVersion })),
+    });
+  });
+  // 「Pinky 能看到什么」(founder 11-07, trust you can see): counts of everything the AI can draw on for this member, in one
+  // place, with nothing of its content. The partner's private material is never counted here: it is never theirs to see.
+  router.get("/privacy/ai-access", async (req, res) => {
+    const userId = req.auth.user.id;
+    const snapshot = await store.relationshipSnapshotForUser(userId);
+    const context = await store.getRelationshipContext(userId);
+    const relationshipId = context?.relationship?.status === "active" ? context.relationship.id : null;
+    const live = (collection) => (snapshot[collection] || []).filter((record) => !record.archivedAt && !record.withdrawnAt && canViewRecord(record, userId));
+    const mine = (collection) => live(collection).filter((record) => record.ownerUserId === userId);
+    const memories = live("memories"), own = memories.filter((record) => record.ownerUserId === userId && record.visibility === "private");
+    const us = relationshipId ? (snapshot.togetherConversations || []).find((record) => record.relationshipId === relationshipId) : null;
+    res.json({
+      paired: Boolean(relationshipId),
+      facts: { used: own.filter((record) => record.aiAccessScope !== "none").length, off: own.filter((record) => record.aiAccessScope === "none").length, together: memories.filter((record) => record.visibility !== "private").length },
+      privateChat: mine("privateAgentThreads").filter((record) => record.intentType === "assistant").reduce((count, record) => count + (record.messages || []).length, 0),
+      us: us ? (us.messages || []).length : 0,
+      imports: mine("chatImports").length,
+      photos: mine("photos").length,
+      checkins: mine("checkins").length,
+      reminders: mine("reminders").length,
+      privateItems: mine("spaceItems").filter((record) => record.visibility === "private").length,
+      sharedByYou: (snapshot.consentEvents || []).filter((record) => record.ownerUserId === userId).length,
     });
   });
   router.patch("/privacy", async (req, res) => {
