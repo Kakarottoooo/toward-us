@@ -8,7 +8,7 @@ import { createFileStore } from "../server/store.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { jsonFromText, jsonInstruction } from "../server/claude-cli-client.mjs";
-import { assistantInstructions, routeAttachedScreenshots, validateAssistantTurn } from "../server/assistant-agent.mjs";
+import { assistantInstructions, assistantTurnSchema, routeAttachedScreenshots, validateAssistantTurn } from "../server/assistant-agent.mjs";
 
 test("the compact screenshot route preserves private import, normal photo planning and strict routing metadata", async () => {
   const messages = Array.from({ length: 8 }, (_, i) => ({ role: "user", text: `message ${i}` }));
@@ -51,6 +51,24 @@ test("missing a busy partner with little energy gets a quiet activity rather tha
     assert.match(prompt, /Do not offer a call, nudge, game invite or immediate message/);
     assert.match(prompt, /overrides feature discovery and onboarding/);
     assert.match(prompt, /No outgoing action unless asked/);
+  }
+});
+
+test("birthday gift advice uses visible wishes without invented prices, unsuitable DIY or outgoing actions", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /use only visible context.profile facts or this user's words/);
+    assert.match(prompt, /never the partner's private space/);
+    assert.match(prompt, /One idea tied to a wish and dislikes, at most one fallback, in 3–5 short sentences/);
+    assert.match(prompt, /Budget is a ceiling/);
+    assert.match(prompt, /without user\/lookup evidence/);
+    assert.match(prompt, /drinking cup needs food-safe finishing and firing, not air-dry\/polymer clay/);
+    assert.match(prompt, /gift a later experience/);
+    assert.match(prompt, /Advice uses actions:\[\]/);
+    assert.match(prompt, /no reminders, buying, messages, shared plans or onboarding unless requested/);
+    // Claude CLI passes this system prompt plus the schema as a Windows argument; keep headroom below 32,767.
+    const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
+    assert.ok(system.length + (system.match(/["\\]/g) || []).length < 32_600);
   }
 });
 
