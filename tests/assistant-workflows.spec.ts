@@ -67,7 +67,7 @@ test("the private conversation supports queued speech, interruption and text ret
   await page.getByRole("button", { name: "ES", exact: true }).click();
   await page.getByTestId("back-to-conversation").click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId("conversation-input")).toHaveAttribute("placeholder", "Cuéntame…");
+  await expect(page.getByTestId("conversation-input")).toHaveAttribute("placeholder", "Pega lo que dijo, o cuéntame…");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
