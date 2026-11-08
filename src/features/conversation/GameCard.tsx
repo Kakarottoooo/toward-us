@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowsClockwise, GameController, LockKey, Sparkle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { KeyboardTextarea, useKeyboard } from "../../mobile";
@@ -15,11 +15,20 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
-  const [draft, setDraft] = useState(""); const [busy, setBusy] = useState(false);
+  // Unsent truth answers stay in this tab, scoped to their author and this round.
+  const draftKey = `pinky:game-draft:${userId}:${questionId}`;
+  const [draft, setDraft] = useState(() => { try { return sessionStorage.getItem(draftKey)?.slice(0, 400) || ""; } catch { return ""; } });
+  const [busy, setBusy] = useState(false);
   const partner = members.find((member) => member.id !== userId);
   const partnerName = partner?.name || t("TA", "your partner", "tu pareja");
   const mine = answers[userId], theirs = partner ? answers[partner.id] : undefined;
   const revealed = Object.keys(answers).length >= 2;
+  useEffect(() => {
+    try {
+      if (game.type === "truth" && !mine && !revealed && draft) sessionStorage.setItem(draftKey, draft);
+      else sessionStorage.removeItem(draftKey);
+    } catch { /* Storage may be unavailable; the current answer remains usable. */ }
+  }, [draftKey, draft, game.type, mine, revealed]);
   // A private view preference: declining a question never submits an answer or changes the score.
   const deferredKey = `pinky:game-deferred:${userId}:${questionId}`;
   const [deferred, setDeferred] = useState(() => { try { return localStorage.getItem(deferredKey) === "1"; } catch { return false; } });
@@ -54,7 +63,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
       </li>;
     })}</ul> : <QuickReply language={language} options={game.options.map((option, index) => ({ value: String(index), label: option }))} busy={busy} onAnswer={(choice) => void send({ choice: Number(choice) })} testId="game-answer" /> : revealed ? <ul className="daily-answers">{[userId, partner?.id || ""].map((id) => answers[id] && <li key={id}><small>{id === userId ? t("你", "You", "Tú") : partnerName}</small><p>{answers[id].text}</p></li>)}</ul>
       : mine ? <div className="daily-mine"><p>{mine.text}</p></div>
-      : <><div className="daily-input"><KeyboardTextarea aria-label={t("你的回答", "Your answer", "Tu respuesta")} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => keyboard.hide()} rows={2} maxLength={400} placeholder={t("写下你的真心话…", "Write your answer…", "Escribe tu respuesta…")} /></div>
+      : <><div className="daily-input"><KeyboardTextarea aria-label={t("你的回答", "Your answer", "Tu respuesta")} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onBlur={() => keyboard.hide()} rows={2} maxLength={400} placeholder={t("写下你的真心话…", "Write your answer…", "Escribe tu respuesta…")} /></div>
         <div className="card-actions"><button className="card-primary" disabled={busy || !draft.trim()} onClick={() => void send({ text: draft.trim() })}>{t("回答", "Answer", "Responder")}</button></div></>}
     {!mine && !revealed && <div className="card-actions"><button type="button" disabled={busy} onClick={() => defer(true)} data-testid="game-defer">{t("这题先不玩", "Pass on this question", "Pasar esta pregunta")}</button></div>}
     {mine && !revealed && <small className="game-wait"><LockKey size={14} />{t(`等 ${partnerName} 也答完，一起揭晓`, `Revealed together once ${partnerName} answers`, `Se revela cuando ${partnerName} también responda`)}</small>}
