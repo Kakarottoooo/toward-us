@@ -5,7 +5,7 @@ import { jsonBody, relationshipApi } from "../relationship/api";
 import { LiveCall, type CallState, type CaptionRow } from "./liveCall";
 import "./call.css";
 
-type Started = { channel: "me" | "us"; sessionId: string | null };
+type Started = { channel: "me" | "us"; sessionId: string | null; mode?: "interview" };
 const ERRORS: Record<string, [string, string, string]> = {
   voice_not_configured: ["通话还没开通：服务器还没有配置语音服务。", "Calls aren't set up yet: the voice service isn't configured on the server.", "Las llamadas aún no están activadas: falta configurar el servicio de voz."],
   voice_quota: ["语音服务的账户余额用完了，充值后就能通话。", "The voice service account is out of credit. Calls work again once it is topped up.", "La cuenta del servicio de voz se quedó sin saldo. Las llamadas vuelven al recargarla."],
@@ -31,7 +31,7 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
     // Unmounting (or React's dev double-run of effects) hangs up quietly instead of reporting the call as ended.
     let disposed = false;
     const live = new LiveCall({
-      start: (body) => relationshipApi(`/api/voice/start`, jsonBody({ ...body, channel: started.channel, sessionId: started.sessionId, language })),
+      start: (body) => relationshipApi(`/api/voice/start`, jsonBody({ ...body, channel: started.channel, sessionId: started.sessionId, language, ...(started.mode ? { mode: started.mode } : {}) })),
       post: (path, body) => relationshipApi(path, jsonBody(body)),
       onState: (next, detail) => { setState(next); if (detail === "playback_blocked") setBlocked(true); else if (detail) reason.current = detail; },
       onCaptions: setRows, onTask: setPending,
@@ -50,7 +50,8 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
   const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   const status = state === "connecting" || state === "idle" ? t("正在接通 Pinky…", "Connecting to Pinky…", "Conectando con Pinky…") : state === "connected" ? pending ? t("Pinky 正在办…", "Pinky is on it…", "Pinky está en ello…") : clock : t("正在挂断…", "Hanging up…", "Colgando…");
   return <section className="call-panel" data-testid="call-panel" aria-live="polite">
-    <header><span className={`call-dot is-${state}`} aria-hidden="true" /><strong>{started.channel === "us" ? t("你们和 Pinky 通话中", "On a call with Pinky", "En llamada con Pinky") : t("和 Pinky 私下通话", "Private call with Pinky", "Llamada privada con Pinky")}</strong><span>{status}</span></header>
+    <header><span className={`call-dot is-${state}`} aria-hidden="true" /><strong>{started.channel === "us" ? t("你们和 Pinky 通话中", "On a call with Pinky", "En llamada con Pinky") : started.mode === "interview" ? t("Pinky 在认识你", "Pinky is getting to know you", "Pinky te está conociendo") : t("和 Pinky 私下通话", "Private call with Pinky", "Llamada privada con Pinky")}</strong><span>{status}</span></header>
+    {started.mode === "interview" && state === "connected" && !rows.length && <p className="call-hint">{t("Pinky 会先开口问你问题。哪题不想答就说“跳过”，想结束随时挂断。", "Pinky will start with a question. Say “skip” for any you'd rather not answer, and hang up whenever you like.", "Pinky empezará con una pregunta. Di «saltar» si no quieres responder y cuelga cuando quieras.")}</p>}
     {started.channel === "us" && state === "connected" && !rows.length && <p className="call-hint">{t(`把手机放在你们中间。Pinky 会先问每个人的名字，之后谁说话它都能听到。旁边有第三个人也可以一起说。`, `Put the phone between you. Pinky will ask everyone's name first; after that it hears whoever speaks. A third person can join in too.`, `Pon el teléfono entre ustedes. Pinky preguntará primero el nombre de cada uno; después oye a quien hable. Una tercera persona también puede participar.`)}</p>}
     {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}</li>)}</ol>}
     {blocked && <p className="call-hint">{t("点一下扬声器按钮，打开 Pinky 的声音。", "Tap the speaker button to hear Pinky.", "Toca el altavoz para oír a Pinky.")}</p>}

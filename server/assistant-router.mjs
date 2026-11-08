@@ -15,6 +15,7 @@ import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
 import { draftAgreementFromTogether } from "./together-domain.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
+import { answerDateCheck, askAfterDate } from "./date-checks.mjs";
 import { isAiLimit } from "./ai-budget.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
@@ -45,7 +46,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
-      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.kind === "noted" ? { kind: "noted" } : {}), ...(message.call ? { call: message.call } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.kind === "noted" ? { kind: "noted" } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
@@ -82,11 +83,11 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
     const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!latest) throw fail(404, "No conversation yet.");
-    res.json({ session: await output((await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
+    res.json({ session: await output((await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
   });
   router.get("/assistant/sessions/:id", async (req, res) => {
     const session = await owned(store, req.params.id, req.auth.user.id);
-    res.json({ session: await output((req.query.opened === "1" && await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null)) || session) });
+    res.json({ session: await output((req.query.opened === "1" && ((await askAfterDate(store, { userId: req.auth.user.id, session }).catch(() => null)) || await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null))) || session) });
   });
   // Each promise's own latest answer, for the Agreements page; private to this member.
   router.get("/assistant/promises", async (req, res) => {
@@ -488,6 +489,14 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       if (!record.archivedAt) await tx.updateRelationshipRecordForUser(collections[kind], record.id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; });
       return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => { draft.undone = [...(draft.undone || []), { id: cardId, kind, title }].slice(-100); draft.version += 1; });
     });
+    res.json({ session: await output(saved) });
+  });
+  // 约会之后问一句: the one-tap answer to "how was it?", kept as the member's own private note.
+  router.post("/assistant/sessions/:id/date-check", async (req, res) => {
+    const userId = req.auth.user.id;
+    await owned(store, req.params.id, userId);
+    const saved = await answerDateCheck(store, { userId, sessionId: req.params.id, messageId: clean(req.body?.messageId, 80), rating: clean(req.body?.rating, 10), told: req.body?.told === true });
+    if (!req.body?.told) { const context = await store.getRelationshipContext(userId); if (context?.relationship) emit({ id: saved.id, relationshipId: context.relationship.id }, "profile.updated", userId); }
     res.json({ session: await output(saved) });
   });
   router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
