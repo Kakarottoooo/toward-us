@@ -126,6 +126,50 @@ test("screenshot advice reads the actual exchange, answers the original question
   assert.equal(f.calls.planner.at(-1).screenshotConversation.transcript, null, "deleted original messages are not restored to context");
 });
 
+test("screenshots where only the other person speaks are answered without asking who is who", async (t) => {
+  // Use-case test, 11-08: an ex's three messages got "告诉我哪个名字是你、哪个是 TA" instead of an answer.
+  const privateReply = "Private advice about the ex's invitation.";
+  const f = await fixture(t, { screenshots: [
+    { mine: false, name: "Jordan", text: "How have you been?", time: null },
+    { mine: false, name: "Jordan", text: "It's been three months.", time: null },
+    { mine: false, name: "Jordan", text: "Dinner sometime?", time: null },
+  ], planner: (context) => context.transcript
+    ? { observations: [], uncertainties: [], reply: privateReply, actions: [] }
+    : { reply: "I'm reading the screenshots privately.", actions: [action("chat_import", "create")] } });
+  const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "My ex wants dinner. Should I go?", itemId: randomUUID(), photoIds: [photo.id] });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  let session;
+  for (let index = 0; index < 150; index += 1) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === privateReply)) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(session.messages.some((message) => message.text === privateReply), JSON.stringify(session.messages.map((message) => message.text)));
+  assert.ok(!session.messages.some((message) => /which name is you/.test(message.text)));
+  const context = f.calls.planner.find((call) => call.transcript);
+  assert.deepEqual(context.names, { me: "Alex", partner: "Jordan" });
+  assert.match(context.transcript, /\[partner\] Jordan: Dinner sometime\?/);
+});
+
+test("a screenshot with a single line from the other person is answered", async (t) => {
+  // Use-case test, 11-08: "今天好冷啊" alone got "这些截图里没有读到聊天内容".
+  const privateReply = "Try: Want me to bring you a hot drink?";
+  const f = await fixture(t, { screenshots: [{ mine: false, name: "Lily", text: "It's so cold today", time: null }],
+    planner: (context) => context.transcript ? { observations: [], uncertainties: [], reply: privateReply, actions: [] } : { reply: "Reading.", actions: [action("chat_import", "create")] } });
+  const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Just reply for me", itemId: randomUUID(), photoIds: [photo.id] })).status, 200);
+  let session;
+  for (let index = 0; index < 150; index += 1) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === privateReply)) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(session.messages.some((message) => message.text === privateReply), JSON.stringify(session.messages.map((message) => message.text)));
+});
+
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
   let release;
   const held = new Promise((resolve) => { release = resolve; });

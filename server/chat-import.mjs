@@ -244,6 +244,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const pairing = await store.getRelationshipContext(user.id);
     const partnerName = norm(pairing?.members?.find((member) => member.userId !== user.id)?.user?.name);
     const people = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count, role: fromMe.has(name) || ["me", "我", "yo"].includes(norm(name)) || norm(name) === norm(user.name) ? "me" : partnerName && norm(name) === partnerName ? "partner" : null }));
+    // The screenshot reader knows which bubbles are the member's (their side of the screen). When only the other person
+    // speaks in them (an ex asking to meet, a partner venting), the rest is the member, so there is nobody to ask about
+    // (use-case test, 11-08: "哪个名字是你、哪个是 TA" after an ex's three messages).
+    if (record.platform === "screenshots" && !people.some((person) => person.role === "me")) people.unshift({ name: user.name || "Me", count: 0, role: "me" });
     const others = people.filter((person) => person.role !== "me"), total = conversation.messages.length;
     if (people.some((person) => person.role === "me") && !people.some((person) => person.role === "partner")) {
       const main = others.filter((person) => person.count >= total * 0.05);
@@ -343,7 +347,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
     const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id)) } : null });
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
-    if (messages.length < 2) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
+    // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
+    if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
     return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
   }

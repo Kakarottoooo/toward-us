@@ -82,6 +82,13 @@ test("the planner contract: a handoff carries its details, and only a handoff do
   assert.equal(validateAssistantTurn(normalizeAssistantTurn({ reply: "", actions: [action({ kind: "link", operation: "create", fields: older })] })), true, "older planners without the field still pass");
 });
 
+test("empty action fields repeated at the top of a planner answer do not refuse a good reply", () => {
+  const stray = { reply: "记下了：阿凯压力大时不喜欢被追问。", actions: [], query: null, queryPeriod: "all", occurrence: null };
+  assert.deepEqual(normalizeAssistantTurn(stray), { reply: stray.reply, actions: [] });
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn(stray)), true);
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn({ ...stray, query: "阿凯" })), false, "an extra with content still fails");
+});
+
 async function setup(t, plan) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "handoffs-"));
