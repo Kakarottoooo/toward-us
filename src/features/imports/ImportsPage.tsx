@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, ChatCircleDots, ChatsCircle, Copy, FileArrowUp, Laptop, LockKey, Trash, UsersThree, Warning } from "@phosphor-icons/react";
+import { ArrowRight, ChatCircleDots, ChatsCircle, Copy, Desktop, FileArrowUp, Laptop, LockKey, Trash, UsersThree, Warning } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -33,18 +33,20 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
   </div>;
 }
 
-/** Ways in: a file, the Mac helper for iMessage, or asking Pinky for steps for any app. */
+/** Ways in: a file, iMessage from a Mac or from a Windows PC's iPhone backup, or asking Pinky for steps for any app. */
 function ImportStart({ language, onImported, onAsk }: { language: Language; onImported: (item: ChatImport) => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [command, setCommand] = useState(""), [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [command, setCommand] = useState(""), [winCommand, setWinCommand] = useState(""), [copied, setCopied] = useState(false);
   const pick = async (file: File | undefined) => {
     if (fileRef.current) fileRef.current.value = ""; if (!file) return;
     setBusy(true); setError("");
     try { onImported(await uploadChatFile(file, { name: file.name, language })); } catch (caught) { setError((caught as Error).message); } finally { setBusy(false); }
   };
-  const mac = async () => { setError(""); try { setCommand((await relationshipApi<{ command: string }>("/api/imports/mac-sync-command", jsonBody({ language }))).command); } catch (caught) { setError((caught as Error).message); } };
-  const copy = async () => { try { await navigator.clipboard.writeText(command); setCopied(true); } catch { setCopied(false); } };
+  // Years of iMessage without a Mac (founder 11-09): the PC's iPhone backup, read by a short command typed off the phone.
+  const windows = async () => { setError(""); setCommand(""); setCopied(false); try { setWinCommand((await relationshipApi<{ command: string }>("/api/imports/windows-command", jsonBody({ language }))).command); } catch (caught) { setError((caught as Error).message); } };
+  const mac = async () => { setError(""); setWinCommand(""); setCopied(false); try { setCommand((await relationshipApi<{ command: string }>("/api/imports/mac-sync-command", jsonBody({ language }))).command); } catch (caught) { setError((caught as Error).message); } };
+  const copy = async () => { try { await navigator.clipboard.writeText(command || winCommand); setCopied(true); } catch { setCopied(false); } };
   return <section className="import-start">
     <h2 className="space-subhead">{t("导入新的聊天", "Import a chat", "Importar un chat")}</h2>
     <button className="import-way" disabled={busy} onClick={() => fileRef.current?.click()} data-testid="import-file"><FileArrowUp size={22} /><span><strong>{busy ? t("正在上传…", "Uploading…", "Subiendo…") : t("选择导出的文件", "Choose an exported file", "Elegir un archivo exportado")}</strong><small>WhatsApp · Messenger · Instagram · Telegram · LINE · iMazing · SMS Backup</small></span></button>
@@ -57,6 +59,15 @@ function ImportStart({ language, onImported, onAsk }: { language: Language; onIm
         <li>{t("选出和 TA 的对话编号。之后每小时自动同步，只有你能看到；Mac 合上时暂停，打开后补上。", "Pick the conversation with your partner. From then on it syncs every hour, visible only to you; it pauses while the Mac sleeps and catches up after.", "Elige la conversación con tu pareja. Desde entonces se sincroniza cada hora, solo para ti; se pausa con el Mac dormido y luego se pone al día.")}</li>
         <li>{t("最后按终端里的提示，把 /bin/zsh 也加进“完全磁盘访问权限”（只做一次），后台同步才能读到。", "Last, as Terminal says, add /bin/zsh to Full Disk Access too (once), so the background sync can read.", "Por último, como indica Terminal, añade /bin/zsh al acceso total al disco (una vez) para que la sincronización en segundo plano pueda leer.")}</li></ol>
       <code>{command}</code><button onClick={() => void copy()}><Copy size={16} />{copied ? t("已复制", "Copied", "Copiado") : t("复制命令", "Copy command", "Copiar comando")}</button>
+    </div>}
+    <button className="import-way" onClick={() => void windows()} data-testid="import-windows"><Desktop size={22} /><span><strong>{t("在 Windows 电脑上导入 iMessage", "Import iMessage on a Windows PC", "Importar iMessage en un PC con Windows")}</strong><small>{t("没有 Mac 也行：用 iPhone 在电脑上的备份，几年的记录一次导入", "No Mac needed: uses the iPhone's backup on the PC, years of history at once", "Sin Mac: usa la copia del iPhone en el PC, años de historial de una vez")}</small></span></button>
+    {winCommand && <div className="import-command" data-testid="windows-steps">
+      <ol><li>{t("用数据线把 iPhone 连到 Windows 电脑，打开“Apple 设备”App（没有就在 Microsoft Store 免费下载，用 iTunes 也行）。", "Connect the iPhone to the Windows PC with a cable and open the Apple Devices app (free in the Microsoft Store; iTunes works too).", "Conecta el iPhone al PC con un cable y abre la app Dispositivos Apple (gratis en Microsoft Store; también sirve iTunes).")}</li>
+        <li>{t("选中你的 iPhone，点“立即备份”，不要勾选“加密本地备份”，等备份完成（第一次可能要十几分钟）。", "Select the iPhone and click Back Up Now, with “Encrypt local backup” off. Wait for it to finish (the first one can take a while).", "Selecciona el iPhone y pulsa Realizar copia ahora, sin «Encriptar copia local». Espera a que termine (la primera puede tardar).")}</li>
+        <li>{t("在电脑上点“开始”，搜索 PowerShell，打开“Windows PowerShell”。", "On the PC, open Start, search for PowerShell and open Windows PowerShell.", "En el PC, abre Inicio, busca PowerShell y abre Windows PowerShell.")}</li>
+        <li>{t("照着输入下面这一行，按回车，再选出和 TA 的对话编号。只读这一段对话，别的什么都不读、不发。", "Type this one line and press Enter, then pick the conversation with them. Only that conversation is read; nothing else is read or sent.", "Escribe esta línea y pulsa Intro; luego elige la conversación. Solo se lee esa conversación; nada más se lee ni se envía.")}</li>
+        <li>{t("看到“已导入”后回到这里看分析。这一行一小时内有效，只能用一次。", "When it says imported, come back here for the analysis. The line works for an hour, once.", "Cuando diga importado, vuelve aquí para ver el análisis. La línea sirve una hora, una sola vez.")}</li></ol>
+      <code className="import-typed">{winCommand}</code><button onClick={() => void copy()}><Copy size={16} />{copied ? t("已复制", "Copied", "Copiado") : t("复制", "Copy", "Copiar")}</button>
     </div>}
     <button className="import-way" onClick={() => onAsk(t("我想导入我和 TA 的聊天记录，告诉我怎么从", "I want to import my chat history with my partner. How do I export it from ", "Quiero importar mi historial de chat con mi pareja. ¿Cómo lo exporto desde "), "me")}><ChatCircleDots size={22} /><span><strong>{t("问 Pinky 怎么导出", "Ask Pinky how to export", "Pregúntale a Pinky cómo exportar")}</strong><small>{t("微信、iPhone 短信等：Pinky 一步步教你，也可以直接发截图", "WeChat, iPhone texts and more: Pinky walks you through it, or send screenshots", "WeChat, mensajes del iPhone y más: Pinky te guía, o envía capturas")}</small></span></button>
     {error && <p className="space-error" role="alert">{error}</p>}

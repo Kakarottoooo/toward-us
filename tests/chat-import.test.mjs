@@ -482,3 +482,22 @@ test("a synced history is due again only after a week and enough new messages", 
   assert.equal(dueForAnalysis({ ...read, messageCount: 400, analyzedAt: new Date().toISOString() }), false);
   assert.equal(dueForAnalysis({ ...base, messageCount: 500, people: [{ role: "me" }] }), false, "not before it knows who is who");
 });
+
+test("a Windows PC imports iMessage from the iPhone backup with a short, single-use code (founder 11-09)", async (t) => {
+  const f = await fixture(t);
+  const { command, expiresInMinutes } = (await f.request("/imports/windows-command", "POST", { language: "en" })).body;
+  assert.equal(expiresInMinutes, 60);
+  const code = command.match(/\/imports\/w\/([A-Z2-9]{8}) \| iex$/)?.[1];
+  assert.ok(code, command);
+  const script = await (await fetch(f.url(`/imports/w/${code}`))).text();
+  assert.ok(script.startsWith("$Base = '") && script.split("\n")[0].endsWith(`; $Token = '${code}'`), "the script carries its code and needs no arguments");
+  assert.match(script, /3d0d7e5fb2ce288813306e4d4636395e047a3d28/, "it reads the backup's message database");
+  assert.doesNotMatch(script, /^param\(/m);
+  const rows = JSON.stringify({ format: "pinky-imessage", chat: { title: "Lin" }, rows: [{ date: 726000000000000000, is_from_me: 1, handle: "+15550100", text: "hi", body_hex: null, attachments: 0 }, { date: 726000060000000000, is_from_me: 0, handle: "+15550100", text: "hey", body_hex: null, attachments: 0 }] });
+  const post = () => fetch(f.url(`/imports/upload/${code}`), { method: "POST", headers: { "content-type": "application/octet-stream" }, body: rows });
+  const first = await post(); const text = await first.text();
+  assert.equal(first.status, 200, text); assert.match(text, /Imported 2 messages/);
+  assert.equal((await post()).status, 401, "the code works once");
+  assert.match(await (await fetch(f.url(`/imports/w/${code}`))).text(), /expired/, "a used code gets one line, not the script");
+  assert.equal((await fetch(f.url("/imports/windows-helper.ps1"))).status, 200, "the plain script needs no session");
+});

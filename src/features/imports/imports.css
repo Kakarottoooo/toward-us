@@ -53,3 +53,5 @@
 .import-command ol { display: grid; gap: 6px; margin: 0; padding-left: 20px; color: #4a4540; font-size: 15px; line-height: 1.5; }
 .import-command code { display: block; padding: 10px 12px; border-radius: 10px; background: #252525; color: #f8f4ec; font-size: 12px; line-height: 1.5; word-break: break-all; user-select: all; }
 .import-command button { justify-self: start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--jian-blue); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+/* Typed by hand off the phone screen: big enough to read across a desk. */
+.import-command code.import-typed { font-size: 16px; letter-spacing: .02em; }
