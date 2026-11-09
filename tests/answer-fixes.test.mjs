@@ -148,6 +148,14 @@ test("a search that finds something keeps Pinky's own words and shows what it fo
   assert.equal(reply.cards.length, 1);
 });
 
+test("an empty answer is planned once more instead of showing a generic what-to-do question", async (t) => {
+  let turn = 0;
+  const { say } = await setup(t, () => (turn += 1) === 1 ? { reply: "", actions: [] } : { reply: "带点水果或茶叶，叫叔叔阿姨就好。", actions: [] });
+  const reply = await say("见她父母第一次，带什么、说什么");
+  assert.equal(turn, 2);
+  assert.equal(reply.text, "带点水果或茶叶，叫叔叔阿姨就好。");
+});
+
 test("structured answers are read from the model's one JSON reply, fences and stray text tolerated", () => {
   assert.deepEqual(jsonFromText('{"reply":"建议：猫咖","actions":[]}'), { reply: "建议：猫咖", actions: [] });
   assert.deepEqual(jsonFromText('```json\n{"reply":"好","actions":[]}\n```'), { reply: "好", actions: [] });
@@ -169,6 +177,11 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, actions: [] }, "use-case test 11-08: repeated empty wrappers");
   const called = `${prose}\n<invoke name="Bash">\n<parameter name="command">echo done</parameter>\n</invoke>`;
   assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 6: a written-out tool call with arguments");
+  assert.deepEqual(proseAsReply(`${called}\n_ctx`, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 8: stray text after the call");
+  const { answerFromText } = await import("../server/claude-cli-client.mjs");
+  const scraper = '可以这样写：\nheaders = {"User-Agent": "Mozilla/5.0"}\nrequests.get(url, headers=headers)';
+  assert.equal(answerFromText(scraper, assistantTurnSchema)?.["User-Agent"], undefined, "use-case round 8: a JSON object from code in the prose is not the turn");
+  assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema), { reply: "好", actions: [] });
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");

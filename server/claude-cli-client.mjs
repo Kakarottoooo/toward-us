@@ -33,8 +33,9 @@ export function jsonFromText(text) {
 export function withoutToolMarkup(text) {
   let value = String(text ?? "");
   // A tool call the model wrote out on its own lines, with or without arguments (round 6: `<invoke name="Bash">` with
-  // `echo done`), is never part of the answer; quoted markup inside a sentence is left alone.
-  const call = value.match(/(?:^|\n)[ \t]*(?:<function_calls>\s*)?<invoke\b[\s\S]*<\/(?:invoke|function_calls)>\s*$/i);
+  // `echo done`), is never part of the answer, nor is anything after it (round 8: a stray `_ctx` followed the closing
+  // tag); quoted markup inside a sentence is left alone.
+  const call = value.match(/(?:^|\n)[ \t]*(?:<function_calls>\s*)?<invoke\b[\s\S]*<\/(?:invoke|function_calls)>[\s\S]*$/i);
   if (call) value = value.slice(0, call.index).trimEnd();
   const tail = value.match(/(?:\s*<\/?(?:function_calls|invoke)\b[^>]*>)+\s*$/i);
   return tail && /<(?:function_calls|invoke)\b/i.test(tail[0]) ? value.slice(0, tail.index).trimEnd() : value;
@@ -59,6 +60,15 @@ export function proseAsReply(text, schema) {
     else return null;
   }
   return "reply" in value ? value : null;
+}
+
+/** The structured answer in a model's first text reply under `schema`, or null when a strict second call is needed. */
+export function answerFromText(text, schema) {
+  // An object holding none of the schema's required keys is not the answer: asked to write a scraper, the model's prose
+  // held `{"User-Agent": …}`, which was taken as the turn and failed as a 502 (round 8, 11-09).
+  const found = jsonFromText(text);
+  const fits = found && (!schema?.required?.length || schema.required.some((key) => key in found));
+  return (fits ? found : null) || proseAsReply(text, schema);
 }
 
 // Scenario testing found the lightweight planner invented context and UI paths in ordinary care requests, too.
@@ -115,7 +125,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         };
         if (!schema) return { output_text: String((await call([], system)).result ?? "") };
         const firstText = (await call([], [system, jsonInstruction(schema)].filter(Boolean).join("\n\n"))).result;
-        const parsed = jsonFromText(firstText) || proseAsReply(firstText, schema);
+        const parsed = answerFromText(firstText, schema);
         if (parsed && typeof parsed.reply === "string") parsed.reply = withoutToolMarkup(parsed.reply);
         if (parsed) return { output_text: JSON.stringify(parsed) };
         return { output_text: JSON.stringify((await call(["--json-schema", JSON.stringify(schema)], system)).structured_output ?? {}) };
