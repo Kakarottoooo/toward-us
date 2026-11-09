@@ -198,3 +198,12 @@ test("the Claude CLI gets its system prompt from a file, so a long prompt never 
 test("asked for suggestions in words, Pinky gives a few specific ones, since the bulb button is gone (founder 11-09)", () => {
   for (const language of ["zh", "en", "es"]) assert.match(assistantInstructions(language), /there is no suggestions button any more/);
 });
+
+test("import help gives the chat history page as a button with labels in the member's language, never a written path (founder 11-09)", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /a link action with fields\.text "\/\?view=import"/);
+    assert.match(prompt, /在 Mac 上自动同步 iMessage/);
+    assert.doesNotMatch(prompt, /link \/\?view=import\)/);
+  }
+});
