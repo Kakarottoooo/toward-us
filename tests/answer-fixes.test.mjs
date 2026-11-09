@@ -167,6 +167,8 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', actions: [] }, "nonempty quoted markup is preserved");
   const doubled = `${prose}\n\n<invoke name="x">\n</invoke>\n</invoke>\n\n\n<invoke name="x">\n</invoke>\n</invoke>`;
   assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, actions: [] }, "use-case test 11-08: repeated empty wrappers");
+  const called = `${prose}\n<invoke name="Bash">\n<parameter name="command">echo done</parameter>\n</invoke>`;
+  assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 6: a written-out tool call with arguments");
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");

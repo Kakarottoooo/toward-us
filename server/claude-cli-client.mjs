@@ -31,7 +31,11 @@ export function jsonFromText(text) {
 // `<invoke name="x">\n</invoke>\n</invoke>` twice after good first-date advice). The trailing block made only of such
 // tags is dropped when it opens one itself; markup that closes quoted content (`<invoke>text</invoke>`) is kept.
 export function withoutToolMarkup(text) {
-  const value = String(text ?? "");
+  let value = String(text ?? "");
+  // A tool call the model wrote out on its own lines, with or without arguments (round 6: `<invoke name="Bash">` with
+  // `echo done`), is never part of the answer; quoted markup inside a sentence is left alone.
+  const call = value.match(/(?:^|\n)[ \t]*(?:<function_calls>\s*)?<invoke\b[\s\S]*<\/(?:invoke|function_calls)>\s*$/i);
+  if (call) value = value.slice(0, call.index).trimEnd();
   const tail = value.match(/(?:\s*<\/?(?:function_calls|invoke)\b[^>]*>)+\s*$/i);
   return tail && /<(?:function_calls|invoke)\b/i.test(tail[0]) ? value.slice(0, tail.index).trimEnd() : value;
 }
