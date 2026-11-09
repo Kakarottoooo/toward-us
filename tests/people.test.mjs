@@ -76,6 +76,22 @@ test("what a chat with one person shows is kept on that person's card, never on 
   assert.match(noted.text, /About us|Lily/);
 });
 
+test("the noted line quotes the member's own history words and says which notes went to the person's card", async (t) => {
+  // Watch 11-09: "已记进「关于我们」：你2026-10-15 前后 我去梧桐山看日出，超美；小雨喜欢徒步" read as garbled and put 小雨's notes in About us.
+  const { store, users, add } = await setup(t);
+  const rain = await add("小雨");
+  const session = createRelationshipRecord({ relationshipId: null, userId: users[0].id, visibility: "private", aiAccessScope: "private", intentType: "assistant", language: "zh", timezone: "UTC", messages: [] });
+  await store.createRelationshipRecord("privateAgentThreads", session);
+  const mediator = { structured: async () => ({ facts: [
+    { messageId: "imp:0", quote: "我去梧桐山看日出，超美", subject: "A", person: "", category: "history", fact: "2026-10-15 前后 我去梧桐山看日出，超美", replaces: "" },
+    { messageId: "imp:1", quote: "我超喜欢徒步", subject: "B", person: "", category: "likes", fact: "喜欢徒步", replaces: "" },
+  ] }) };
+  const messages = [{ role: "me", text: "上个月我去梧桐山看日出，超美" }, { role: "partner", text: "我超喜欢徒步" }];
+  await scanBroughtChat({ store, mediator, userId: users[0].id, sessionId: session.id, sourceId: "imp", messages, personId: rain.id });
+  const noted = (await store.getRelationshipRecordForUser("privateAgentThreads", session.id, users[0].id)).messages.find((message) => message.kind === "noted");
+  assert.equal(noted.text, "已记进「关于我们」：「2026-10-15 前后 我去梧桐山看日出，超美」。已记进 小雨 的档案：喜欢徒步");
+});
+
 test("a partner sees none of the people or their notes, through any route", async (t) => {
   const { store, users, session, add, request } = await setup(t, { paired: true });
   const lily = await add("Lily");

@@ -271,15 +271,25 @@ const notedPerson = (facts) => { const ids = [...new Set(facts.map((fact) => per
 function notedText(language, facts, { userId, partnerName, people = [] }) {
   const personName = (fact) => personOf(fact.subjectUserId) ? people.find((person) => person.id === personOf(fact.subjectUserId))?.name || say(language, "TA", "them", "esa persona") : null;
   // Notes about someone they are getting to know go to that person's own card, not to About us.
+  const sep = say(language, "；", "; ", "; "), more = facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "";
+  const shown = facts.slice(0, 3);
+  const onCard = (name, list) => say(language, `已记进 ${name} 的档案：${list}`, `Kept on ${name}'s card: ${list}`, `Guardado en la ficha de ${name}: ${list}`);
   const owners = [...new Set(facts.map(personName))];
-  if (owners.length === 1 && owners[0]) {
-    const list = facts.slice(0, 3).map((fact) => fact.text).join(say(language, "；", "; ", "; "));
-    return say(language, `已记进 ${owners[0]} 的档案：${list}`, `Kept on ${owners[0]}'s card: ${list}`, `Guardado en la ficha de ${owners[0]}: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
-  }
-  const who = (fact) => personName(fact) || (fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes"));
-  const list = facts.slice(0, 3).map((fact) => say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`)).join(say(language, "；", "; ", "; "));
+  if (owners.length === 1 && owners[0]) return onCard(owners[0], shown.map((fact) => fact.text).join(sep)) + more;
+  // A history line is already in the member's own words ("2026-10-15 前后 我去…"): quote it instead of putting 你 before it
+  // (watch 11-09: "你2026-10-15 前后 我去梧桐山看日出").
+  const who = (fact) => fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes");
+  const item = (fact) => fact.category === "history"
+    ? say(language, `「${fact.text}」`, `"${fact.text}"`, `«${fact.text}»`)
+    : say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`);
+  // Notes about a person they are getting to know went to that person's card, so they are not said to be in About us.
+  const ours = shown.filter((fact) => !personName(fact)), named = [...new Set(shown.map(personName).filter(Boolean))];
+  const parts = [
+    ...(ours.length ? [say(language, `已记进「关于我们」：${ours.map(item).join(sep)}`, `Kept in About us: ${ours.map(item).join(sep)}`, `Guardado en Sobre nosotros: ${ours.map(item).join(sep)}`)] : []),
+    ...named.map((name) => onCard(name, shown.filter((fact) => personName(fact) === name).map((fact) => fact.text).join(sep))),
+  ];
   // Pinky's own reply may already say it will remember; this line says where it went, so it never just repeats it.
-  return say(language, `已记进「关于我们」：${list}`, `Kept in About us: ${list}`, `Guardado en Sobre nosotros: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
+  return parts.join(say(language, "。", ". ", ". ")) + more;
 }
 
 /** What Pinky knows, for this member's own conversations: their notes and what is shared with them. */
