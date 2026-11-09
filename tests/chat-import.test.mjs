@@ -33,7 +33,7 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
     answerScreenshot: async (context) => { calls.planner.push(context); return planner(context); },
     continueTogether: async (context) => { calls.shared.push(context); return shared(context); },
     structured: async ({ name, input }) => { calls.structured.push({ name, input }); await beforeStructured(name); return name === "chat_history_part" ? { episodes: [{ date: "2024-01-02", kind: "conflict", title: "Late again", summary: "Blair was late.", speaker: "Alex", quote: "you always say that" }], themes: ["lateness"], tone: "tense" } : report; },
-    readScreenshots: async (context) => { calls.screenshots.push(context); return { messages: screenshots, advice: screenshotAdvice }; },
+    readScreenshots: async (context) => { calls.screenshots.push(context); return { messages: typeof screenshots === "function" ? screenshots() : screenshots, advice: screenshotAdvice }; },
   };
   const app = express(); app.use(express.json());
   app.use((req, _res, next) => { const person = people.find((item) => item.id === req.headers["x-user"]); if (person) req.auth = { user: person }; next(); });
@@ -501,4 +501,31 @@ test("a Windows PC imports iMessage from the iPhone backup with a short, single-
   assert.equal((await post()).status, 401, "the code works once");
   assert.match(await (await fetch(f.url(`/imports/w/${code}`))).text(), /expired/, "a used code gets one line, not the script");
   assert.equal((await fetch(f.url("/imports/windows-helper.ps1"))).status, 200, "the plain script needs no session");
+});
+
+test("a screenshot chat with someone other than the partner goes on that person's card; the partner's chat does not", async (t) => {
+  // Founder 11-09: someone single (or anyone) may bring chats with several people; Pinky tells them apart by the chat's name.
+  const { listPeople } = await import("../server/people.mjs");
+  let shots = [{ mine: false, name: "Lily", text: "Movie on Friday?", time: null }];
+  const f = await fixture(t, { screenshots: () => shots, planner: (context) => context.transcript ? { observations: [], uncertainties: [], reply: "Say yes.", actions: [] } : { reply: "Reading.", actions: [action("chat_import", "create")] } });
+  const send = async (messages) => {
+    shots = messages;
+    const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+    await f.store.createRelationshipRecord("photos", photo);
+    const before = (await f.request("/imports")).body.imports.length;
+    assert.equal((await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What do I say?", itemId: randomUUID(), photoIds: [photo.id] })).status, 200);
+    let imports = [];
+    for (let index = 0; index < 150 && imports.length <= before; index += 1) { imports = (await f.request("/imports")).body.imports; await new Promise((r) => setTimeout(r, 20)); }
+    return f.ready(imports[0].id);
+  };
+  const lilyChat = await send([{ mine: false, name: "Lily", text: "Movie on Friday?", time: null }]);
+  const jieChat = await send([{ mine: false, name: "阿杰", text: "Hike this weekend?", time: null }]);
+  const partnerChat = await send([{ mine: false, name: "Blair", text: "Home soon?", time: null }]);
+  const people = await listPeople(f.store, f.people[0].id);
+  assert.deepEqual(people.map((person) => person.name).sort(), ["Lily", "阿杰"].sort());
+  const record = async (id) => f.store.getRelationshipRecordForUser("chatImports", id, f.people[0].id);
+  assert.equal((await record(lilyChat.id)).personId, people.find((person) => person.name === "Lily").id);
+  assert.equal((await record(jieChat.id)).personId, people.find((person) => person.name === "阿杰").id);
+  assert.equal((await record(partnerChat.id)).personId, undefined, "the paired partner's chat stays the couple's");
+  assert.deepEqual(await listPeople(f.store, f.people[1].id), [], "the partner has none of these");
 });
