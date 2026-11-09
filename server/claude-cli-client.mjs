@@ -27,6 +27,15 @@ export function jsonFromText(text) {
   return null;
 }
 
+// A tool-disabled CLI reply sometimes ends with empty tool-call wrappers, in several shapes (use-case test, 11-08:
+// `<invoke name="x">\n</invoke>\n</invoke>` twice after good first-date advice). The trailing block made only of such
+// tags is dropped when it opens one itself; markup that closes quoted content (`<invoke>text</invoke>`) is kept.
+export function withoutToolMarkup(text) {
+  const value = String(text ?? "");
+  const tail = value.match(/(?:\s*<\/?(?:function_calls|invoke)\b[^>]*>)+\s*$/i);
+  return tail && /<(?:function_calls|invoke)\b/i.test(tail[0]) ? value.slice(0, tail.index).trimEnd() : value;
+}
+
 // For longer advice the model sometimes answers in plain prose instead of JSON, and that prose is the answer itself. Asking
 // again (--json-schema) then produced "好的，我用结构化的方式回复你…" about an answer the person never saw (pain-point testing,
 // founder 11-08). When the only free text a schema has is `reply` and every other required field may be empty, the prose
@@ -35,7 +44,7 @@ export function jsonFromText(text) {
 export function proseAsReply(text, schema) {
   // A tool-disabled CLI reply once ended with an empty tool-call wrapper during first-day scenario testing.
   // Drop only that empty trailing transport fragment; preserve the actual advice and any quoted XML with content.
-  const prose = String(text || "").replace(/\s*(?:<function_calls>\s*)?<invoke\b[^>]*>\s*<\/invoke>\s*<\/function_calls>\s*$/i, "").trim();
+  const prose = withoutToolMarkup(text).trim();
   if (!prose || /"reply"\s*:/.test(prose) || schema?.type !== "object" || schema.properties?.reply?.type !== "string") return null;
   const value = {};
   for (const key of schema.required || []) {
@@ -103,6 +112,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         if (!schema) return { output_text: String((await call([], system)).result ?? "") };
         const firstText = (await call([], [system, jsonInstruction(schema)].filter(Boolean).join("\n\n"))).result;
         const parsed = jsonFromText(firstText) || proseAsReply(firstText, schema);
+        if (parsed && typeof parsed.reply === "string") parsed.reply = withoutToolMarkup(parsed.reply);
         if (parsed) return { output_text: JSON.stringify(parsed) };
         return { output_text: JSON.stringify((await call(["--json-schema", JSON.stringify(schema)], system)).structured_output ?? {}) };
       },
