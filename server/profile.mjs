@@ -227,8 +227,11 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
   const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, date: localDay(line.createdAt, session.timezone), text: line.text, isNew: true })) };
   const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: person ? person.name : scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
   // What happened between them in a chat with one person (their first coffee, a cooled reply) is that person's history;
-  // dropping it left most cards empty on the founder's phone (11-09). So is what the member did with them ("帮她挑不辣的菜").
-  const findings = verifyFacts(result?.facts, lines, () => true).map((found) => person && (found.subject === "B" || found.subject === "both" || found.category === "history") ? { ...found, subject: "B", person: person.name } : { ...found, person: "" });
+  // dropping it left most cards empty on the founder's phone (11-09). So is what the member did with them ("帮她挑不辣的菜"),
+  // but not the member's own story told in that chat ("我去梧桐山看日出"), which stays theirs.
+  const withThem = person ? new RegExp(`[他她]|TA|对方|一起|我们|${person.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i") : null;
+  const theirs = (found) => found.subject === "B" || found.subject === "both" || (found.subject === "A" && found.category === "history" && withThem.test(found.fact));
+  const findings = verifyFacts(result?.facts, lines, () => true).map((found) => person && theirs(found) ? { ...found, subject: "B", person: person.name } : { ...found, person: "" });
   if (!findings.length) return [];
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
