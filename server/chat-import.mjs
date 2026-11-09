@@ -17,6 +17,8 @@ import { profileContext, scanBroughtChat } from "./profile.mjs";
 // - The parsed messages live in one file beside the data file; deleting removes the file, not just a flag.
 const COLLECTION = "chatImports";
 const MAX_BYTES = 120 * 1024 * 1024, IMPORT_LIMIT = 20;
+// Letters and digits that cannot be mistaken for each other when typed from a phone screen.
+const CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
 // The synced history is read once it has this many messages, and read again only after a week with this many new ones.
 export const SYNC_FIRST = 50, SYNC_MORE = 300, SYNC_EVERY_MS = 7 * 86_400_000;
@@ -198,7 +200,7 @@ overview is 3 to 4 plain sentences about the relationship as a whole, without re
 export function createChatImportRouter({ store, mediator, appendAssistantMessage }) {
   const router = express.Router();
   const jobs = new Map(), macTokens = new Map();
-  const publicPaths = /^\/imports\/(mac-helper\.sh|mac-sync\.sh|upload\/|sync\/)/;
+  const publicPaths = /^\/imports\/(mac-helper\.sh|mac-sync\.sh|windows-helper\.ps1|w\/|upload\/|sync\/)/;
   router.use("/imports", (req, res, next) => req.auth || publicPaths.test(`/imports${req.path}`) ? next() : res.status(401).json({ error: "Please sign in." }));
 
   const owned = async (db, id, userId) => {
@@ -391,6 +393,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // A Windows checkout may have turned its line endings into CRLF, which bash on the Mac cannot run.
     res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-helper.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
   });
+  // Windows (founder 11-09: years of iMessage without a Mac): reads one conversation from the iPhone backup on the PC.
+  router.get("/imports/windows-helper.ps1", async (_req, res) => {
+    res.type("text/plain; charset=utf-8").send(await readFile(new URL("./pinky-imessage-windows.ps1", import.meta.url), "utf8"));
+  });
   router.get("/imports/mac-sync.sh", async (_req, res) => {
     res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-sync.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
   });
@@ -507,6 +513,23 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     macTokens.set(token, { userId: req.auth.user.id, language: languageOf(req), sessionId: clean(req.body?.session, 80) || null, expiresAt: Date.now() + 30 * 60_000 });
     const origin = originOf(req);
     res.json({ command: `curl -fsSL ${origin}/api/imports/mac-helper.sh | bash -s -- ${origin} ${token}`, expiresInMinutes: 30 });
+  });
+  // The same one-time upload from a Windows PC, for PowerShell: it reads the iPhone backup there (no Mac needed). The member
+  // reads the command off their phone and types it on the PC, so it is short: an 8-character code instead of a long token.
+  router.post("/imports/windows-command", async (req, res) => {
+    for (const [token, entry] of macTokens) if (entry.expiresAt < Date.now()) macTokens.delete(token);
+    let code = "";
+    while (!code || macTokens.has(code)) code = Array.from(randomBytes(8), (byte) => CODE_LETTERS[byte % CODE_LETTERS.length]).join("");
+    macTokens.set(code, { userId: req.auth.user.id, language: languageOf(req), sessionId: clean(req.body?.session, 80) || null, expiresAt: Date.now() + 60 * 60_000 });
+    res.json({ command: `irm ${originOf(req)}/api/imports/w/${code} | iex`, expiresInMinutes: 60 });
+  });
+  // The script with this code filled in, so `irm … | iex` needs no arguments. An unknown or expired code gets one line.
+  router.get("/imports/w/:code", async (req, res) => {
+    const entry = macTokens.get(String(req.params.code).toUpperCase());
+    res.type("text/plain; charset=utf-8");
+    if (!entry || entry.expiresAt < Date.now()) return res.send("Write-Host '这条命令已经过期，请回到 Pinky 重新获取。 / This command expired. Get a new one in Pinky.'\n");
+    const script = await readFile(new URL("./pinky-imessage-windows.ps1", import.meta.url), "utf8");
+    res.send(script.replace(/^param\([^\n]*\)/, `$Base = '${originOf(req)}'; $Token = '${String(req.params.code).toUpperCase()}'`));
   });
 
   // Continuous iMessage sync (11-05): one import per member that every run on the Mac appends new messages to. It is kept,

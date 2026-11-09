@@ -207,3 +207,7 @@ test("import help gives the chat history page as a button with labels in the mem
     assert.doesNotMatch(prompt, /link \/\?view=import\)/);
   }
 });
+
+test("iMessage import help offers the Windows PC route next to the Mac (founder 11-09)", () => {
+  for (const language of ["zh", "en", "es"]) assert.match(assistantInstructions(language), /在 Windows 电脑上导入 iMessage/);
+});
