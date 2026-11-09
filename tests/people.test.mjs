@@ -83,13 +83,17 @@ test("what happened between the member and one person goes on that person's card
   const { store, users, session, add, request } = await setup(t, { paired: true });
   const lily = await add("Lily");
   const mediator = { structured: async () => ({ facts: [
-    { messageId: "imp:0", quote: "昨天的拿铁真的好好喝", subject: "both", person: "", category: "history", fact: "2026-11-08 第一次一起喝咖啡，聊了很久", replaces: "" }] }) };
-  const kept = await scanBroughtChat({ store, mediator, userId: users[0].id, sessionId: session.id, sourceId: "imp", messages: [{ role: "partner", text: "昨天的拿铁真的好好喝" }], personId: lily.id });
-  assert.equal(kept.length, 1);
+    { messageId: "imp:0", quote: "昨天的拿铁真的好好喝", subject: "both", person: "", category: "history", fact: "2026-11-08 第一次一起喝咖啡，聊了很久", replaces: "" },
+    { messageId: "imp:1", quote: "我一直帮你挑不辣的", subject: "A", person: "", category: "history", fact: "2026-11-09 点菜时一直帮她挑不辣的", replaces: "" },
+    { messageId: "imp:1", quote: "我一直帮你挑不辣的", subject: "A", person: "", category: "likes", fact: "会照顾别人口味", replaces: "" }] }) };
+  const messages = [{ role: "partner", text: "昨天的拿铁真的好好喝" }, { role: "me", text: "我一直帮你挑不辣的" }];
+  const kept = await scanBroughtChat({ store, mediator, userId: users[0].id, sessionId: session.id, sourceId: "imp", messages, personId: lily.id });
+  assert.equal(kept.length, 3);
   const card = (await request(`/people/${lily.id}`)).body;
-  assert.deepEqual(card.history.map((item) => item.text), ["2026-11-08 第一次一起喝咖啡，聊了很久"]);
+  assert.deepEqual(card.history.map((item) => item.text).sort(), ["2026-11-08 第一次一起喝咖啡，聊了很久", "2026-11-09 点菜时一直帮她挑不辣的"].sort(), "what the member did with them is theirs too");
   const known = await profileContext(store, users[0].id);
   assert.deepEqual(known.history, [], "it never becomes the couple's history");
+  assert.deepEqual(known.me.map((item) => item.fact), ["会照顾别人口味"], "the member's own traits stay theirs");
 });
 
 test("the noted line quotes the member's own history words instead of putting 你 before them", async (t) => {
