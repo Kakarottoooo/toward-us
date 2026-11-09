@@ -287,7 +287,11 @@ function notedText(language, facts, { userId, partnerName, people = [] }) {
     return [...cards, ...(rest.length ? [notedText(language, rest, { userId, partnerName, people })] : [])].join(say(language, "。", ". ", ". "));
   }
   const who = (fact) => personName(fact) || (fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes"));
-  const list = facts.slice(0, 3).map((fact) => say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`)).join(say(language, "；", "; ", "; "));
+  // A history line is already in the member's own words ("2026-10-15 前后 我去…"): quote it instead of putting 你 before it
+  // (watch 11-09: "你2026-10-15 前后 我去梧桐山看日出").
+  const item = (fact) => fact.category === "history" ? say(language, `「${fact.text}」`, `"${fact.text}"`, `«${fact.text}»`)
+    : say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`);
+  const list = facts.slice(0, 3).map(item).join(say(language, "；", "; ", "; "));
   // Pinky's own reply may already say it will remember; this line says where it went, so it never just repeats it.
   return say(language, `已记进「关于我们」：${list}`, `Kept in About us: ${list}`, `Guardado en Sobre nosotros: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
 }
