@@ -9,6 +9,7 @@ export const PERSON_KIND = "person";
 export const personSubject = (id) => `person:${id}`;
 export const personOf = (subjectUserId) => String(subjectUserId || "").startsWith("person:") ? String(subjectUserId).slice(7) : null;
 
+const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language) ? req.query.language : req.auth.user.language || "zh";
 const squash = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit);
 /** A name as typed or shown in a chat title, compared without spaces, case, emoji or punctuation ("Lily 🌸" is "lily"). */
@@ -50,7 +51,7 @@ export async function personFor(tx, userId, name, { at = new Date().toISOString(
 export const projectPerson = (record, facts = 0) => ({ id: record.id, version: record.version, name: record.name, aliases: record.aliases || [], archived: Boolean(record.archivedAt), lastSeenAt: record.lastSeenAt || record.updatedAt, facts });
 
 /** 我的 TA 们: list, rename, merge two that are one person, archive. Every route works on the member's own records only. */
-export function createPeopleRouter({ store, emit = () => {} }) {
+export function createPeopleRouter({ store, emit = () => {}, comparer = null }) {
   const router = express.Router();
   const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
   router.use("/people", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
@@ -65,6 +66,13 @@ export function createPeopleRouter({ store, emit = () => {} }) {
     const counts = new Map();
     for (const record of records) if (record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && String(record.subjectUserId || "").startsWith("person:")) counts.set(personOf(record.subjectUserId), (counts.get(personOf(record.subjectUserId)) || 0) + 1);
     res.json({ people: (await listPeople(store, userId, { archived: req.query.archived === "1" })).map((person) => projectPerson(person, counts.get(person.id) || 0)) });
+    // The comparison is made ahead of time whenever their notes change, so the page is ready when opened.
+    if (comparer) comparer.current(userId, languageOf(req)).catch(() => {});
+  });
+  // 对比: everyone they are getting to know, compared by Pinky without picking anyone (founder 11-09).
+  router.get("/people/compare", async (req, res) => {
+    if (!comparer) return res.json({ status: "unavailable" });
+    res.json(await comparer.current(req.auth.user.id, languageOf(req)));
   });
   // One card: what Pinky keeps about this person, newest first, and what happened between them by date.
   router.get("/people/:id", async (req, res) => {

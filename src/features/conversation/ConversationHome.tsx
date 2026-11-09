@@ -26,7 +26,7 @@ import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
 import { MatchInviteCard } from "../games/MatchInviteCard";
-import { PeopleRow, PersonSheet, usePeople, type Person } from "../people/People";
+import { PeopleCompare, PeopleRow, PersonSheet, usePeople, type Person } from "../people/People";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -147,8 +147,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const restoring = useRef<Promise<Session | null> | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   // 我的 TA 们 (founder 11-09): reloaded as the private chat grows, since a new note may have filed someone new.
-  const people = usePeople(session?.messages.length || 0);
+  const people = usePeople(session?.messages.length || 0, language);
   const [person, setPerson] = useState<Person | null>(null);
+  const [comparing, setComparing] = useState(false);
   const audienceId = useId();
   const endRef = useRef<HTMLDivElement>(null);
   const keyboard = useKeyboard();
@@ -678,7 +679,7 @@ ${text}` : text, target);
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      {channel === "me" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => compare(people)} onAdd={() => fileRef.current?.click()} />}
+      {channel === "me" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => { keyboard.hide(); setComparing(true); }} onAdd={() => fileRef.current?.click()} />}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
@@ -697,7 +698,8 @@ ${text}` : text, target);
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
     </main></MobileScroll></div>
-    <PersonSheet language={language} person={person} others={people.filter((item) => item.id !== person?.id).length} onClose={() => setPerson(null)} onChat={talkAbout} onCompare={(item) => compare([item, ...people.filter((other) => other.id !== item.id)])} />
+    <PersonSheet language={language} person={person} others={people.filter((item) => item.id !== person?.id).length} onClose={() => setPerson(null)} onChat={talkAbout} onCompare={() => { setPerson(null); setComparing(true); }} />
+    <PeopleCompare language={language} open={comparing} people={people} onClose={() => setComparing(false)} onOpenPerson={(item) => { setComparing(false); setPerson(item); }} onAsk={() => { setComparing(false); compare(people); }} onAnswer={() => { setComparing(false); setDraft(t("我想要的是：", "What I want is: ", "Lo que quiero es: "), "me"); window.setTimeout(() => composerRef.current?.querySelector("textarea")?.focus(), 350); }} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {!call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
