@@ -144,8 +144,6 @@
 .conversation-segments button { position: relative; }
 .tab-dot { width: 8px; height: 8px; margin-left: 2px; border-radius: 50%; background: var(--jian-red); }
 .conversation-input .conversation-photo { color: #5f5952; }
-.conversation-input .conversation-ideas { color: #5f5952; }
-.conversation-input .conversation-ideas.active { background: var(--jian-blue-soft); color: var(--jian-blue); }
 .conversation-input .conversation-photo:disabled { opacity: .4; }
 .composer-photos { display: flex; gap: 8px; margin: 0 0 8px; overflow-x: auto; }
 .composer-photos figure { position: relative; flex: 0 0 auto; width: 64px; height: 64px; margin: 0; }

@@ -53,6 +53,8 @@ export const readUsHidden = (userId: string) => { try { return localStorage.getI
 
 // Private records Pinky made that one tap can take back (server: assistant-router UNDOABLE).
 const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
+// Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
+const REOPEN_AFTER = 30 * 60_000;
 
 export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: (page?: "character" | "profile" | "membership") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
@@ -129,10 +131,16 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [reasons, setReasons] = useState<Record<Channel, string[]>>({ me: [], us: [] });
   // At most one open promise Pinky brings up in Us, only where suggestions may show (11-03); the server picks which.
   const [nudge, setNudge] = useState<PromiseItem | null>(null);
-  // Suggestions are a fresh-start aid, not fixed chrome: they show at the end of a channel that is empty or has been quiet
-  // for a while, or when asked for with the bulb, and fold away once the person starts typing or sends.
-  const [summoned, setSummoned] = useState<Channel | null>(null);
-  const [dismissedAt, setDismissedAt] = useState<Record<Channel, number>>({ me: 0, us: 0 });
+  // Suggestions show only when the app has just been opened, and are gone once the person starts using it (founder 11-09:
+  // "一般刚打开 APP 的时候可以出现，只要开始使用了之后就会消失掉建议。或者用户可以主动问有什么建议"). No button calls them back.
+  const [started, setStarted] = useState(false);
+  // Coming back after a long time away counts as opening the app again; a quick switch away and back does not.
+  useEffect(() => {
+    let hiddenAt = 0;
+    const onVisibility = () => { if (document.hidden) hiddenAt = Date.now(); else if (hiddenAt && Date.now() - hiddenAt >= REOPEN_AFTER) setStarted(false); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
   const sessionRef = useRef<Session | null>(null);
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
@@ -613,14 +621,12 @@ ${text}` : text, target);
   const olderMessages = older?.messages || [], sharedMessages = [...olderMessages, ...(together?.conversation.messages || [])];
   const hasOlder = Boolean(paired && together) && (older ? older.more : (together?.conversation.archived?.messages || 0) > 0);
   const lastSeen = channel === "me" ? privateMessages.at(-1)?.id || "" : sharedMessages.at(-1)?.id || "";
-  const lastAt = Date.parse((channel === "me" ? privateMessages.at(-1)?.createdAt : sharedMessages.at(-1)?.createdAt) || "") || 0;
-  const QUIET = 4 * 3_600_000;
-  const wantIdeas = summoned === channel || (Date.now() - lastAt >= QUIET && Date.now() - dismissedAt[channel] >= QUIET);
+  const wantIdeas = !started;
   // A brand-new Just me shows the reply coach alone (founder 11-08): no idea chips or discovery card competing with it.
   const coachAlone = channel === "me" && !privateMessages.length && !queued.length;
   const showIdeas = wantIdeas && !draft.trim() && !voice.listening && !!ideas[channel].length && !readOnly && !(channel === "us" && !paired) && !coachAlone;
-  const dismissIdeas = () => { setSummoned(null); setDismissedAt((current) => ({ ...current, [channel]: Date.now() })); };
-  useEffect(() => { if (draft.trim() && wantIdeas) dismissIdeas(); }, [Boolean(draft.trim())]);
+  // Typing, talking or sending anything (a photo included) is starting to use the app.
+  useEffect(() => { if (draft.trim() || voice.listening || queued.length) setStarted(true); }, [Boolean(draft.trim()), voice.listening, queued.length]);
   const showNudge = channel === "us" && paired && wantIdeas && !draft.trim() && !voice.listening && !readOnly && Boolean(nudge);
   useEffect(() => { if (showIdeas || showNudge) endRef.current?.scrollIntoView({ block: "end" }); }, [showIdeas, showNudge, ideas[channel].length]);
   useEffect(() => {
@@ -690,7 +696,6 @@ ${text}` : text, target);
         <div className="conversation-input">
           {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Pinky 来帮忙", "Ask Pinky to help", "Pedir ayuda a Pinky")}><At size={20} weight="bold" /></button>}
           <button type="button" className="conversation-photo" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} disabled={attachments.length >= 6} aria-label={t("发照片", "Send a photo", "Enviar una foto")} data-testid="conversation-photo"><ImageSquare size={22} /></button>
-          {!draft.trim() && <button type="button" className={`conversation-ideas ${showIdeas ? "active" : ""}`} aria-pressed={showIdeas} onClick={() => showIdeas ? dismissIdeas() : setSummoned(channel)} aria-label={t("给我一些建议", "Show suggestions", "Mostrar sugerencias")} data-testid="show-ideas"><Lightbulb size={22} /></button>}
           <input ref={fileRef} type="file" accept="image/*,.txt,.zip,.json,.csv,.xml,.html" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
           <KeyboardTextarea data-testid="conversation-input" aria-label={placeholder} aria-describedby={audienceId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
