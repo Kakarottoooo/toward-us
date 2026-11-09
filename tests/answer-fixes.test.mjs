@@ -102,7 +102,8 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
     // The Claude CLI reads the system prompt from a file (no Windows command-line limit since 11-08); keep a cap so the
     // planner prompt cannot grow without anyone noticing what each turn costs.
     const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
-    assert.ok(system.length < 40_000, `planner prompt is ${system.length} characters`);
+    // 42,000 since 11-09: room for the people someone single is getting to know.
+    assert.ok(system.length < 42_000, `planner prompt is ${system.length} characters`);
   }
 });
 
@@ -218,5 +219,16 @@ test("history answers pick the thread, give a next step, and know a past relatio
     assert.match(prompt, /never end with a menu of what you could look at next/);
     assert.match(prompt, /Every pattern you name comes with one concrete thing to do/);
     assert.match(prompt, /is a past relationship/);
+  }
+});
+
+test("several people: Pinky keeps each one's notes apart, compares by what the user wants with evidence, never scores (founder 11-09)", async () => {
+  const { screenshotAdviceInstructions } = await import("../server/assistant-agent.mjs");
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /context\.profile\.people lists each by name/);
+    assert.match(prompt, /Never score, rank by numbers or give percentages/);
+    assert.match(prompt, /never help deceive one about another/);
+    assert.match(screenshotAdviceInstructions(language), /Known\.people, when present/);
   }
 });

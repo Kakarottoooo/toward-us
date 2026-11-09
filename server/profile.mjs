@@ -1,6 +1,7 @@
 import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { listPeople, matchPerson, nameKey, personFor, personOf, personSubject } from "./people.mjs";
 
 // 喜好档案 (founder 11-06): Pinky's long-term memory of each partner and of the two of them: what they like and dislike,
 // what they wish for, their habits and traits, the people and days that matter. It is kept automatically from their
@@ -19,7 +20,7 @@ const squash = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit);
 const key = (value) => squash(value).toLowerCase().replace(/[\s。.!！,，、;；:："“”'‘’「」]/g, "");
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
-const schema = object({ facts: { type: "array", maxItems: 10, items: object({ messageId: { type: "string" }, quote: { type: "string" }, subject: { type: "string", enum: ["A", "B", "both"] }, category: { type: "string", enum: CATEGORIES }, fact: { type: "string" }, replaces: { type: "string" } }) } });
+const schema = object({ facts: { type: "array", maxItems: 10, items: object({ messageId: { type: "string" }, quote: { type: "string" }, subject: { type: "string", enum: ["A", "B", "both"] }, person: { type: "string" }, category: { type: "string", enum: CATEGORIES }, fact: { type: "string" }, replaces: { type: "string" } }) } });
 const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
 export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
 const live = (record) => isProfileFact(record) && record.status === "active" && !record.archivedAt && !record.deletedAt;
@@ -47,6 +48,7 @@ Not kept: periods, health or medical details (kept elsewhere, privately; that so
 When A explicitly asks Pinky to remember something (记住, 记一下, 帮我记, remember, keep in mind, recuerda, apunta), keep every distinct point of what they asked to remember as its own fact, each with its own quote; an explicit request outweighs being selective. A standing arrangement the two of them made about how they handle things from now on (who tells whom what and when, how they talk after a fight) is lasting: keep it under traits with subject both. It is not a one-off promise.
 A history fact begins with the date it happened as YYYY-MM-DD, worked out from the message's date (昨天 is the day before it); when only roughly known (上周, 上个月, last week) the date is followed by 前后 (around, alrededor de), as in "2026-11-01 前后"; something from long ago at an unknown time begins with 以前 (Before, Antes) instead. Then one short line in the language of the quote that says who did what, in A's own words: in a private chat or a brought chat 我 is A and B is called the way A calls B (他, 她, a name), so "2026-11-07 他打游戏一晚上不回我消息，吵了一架，后来他道歉了"; in the shared chat use their names. Never write the letters A or B inside any fact. When a new line tells how something in known history went on (they made up, the trip happened), give the updated line with replaces set to that fact's id instead of a new fact; subject is both unless it is only about one of them.
 Look only at messages with isNew true; the others are context. For each fact give messageId, copied exactly from the id of the very message the quote is in; quote, copied exactly from that message's text, unchanged and contiguous (the shortest part that states the fact), never paraphrased or translated; subject, whom it is about (A, B or both); category; fact, a short phrase without the person's name, in the language of the quote ("不吃香菜", "loves rainy-day films", "生日是 3 月 5 日", "吵架后需要先安静一会儿"); replaces, the id of the fact in known that this one updates or contradicts (they started eating cilantro), else "".
+person: in A's private chat, when the fact is about someone A is dating or getting to know and A names them ("Lily 不吃辣", "阿杰最爱火锅"), subject is B and person is that name as A writes it, or as listed below when it is one of them; "" for an unnamed TA, for the partner A is paired with, for family and friends, and in any other chat. Never put a fact about one of them under another.
 Be selective: only clear, lasting things the speaker means. Most lines hold none; then return facts: [].`;
 }
 
@@ -58,7 +60,7 @@ export function verifyFacts(found, lines, counts) {
     const quote = clean(String(item?.quote || "").replace(/^["“「'‘]+|["”」'’]+$/g, ""), 300), fact = clean(item?.fact, 160);
     if (!line || !counts(line) || quote.length < 2 || !fact || !squash(line.text).includes(quote)) continue;
     if (!["A", "B", "both"].includes(item.subject) || !CATEGORIES.includes(item.category)) continue;
-    kept.push({ line, quote, fact, subject: item.subject, category: item.category, replaces: clean(item.replaces, 80) });
+    kept.push({ line, quote, fact, subject: item.subject, person: clean(item.person, 60), category: item.category, replaces: clean(item.replaces, 80) });
   }
   return kept;
 }
@@ -79,7 +81,7 @@ async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, 
   const scoped = (await tx.listRelationshipRecordsForUser("memories", userId)).filter((item) => live(item) && item.relationshipId === relationshipId && item.visibility === visibility && (visibility === "shared" || item.ownerUserId === ownerUserId));
   const changed = [];
   for (const found of findings) {
-    const subjectUserId = subjectOf(found.subject);
+    const subjectUserId = subjectOf(found.subject, found);
     const evidence = { channel, ...(sessionId ? { sessionId } : {}), messageId: found.line.id, quote: found.quote, saidAt: found.line.createdAt };
     const target = found.replaces && scoped.find((item) => item.id === found.replaces);
     if (target) {
@@ -100,7 +102,24 @@ async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, 
   return changed;
 }
 
-const knownFor = (records, userId, relationshipId, label) => records.filter((item) => visibleTo(item, userId, relationshipId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, KNOWN_LIMIT).map((item) => ({ id: item.id, subject: label(item.subjectUserId || null), fact: item.text }));
+// A label of null leaves a fact out: the people someone single is getting to know never leak into notes about a partner
+// or into each other's (founder 11-09).
+const knownFor = (records, userId, relationshipId, label) => records.filter((item) => visibleTo(item, userId, relationshipId) && label(item.subjectUserId || null) !== null).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, KNOWN_LIMIT).map((item) => ({ id: item.id, subject: label(item.subjectUserId || null), fact: item.text }));
+const coupleOnly = (label) => (subjectUserId) => personOf(subjectUserId) ? null : label(subjectUserId);
+const PEOPLE_NOTE = (people) => people.length ? `\nPeople A is getting to know (not B unless A says so): ${people.map((person) => person.name).join(", ")}.` : "";
+/** Writes facts about the people someone is getting to know apart from the rest: theirs alone, outside any couple. In A's
+ * own chat a newly named person gets their card here (11-09 test: "Lily 不吃辣" and "阿杰最爱火锅" both landed on one TA). */
+async function keepWithPeople(tx, options, people, { create = false, partnerName = "" } = {}) {
+  const resolved = new Map();
+  for (const found of options.findings) {
+    if (found.subject !== "B" || !found.person || (partnerName && nameKey(found.person) === nameKey(partnerName))) continue;
+    let person = matchPerson(people, found.person);
+    if (!person && create) { person = await personFor(tx, options.ownerUserId, found.person); if (person) people.push(person); }
+    if (person) resolved.set(found, person);
+  }
+  const personal = options.findings.filter((found) => resolved.has(found)), rest = options.findings.filter((found) => !resolved.has(found));
+  return [...await keepFacts(tx, { ...options, findings: rest }), ...await keepFacts(tx, { ...options, relationshipId: null, findings: personal, subjectOf: (_subject, found) => personSubject(resolved.get(found).id) })];
+}
 
 /** Reads one member's new private lines and keeps what they reveal, privately for that member. */
 export async function scanPrivateProfile({ store, mediator, userId, sessionId }) {
@@ -112,22 +131,23 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
   const { fresh, more, last, before } = freshLines(messages, session.profileScan, (item) => item.role === "user" && !item.call && Boolean(squash(item.text)));
   if (!last || (!fresh.length && session.profileScan?.messageId === last.id)) return [];
   const { relationshipId, partnerId } = scope;
+  const people = await listPeople(store, userId);
   let findings = [];
   if (fresh.length) {
-    const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both";
+    const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : personOf(subjectUserId) ? people.find((person) => person.id === personOf(subjectUserId))?.name || null : "both";
     const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
     const input = { known, messages: [...before.map((item) => ({ id: item.id, from: item.role === "user" ? "A" : "Pinky", text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: "A", date: localDay(item.createdAt, session.timezone), text: String(item.text).slice(0, 1200), isNew: true }))] };
-    const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, privateChat: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
+    const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, privateChat: true }) + PEOPLE_NOTE(people), input: JSON.stringify(input), maxOutputTokens: 900 });
     findings = verifyFacts(result?.facts, fresh, () => true);
   }
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
-    const changed = await keepFacts(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId });
+    const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, people, { create: true, partnerName: scope.b });
     // No version bump: the member's next turn checks the session version and must never fail because of this.
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length) draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+      if (changed.length) draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
     });
     return Object.assign(changed, { more, sessionId });
   });
@@ -166,7 +186,7 @@ export async function scanCall({ store, mediator, userId, sessionId, noteId, row
   const lines = (rows || []).map((row, index) => ({ id: `${noteId}:${index}`, from: row.role === "agent" ? "Pinky" : "A", text: squash(row.text).slice(0, 2000), createdAt: at })).filter((line) => line.text);
   const answers = lines.filter((line) => line.from === "A");
   if (!answers.length) return [];
-  const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both";
+  const label = coupleOnly((subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both");
   const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
   const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, text: line.text, isNew: line.from === "A" })) };
   const result = await mediator.structured({ name: "couple_profile", schema: interviewSchema, instructions: instructions({ a: scope.a, b: scope.b, privateChat: true }) + (interview ? INTERVIEW : CALL) + CALL_EVIDENCE, input: JSON.stringify(input), maxOutputTokens: 1800 });
@@ -189,7 +209,7 @@ export async function scanCall({ store, mediator, userId, sessionId, noteId, row
 /** Reads a chat between the member and their partner that the member brought privately (screenshots or pasted text with a
  * question, the reply coach) and keeps what it shows about either of them, privately for the member (founder 11-08: "用得越多
  * 越懂她"). Runs after the answer, so it never slows it down; B's own words are the evidence about B. */
-export async function scanBroughtChat({ store, mediator, userId, sessionId, sourceId, messages, at = new Date().toISOString() }) {
+export async function scanBroughtChat({ store, mediator, userId, sessionId, sourceId, messages, personId = null, at = new Date().toISOString() }) {
   if (!mediator?.structured) return [];
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
   if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
@@ -197,17 +217,22 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
     .filter((line) => line.from && line.text);
   if (!lines.length) return [];
   const scope = await memberScope(store, userId), { relationshipId, partnerId } = scope;
-  const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both";
+  // A chat with someone they are getting to know: B is that person, and nobody else's notes are read or written (founder
+  // 11-09: the people must never be mixed up). A chat with the partner keeps the couple's notes.
+  const person = personId ? (await listPeople(store, userId)).find((item) => item.id === personId) || null : null;
+  const label = person
+    ? (subjectUserId) => subjectUserId === userId ? "A" : subjectUserId === personSubject(person.id) ? "B" : null
+    : coupleOnly((subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both");
   const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
   const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, date: localDay(line.createdAt, session.timezone), text: line.text, isNew: true })) };
-  const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
-  const findings = verifyFacts(result?.facts, lines, () => true);
+  const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: person ? person.name : scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
+  const findings = verifyFacts(result?.facts, lines, () => true).map((found) => person && found.subject === "B" ? { ...found, person: person.name } : { ...found, person: "" });
   if (!findings.length) return [];
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
-    const changed = await keepFacts(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId });
+    const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings: person ? findings.filter((found) => found.subject !== "both") : findings, channel: "private", sessionId }, person ? [person] : []);
     if (changed.length) await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
     });
     return Object.assign(changed, { sessionId });
   });
@@ -226,7 +251,7 @@ export async function scanTogetherProfile({ store, mediator, relationshipId, use
   let findings = [];
   if (fresh.length) {
     const from = (item) => item.role === "agent" ? "Pinky" : context.members.find((member) => member.userId === item.actorUserId)?.role || "?";
-    const label = (subjectUserId) => subjectUserId ? context.members.find((member) => member.userId === subjectUserId)?.role || "both" : "both";
+    const label = coupleOnly((subjectUserId) => subjectUserId ? context.members.find((member) => member.userId === subjectUserId)?.role || "both" : "both");
     const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label).filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index);
     const input = { known, messages: [...before.map((item) => ({ id: item.id, from: from(item), text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: from(item), date: String(item.createdAt || "").slice(0, 10), text: String(item.text).slice(0, 1200), isNew: true }))] };
     const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: byRole("A")?.user?.name || "", b: byRole("B")?.user?.name || "", privateChat: false }), input: JSON.stringify(input), maxOutputTokens: 900 });
@@ -241,8 +266,15 @@ export async function scanTogetherProfile({ store, mediator, relationshipId, use
   });
 }
 
-function notedText(language, facts, { userId, partnerName }) {
-  const who = (fact) => fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes");
+function notedText(language, facts, { userId, partnerName, people = [] }) {
+  const personName = (fact) => personOf(fact.subjectUserId) ? people.find((person) => person.id === personOf(fact.subjectUserId))?.name || say(language, "TA", "them", "esa persona") : null;
+  // Notes about someone they are getting to know go to that person's own card, not to About us.
+  const owners = [...new Set(facts.map(personName))];
+  if (owners.length === 1 && owners[0]) {
+    const list = facts.slice(0, 3).map((fact) => fact.text).join(say(language, "；", "; ", "; "));
+    return say(language, `已记进 ${owners[0]} 的档案：${list}`, `Kept on ${owners[0]}'s card: ${list}`, `Guardado en la ficha de ${owners[0]}: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
+  }
+  const who = (fact) => personName(fact) || (fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes"));
   const list = facts.slice(0, 3).map((fact) => say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`)).join(say(language, "；", "; ", "; "));
   // Pinky's own reply may already say it will remember; this line says where it went, so it never just repeats it.
   return say(language, `已记进「关于我们」：${list}`, `Kept in About us: ${list}`, `Guardado en Sobre nosotros: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
@@ -255,16 +287,23 @@ export async function profileContext(store, userId) {
   const partner = relationshipId ? context.members.find((member) => member.userId !== userId) : null;
   const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, relationshipId) || (item.kind === "memory" && item.visibility === "private" && item.ownerUserId === userId && item.aiAccessScope === "private" && item.status === "active" && !item.archivedAt));
   const line = (item) => ({ id: item.id, version: item.version, category: item.category || "other", fact: item.text, ...(item.visibility !== "private" ? { from: item.evidence?.channel === "together" ? "said together in Us" : "they shared it with you" } : {}) });
-  const pick = (test) => records.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CONTEXT_LIMIT).map(line);
+  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId))) => from.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CONTEXT_LIMIT).map(line);
   // What happened between them is its own list, newest first by the date it starts with, so a month-old fight is still
   // there after many new preferences (founder 11-08: a month later Pinky must still remember last month's talks).
-  const history = records.filter((item) => isProfileFact(item) && item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, HISTORY_LIMIT).map(line);
+  const people = await listPeople(store, userId);
+  const history = records.filter((item) => isProfileFact(item) && item.category === "history" && !personOf(item.subjectUserId)).sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, HISTORY_LIMIT).map(line);
   const lasting = (item) => !isProfileFact(item) || item.category !== "history";
   return {
     me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId),
     partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null)),
     us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId)),
     history,
+    // Someone single may be getting to know several people (founder 11-09); each one's notes stay with that person.
+    people: people.slice(0, 8).map((person) => {
+      const theirs = records.filter((item) => isProfileFact(item) && item.subjectUserId === personSubject(person.id));
+      return { id: person.id, name: person.name, alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4), lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10),
+        facts: pick((item) => item.category !== "history", theirs).slice(0, 30), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, 20).map(line) };
+    }),
   };
 }
 
@@ -299,7 +338,7 @@ export function createProfileRouter({ store, emit = () => {} }) {
 
   router.get("/profile", async (req, res) => {
     const userId = req.auth.user.id, context = await scope(store, userId);
-    const facts = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, context?.relationship.id || null)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => projectFact(item, userId));
+    const facts = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, context?.relationship.id || null) && !personOf(item.subjectUserId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => projectFact(item, userId));
     res.json({ facts, partnerName: context?.members.find((member) => member.userId !== userId)?.user?.name || null });
   });
 
