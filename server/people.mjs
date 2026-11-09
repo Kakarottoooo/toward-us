@@ -66,6 +66,15 @@ export function createPeopleRouter({ store, emit = () => {} }) {
     for (const record of records) if (record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && String(record.subjectUserId || "").startsWith("person:")) counts.set(personOf(record.subjectUserId), (counts.get(personOf(record.subjectUserId)) || 0) + 1);
     res.json({ people: (await listPeople(store, userId, { archived: req.query.archived === "1" })).map((person) => projectPerson(person, counts.get(person.id) || 0)) });
   });
+  // One card: what Pinky keeps about this person, newest first, and what happened between them by date.
+  router.get("/people/:id", async (req, res) => {
+    const userId = req.auth.user.id, person = await owned(store, req.params.id, userId);
+    const facts = (await store.listRelationshipRecordsForUser("memories", userId)).filter((record) => record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && record.subjectUserId === personSubject(person.id));
+    const line = (record) => ({ id: record.id, version: record.version, category: record.category || "other", text: record.text, quote: record.evidence?.quote || null, updatedAt: record.updatedAt });
+    res.json({ person: projectPerson(person, facts.length),
+      facts: facts.filter((record) => record.category !== "history").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 40).map(line),
+      history: facts.filter((record) => record.category === "history").sort((a, b) => String(b.text).localeCompare(String(a.text))).slice(0, 30).map(line) });
+  });
   router.patch("/people/:id", async (req, res) => {
     const userId = req.auth.user.id, name = clean(req.body?.name, 60);
     if (!nameKey(name)) throw fail(400, "Give a name.");

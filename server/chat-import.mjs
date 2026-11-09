@@ -279,7 +279,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const partnerName = pairing?.relationship?.status === "active" ? pairing.members?.find((member) => member.userId !== user.id)?.user?.name : null;
     if (partnerName && norm(partnerName) === norm(name)) return record;
     const person = await store.transaction(`user:${user.id}`, (tx) => personFor(tx, user.id, name)).catch((error) => { console.error("Could not file the chat under a person:", error?.message || error); return null; });
-    return person ? update(record, user.id, (draft) => { draft.personId = person.id; }) : record;
+    // A card made just now is announced once, after the answer, so the member sees where this person's notes go.
+    return person ? update(record, user.id, (draft) => { draft.personId = person.id; if (person.version === 1) draft.personNew = person.name; }) : record;
   }
 
   async function assignPeople(user, record, { me, partner }) {
@@ -327,6 +328,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         }
         await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
+        if (record.personNew && record.personId) {
+          await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
+          await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
+        }
         // After the answer: keep what this exchange shows about the two of them, privately (reply coach, founder 11-08).
         void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages, personId: record.personId || null })
           .catch((error) => console.error("Could not keep notes from the screenshots:", error?.message || error));

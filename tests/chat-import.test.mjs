@@ -528,4 +528,7 @@ test("a screenshot chat with someone other than the partner goes on that person'
   assert.equal((await record(jieChat.id)).personId, people.find((person) => person.name === "阿杰").id);
   assert.equal((await record(partnerChat.id)).personId, undefined, "the paired partner's chat stays the couple's");
   assert.deepEqual(await listPeople(f.store, f.people[1].id), [], "the partner has none of these");
+  const all = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages;
+  const notes = all.filter((message) => message.kind === "noted" && message.personId);
+  assert.deepEqual(notes.map((message) => message.text), ["已为 Lily 建档", "已为 阿杰 建档"], "each new card is announced once, after its answer");
 });

@@ -98,6 +98,9 @@ test("two cards that are one person merge, rename and archive without losing not
   assert.deepEqual(merged.aliases.sort(), ["Lily", "小莉"].sort());
   assert.equal((await add("小莉")).id, lily.id, "the old name now finds the kept card");
   assert.deepEqual((await profileContext(store, users[0].id)).people.map((person) => [person.name, person.facts.map((item) => item.fact)]), [["Lily", ["loves cats"]]]);
+  const card = (await request(`/people/${lily.id}`)).body;
+  assert.deepEqual(card.facts.map((item) => item.text), ["loves cats"], "the card shows what Pinky keeps about them");
+  assert.equal((await request(`/people/${lily.id}`, "GET", null, users[1].id)).status, 404, "nobody else opens it");
   assert.equal((await request(`/people/${lily.id}`, "PATCH", { name: "Lily Chen" })).body.person.name, "Lily Chen");
   assert.equal((await request(`/people/${lily.id}/archive`, "POST", {})).body.person.archived, true);
   assert.deepEqual((await request("/people")).body.people, []);

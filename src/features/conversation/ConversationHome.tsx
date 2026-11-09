@@ -26,13 +26,14 @@ import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
 import { MatchInviteCard } from "../games/MatchInviteCard";
+import { PeopleRow, PersonSheet, usePeople, type Person } from "../people/People";
 import "./conversation.css";
 
 type Channel = "me" | "us";
 type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string; openOn?: string; shareKind?: "date" | "agreement" };
 type SpaceSummary = { id: string; title: string; layout: string; visibility: string; system?: string };
 type CallTranscript = { minutes: number; rows: Array<{ role: string; text: string }> };
-type PrivateMessage = { id: string; role: "user" | "assistant"; kind?: string; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript; dateCheck?: { title: string; date: string }; dateAnswer?: { rating: "great" | "ok" | "meh"; told: boolean } };
+type PrivateMessage = { id: string; role: "user" | "assistant"; kind?: string; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript; dateCheck?: { title: string; date: string }; dateAnswer?: { rating: "great" | "ok" | "meh"; told: boolean }; personId?: string };
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[] };
 type Ref = { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
@@ -145,6 +146,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const creating = useRef<Promise<Session> | null>(null);
   const restoring = useRef<Promise<Session | null> | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  // 我的 TA 们 (founder 11-09): reloaded as the private chat grows, since a new note may have filed someone new.
+  const people = usePeople(session?.messages.length || 0);
+  const [person, setPerson] = useState<Person | null>(null);
   const audienceId = useId();
   const endRef = useRef<HTMLDivElement>(null);
   const keyboard = useKeyboard();
@@ -351,6 +355,19 @@ ${text}` : text, target);
     setNotice(""); setPending((count) => ({ ...count, me: count.me + 1 }));
     try { const active = await ensureSession(); await run(active?.id || null); await reloadSession(); }
     catch (error) { setNotice((error as Error).message); } finally { setPending((count) => ({ ...count, me: count.me - 1 })); }
+  };
+  // Comparing is a question to Pinky in Just me, so the answer has the evidence and can be followed up (founder 11-09).
+  const compare = (list: Person[]) => {
+    setPerson(null);
+    const names = list.slice(0, 4).map((item) => item.name);
+    if (names.length < 2) return;
+    if (channel !== "me") switchChannel("me");
+    void sendPrivate(t(`帮我对比一下 ${names.join("、")}，谁更适合我？`, `Compare ${names.join(", ")} for me: who suits me better?`, `Compara a ${names.join(", ")}: ¿quién me conviene más?`), crypto.randomUUID());
+  };
+  const talkAbout = (item: Person) => {
+    setPerson(null);
+    setDraft(t(`关于 ${item.name}，`, `About ${item.name}: `, `Sobre ${item.name}: `), "me");
+    window.setTimeout(() => composerRef.current?.querySelector("textarea")?.focus(), 350);
   };
   const send = () => {
     const text = draft.trim(); if ((!text && !ready.length) || uploading) return;
@@ -661,11 +678,12 @@ ${text}` : text, target);
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
+      {channel === "me" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => compare(people)} onAdd={() => fileRef.current?.click()} />}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{session && !privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "noted" ? <button key={message.id} type="button" className="conversation-noted" onClick={() => { keyboard.hide(); onPrivacy("profile"); }} data-testid="profile-noted"><Heart size={14} weight="fill" /><span>{message.text}</span></button> : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>)}</> :
+      {channel === "me" ? <>{session && !privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about) setPerson(about); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{t("查看", "Open", "Ver")}</span>}</button>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>)}</> :
         !paired ? invite : <>{together && !sharedMessages.length && usEmpty}
           {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()} data-testid="earlier-messages">{loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
           {sharedMessages.slice(0, olderMessages.length).map(sharedMessage)}<div ref={olderRef} className="conversation-seam" aria-hidden="true" />{sharedMessages.slice(olderMessages.length).map((message, index) => sharedMessage(message, index + olderMessages.length))}
@@ -679,6 +697,7 @@ ${text}` : text, target);
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
     </main></MobileScroll></div>
+    <PersonSheet language={language} person={person} others={people.filter((item) => item.id !== person?.id).length} onClose={() => setPerson(null)} onChat={talkAbout} onCompare={(item) => compare([item, ...people.filter((other) => other.id !== item.id)])} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {!call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
