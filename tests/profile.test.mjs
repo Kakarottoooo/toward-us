@@ -116,6 +116,22 @@ test("before any partner joins, Pinky still learns TA privately from chats and b
   assert.ok(!leaks(await call("/profile", partner)) && !leaks(await profileContext(store, partner.user.id)));
 });
 
+test("the question sent with screenshots is left to the screenshot scan, never read again as being about the partner", async () => {
+  // Watch 11-09: "Mia 又找我借两千" came with a screenshot of a chat with Mia（可删）, someone the member is getting to know.
+  // The screenshot scan kept it on her card; the private scan read the same line again and kept "他又找我借两千" about the
+  // partner, Mia（测试）, in About us.
+  const { a } = await pair();
+  const session = await privateChat(a.user.id, [["q1", "user", "Mia 又找我借两千"], ["r1", "assistant", "先别借。"], ["m1", "user", "我不吃香菜"]]);
+  await store.updateRelationshipRecordForUser("privateAgentThreads", session.id, a.user.id, (draft) => { draft.messages[0].screenshots = true; });
+  const model = fakeModel(() => [
+    fact({ messageId: "q1", quote: "Mia 又找我借两千", subject: "B", category: "history", fact: "2026-11-09 他又找我借两千" }),
+    fact({ messageId: "m1", quote: "我不吃香菜", fact: "不吃香菜" }),
+  ]);
+  const kept = await scanPrivateProfile({ store, mediator: model, userId: a.user.id, sessionId: session.id });
+  assert.deepEqual(kept.map((item) => [item.text, item.subjectUserId]), [["不吃香菜", a.user.id]]);
+  assert.deepEqual(model.seen[0].messages.filter((item) => item.isNew).map((item) => item.id), ["m1"]);
+});
+
 test("facts from a private chat are kept for their owner alone, noted in the chat, corrected and never duplicated", async () => {
   const { a, b, relationshipId } = await pair();
   const session = await privateChat(a.user.id, [["m1", "user", "我不吃香菜，Mia 最怕别人催她，她一直想去冰岛看极光"], ["m2", "assistant", "记住啦"]]);

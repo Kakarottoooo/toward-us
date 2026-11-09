@@ -128,7 +128,9 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
   if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
   const messages = session.messages || [];
-  const { fresh, more, last, before } = freshLines(messages, session.profileScan, (item) => item.role === "user" && !item.call && Boolean(squash(item.text)));
+  // The question sent with screenshots goes with them to scanBroughtChat, which knows whose chat it is; read again here it
+  // was kept about the partner (watch 11-09: "Mia 又找我借两千" about Mia（可删） landed on Mia（测试） in About us).
+  const { fresh, more, last, before } = freshLines(messages, session.profileScan, (item) => item.role === "user" && !item.call && !item.screenshots && Boolean(squash(item.text)));
   if (!last || (!fresh.length && session.profileScan?.messageId === last.id)) return [];
   const { relationshipId, partnerId } = scope;
   const people = await listPeople(store, userId);
