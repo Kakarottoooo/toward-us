@@ -497,6 +497,7 @@ test("a Windows PC imports iMessage from the iPhone backup with a short, single-
   const post = () => fetch(f.url(`/imports/upload/${code}`), { method: "POST", headers: { "content-type": "application/octet-stream" }, body: rows });
   const first = await post(); const text = await first.text();
   assert.equal(first.status, 200, text); assert.match(text, /Imported 2 messages/);
+  await f.ready(text.trim().split("\n").at(-1)); // the analysis job must finish before the fixture's folder is removed
   assert.equal((await post()).status, 401, "the code works once");
   assert.match(await (await fetch(f.url(`/imports/w/${code}`))).text(), /expired/, "a used code gets one line, not the script");
   assert.equal((await fetch(f.url("/imports/windows-helper.ps1"))).status, 200, "the plain script needs no session");
