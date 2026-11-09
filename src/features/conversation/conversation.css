@@ -282,3 +282,6 @@
 .conversation-suggestions .suggestion-why { display: block; margin-top: 2px; color: rgba(37,37,37,.56); font-size: 12px; line-height: 1.4; }
 .quick-reply select { flex: 1 1 160px; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--jian-line); border-radius: 12px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-size: 15px; }
 .device-screen .quick-reply :is(select, button):focus-visible { outline: 2px solid var(--jian-blue) !important; outline-offset: -2px; }
+
+/* Read by screen readers only: who will see what you type (the visible tabs and the welcome tour say it once). */
+.composer-audience-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

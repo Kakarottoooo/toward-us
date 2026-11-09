@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-for (const language of ["zh", "en", "es"] as const) test(`composer keeps its audience visible while writing (${language})`, async ({ browser, baseURL }, testInfo) => {
+for (const language of ["zh", "en", "es"] as const) test(`composer tells screen readers its audience without a standing line (${language})`, async ({ browser, baseURL }, testInfo) => {
   const a = await browser.newContext({ baseURL, viewport: { width: 375, height: 812 } });
   const b = await browser.newContext({ baseURL });
   const words = {
@@ -17,29 +17,28 @@ for (const language of ["zh", "en", "es"] as const) test(`composer keeps its aud
     const invitation = await (await a.request.post("/api/partner/invitations")).json();
     expect((await b.request.post("/api/partner/accept", { data: { code: invitation.pairing.invitation.code } })).ok()).toBe(true);
     const page = await a.newPage(); await page.goto("/");
-    const audience = page.getByTestId("composer-audience"), input = page.getByTestId("conversation-input"), send = page.getByTestId("conversation-send");
-    await expect(audience).toHaveText(words.private);
+    const input = page.getByTestId("conversation-input"), send = page.getByTestId("conversation-send");
+    // Founder 11-08: no standing "只有我 · …" line above the box; the tour says it once, the tabs show it.
+    await expect(page.getByTestId("composer-audience")).toHaveCount(0);
+    await expect(input).toHaveAccessibleDescription(words.private);
     await expect(send).toBeDisabled();
     await input.fill("PRIVATE_UNSENT_THOUGHT");
-    await expect(audience).toHaveText(words.private);
     await expect(input).toHaveAccessibleDescription(words.private);
     await page.getByRole("tab", { name: new RegExp(`^${words.us}`) }).click();
     await expect(input).toHaveValue(""); await expect(send).toBeDisabled();
-    await expect(audience).toHaveText(words.shared);
+    await expect(input).toHaveAccessibleDescription(words.shared);
     await input.fill("Shared local test greeting");
     const mention = page.getByRole("button", { name: words.ask, exact: true });
     await mention.click(); await expect(mention).toHaveAttribute("aria-pressed", "true");
     // Asking Pinky inside Us must never look like a private conversation.
-    await expect(audience).toHaveText(words.shared);
     await expect(input).toHaveAccessibleDescription(words.shared);
     await expect(send).toHaveAccessibleName(words.send);
     for (const width of [375, 1280]) {
       await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
-      await audience.click(); await send.hover(); await page.keyboard.press("Tab"); await send.focus();
+      await send.hover(); await page.keyboard.press("Tab"); await send.focus();
       await expect(send).toBeFocused();
       expect(await send.evaluate(el => getComputedStyle(el).outlineStyle)).toBe("solid");
       expect(await mention.evaluate(el => getComputedStyle(el).borderTopStyle)).toBe("solid");
-      expect(await audience.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`audience-shared-${language}-${width}.png`), fullPage: true });
     }
     await mention.click();
@@ -50,7 +49,7 @@ for (const language of ["zh", "en", "es"] as const) test(`composer keeps its aud
     expect(JSON.stringify(shared)).not.toContain("PRIVATE_UNSENT_THOUGHT");
     await page.getByRole("tab", { name: new RegExp(`^${words.me}`) }).click();
     await expect(input).toHaveValue("PRIVATE_UNSENT_THOUGHT");
-    await expect(audience).toHaveText(words.private);
+    await expect(input).toHaveAccessibleDescription(words.private);
     for (const width of [375, 1280]) {
       await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
       await page.screenshot({ path: testInfo.outputPath(`audience-private-${language}-${width}.png`), fullPage: true });
