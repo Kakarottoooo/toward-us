@@ -175,6 +175,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     plan = normalizeAssistantTurn(plan);
+    // A plan with no words and no action was shown as the generic "你想创建、查找还是修改什么？" (use-case regression 11-09:
+    // asked what to bring to meet her parents). The model is asked once more before that fallback can appear.
+    if (validateAssistantTurn(plan) && !clean(plan.reply, 1200) && !plan.actions.length) {
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language)); }
+      catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
+    }
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
     if (!validateAssistantTurn(plan)) { console.error("Invalid planner turn:", JSON.stringify({ keys: Object.keys(plan || {}), actions: Array.isArray(plan?.actions) ? plan.actions.map((action) => ({ keys: Object.keys(action || {}), kind: action?.kind, operation: action?.operation, fields: Object.keys(action?.fields || {}) })) : typeof plan?.actions })); throw fail(502, "The assistant could not prepare a valid action. Nothing was changed."); }
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
