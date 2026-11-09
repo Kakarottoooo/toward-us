@@ -767,7 +767,7 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
     ] : []),
   ];
   // 我的 TA 们 (founder 11-09): everyone they are getting to know, on a page of its own.
-  const peopleRow: DrawerItem = { key: "people", icon: <UsersThree size={22} />, label: t("我的 TA 们", "People I'm seeing", "Las personas que conozco"), badge: data.alerts, onClick: () => onOpen("/?view=people") };
+  const peopleRow: DrawerItem = { key: "people", icon: <UsersThree size={22} />, label: t("在了解的人", "People I'm seeing", "Las personas que conozco"), badge: data.alerts, onClick: () => onOpen("/?view=people") };
   const cycleRow: DrawerItem = { key: "cycle", icon: <Drop size={22} />, label: t("经期记录", "Period", "Periodo"), onClick: () => onOpen(`/?view=${paired ? "upcoming" : "reminders"}&focus=cycle`) };
   const layoutIcon: Record<string, ReactNode> = { checklist: <ListChecks size={22} />, timeline: <ClockCounterClockwise size={22} />, gallery: <Images size={22} />, notes: <NotePencil size={22} />, list: <ListBullets size={22} /> };
   const spaceRow = (space: SpaceSummary): DrawerItem => ({ key: `space-${space.id}`, icon: layoutIcon[space.layout] || layoutIcon.list, label: space.title, onClick: () => onOpen(`/?view=space&space=${encodeURIComponent(space.id)}`) });

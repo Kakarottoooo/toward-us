@@ -55,6 +55,7 @@ test("我的 TA 们 opens from the menu with everyone read by Pinky, compared si
   await signIn(page, context, sent, wants);
   await page.goto("/");
   await page.getByTestId("open-drawer").click();
+  await expect(page.getByTestId("drawer-people")).toContainText("在了解的人"); // founder 11-09: not "我的 TA 们"
   await expect(page.getByTestId("drawer-people")).toContainText("1");
   await page.getByTestId("drawer-people").click();
   // 总览: what to do now, everyone by where they stand, who moved this week.

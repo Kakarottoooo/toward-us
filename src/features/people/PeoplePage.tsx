@@ -101,7 +101,7 @@ export function PeoplePage({ language, initialPerson, initialTab, onBack, onAsk 
   };
 
   return <div className="paper-screen relationship-shell people-screen" data-testid="people-page">
-    <PageHeader language={language} title={t("我的 TA 们", "People I'm seeing", "Las personas que conozco")} onBack={onBack} />
+    <PageHeader language={language} title={t("在了解的人", "People I'm seeing", "Las personas que conozco")} onBack={onBack} />
     <main className="relationship-main people-main">
       <p className="people-muted small">{t("只有你看得到 · 发新聊天会自动更新", "Only you can see this · updates with new chats", "Solo tú lo ves · se actualiza con chats nuevos")}</p>
       <div className="people-tabs" role="tablist">{(["overview", "compare", "wants"] as Tab[]).map((key) => <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "active" : ""} onClick={() => { keyboard.hide(); setTab(key); }} data-testid={`people-tab-${key}`}>{key === "overview" ? t("总览", "Overview", "Resumen") : key === "compare" ? t("对比", "Compare", "Comparar") : t("我想要的", "What I want", "Lo que quiero")}</button>)}</div>
@@ -156,7 +156,7 @@ function PersonPage({ language, id, row, stages, onBack, onAsk }: { language: La
   const top = Math.max(1, ...(numbers?.monthly || []).map((month) => month.me + month.them));
   const archive = async () => { await relationshipApi(`/api/people/${encodeURIComponent(id)}/archive`, jsonBody({ archived: true })); setArchived(true); };
   return <div className="paper-screen relationship-shell people-screen" data-testid="person-page">
-    <header className="page-header"><button className="page-back" onClick={onBack} data-testid="person-back"><ArrowLeft size={20} />{t("我的 TA 们", "People", "Personas")}</button><h1>{person?.name || row?.name || ""}</h1></header>
+    <header className="page-header"><button className="page-back" onClick={onBack} data-testid="person-back"><ArrowLeft size={20} />{t("在了解的人", "People", "Personas")}</button><h1>{person?.name || row?.name || ""}</h1></header>
     <main className="relationship-main people-main">
       {error && <p className="people-error" role="alert">{error}</p>}
       {person && <div className="person-head"><Avatar name={person.name} /><span><strong>{person.name}</strong><small>{read?.summary || ""}</small></span>{stage && <span className={`people-stage stage-${stage}`}>{stages[stage]}</span>}</div>}
