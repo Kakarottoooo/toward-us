@@ -147,7 +147,7 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length) draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+      if (changed.length) draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }].slice(-200);
     });
     return Object.assign(changed, { more, sessionId });
   });
@@ -232,7 +232,7 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
     const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings: person ? findings.filter((found) => found.subject !== "both") : findings, channel: "private", sessionId }, person ? [person] : []);
     if (changed.length) await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }].slice(-200);
     });
     return Object.assign(changed, { sessionId });
   });
@@ -266,6 +266,8 @@ export async function scanTogetherProfile({ store, mediator, relationshipId, use
   });
 }
 
+/** The person a 已记下 line is about, when all its notes are about one: the app opens that person's card from it. */
+const notedPerson = (facts) => { const ids = [...new Set(facts.map((fact) => personOf(fact.subjectUserId)))]; return ids.length === 1 && ids[0] ? { personId: ids[0] } : {}; };
 function notedText(language, facts, { userId, partnerName, people = [] }) {
   const personName = (fact) => personOf(fact.subjectUserId) ? people.find((person) => person.id === personOf(fact.subjectUserId))?.name || say(language, "TA", "them", "esa persona") : null;
   // Notes about someone they are getting to know go to that person's own card, not to About us.
