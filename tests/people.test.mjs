@@ -78,6 +78,20 @@ test("what a chat with one person shows is kept on that person's card, never on 
   assert.match(noted.text, /About us|Lily/);
 });
 
+test("what happened between the member and one person goes on that person's card as history", async (t) => {
+  // 11-09 on the founder's phone: a first coffee and a cooled reply came back as "both" and were dropped, so cards stayed empty.
+  const { store, users, session, add, request } = await setup(t, { paired: true });
+  const lily = await add("Lily");
+  const mediator = { structured: async () => ({ facts: [
+    { messageId: "imp:0", quote: "昨天的拿铁真的好好喝", subject: "both", person: "", category: "history", fact: "2026-11-08 第一次一起喝咖啡，聊了很久", replaces: "" }] }) };
+  const kept = await scanBroughtChat({ store, mediator, userId: users[0].id, sessionId: session.id, sourceId: "imp", messages: [{ role: "partner", text: "昨天的拿铁真的好好喝" }], personId: lily.id });
+  assert.equal(kept.length, 1);
+  const card = (await request(`/people/${lily.id}`)).body;
+  assert.deepEqual(card.history.map((item) => item.text), ["2026-11-08 第一次一起喝咖啡，聊了很久"]);
+  const known = await profileContext(store, users[0].id);
+  assert.deepEqual(known.history, [], "it never becomes the couple's history");
+});
+
 test("a partner sees none of the people or their notes, through any route", async (t) => {
   const { store, users, session, add, request } = await setup(t, { paired: true });
   const lily = await add("Lily");
