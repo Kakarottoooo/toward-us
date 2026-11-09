@@ -66,7 +66,10 @@ export function ProfilePage({ language }: { language: Language }) {
   }, [load]);
 
   const partner = partnerName || t("TA", "Your partner", "Tu pareja");
-  const tabs: Array<["me" | "partner" | "us", string]> = partnerName ? [["partner", partner], ["me", t("我", "Me", "Yo")], ["us", t("我们", "Us", "Nosotros")]] : [["me", t("我", "Me", "Yo")]];
+  // Before a partner joins, what Pinky learned about TA privately still shows here, to see, correct or remove (11-08).
+  const has = (subject: "partner" | "us") => (facts || []).some((fact) => fact.subject === subject);
+  const tabs: Array<["me" | "partner" | "us", string]> = partnerName ? [["partner", partner], ["me", t("我", "Me", "Yo")], ["us", t("我们", "Us", "Nosotros")]]
+    : [...(has("partner") ? [["partner", partner] as ["partner", string]] : []), ["me", t("我", "Me", "Yo")], ...(has("us") ? [["us", t("我们", "Us", "Nosotros")] as ["us", string]] : [])];
   const shown = tabs.some(([value]) => value === tab) ? tab : tabs[0][0];
   const label: Record<Category, string> = { food: t("吃喝", "Food and drink", "Comida y bebida"), likes: t("喜欢", "Loves", "Le encanta"), dislikes: t("不喜欢 · 雷区", "Dislikes · sore spots", "No le gusta · puntos sensibles"), wishes: t("想要的", "Wishes", "Deseos"), traits: t("性格和习惯", "Traits and habits", "Forma de ser y hábitos"), people: t("重要的人和日子", "People and days that matter", "Personas y fechas importantes"), other: t("其他", "Other", "Otros") };
   const tag = (fact: Fact) => fact.source === "together" ? t("一起说过", "Said together", "Lo dijeron juntos") : fact.source === "partner_shared" ? t(`${partner} 分享的`, `Shared by ${partner}`, `Compartido por ${partner}`) : fact.source === "i_shared" ? t("你分享的副本", "Copy you shared", "Copia que compartiste") : fact.sharedAt ? t("分享过副本", "A copy was shared", "Se compartió una copia") : "";

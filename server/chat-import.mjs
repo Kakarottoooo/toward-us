@@ -8,6 +8,7 @@ import { canViewRecord, createRelationshipRecord } from "./relationship-domain.m
 import { appendTogetherMessage, memberLanguage, togetherI18n } from "./together-domain.mjs";
 import { photoFile, visiblePhoto } from "./photo-store.mjs";
 import { asAiUser, isAiLimit } from "./ai-budget.mjs";
+import { profileContext, scanBroughtChat } from "./profile.mjs";
 
 // Chat-history import: a member brings years of messages with their partner from another app so Pinky can help them see
 // their patterns. Guarantees live here; reading and interpreting is the model's job.
@@ -290,7 +291,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       if (request?.text) {
         let text;
         try {
-          const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
+          const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (typeof answer?.reply !== "string" || !answer.reply.trim()) throw new Error("Empty screenshot answer");
           text = answer.reply.trim().slice(0, 2000);
         } catch (error) {
@@ -298,6 +299,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         }
         await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
+        // After the answer: keep what this exchange shows about the two of them, privately (reply coach, founder 11-08).
+        void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages })
+          .catch((error) => console.error("Could not keep notes from the screenshots:", error?.message || error));
       }
     }
     const stats = computeStats(messages);
@@ -326,11 +330,18 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   }
 
   /** Screenshots (WeChat, or any app) become an import after the model transcribes them, oldest first. */
+  // What Pinky already knows privately about the two of them helps the reply coach answer like someone who knows her
+  // (founder 11-08: "用得越多越懂她"). Only the member's own view; empty when nothing is known yet.
+  const knownAbout = async (userId) => {
+    const known = await profileContext(store, userId).catch(() => null);
+    const facts = (list) => (list || []).slice(0, 20).map((item) => item.fact);
+    return known && (known.me.length || known.partner.length) ? { known: { me: facts(known.me), partner: facts(known.partner) } } : {};
+  };
   async function importScreenshots(user, photoIds, { sessionId, language, messageId, question = "" }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
     const photos = [];
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
-    const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") } } : null });
+    const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id)) } : null });
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
     if (messages.length < 2) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
