@@ -1,5 +1,6 @@
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { chatNumbers, cleanWants, readWants, writeWants } from "./people-compare.mjs";
 
 // Pinky works for someone single too (founder 11-09: "有很多个暧昧对象……Pinky 要能识别对面是不同的人……哪个人最后评估下来是
 // 比较适合我的"). Each person they are getting to know is a private record of theirs, never a user and never shared: the
@@ -48,7 +49,9 @@ export async function personFor(tx, userId, name, { at = new Date().toISOString(
 }
 
 /** One person as their owner sees them. */
-export const projectPerson = (record, facts = 0) => ({ id: record.id, version: record.version, name: record.name, aliases: record.aliases || [], archived: Boolean(record.archivedAt), lastSeenAt: record.lastSeenAt || record.updatedAt, facts });
+export const projectPerson = (record, facts = 0) => ({ id: record.id, version: record.version, name: record.name, aliases: record.aliases || [], archived: Boolean(record.archivedAt), lastSeenAt: record.lastSeenAt || record.updatedAt, facts, stage: record.stage || null, previousStage: record.previousStage || null, stageAt: record.stageAt || null });
+// Someone newly showing warning signs since the member last opened 我的 TA 们: the menu row shows a dot for them.
+const alerted = (person, seenAt) => person.stage === "risk" && person.stageAt && (!seenAt || person.stageAt > seenAt);
 
 /** 我的 TA 们: list, rename, merge two that are one person, archive. Every route works on the member's own records only. */
 export function createPeopleRouter({ store, emit = () => {}, comparer = null }) {
@@ -65,21 +68,40 @@ export function createPeopleRouter({ store, emit = () => {}, comparer = null }) 
     const records = await store.listRelationshipRecordsForUser("memories", userId);
     const counts = new Map();
     for (const record of records) if (record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && String(record.subjectUserId || "").startsWith("person:")) counts.set(personOf(record.subjectUserId), (counts.get(personOf(record.subjectUserId)) || 0) + 1);
-    res.json({ people: (await listPeople(store, userId, { archived: req.query.archived === "1" })).map((person) => projectPerson(person, counts.get(person.id) || 0)) });
-    // The comparison is made ahead of time whenever their notes change, so the page is ready when opened.
+    const people = await listPeople(store, userId, { archived: req.query.archived === "1" }), { seenAt } = await readWants(store, userId);
+    res.json({ people: people.map((person) => projectPerson(person, counts.get(person.id) || 0)), alerts: people.filter((person) => alerted(person, seenAt)).length });
+    // The reading is made ahead of time whenever their notes change, so 我的 TA 们 is ready when opened.
     if (comparer) comparer.current(userId, languageOf(req)).catch(() => {});
   });
-  // 对比: everyone they are getting to know, compared by Pinky without picking anyone (founder 11-09).
-  router.get("/people/compare", async (req, res) => {
-    if (!comparer) return res.json({ status: "unavailable" });
-    res.json(await comparer.current(req.auth.user.id, languageOf(req)));
+  // 我的 TA 们 (founder 11-09, B+C): everyone at once, read by Pinky without picking anyone. Opening it clears the dot.
+  router.get("/people/board", async (req, res) => {
+    const userId = req.auth.user.id;
+    const records = await store.listRelationshipRecordsForUser("memories", userId);
+    const people = await listPeople(store, userId), names = new Map(people.map((person) => [person.id, person.name]));
+    // What happened lately, across everyone, by the date each line starts with.
+    const feed = records.filter((record) => record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && record.category === "history" && names.has(personOf(record.subjectUserId)))
+      .sort((a, b) => String(b.text).localeCompare(String(a.text))).slice(0, 8).map((record) => ({ personId: personOf(record.subjectUserId), name: names.get(personOf(record.subjectUserId)), text: record.text }));
+    const { wants } = await readWants(store, userId);
+    const reading = comparer ? await comparer.current(userId, languageOf(req)) : { status: "unavailable" };
+    if (req.query.seen === "1") await writeWants(store, userId, { seenAt: new Date().toISOString() });
+    res.json({ ...reading, people: people.map((person) => projectPerson(person)), feed, wants });
+  });
+  // What they want in a relationship, kept as they set it; the reading is remade against it.
+  router.put("/people/wants", async (req, res) => {
+    const userId = req.auth.user.id;
+    if (!Array.isArray(req.body?.wants)) throw fail(400, "Send the list of what you want.");
+    const record = await writeWants(store, userId, { wants: cleanWants(req.body.wants) });
+    if (comparer) comparer.current(userId, languageOf(req)).catch(() => {});
+    res.json({ wants: record.wants });
   });
   // One card: what Pinky keeps about this person, newest first, and what happened between them by date.
   router.get("/people/:id", async (req, res) => {
     const userId = req.auth.user.id, person = await owned(store, req.params.id, userId);
     const facts = (await store.listRelationshipRecordsForUser("memories", userId)).filter((record) => record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && record.subjectUserId === personSubject(person.id));
     const line = (record) => ({ id: record.id, version: record.version, category: record.category || "other", text: record.text, quote: record.evidence?.quote || null, updatedAt: record.updatedAt });
-    res.json({ person: projectPerson(person, facts.length),
+    const imports = (await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => record.ownerUserId === userId && record.personId === person.id && !record.deletedAt);
+    const reading = comparer ? await comparer.current(userId, languageOf(req)).catch(() => null) : null;
+    res.json({ person: projectPerson(person, facts.length), numbers: chatNumbers(imports), read: reading?.reading?.people.find((row) => row.id === person.id) || null,
       facts: facts.filter((record) => record.category !== "history").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 40).map(line),
       history: facts.filter((record) => record.category === "history").sort((a, b) => String(b.text).localeCompare(String(a.text))).slice(0, 30).map(line) });
   });
