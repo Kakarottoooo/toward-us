@@ -69,6 +69,8 @@ test("what a chat with one person shows is kept on that person's card, never on 
   assert.deepEqual(known.people.find((person) => person.id === jie.id).facts, []);
   assert.deepEqual(known.partner, [], "nothing about Lily becomes the partner's");
   assert.deepEqual(known.me.map((item) => item.fact), ["hates being late"]);
+  const mixed = (await store.getRelationshipRecordForUser("privateAgentThreads", session.id, users[0].id)).messages.at(-1).text;
+  assert.match(mixed, /^(Kept on Lily's card: loves cats\. Kept in About us: you: hates being late|已记进 Lily 的档案：loves cats。已记进「关于我们」：你 hates being late)$/, "a mixed note says where each part went");
   // The next chat, with 阿杰, is read without Lily's notes in view.
   await scanBroughtChat({ store, mediator: { structured: async ({ input }) => { seen.push(JSON.parse(input)); return { facts: [] }; } }, userId: users[0].id, sessionId: session.id, sourceId: "imp2", messages, personId: jie.id });
   assert.ok(!JSON.stringify(seen.at(-1).known).includes("loves cats"), "another person's notes are never in view");
@@ -76,8 +78,22 @@ test("what a chat with one person shows is kept on that person's card, never on 
   assert.match(noted.text, /About us|Lily/);
 });
 
-test("the noted line quotes the member's own history words and says which notes went to the person's card", async (t) => {
-  // Watch 11-09: "已记进「关于我们」：你2026-10-15 前后 我去梧桐山看日出，超美；小雨喜欢徒步" read as garbled and put 小雨's notes in About us.
+test("what happened between the member and one person goes on that person's card as history", async (t) => {
+  // 11-09 on the founder's phone: a first coffee and a cooled reply came back as "both" and were dropped, so cards stayed empty.
+  const { store, users, session, add, request } = await setup(t, { paired: true });
+  const lily = await add("Lily");
+  const mediator = { structured: async () => ({ facts: [
+    { messageId: "imp:0", quote: "昨天的拿铁真的好好喝", subject: "both", person: "", category: "history", fact: "2026-11-08 第一次一起喝咖啡，聊了很久", replaces: "" }] }) };
+  const kept = await scanBroughtChat({ store, mediator, userId: users[0].id, sessionId: session.id, sourceId: "imp", messages: [{ role: "partner", text: "昨天的拿铁真的好好喝" }], personId: lily.id });
+  assert.equal(kept.length, 1);
+  const card = (await request(`/people/${lily.id}`)).body;
+  assert.deepEqual(card.history.map((item) => item.text), ["2026-11-08 第一次一起喝咖啡，聊了很久"]);
+  const known = await profileContext(store, users[0].id);
+  assert.deepEqual(known.history, [], "it never becomes the couple's history");
+});
+
+test("the noted line quotes the member's own history words instead of putting 你 before them", async (t) => {
+  // Watch 11-09: "已记进「关于我们」：你2026-10-15 前后 我去梧桐山看日出，超美" read as garbled.
   const { store, users, add } = await setup(t);
   const rain = await add("小雨");
   const session = createRelationshipRecord({ relationshipId: null, userId: users[0].id, visibility: "private", aiAccessScope: "private", intentType: "assistant", language: "zh", timezone: "UTC", messages: [] });
@@ -89,7 +105,7 @@ test("the noted line quotes the member's own history words and says which notes 
   const messages = [{ role: "me", text: "上个月我去梧桐山看日出，超美" }, { role: "partner", text: "我超喜欢徒步" }];
   await scanBroughtChat({ store, mediator, userId: users[0].id, sessionId: session.id, sourceId: "imp", messages, personId: rain.id });
   const noted = (await store.getRelationshipRecordForUser("privateAgentThreads", session.id, users[0].id)).messages.find((message) => message.kind === "noted");
-  assert.equal(noted.text, "已记进「关于我们」：「2026-10-15 前后 我去梧桐山看日出，超美」。已记进 小雨 的档案：喜欢徒步");
+  assert.equal(noted.text, "已记进 小雨 的档案：喜欢徒步。已记进「关于我们」：「2026-10-15 前后 我去梧桐山看日出，超美」");
 });
 
 test("a partner sees none of the people or their notes, through any route", async (t) => {

@@ -226,7 +226,9 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
   const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
   const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, date: localDay(line.createdAt, session.timezone), text: line.text, isNew: true })) };
   const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: person ? person.name : scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
-  const findings = verifyFacts(result?.facts, lines, () => true).map((found) => person && found.subject === "B" ? { ...found, person: person.name } : { ...found, person: "" });
+  // What happened between them in a chat with one person (their first coffee, a cooled reply) is that person's history;
+  // dropping it left most cards empty on the founder's phone (11-09).
+  const findings = verifyFacts(result?.facts, lines, () => true).map((found) => person && (found.subject === "B" || found.subject === "both") ? { ...found, subject: "B", person: person.name } : { ...found, person: "" });
   if (!findings.length) return [];
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
@@ -271,25 +273,27 @@ const notedPerson = (facts) => { const ids = [...new Set(facts.map((fact) => per
 function notedText(language, facts, { userId, partnerName, people = [] }) {
   const personName = (fact) => personOf(fact.subjectUserId) ? people.find((person) => person.id === personOf(fact.subjectUserId))?.name || say(language, "TA", "them", "esa persona") : null;
   // Notes about someone they are getting to know go to that person's own card, not to About us.
-  const sep = say(language, "；", "; ", "; "), more = facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "";
-  const shown = facts.slice(0, 3);
-  const onCard = (name, list) => say(language, `已记进 ${name} 的档案：${list}`, `Kept on ${name}'s card: ${list}`, `Guardado en la ficha de ${name}: ${list}`);
+  // A mixed batch says where each part went (founder's phone, 11-09: "已记进「关于我们」：小雨 喜欢徒步" read as if 小雨 had
+  // gone into the couple's space).
   const owners = [...new Set(facts.map(personName))];
-  if (owners.length === 1 && owners[0]) return onCard(owners[0], shown.map((fact) => fact.text).join(sep)) + more;
+  if (owners.some(Boolean)) {
+    const more = (group) => group.length > 3 ? say(language, ` 等 ${group.length} 条`, ` and ${group.length - 3} more`, ` y ${group.length - 3} más`) : "";
+    const cards = owners.filter(Boolean).map((name) => {
+      const group = facts.filter((fact) => personName(fact) === name);
+      const list = group.slice(0, 3).map((fact) => fact.text).join(say(language, "；", "; ", "; "));
+      return say(language, `已记进 ${name} 的档案：${list}`, `Kept on ${name}'s card: ${list}`, `Guardado en la ficha de ${name}: ${list}`) + more(group);
+    });
+    const rest = facts.filter((fact) => !personName(fact));
+    return [...cards, ...(rest.length ? [notedText(language, rest, { userId, partnerName, people })] : [])].join(say(language, "。", ". ", ". "));
+  }
+  const who = (fact) => personName(fact) || (fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes"));
   // A history line is already in the member's own words ("2026-10-15 前后 我去…"): quote it instead of putting 你 before it
   // (watch 11-09: "你2026-10-15 前后 我去梧桐山看日出").
-  const who = (fact) => fact.subjectUserId === userId ? say(language, "你", "you", "tú") : fact.subjectUserId ? partnerName || say(language, "TA", "your partner", "tu pareja") : say(language, "你们", "you two", "ustedes");
-  const item = (fact) => fact.category === "history"
-    ? say(language, `「${fact.text}」`, `"${fact.text}"`, `«${fact.text}»`)
+  const item = (fact) => fact.category === "history" ? say(language, `「${fact.text}」`, `"${fact.text}"`, `«${fact.text}»`)
     : say(language, `${who(fact)}${/[A-Za-z0-9]$/.test(who(fact)) ? " " : ""}${fact.text}`, `${who(fact)}: ${fact.text}`, `${who(fact)}: ${fact.text}`);
-  // Notes about a person they are getting to know went to that person's card, so they are not said to be in About us.
-  const ours = shown.filter((fact) => !personName(fact)), named = [...new Set(shown.map(personName).filter(Boolean))];
-  const parts = [
-    ...(ours.length ? [say(language, `已记进「关于我们」：${ours.map(item).join(sep)}`, `Kept in About us: ${ours.map(item).join(sep)}`, `Guardado en Sobre nosotros: ${ours.map(item).join(sep)}`)] : []),
-    ...named.map((name) => onCard(name, shown.filter((fact) => personName(fact) === name).map((fact) => fact.text).join(sep))),
-  ];
+  const list = facts.slice(0, 3).map(item).join(say(language, "；", "; ", "; "));
   // Pinky's own reply may already say it will remember; this line says where it went, so it never just repeats it.
-  return parts.join(say(language, "。", ". ", ". ")) + more;
+  return say(language, `已记进「关于我们」：${list}`, `Kept in About us: ${list}`, `Guardado en Sobre nosotros: ${list}`) + (facts.length > 3 ? say(language, ` 等 ${facts.length} 条`, ` and ${facts.length - 3} more`, ` y ${facts.length - 3} más`) : "");
 }
 
 /** What Pinky knows, for this member's own conversations: their notes and what is shared with them. */
