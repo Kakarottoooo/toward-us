@@ -90,6 +90,10 @@ test("empty action fields repeated at the top of a planner answer do not refuse 
   // Use-case round 5: a screenshot import came back without fields.frequency and was refused with a 502.
   const { frequency, ...withoutFrequency } = fields();
   assert.equal(validateAssistantTurn(normalizeAssistantTurn({ reply: "", actions: [action({ kind: "chat_import", operation: "create", fields: withoutFrequency })] })), true);
+  // Round 6: photoId written beside the fields of a moment.
+  const beside = normalizeAssistantTurn({ reply: "", actions: [{ ...action({ kind: "space_item", operation: "create", fields: fields({ title: "海边" }) }), photoId: "photo-1" }] });
+  assert.equal(validateAssistantTurn(beside), true);
+  assert.equal(beside.actions[0].fields.photoId, "photo-1");
 });
 
 async function setup(t, plan) {
