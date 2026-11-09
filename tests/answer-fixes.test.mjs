@@ -194,3 +194,7 @@ test("the Claude CLI gets its system prompt from a file, so a long prompt never 
   assert.ok(!/"--system-prompt",/.test(source), "no system prompt passed as a command-line argument");
   assert.equal((source.match(/await withSystemFile\(cwd, /g) || []).length, 3, "lookup, image reading and replies all use the file");
 });
+
+test("asked for suggestions in words, Pinky gives a few specific ones, since the bulb button is gone (founder 11-09)", () => {
+  for (const language of ["zh", "en", "es"]) assert.match(assistantInstructions(language), /there is no suggestions button any more/);
+});
