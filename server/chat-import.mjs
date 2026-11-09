@@ -344,7 +344,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const knownAbout = async (userId) => {
     const known = await profileContext(store, userId).catch(() => null);
     const facts = (list) => (list || []).slice(0, 20).map((item) => item.fact);
-    return known && (known.me.length || known.partner.length) ? { known: { me: facts(known.me), partner: facts(known.partner) } } : {};
+    return known && (known.me.length || known.partner.length || known.history?.length) ? { known: { me: facts(known.me), partner: facts(known.partner), history: facts(known.history) } } : {};
   };
   async function importScreenshots(user, photoIds, { sessionId, language, messageId, question = "" }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };

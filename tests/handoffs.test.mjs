@@ -87,6 +87,9 @@ test("empty action fields repeated at the top of a planner answer do not refuse 
   assert.deepEqual(normalizeAssistantTurn(stray), { reply: stray.reply, actions: [] });
   assert.equal(validateAssistantTurn(normalizeAssistantTurn(stray)), true);
   assert.equal(validateAssistantTurn(normalizeAssistantTurn({ ...stray, query: "阿凯" })), false, "an extra with content still fails");
+  // Use-case round 5: a screenshot import came back without fields.frequency and was refused with a 502.
+  const { frequency, ...withoutFrequency } = fields();
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn({ reply: "", actions: [action({ kind: "chat_import", operation: "create", fields: withoutFrequency })] })), true);
 });
 
 async function setup(t, plan) {
