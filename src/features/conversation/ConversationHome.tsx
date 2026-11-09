@@ -114,6 +114,17 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const openPetRoom = () => { keyboard.hide(); setPetRoom(true); };
   // A few fresh things to say, made by Pinky from where the couple is; they change as the conversation moves on.
   const [ideas, setIdeas] = useState<Record<Channel, string[]>>({ me: [], us: [] });
+  // Opening shows the conversation once, whole (founder 11-08: "点进 Pinky 还是会闪过几个画面"): the loading screen stays
+  // until the messages and what sits under them (suggestions, the discovery card, the couple's character) have answered,
+  // at most a moment longer for the extras, instead of each popping in on its own.
+  const [firstLook, setFirstLook] = useState({ session: false, together: !paired, ideas: false, discover: false, grace: false, cap: false });
+  const shown = useRef(false);
+  useEffect(() => { const grace = window.setTimeout(() => setFirstLook((current) => ({ ...current, grace: true })), 1500), cap = window.setTimeout(() => setFirstLook((current) => ({ ...current, cap: true })), 5000); return () => { window.clearTimeout(grace); window.clearTimeout(cap); }; }, []);
+  // The drawer's rows and counts are fetched with the conversation, so opening the menu shows them at once (11-08).
+  const [drawerData, setDrawerData] = useState<DrawerData>({ home: null, spaces: [], chats: 0 });
+  const [discoverUsed, setDiscoverUsed] = useState<string[] | null>(null);
+  useEffect(() => { relationshipApi<{ used: string[] }>("/api/discover").then((result) => setDiscoverUsed(result.used)).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, discover: true }))); }, [user.id]);
+  useEffect(() => { void loadDrawerData(paired).then(setDrawerData); }, [paired]);
   // Why each suggestion was made, in a few words (founder 11-07: trust you can see).
   const [reasons, setReasons] = useState<Record<Channel, string[]>>({ me: [], us: [] });
   // At most one open promise Pinky brings up in Us, only where suggestions may show (11-03); the server picks which.
@@ -178,8 +189,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   };
 
   // Connected members always get a conversation on open, so Pinky can speak first to someone it barely knows (founder 11-08).
-  useEffect(() => { void ensureSession(paired, true).catch(() => {}); }, [user.id, paired]);
-  useEffect(() => { void loadTogether(); }, [loadTogether]);
+  useEffect(() => { void ensureSession(paired, true).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, session: true }))); }, [user.id, paired]);
+  useEffect(() => { void loadTogether().finally(() => setFirstLook((current) => ({ ...current, together: true }))); }, [loadTogether]);
   useEffect(() => {
     if (!paired) return;
     const events = new EventSource("/api/relationship/events");
@@ -622,12 +633,15 @@ ${text}` : text, target);
   useEffect(() => {
     if ((channel === "us" && !paired) || !wantIdeas) return;
     let alive = true;
-    relationshipApi<{ suggestions: string[]; reasons?: string[] }>(`/api/suggestions?channel=${channel}&language=${language}`).then((result) => { if (alive) { setIdeas((current) => ({ ...current, [channel]: result.suggestions })); setReasons((current) => ({ ...current, [channel]: result.reasons || [] })); } }).catch(() => {});
+    relationshipApi<{ suggestions: string[]; reasons?: string[] }>(`/api/suggestions?channel=${channel}&language=${language}`).then((result) => { if (alive) { setIdeas((current) => ({ ...current, [channel]: result.suggestions })); setReasons((current) => ({ ...current, [channel]: result.reasons || [] })); } }).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, ideas: true })));
     return () => { alive = false; };
   }, [channel, language, lastSeen, paired, wantIdeas]);
   // In Just me only this phone's own wait counts; in Us also a reply Pinky is preparing for the partner.
   const working: AgentActivity = channel === "me" ? (waitingMe ? activity.me || { step: "thinking" } : null) : paired ? activity.us || (waitingUs ? { step: "thinking" } : null) : null;
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
+  const extrasIn = (firstLook.ideas || !wantIdeas || coachAlone) && (firstLook.discover || readOnly || coachAlone) && (!paired || mascotLoaded);
+  if (!shown.current && (firstLook.cap || firstLook.session && firstLook.together && (extrasIn || firstLook.grace))) shown.current = true;
+  if (!shown.current) return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
   return <div className={`paper-screen conversation-home ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen">
     {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
@@ -654,7 +668,7 @@ ${text}` : text, target);
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
-      {!readOnly && !coachAlone && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} />}
+      {!readOnly && !coachAlone && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} used={discoverUsed} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=upcoming")} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
@@ -689,7 +703,7 @@ ${text}` : text, target);
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
     {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }} />}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 
@@ -700,20 +714,22 @@ export function PageHeader({ language, title, onBack, backLabel }: { language: L
 }
 
 type DrawerItem = { key: string; icon: ReactNode; label: string; badge?: number; onClick: () => void };
+type DrawerData = { home: { pending: number; since: string | null } | null; spaces: SpaceSummary[]; chats: number };
+async function loadDrawerData(paired: boolean): Promise<DrawerData> {
+  const [home, spaces, chats] = await Promise.all([
+    paired ? relationshipApi<{ home: { pending: unknown[] }; graph: { milestones: Array<{ type?: string; date?: string; archivedAt?: string | null }> } }>("/api/relationship/home").then((result) => ({ pending: result.home.pending.length, since: result.graph.milestones.find((item) => item.type === "relationship_started" && !item.archivedAt)?.date || null })).catch(() => null) : Promise.resolve(null),
+    relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => result.spaces.filter((space) => !space.system)).catch(() => [] as SpaceSummary[]),
+    listImports().then((items) => items.length).catch(() => 0),
+  ]);
+  return { home, spaces, chats };
+}
 /** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
-function ConversationDrawer({ user, paired, language, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
+function ConversationDrawer({ user, paired, language, data, onData, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; data: DrawerData; onData: (data: DrawerData) => void; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [home, setHome] = useState<{ pending: number; since: string | null } | null>(null);
-  const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
+  // Shown at once from what was fetched with the conversation; refreshed quietly while the drawer is open.
+  const { home, spaces, chats } = data;
   const start = useRef<number | null>(null);
-  useEffect(() => {
-    if (!paired) return;
-    relationshipApi<{ home: { pending: unknown[] }; graph: { milestones: Array<{ type?: string; date?: string; archivedAt?: string | null }> } }>("/api/relationship/home")
-      .then((result) => setHome({ pending: result.home.pending.length, since: result.graph.milestones.find((item) => item.type === "relationship_started" && !item.archivedAt)?.date || null })).catch(() => {});
-  }, [paired]);
-  useEffect(() => { relationshipApi<{ spaces: SpaceSummary[] }>("/api/spaces").then((result) => setSpaces(result.spaces.filter((space) => !space.system))).catch(() => {}); }, []);
-  const [chats, setChats] = useState(0);
-  useEffect(() => { listImports().then((items) => setChats(items.length)).catch(() => {}); }, []);
+  useEffect(() => { void loadDrawerData(paired).then(onData); }, [paired]);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [onClose]);
   const moments: DrawerItem = { key: "moments", icon: <HandHeart size={22} />, label: t("回忆", "Moments", "Momentos"), onClick: () => onOpen("/?view=moments") };
   // Agreements live at the top of Coming up (founder 11-06), so one waiting for approval shows as Coming up's badge.

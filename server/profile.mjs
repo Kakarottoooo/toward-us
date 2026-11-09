@@ -8,9 +8,12 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 // their own (founder: "各自私有，可挑着分享"): what Ziwei tells Pinky privately about himself or about Mia stays Ziwei's alone;
 // he may share a line about himself with Mia; what they both said in Us belongs to both. Facts live in the existing
 // memories collection (kind "profile"), so export, retention and deletion already cover them.
-export const CATEGORIES = ["food", "likes", "dislikes", "wishes", "traits", "people", "other"];
+export const CATEGORIES = ["food", "likes", "dislikes", "wishes", "traits", "people", "history", "other"];
 export const PROFILE_KIND = "profile";
-const SCAN_LIMIT = 40, SCAN_CONTEXT = 6, KNOWN_LIMIT = 150, CONTEXT_LIMIT = 80;
+const SCAN_LIMIT = 40, SCAN_CONTEXT = 6, KNOWN_LIMIT = 150, CONTEXT_LIMIT = 80, HISTORY_LIMIT = 60;
+// The day a line was said where the member lives: "昨天" late in the evening in California is not yesterday in UTC.
+const localDay = (at, timeZone) => { try { return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at)); } catch { return String(at || "").slice(0, 10); } };
+const historyDay = (text) => /^\d{4}-\d{2}-\d{2}/.exec(text)?.[0] || "0000";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const squash = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit);
@@ -38,10 +41,11 @@ async function memberScope(db, userId) {
 
 function instructions({ a, b, privateChat, between = false }) {
   return `You keep a long-term profile of two partners for Pinky, a couple's app, so Pinky understands them better over time. A is ${a || "the first partner"}, B is ${b || "the second partner"}.
-${between ? "This is a chat between A and B that A brought to Pinky privately (screenshots or pasted text). A's and B's own lines both count; what B says about B is the best evidence about B. Keep only lasting things, never how they feel in this one exchange." : privateChat ? "This is A's private chat with Pinky; only A's own lines count. A may tell you things about B." : "This is the couple's shared chat; Pinky's lines never count."}
-Keep lasting facts that help to know a person or the couple later. Categories: food (food and drink they love or avoid, allergies, diet); likes (hobbies, music, films, places, styles, what makes them happy); dislikes (what annoys or hurts them, sore spots, boundaries); wishes (things they want, gift ideas, places they want to go, sizes); traits (personality, habits and routines, how they like to be cared for or comforted, how they handle conflict); people (family, friends, pets, birthdays and dates that matter to them); other (work, studies, where they live, other lasting facts). For both: how the two of them work best together, their rituals and lessons ("we talk after ten quiet minutes").
-Not kept: periods, health or medical details (kept elsewhere, privately), today's mood or events, one-off plans or picks for right now, promises, jokes or sarcasm, guesses ("maybe he likes…"), facts about other people that say nothing about A or B, and anything already in known unless it changed.
+${between ? "This is a chat between A and B that A brought to Pinky privately (screenshots or pasted text). A's and B's own lines both count; what B says about B is the best evidence about B. Keep lasting things and what happened between them (history), never only how they feel in this one exchange." : privateChat ? "This is A's private chat with Pinky; only A's own lines count. A may tell you things about B." : "This is the couple's shared chat; Pinky's lines never count."}
+Keep lasting facts that help to know a person or the couple later. Categories: food (food and drink they love or avoid, allergies, diet); likes (hobbies, music, films, places, styles, what makes them happy); dislikes (what annoys or hurts them, sore spots, boundaries); wishes (things they want, gift ideas, places they want to go, sizes); traits (personality, habits and routines, how they like to be cared for or comforted, how they handle conflict); people (family, friends, pets, birthdays and dates that matter to them); history (what happened between them; founder 11-08: Pinky must remember what happened before, past fights and experiences): a fight, what it was about and how it ended, an important talk or decision, a first date or any date, a trip, a first, a hard time in their lives (a family member in hospital, losing a job), something one of them did that mattered; a place or plan B said they want for next time (下次想去爬山) is also a wish about B; other (work, studies, where they live, other lasting facts). For both: how the two of them work best together, their rituals and lessons ("we talk after ten quiet minutes").
+Not kept: periods, health or medical details (kept elsewhere, privately; that someone close went into hospital is history, without medical details), today's mood, small talk and trivial events, one-off plans or picks for right now, promises, jokes or sarcasm, guesses ("maybe he likes…"), facts about other people that say nothing about A or B, and anything already in known unless it changed.
 When A explicitly asks Pinky to remember something (记住, 记一下, 帮我记, remember, keep in mind, recuerda, apunta), keep every distinct point of what they asked to remember as its own fact, each with its own quote; an explicit request outweighs being selective. A standing arrangement the two of them made about how they handle things from now on (who tells whom what and when, how they talk after a fight) is lasting: keep it under traits with subject both. It is not a one-off promise.
+A history fact begins with the date it happened as YYYY-MM-DD, worked out from the message's date (昨天 is the day before it); when only roughly known (上周, 上个月, last week) the date is followed by 前后 (around, alrededor de), as in "2026-11-01 前后"; something from long ago at an unknown time begins with 以前 (Before, Antes) instead. Then one short line in the language of the quote that says who did what, in A's own words: in a private chat or a brought chat 我 is A and B is called the way A calls B (他, 她, a name), so "2026-11-07 他打游戏一晚上不回我消息，吵了一架，后来他道歉了"; in the shared chat use their names. Never write the letters A or B inside any fact. When a new line tells how something in known history went on (they made up, the trip happened), give the updated line with replaces set to that fact's id instead of a new fact; subject is both unless it is only about one of them.
 Look only at messages with isNew true; the others are context. For each fact give messageId, copied exactly from the id of the very message the quote is in; quote, copied exactly from that message's text, unchanged and contiguous (the shortest part that states the fact), never paraphrased or translated; subject, whom it is about (A, B or both); category; fact, a short phrase without the person's name, in the language of the quote ("不吃香菜", "loves rainy-day films", "生日是 3 月 5 日", "吵架后需要先安静一会儿"); replaces, the id of the fact in known that this one updates or contradicts (they started eating cilantro), else "".
 Be selective: only clear, lasting things the speaker means. Most lines hold none; then return facts: [].`;
 }
@@ -112,7 +116,7 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
   if (fresh.length) {
     const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both";
     const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
-    const input = { known, messages: [...before.map((item) => ({ id: item.id, from: item.role === "user" ? "A" : "Pinky", text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: "A", text: String(item.text).slice(0, 1200), isNew: true }))] };
+    const input = { known, messages: [...before.map((item) => ({ id: item.id, from: item.role === "user" ? "A" : "Pinky", text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: "A", date: localDay(item.createdAt, session.timezone), text: String(item.text).slice(0, 1200), isNew: true }))] };
     const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, privateChat: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
     findings = verifyFacts(result?.facts, fresh, () => true);
   }
@@ -195,7 +199,7 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
   const scope = await memberScope(store, userId), { relationshipId, partnerId } = scope;
   const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both";
   const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
-  const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, text: line.text, isNew: true })) };
+  const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, date: localDay(line.createdAt, session.timezone), text: line.text, isNew: true })) };
   const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
   const findings = verifyFacts(result?.facts, lines, () => true);
   if (!findings.length) return [];
@@ -224,7 +228,7 @@ export async function scanTogetherProfile({ store, mediator, relationshipId, use
     const from = (item) => item.role === "agent" ? "Pinky" : context.members.find((member) => member.userId === item.actorUserId)?.role || "?";
     const label = (subjectUserId) => subjectUserId ? context.members.find((member) => member.userId === subjectUserId)?.role || "both" : "both";
     const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label).filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index);
-    const input = { known, messages: [...before.map((item) => ({ id: item.id, from: from(item), text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: from(item), text: String(item.text).slice(0, 1200), isNew: true }))] };
+    const input = { known, messages: [...before.map((item) => ({ id: item.id, from: from(item), text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: from(item), date: String(item.createdAt || "").slice(0, 10), text: String(item.text).slice(0, 1200), isNew: true }))] };
     const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: byRole("A")?.user?.name || "", b: byRole("B")?.user?.name || "", privateChat: false }), input: JSON.stringify(input), maxOutputTokens: 900 });
     findings = verifyFacts(result?.facts, fresh, (line) => context.members.some((member) => member.userId === line.actorUserId));
   }
@@ -252,10 +256,15 @@ export async function profileContext(store, userId) {
   const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, relationshipId) || (item.kind === "memory" && item.visibility === "private" && item.ownerUserId === userId && item.aiAccessScope === "private" && item.status === "active" && !item.archivedAt));
   const line = (item) => ({ id: item.id, version: item.version, category: item.category || "other", fact: item.text, ...(item.visibility !== "private" ? { from: item.evidence?.channel === "together" ? "said together in Us" : "they shared it with you" } : {}) });
   const pick = (test) => records.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CONTEXT_LIMIT).map(line);
+  // What happened between them is its own list, newest first by the date it starts with, so a month-old fight is still
+  // there after many new preferences (founder 11-08: a month later Pinky must still remember last month's talks).
+  const history = records.filter((item) => isProfileFact(item) && item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, HISTORY_LIMIT).map(line);
+  const lasting = (item) => !isProfileFact(item) || item.category !== "history";
   return {
-    me: pick((item) => isProfileFact(item) && item.subjectUserId === userId),
-    partner: pick((item) => isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null)),
-    us: pick((item) => !isProfileFact(item) || !item.subjectUserId),
+    me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId),
+    partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null)),
+    us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId)),
+    history,
   };
 }
 

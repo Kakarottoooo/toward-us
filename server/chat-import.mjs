@@ -244,10 +244,17 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const pairing = await store.getRelationshipContext(user.id);
     const partnerName = norm(pairing?.members?.find((member) => member.userId !== user.id)?.user?.name);
     const people = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count, role: fromMe.has(name) || ["me", "我", "yo"].includes(norm(name)) || norm(name) === norm(user.name) ? "me" : partnerName && norm(name) === partnerName ? "partner" : null }));
+    // The screenshot reader knows which bubbles are the member's (their side of the screen). When only the other person
+    // speaks in them (an ex asking to meet, a partner venting), the rest is the member, so there is nobody to ask about
+    // (use-case test, 11-08: "哪个名字是你、哪个是 TA" after an ex's three messages).
+    if (record.platform === "screenshots" && !people.some((person) => person.role === "me")) people.unshift({ name: user.name || "Me", count: 0, role: "me" });
     const others = people.filter((person) => person.role !== "me"), total = conversation.messages.length;
     if (people.some((person) => person.role === "me") && !people.some((person) => person.role === "partner")) {
       const main = others.filter((person) => person.count >= total * 0.05);
       if (main.length === 1) main[0].role = "partner";
+      // A group chat in screenshots has several others; the one who says most is who the question is usually about,
+      // and the rest stay [other] (use-case test, 11-08: a hiking group got "哪个名字是你" instead of an answer).
+      else if (record.platform === "screenshots" && others.length) others[0].role = "partner";
     }
     await writeFile(fileFor(record), JSON.stringify({ conversation }));
     const ready = people.some((person) => person.role === "me") && people.some((person) => person.role === "partner");
@@ -268,7 +275,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (jobs.has(record.id)) return;
     // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
     // The report is written in the owner's interface language at the time it is read, not the one the import began in (founder 11-06: one language everywhere, the one each member picked).
-    const job = memberLanguage(store, record.ownerUserId).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
+    // Screenshots carry the language the member was just talking in; without it a member who never picked one was
+    // answered in Chinese in an English conversation (use-case test, 11-08).
+    const job = memberLanguage(store, record.ownerUserId, record.platform === "screenshots" ? record.language : null).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
       await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
       if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
@@ -335,7 +344,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const knownAbout = async (userId) => {
     const known = await profileContext(store, userId).catch(() => null);
     const facts = (list) => (list || []).slice(0, 20).map((item) => item.fact);
-    return known && (known.me.length || known.partner.length) ? { known: { me: facts(known.me), partner: facts(known.partner) } } : {};
+    return known && (known.me.length || known.partner.length || known.history?.length) ? { known: { me: facts(known.me), partner: facts(known.partner), history: facts(known.history) } } : {};
   };
   async function importScreenshots(user, photoIds, { sessionId, language, messageId, question = "" }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
@@ -343,7 +352,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
     const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id)) } : null });
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
-    if (messages.length < 2) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
+    // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
+    if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
     return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
   }

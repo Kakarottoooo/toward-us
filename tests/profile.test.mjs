@@ -210,3 +210,27 @@ test("what they say together in Us belongs to both, about the right person", asy
   await call(`/profile/${peanut.id}`, b, { expectedVersion: peanut.version }, 204, "DELETE");
   assert.ok(!(await call("/profile", a)).facts.some((item) => item.text === "对花生过敏"));
 });
+
+test("what happened between them is kept with its date, updated when it goes on, and given back newest first apart from preferences", async () => {
+  // Founder 11-08: a month later Pinky must still remember past talks, fights and experiences, kept up to date.
+  const { a } = await pair();
+  const session = await privateChat(a.user.id, [["h1", "user", "昨天我们因为我忘了结婚纪念日吵架了"], ["h2", "user", "她不吃香菜"]]);
+  let model = fakeModel((input, instructions) => {
+    assert.match(instructions, /history \(what happened between them/);
+    assert.ok(input.messages.every((line) => /^\d{4}-\d{2}-\d{2}$/.test(line.date)), "each new line carries its date");
+    return [fact({ messageId: "h1", quote: "因为我忘了结婚纪念日吵架了", subject: "both", category: "history", fact: "2026-10-07 因为忘了结婚纪念日吵架" }), fact({ messageId: "h2", quote: "她不吃香菜", subject: "B", fact: "不吃香菜" })];
+  });
+  await scanPrivateProfile({ store, mediator: model, userId: a.user.id, sessionId: session.id });
+  let known = await profileContext(store, a.user.id);
+  assert.deepEqual(known.history.map((item) => item.fact), ["2026-10-07 因为忘了结婚纪念日吵架"]);
+  assert.ok(!known.us.some((item) => item.category === "history") && known.partner.some((item) => item.fact === "不吃香菜"), "history is its own list");
+  const fight = known.history[0];
+  await store.updateRelationshipRecordForUser("privateAgentThreads", session.id, a.user.id, (draft) => { draft.messages.push({ id: "h3", role: "user", text: "后来我订了她喜欢的餐厅补过，我们和好了", createdAt: new Date().toISOString() }, { id: "h4", role: "user", text: "上周我们去了一趟大理，很开心", createdAt: new Date().toISOString() }); });
+  model = fakeModel(() => [
+    fact({ messageId: "h3", quote: "我们和好了", subject: "both", category: "history", fact: "2026-10-07 因为忘了结婚纪念日吵架，后来补过后和好", replaces: fight.id }),
+    fact({ messageId: "h4", quote: "上周我们去了一趟大理", subject: "both", category: "history", fact: "2026-11-01 一起去大理，很开心" }),
+  ]);
+  await scanPrivateProfile({ store, mediator: model, userId: a.user.id, sessionId: session.id });
+  known = await profileContext(store, a.user.id);
+  assert.deepEqual(known.history.map((item) => item.fact), ["2026-11-01 一起去大理，很开心", "2026-10-07 因为忘了结婚纪念日吵架，后来补过后和好"]);
+});

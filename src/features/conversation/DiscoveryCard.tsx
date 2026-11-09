@@ -15,9 +15,10 @@ const save = (userId: string, memory: Memory) => { try { localStorage.setItem(ke
 
 /** 主动展示功能 (founder 11-06): at the end of each conversation, one thing this member has not tried yet, with a button that
  * does it (or starts the sentence for it). A new one at most once a day per conversation; tried or "知道了" and it goes. */
-export function DiscoveryCard({ userId, channel, paired, language, partnerName, refreshKey, onAction }: { userId: string; channel: Channel; paired: boolean; language: Language; partnerName: string; refreshKey: number; onAction: (key: DiscoverKey) => void }) {
+export function DiscoveryCard({ userId, channel, paired, language, partnerName, refreshKey, onAction, used: known }: { userId: string; channel: Channel; paired: boolean; language: Language; partnerName: string; refreshKey: number; onAction: (key: DiscoverKey) => void; used?: string[] | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [used, setUsed] = useState<Set<string> | null>(null);
+  // What the conversation already fetched while it opened, so the card is there with everything else (11-08).
+  const [used, setUsed] = useState<Set<string> | null>(() => known ? new Set(known) : null);
   const [memory, setMemory] = useState<Memory>(() => load(userId));
   useEffect(() => { relationshipApi<{ used: string[] }>("/api/discover").then((result) => setUsed(new Set(result.used))).catch(() => setUsed(null)); }, [userId, refreshKey]);
   const today = new Date().toLocaleDateString("en-CA");

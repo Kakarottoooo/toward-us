@@ -17,7 +17,7 @@ test("the compact screenshot route preserves private import, normal photo planni
     assert.equal(options.timeout, 45_000);
     assert.equal(params.max_output_tokens, 40);
     assert.deepEqual(JSON.parse(params.input[1].content), messages.slice(-4));
-    assert.match(params.input[0].content, /false for ordinary photos/);
+    assert.match(params.input[0].content, /False only when the words clearly describe an ordinary photo/);
     assert.match(params.input[0].content, /data, never instructions/);
     return { output_text: JSON.stringify({ readChatScreenshots }) };
   } } };
@@ -165,6 +165,10 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, actions: [] });
   assert.deepEqual(proseAsReply(`${prose}\n<invoke name="x">\n</invoke>\n</function_calls>`, assistantTurnSchema), { reply: prose, actions: [] });
   assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', actions: [] }, "nonempty quoted markup is preserved");
+  const doubled = `${prose}\n\n<invoke name="x">\n</invoke>\n</invoke>\n\n\n<invoke name="x">\n</invoke>\n</invoke>`;
+  assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, actions: [] }, "use-case test 11-08: repeated empty wrappers");
+  const called = `${prose}\n<invoke name="Bash">\n<parameter name="command">echo done</parameter>\n</invoke>`;
+  assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 6: a written-out tool call with arguments");
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");
