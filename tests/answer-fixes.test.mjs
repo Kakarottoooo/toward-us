@@ -202,7 +202,7 @@ test("asked for suggestions in words, Pinky gives a few specific ones, since the
 test("import help gives the chat history page as a button with labels in the member's language, never a written path (founder 11-09)", () => {
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
-    assert.match(prompt, /a link action with fields\.text "\/\?view=import"/);
+    assert.match(prompt, /link action, fields\.text "\/\?view=import"/);
     assert.match(prompt, /在 Mac 上自动同步 iMessage/);
     assert.doesNotMatch(prompt, /link \/\?view=import\)/);
   }
@@ -210,4 +210,13 @@ test("import help gives the chat history page as a button with labels in the mem
 
 test("iMessage import help offers the Windows PC route next to the Mac (founder 11-09)", () => {
   for (const language of ["zh", "en", "es"]) assert.match(assistantInstructions(language), /在 Windows 电脑上导入 iMessage/);
+});
+
+test("history answers pick the thread, give a next step, and know a past relationship from a current one (founder 11-09)", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const prompt = assistantInstructions(language);
+    assert.match(prompt, /never end with a menu of what you could look at next/);
+    assert.match(prompt, /Every pattern you name comes with one concrete thing to do/);
+    assert.match(prompt, /is a past relationship/);
+  }
 });
