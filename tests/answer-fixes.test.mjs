@@ -99,9 +99,10 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
     assert.match(prompt, /gift a later experience/);
     assert.match(prompt, /Advice uses actions:\[\]/);
     assert.match(prompt, /no reminders, buying, messages, shared plans or onboarding unless requested/);
-    // Claude CLI passes this system prompt plus the schema as a Windows argument; keep headroom below 32,767.
+    // The Claude CLI reads the system prompt from a file (no Windows command-line limit since 11-08); keep a cap so the
+    // planner prompt cannot grow without anyone noticing what each turn costs.
     const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
-    assert.ok(system.length + (system.match(/["\\]/g) || []).length < 32_600);
+    assert.ok(system.length < 40_000, `planner prompt is ${system.length} characters`);
   }
 });
 
@@ -169,4 +170,10 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");
   assert.equal(proseAsReply("text", { type: "object", required: ["facts"], properties: { facts: { type: "array" } } }), null, "schemas without a reply keep the strict path");
   assert.equal(proseAsReply("text", { type: "object", required: ["reply", "title"], properties: { reply: { type: "string" }, title: { type: "string" } } }), null, "nothing required may be made up");
+});
+
+test("the Claude CLI gets its system prompt from a file, so a long prompt never hits the Windows command-line limit", async () => {
+  const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../server/claude-cli-client.mjs", import.meta.url), "utf8"));
+  assert.ok(!/"--system-prompt",/.test(source), "no system prompt passed as a command-line argument");
+  assert.equal((source.match(/await withSystemFile\(cwd, /g) || []).length, 3, "lookup, image reading and replies all use the file");
 });

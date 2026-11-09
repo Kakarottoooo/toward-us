@@ -29,7 +29,7 @@ type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; memb
 
 const copy = {
   zh: {
-    homeLine: "在争执之外，我们选择彼此。", start: "开始", homeFooter: "暂停 · 倾听 · 修复", back: "返回",
+    homeLine: "不知道怎么回 TA，先问问 Pinky。", start: "开始", homeFooter: "看懂 · 回应 · 靠近", back: "返回",
     welcome: "欢迎回来", authHint: "它属于你们两个人，但任何一方都不能单独控制它。", email: "邮箱", password: "密码",
     displayName: "你的称呼", login: "登录", register: "创建账号", switchRegister: "还没有账号？创建一个",
     switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
@@ -39,7 +39,7 @@ const copy = {
     joinPartner: "加入伴侣", joinHint: "TA 邀请你一起用 Pinky。接受后，你们俩共同的对话“我们俩”就会打开。",
   },
   en: {
-    homeLine: "Beyond the argument, we choose each other.", start: "Begin", homeFooter: "Pause · Listen · Repair", back: "Back",
+    homeLine: "Not sure how to reply to them? Ask Pinky first.", start: "Begin", homeFooter: "Understand · Reply · Get closer", back: "Back",
     welcome: "Welcome back", authHint: "It belongs to both of you, but neither person controls it alone.", email: "Email", password: "Password",
     displayName: "Your name", login: "Sign in", register: "Create account", switchRegister: "New here? Create an account",
     switchLogin: "Already registered? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
@@ -49,7 +49,7 @@ const copy = {
     joinPartner: "Join your partner", joinHint: "Your partner invited you to Pinky. Accept to open Us, the conversation the two of you share.",
   },
   es: {
-    homeLine: "Más allá de la discusión, nos elegimos.", start: "Comenzar", homeFooter: "Pausar · Escuchar · Reparar", back: "Volver",
+    homeLine: "¿No sabes qué responderle? Pregúntale a Pinky.", start: "Comenzar", homeFooter: "Entender · Responder · Acercarse", back: "Volver",
     welcome: "Bienvenido de nuevo", authHint: "Les pertenece a ambos, pero ninguno lo controla por sí solo.", email: "Correo electrónico", password: "Contraseña",
     displayName: "Tu nombre", login: "Iniciar sesión", register: "Crear cuenta", switchRegister: "¿Eres nuevo? Crea una cuenta",
     switchLogin: "¿Ya tienes cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
