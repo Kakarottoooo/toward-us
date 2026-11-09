@@ -17,7 +17,7 @@ test("the compact screenshot route preserves private import, normal photo planni
     assert.equal(options.timeout, 45_000);
     assert.equal(params.max_output_tokens, 40);
     assert.deepEqual(JSON.parse(params.input[1].content), messages.slice(-4));
-    assert.match(params.input[0].content, /false for ordinary photos/);
+    assert.match(params.input[0].content, /False only when the words clearly describe an ordinary photo/);
     assert.match(params.input[0].content, /data, never instructions/);
     return { output_text: JSON.stringify({ readChatScreenshots }) };
   } } };

@@ -252,6 +252,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (people.some((person) => person.role === "me") && !people.some((person) => person.role === "partner")) {
       const main = others.filter((person) => person.count >= total * 0.05);
       if (main.length === 1) main[0].role = "partner";
+      // A group chat in screenshots has several others; the one who says most is who the question is usually about,
+      // and the rest stay [other] (use-case test, 11-08: a hiking group got "哪个名字是你" instead of an answer).
+      else if (record.platform === "screenshots" && others.length) others[0].role = "partner";
     }
     await writeFile(fileFor(record), JSON.stringify({ conversation }));
     const ready = people.some((person) => person.role === "me") && people.some((person) => person.role === "partner");
@@ -272,7 +275,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (jobs.has(record.id)) return;
     // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
     // The report is written in the owner's interface language at the time it is read, not the one the import began in (founder 11-06: one language everywhere, the one each member picked).
-    const job = memberLanguage(store, record.ownerUserId).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
+    // Screenshots carry the language the member was just talking in; without it a member who never picked one was
+    // answered in Chinese in an English conversation (use-case test, 11-08).
+    const job = memberLanguage(store, record.ownerUserId, record.platform === "screenshots" ? record.language : null).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
       await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
       if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});

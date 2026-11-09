@@ -170,6 +170,27 @@ test("a screenshot with a single line from the other person is answered", async 
   assert.ok(session.messages.some((message) => message.text === privateReply), JSON.stringify(session.messages.map((message) => message.text)));
 });
 
+test("a group chat in screenshots is answered about the one who says most", async (t) => {
+  const privateReply = "Jie is teasing you.";
+  const f = await fixture(t, { screenshots: [
+    { mine: false, name: "Jie", text: "Someone is late again haha", time: null },
+    { mine: false, name: "Wang", text: "hahaha", time: null },
+    { mine: true, name: null, text: "I was on time today!", time: null },
+    { mine: false, name: "Jie", text: "Rare, rare", time: null },
+  ], planner: (context) => context.transcript ? { observations: [], uncertainties: [], reply: privateReply, actions: [] } : { reply: "Reading.", actions: [action("chat_import", "create")] } });
+  const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What does he mean?", itemId: randomUUID(), photoIds: [photo.id] })).status, 200);
+  let session;
+  for (let index = 0; index < 150; index += 1) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === privateReply)) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(session.messages.some((message) => message.text === privateReply), JSON.stringify(session.messages.map((message) => message.text)));
+  assert.deepEqual(f.calls.planner.find((call) => call.transcript).names, { me: "Alex", partner: "Jie" });
+});
+
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
   let release;
   const held = new Promise((resolve) => { release = resolve; });
