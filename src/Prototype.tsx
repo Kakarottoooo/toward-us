@@ -22,7 +22,7 @@ import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
 
-type Screen = "home" | "conversation" | "space" | "import" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
+type Screen = "booting" | "home" | "conversation" | "space" | "import" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type User = { id: string; email: string; name: string; createdAt: string };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; expiresAt: string } | null };
@@ -66,7 +66,9 @@ export default function Prototype() {
 
 function AccountPrototype() {
   const [language, setLanguage] = useState<Language>(initialLanguage);
-  const [screen, setScreen] = useState<Screen>("home");
+  // Until the server says who this is, show only the plain paper background (founder 11-08: opening Pinky flashed the
+  // signed-out landing page, then an empty chat, before the real conversation).
+  const [screen, setScreen] = useState<Screen>("booting");
   // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
   const [feedbackFrom, setFeedbackFrom] = useState("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
@@ -83,8 +85,9 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      if (state.user) { setScreen(landing(state.pairing)); void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active") autoSyncAlbum(language); }
-    }).catch(() => {});
+      setScreen(state.user ? landing(state.pairing) : "home");
+      if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active") autoSyncAlbum(language); }
+    }).catch(() => setScreen("home"));
     listenNativePushTaps();
     listenAppleTransactions();
     registerAppWorker();
@@ -143,6 +146,7 @@ function AccountPrototype() {
   if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : url.includes("view=capabilities") ? "capabilities" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
   if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
+  if (screen === "booting" && !resetToken) return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
   if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
