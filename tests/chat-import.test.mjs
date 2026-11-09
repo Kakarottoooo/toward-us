@@ -151,6 +151,7 @@ test("screenshots where only the other person speaks are answered without asking
   const context = f.calls.planner.find((call) => call.transcript);
   assert.deepEqual(context.names, { me: "Alex", partner: "Jordan" });
   assert.match(context.transcript, /\[partner\] Jordan: Dinner sometime\?/);
+  await f.ready((await f.request("/imports")).body.imports[0].id); // let the separate history report finish its files
 });
 
 test("a screenshot with a single line from the other person is answered", async (t) => {
@@ -168,6 +169,7 @@ test("a screenshot with a single line from the other person is answered", async 
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   assert.ok(session.messages.some((message) => message.text === privateReply), JSON.stringify(session.messages.map((message) => message.text)));
+  await f.ready((await f.request("/imports")).body.imports[0].id);
 });
 
 test("a group chat in screenshots is answered about the one who says most", async (t) => {
@@ -189,6 +191,7 @@ test("a group chat in screenshots is answered about the one who says most", asyn
   }
   assert.ok(session.messages.some((message) => message.text === privateReply), JSON.stringify(session.messages.map((message) => message.text)));
   assert.deepEqual(f.calls.planner.find((call) => call.transcript).names, { me: "Alex", partner: "Jie" });
+  await f.ready((await f.request("/imports")).body.imports[0].id);
 });
 
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
