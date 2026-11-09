@@ -670,7 +670,8 @@ ${text}` : text, target);
           : <p>{t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.")}</p>}
       </div>}
       {!!attachments.length && <div className="composer-photos">{attachments.map((item) => <figure key={item.key} className={item.failed ? "failed" : item.id ? "" : "uploading"}><img src={item.preview} alt="" draggable={false} /><button type="button" onClick={() => setAttachments((items) => items.filter((entry) => entry.key !== item.key))} aria-label={t("移除照片", "Remove photo", "Quitar foto")}><X size={14} weight="bold" /></button></figure>)}</div>}
-      {!readOnly && <div className="composer-audience" id={audienceId} data-testid="composer-audience">{channel === "me" ? <LockKey size={16} aria-hidden="true" /> : <UsersThree size={16} aria-hidden="true" />}<span>{audience}</span></div>}
+      {/* Who sees this is explained once in the welcome tour and shown by the tabs; no standing line above the box (founder 11-08). Screen readers still hear it. */}
+      {!readOnly && <span className="composer-audience-sr" id={audienceId}>{audience}</span>}
       {readOnly ? <p className="conversation-notice">{t("你们的共同空间已结束，这里只能查看。", "Your shared space has ended; this conversation is read-only.", "Su espacio compartido terminó; esta conversación es de solo lectura.")}</p> :
         <div className="conversation-input">
           {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Pinky 来帮忙", "Ask Pinky to help", "Pedir ayuda a Pinky")}><At size={20} weight="bold" /></button>}
