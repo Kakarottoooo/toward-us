@@ -19,18 +19,3 @@
 .person-secondary { border: 1px solid var(--jian-line); background: var(--jian-paper-bright); color: var(--jian-ink); }
 .conversation-noted.person-noted { background: var(--jian-blue-soft); color: var(--jian-blue); }
 .conversation-noted .noted-open { flex: 0 0 auto; font-weight: 600; }
-/* 对比: Pinky's own read across everyone, then one row per person. */
-.compare-page { display: grid; gap: 12px; padding-bottom: 8px; }
-.compare-overview { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: var(--jian-blue-soft); color: var(--jian-ink); line-height: 1.55; }
-.compare-overview p { margin: 0; }
-.compare-leaning { display: flex; align-items: center; gap: 8px; color: var(--jian-blue); font-weight: 700; }
-.compare-row { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--jian-line); border-radius: 16px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; }
-.compare-row:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-.compare-head { display: flex; align-items: center; gap: 8px; }
-.compare-stage { margin-left: auto; padding: 2px 10px; border-radius: 999px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.compare-stage.stage-cooling, .compare-stage.stage-ended { background: var(--jian-line); color: var(--jian-muted); }
-.compare-stage.stage-risk { background: #fde8e6; color: #b3261e; }
-.compare-line { display: flex; gap: 8px; line-height: 1.5; }
-.compare-line b { flex: 0 0 auto; min-width: 3em; color: var(--jian-muted); font-weight: 600; }
-.compare-line.watch b { color: #b3261e; }
-.compare-ask { margin: 0; padding: 12px 14px; border: 1px dashed var(--jian-line); border-radius: 16px; background: var(--jian-paper-bright); line-height: 1.5; }
