@@ -37,7 +37,7 @@ async function setup(t, mediator) {
     await writeFile(join(media, `${fileId}.chat.json`), JSON.stringify({ conversation: { messages: lines.map(([sender, text, at = null]) => ({ sender, text, at })) } }));
     await store.createRelationshipRecord("chatImports", createRelationshipRecord({ relationshipId: null, userId: users[0].id, ownerUserId: users[0].id, visibility: "private", aiAccessScope: "private", status: "ready", fileId, personId: person.id, people: [{ name: "Alex", role: "me" }, { name: person.name, role: "partner" }], stats }));
   };
-  return { users, comparer, call, add, note, chat };
+  return { users, comparer, call, add, note, chat, store };
 }
 
 const reading = (people, chase = {}) => ({
@@ -130,4 +130,18 @@ test("time-based numbers come only from chats with times", () => {
   assert.equal(timed.longestSilence, 3);
   assert.deepEqual([timed.first, timed.last], ["2026-10-01", "2026-11-02"]);
   assert.equal(chatNumbers([{ record: {}, messages: [] }]), null);
+});
+
+test("a restart does not pay for the same reading again (cost pass 11-10)", async (t) => {
+  let calls = 0, people = [];
+  const mediator = { structured: async () => { calls += 1; return reading(people, {}); } };
+  const { comparer, users, add, store } = await setup(t, mediator);
+  people = [await add("Lily"), await add("阿杰")];
+  await comparer.current(users[0].id, "zh"); await comparer.settle(users[0].id);
+  assert.equal(calls, 1);
+  const restarted = createPeopleComparer({ store, mediator });
+  const again = await restarted.current(users[0].id, "zh");
+  assert.equal(again.status, "ready"); assert.equal(again.stale, false);
+  await restarted.settle(users[0].id);
+  assert.equal(calls, 1, "nothing it reads changed, so no new call");
 });
