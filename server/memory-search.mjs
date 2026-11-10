@@ -53,6 +53,8 @@ export async function searchMemory({ store, userId, query = "", date = "", perso
   for (const note of notes) {
     const about = note.subjectUserId === userId ? "关于你" : personOf(note.subjectUserId) ? `关于${nameOf(personOf(note.subjectUserId)) || "TA"}` : note.subjectUserId ? "关于伴侣" : "关于你们";
     consider(note.text, note.evidence?.saidAt || note.createdAt, `记忆卡 · ${about}`);
+    // What used to be true, with when it changed: "以前住上海" still answers "他以前住哪".
+    for (const was of note.past || []) consider(was.text, was.saidAt || note.createdAt, `记忆卡 · ${about} · 以前是这样，${String(was.until || "").slice(0, 10)} 起变成：${squash(note.text, 60)}`);
   }
   if (!hits.length) return "No matching record in their past conversations or notes.";
   return hits.sort((a, b) => b.value - a.value || b.at.localeCompare(a.at)).slice(0, limit).map((hit) => hit.line).join("\n");
