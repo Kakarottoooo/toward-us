@@ -28,6 +28,7 @@ export function validateCases(list) {
       if (!(line.day < 0)) problems.push(`${item.id}: history day must be in the past`);
       if (!threads.has(line.thread)) problems.push(`${item.id}: unknown thread ${line.thread}`);
     }
+    for (const note of [...(item.notes || []), ...(item.bulkNotes ? [item.bulkNotes] : [])]) if (note.about !== "me" && !(item.people || []).includes(note.about)) problems.push(`${item.id}: a note about unknown ${note.about}`);
     if (item.probe && !threads.has(item.probe.thread)) problems.push(`${item.id}: unknown probe thread ${item.probe.thread}`);
     if (item.probe?.as === "partner" && !item.paired) problems.push(`${item.id}: a partner probe needs paired names`);
   }

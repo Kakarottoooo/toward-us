@@ -124,7 +124,7 @@ export function createMemoryRouter({ store, emit = () => {} }) {
   function list(collection) { return async (req, res) => {
     const context = await activeContext(store, req.auth.user.id);
     const query = clean(req.query?.q, 120).toLocaleLowerCase();
-    const records = (await store.listRelationshipRecordsForUser(collection, req.auth.user.id)).filter((record) => record.kind !== "profile" && record.kind !== "cycle" && record.kind !== "cycle_settings" && record.kind !== "person" && record.kind !== "dating_wants").map((record) => projectMemoryRecord(record, req.auth.user.id, context?.relationship.id)).filter(Boolean).filter((record) => !query || record.text.toLocaleLowerCase().includes(query)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const records = (await store.listRelationshipRecordsForUser(collection, req.auth.user.id)).filter((record) => record.kind !== "profile" && record.kind !== "cycle" && record.kind !== "cycle_settings" && record.kind !== "person" && record.kind !== "dating_wants" && record.kind !== "portrait").map((record) => projectMemoryRecord(record, req.auth.user.id, context?.relationship.id)).filter(Boolean).filter((record) => !query || record.text.toLocaleLowerCase().includes(query)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     res.json({ [collection]: records });
   }; }
 

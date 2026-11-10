@@ -3,6 +3,7 @@ import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { listPeople, matchPerson, nameKey, personFor, personOf, personSubject } from "./people.mjs";
+import { readPortraits, refreshPortraits } from "./portraits.mjs";
 
 // 喜好档案 (founder 11-06): Pinky's long-term memory of each partner and of the two of them: what they like and dislike,
 // what they wish for, their habits and traits, the people and days that matter. It is kept automatically from their
@@ -22,17 +23,17 @@ const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit)
 const key = (value) => squash(value).toLowerCase().replace(/[\s。.!！,，、;；:："“”'‘’「」]/g, "");
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const schema = object({ facts: { type: "array", maxItems: 10, items: object({ messageId: { type: "string" }, quote: { type: "string" }, subject: { type: "string", enum: ["A", "B", "both"] }, person: { type: "string" }, category: { type: "string", enum: CATEGORIES }, fact: { type: "string" }, replaces: { type: "string" } }) } });
-const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
+export const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
 export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
 const live = (record) => isProfileFact(record) && record.status === "active" && !record.archivedAt && !record.deletedAt;
 /** A fact this member may see: their own private ones, and shared ones of their current couple. */
-const visibleTo = (record, userId, relationshipId) => live(record) && (record.visibility === "private" ? record.ownerUserId === userId : Boolean(relationshipId) && record.relationshipId === relationshipId && (record.memberUserIds || []).includes(userId));
+export const visibleTo = (record, userId, relationshipId) => live(record) && (record.visibility === "private" ? record.ownerUserId === userId : Boolean(relationshipId) && record.relationshipId === relationshipId && (record.memberUserIds || []).includes(userId));
 
 // Pinky works alone first (founder 11-08: the reply coach needs no invitation) and learns the partner as it is used. Before a
 // partner joins, a note about "TA" points at this stand-in instead of a user id; like every private note it is the member's
 // alone, and after pairing it still counts as being about the partner.
 export const pendingPartner = (userId) => `partner-of:${userId}`;
-const isPartner = (subjectUserId, userId, partnerId) => Boolean(subjectUserId) && subjectUserId !== userId && (subjectUserId === partnerId || subjectUserId === pendingPartner(userId));
+export const isPartner = (subjectUserId, userId, partnerId) => Boolean(subjectUserId) && subjectUserId !== userId && (subjectUserId === partnerId || subjectUserId === pendingPartner(userId));
 /** Where this member's private notes go now: their couple once paired, otherwise just them. */
 async function memberScope(db, userId) {
   const context = await db.getRelationshipContext(userId);
@@ -318,7 +319,11 @@ export async function profileContext(store, userId) {
   const people = await listPeople(store, userId);
   const history = records.filter((item) => isProfileFact(item) && item.category === "history" && !personOf(item.subjectUserId)).sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, HISTORY_LIMIT).map(line);
   const lasting = (item) => !isProfileFact(item) || item.category !== "history";
+  // Standing portraits built from every note, including the old ones no longer listed above (画像层, 11-09).
+  const portraits = await readPortraits(store, userId).catch(() => ({}));
+  const portrait = (key) => portraits[key] ? { portrait: portraits[key].portrait, timeline: portraits[key].timeline } : undefined;
   return {
+    portraits: Object.fromEntries(["me", "partner", "us"].filter((key) => portraits[key]).map((key) => [key, portrait(key)])),
     me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId),
     partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null)),
     us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId)),
@@ -326,7 +331,7 @@ export async function profileContext(store, userId) {
     // Someone single may be getting to know several people (founder 11-09); each one's notes stay with that person.
     people: people.slice(0, 8).map((person) => {
       const theirs = records.filter((item) => isProfileFact(item) && item.subjectUserId === personSubject(person.id));
-      return { id: person.id, name: person.name, alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4), lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10),
+      return { id: person.id, name: person.name, ...(portraits[personSubject(person.id)] ? { portrait: portrait(personSubject(person.id)) } : {}), alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4), lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10),
         facts: pick((item) => item.category !== "history", theirs).slice(0, 30), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, 20).map(line) };
     }),
   };
@@ -428,6 +433,8 @@ export function createProfileKeeper({ store, mediator, delayMs = 20_000, emit = 
     try {
       const changed = await task();
       for (const record of changed) emit(record, "profile.updated", record.visibility === "private" ? record.ownerUserId : null);
+      // New notes may change what is worth never forgetting: the portraits catch up in the background.
+      for (const owner of new Set(changed.map((record) => record.ownerUserId).filter(Boolean))) void refreshPortraits({ store, mediator, userId: owner }).catch((error) => console.error("Portrait refresh failed:", error?.message || error));
       if (changed.sessionId && changed.length) {
         const context = await store.getRelationshipContext(changed[0].ownerUserId);
         if (context?.relationship) emit({ id: changed.sessionId, relationshipId: context.relationship.id }, "assistant.updated", changed[0].ownerUserId);
