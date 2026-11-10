@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blindPair, completionResult, decodeVerdict, summarize } from "./score.mjs";
-import { projectSnapshot, visibleContext } from "./fixture.mjs";
+import { formatVisibleAnswer, projectSnapshot, visibleContext } from "./fixture.mjs";
 import { createRelationshipRecord } from "../../server/relationship-domain.mjs";
 import { recordChecks } from "./evidence.mjs";
 import { cases, layers } from "./cases.mjs";
@@ -39,6 +39,17 @@ test("raw paired memories are projected before deciding whether a partner can se
   assert.equal(undisclosed(raw), true);
   assert.equal(undisclosed(disclosed), false);
   assert.equal(raw.memories[0].visibility, "private");
+});
+
+test("visible answers include chat card dates and complete drafts without backend identifiers or detail-only fields", () => {
+  const answer = formatVisibleAnswer("已准备好。", {
+    cards: [{ id: "PRIVATE_ID", kind: "reminder", title: "给妈妈打电话", text: "明天联系", localDateTime: "2026-11-11T08:00", timezone: "HIDDEN_ZONE", frequency: "HIDDEN_FREQUENCY", tool: "HIDDEN_TOOL" },
+      { kind: "link", url: "/internal/PRIVATE_ID", title: "打开资料", text: "HIDDEN_LINK_TEXT" }],
+    draft: { id: "PRIVATE_DRAFT_ID", title: "轮流做饭", summary: "周末分担", terms: ["这周我做", "下周你做"], unresolvedPoints: ["几点开始"], privateNotes: "HIDDEN_NOTE" },
+  });
+  for (const text of ["已准备好", "给妈妈打电话", "明天联系", "2026-11-11 08:00", "打开资料", "轮流做饭", "周末分担", "这周我做", "下周你做", "还没定的", "几点开始"]) assert.ok(answer.includes(text), text);
+  assert.match(answer, /你们俩都要批准同一版本/);
+  assert.doesNotMatch(answer, /PRIVATE|HIDDEN|reminder|Pinky/);
 });
 
 test("blind order decodes correctly in either direction without exposing labels", () => {

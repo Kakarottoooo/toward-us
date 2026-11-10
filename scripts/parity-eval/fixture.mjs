@@ -22,6 +22,26 @@ export function projectSnapshot(snapshot, userId) {
   ]));
 }
 
+// ConversationHome renders these fields in the chat itself. Reminder timezone/frequency belong to its detail page.
+function visibleCard(card) {
+  if (card.kind === "chat_import") return null; // ImportCard loads its own separately projected status.
+  if (card.kind === "partner_message") return { title: card.openOn ? `一封信 · ${card.openOn} 发给 TA` : "想对 TA 说的话", text: card.text };
+  if (card.kind === "space_share") return { title: card.shareKind === "agreement" ? "在“我们俩”起草约定" : card.shareKind === "date" ? "放进你们俩的日历" : `放进共同的“${card.title}”`, text: card.text };
+  if (card.kind === "link" && card.url) return { title: card.title };
+  return { title: card.title, text: card.text, ...(card.kind !== "space_group" && card.localDateTime ? { localDateTime: card.localDateTime } : {}) };
+}
+
+export function formatVisibleAnswer(answer, { cards = [], draft = null } = {}) {
+  const sections = [answer];
+  for (const card of cards.map(visibleCard).filter(Boolean)) {
+    sections.push([card.title, card.text, card.localDateTime?.replace("T", " ")].filter(Boolean).join("\n"));
+  }
+  if (draft) sections.push(["约定草稿", draft.title, draft.summary, ...(draft.terms || []),
+    ...(draft.unresolvedPoints?.length ? ["还没定的", ...draft.unresolvedPoints] : []),
+    "发出后，你们俩都要批准同一版本才生效。"].filter(Boolean).join("\n"));
+  return sections.filter(Boolean).join("\n\n");
+}
+
 // Same synthetic-account seeding protocol as eval-memory, reusing production memory helpers.
 export async function createHarness(directory, { requestContext } = {}) {
   const options = {};
@@ -169,7 +189,11 @@ async function setupCase(item, withHistory) {
       const messages = result.session?.messages || result.conversation?.messages || [];
       const asked = messages.findLastIndex((entry) => entry.role === "user" || entry.actorUserId === asker.user.id);
       const replies = messages.slice(asked + 1).filter((entry) => entry.role === "assistant" || entry.actorUserId === null);
-      const answer = replies.map((entry) => entry.text || "").filter(Boolean).join("\n") || result.reply?.text || "";
+      const cards = replies.flatMap((entry) => entry.cards || []).map(visibleCard).filter(Boolean);
+      const rawDraft = item.channel === "shared" && !result.pendingAgreement && !result.readOnly ? result.conversation?.draftAgreement : null;
+      const draft = rawDraft ? { title: rawDraft.title, summary: rawDraft.summary, terms: rawDraft.terms, unresolvedPoints: rawDraft.unresolvedPoints } : null;
+      const text = replies.map((entry) => entry.text || "").filter(Boolean).join("\n") || result.reply?.text || "";
+      const answer = formatVisibleAnswer(text, { cards, draft });
       const sources = replies.flatMap((entry) => entry.sources || []);
       const sourceChecks = [];
       for (const source of sources) {
@@ -181,7 +205,7 @@ async function setupCase(item, withHistory) {
           sourceChecks.push({ ok: Boolean(target && original), original: target?.text || null });
         } catch { sourceChecks.push({ ok: false }); }
       }
-      rounds.push({ answer, progress, sources, sourceChecks });
+      rounds.push({ answer, cards, draft, progress, sources, sourceChecks });
     }
     let after = await store.relationshipSnapshotForUser(asker.user.id);
     // Explicit remember requests are extracted by the real background keeper after its 20-second debounce.
