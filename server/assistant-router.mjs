@@ -214,6 +214,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language)); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     }
+    // A malformed answer is asked for once more before the member sees an error (memory eval 11-09: an old question
+    // after a long history came back as a 502 about one time in three).
+    if (!validateAssistantTurn(plan)) {
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language)); }
+      catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
+    }
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
     if (!validateAssistantTurn(plan)) { console.error("Invalid planner turn:", JSON.stringify({ keys: Object.keys(plan || {}), actions: Array.isArray(plan?.actions) ? plan.actions.map((action) => ({ keys: Object.keys(action || {}), kind: action?.kind, operation: action?.operation, fields: Object.keys(action?.fields || {}) })) : typeof plan?.actions })); throw fail(502, "The assistant could not prepare a valid action. Nothing was changed."); }
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.

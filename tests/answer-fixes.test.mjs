@@ -232,3 +232,12 @@ test("several people: Pinky keeps each one's notes apart, compares by what the u
     assert.match(screenshotAdviceInstructions(language), /Known\.people, when present/);
   }
 });
+
+test("a malformed planner answer is asked for once more before the member sees an error", async (t) => {
+  // Memory eval 11-09: after a long history an old question sometimes came back as a 502.
+  let turn = 0;
+  const { say } = await setup(t, () => (turn += 1) === 1 ? { reply: "好的", actions: [{ kind: "no_such_kind", operation: "query" }] } : { reply: "Lin 在字节做产品经理。", actions: [] });
+  const reply = await say("Lin 是做什么工作的？");
+  assert.equal(turn, 2);
+  assert.equal(reply.text, "Lin 在字节做产品经理。");
+});
