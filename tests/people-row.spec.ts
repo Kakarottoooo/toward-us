@@ -24,32 +24,46 @@ async function signIn(page: Page, context: BrowserContext, sent: string[]) {
     { id: "m2", role: "assistant", text: "他很主动，想去就直接答应。", createdAt: at },
     { id: "m3", role: "assistant", kind: "noted", personId: "p-jie", text: "已为 阿杰 建档", createdAt: at },
   ] };
+  // 阿杰's own conversation (founder 11-09: one conversation per person, and Pinky as the brain for everyone).
+  const jieSession = { id: "jie-session", personId: "p-jie", language: "zh", timezone: "UTC", version: 1, messages: [
+    { id: "j1", role: "user", text: "他说想带我去爬山", itemId: "j1", createdAt: at },
+    { id: "j2", role: "assistant", text: "他在主动安排你们的下一次见面。", createdAt: at },
+  ] };
   await page.route("**/api/assistant/sessions**", async (route) => {
     const body = route.request().postDataJSON?.();
     if (body?.text) sent.push(body.text);
-    await route.fulfill({ json: { session } });
+    await route.fulfill({ json: { session: body?.personId === "p-jie" || route.request().url().includes("jie-session") ? jieSession : session } });
   });
   await page.route(/\/api\/people(\?.*)?$/, (route) => route.fulfill({ json: { people, alerts: 1 } }));
   await page.route(/\/api\/people\/board/, (route) => route.fulfill({ json: { status: "ready", stale: false, reading, numbers: { "p-jie": numbers, "p-qing": null, "p-mia": null }, people } }));
   await page.route(/\/api\/people\/p-jie(\?.*)?$/, (route) => route.fulfill({ json: { person: people[0], facts: [{ id: "f1", category: "likes", text: "爱爬山", quote: null }], history: [], read: reading.people[0], numbers } }));
 }
 
-test("the people someone is getting to know sit at the top of Just me and open into their cards and their full page", async ({ page, context }) => {
+test("each person has their own conversation beside Pinky's, and their full page is one tap away", async ({ page, context }) => {
   const sent: string[] = [];
   await signIn(page, context, sent);
   await page.goto("/");
   await expect(page.getByText("他很主动，想去就直接答应。")).toBeVisible();
+  await expect(page.getByTestId("thread-brain")).toHaveAttribute("aria-current", "true");
   await expect(page.getByTestId("person-chip")).toHaveCount(3);
+  // The 已为 阿杰 建档 line opens 阿杰's own conversation.
   await page.getByTestId("person-noted").click();
-  await expect(page.getByTestId("person-sheet")).toContainText("爱爬山");
-  await page.getByTestId("person-full").click();
+  await expect(page.getByTestId("thread-bar")).toContainText("只聊阿杰");
+  await expect(page.getByText("他在主动安排你们的下一次见面。")).toBeVisible();
+  await expect(page.getByText("他很主动，想去就直接答应。")).toHaveCount(0);
+  await expect(page.getByTestId("person-chip").filter({ hasText: "阿杰" })).toHaveAttribute("aria-current", "true");
+  // Back to Pinky, the brain.
+  await page.getByTestId("thread-brain").click();
+  await expect(page.getByText("他很主动，想去就直接答应。")).toBeVisible();
+  await expect(page.getByTestId("thread-bar")).toHaveCount(0);
+  // From the conversation to the full page and back into the conversation.
+  await page.getByTestId("person-chip").filter({ hasText: "阿杰" }).click();
+  await page.getByTestId("thread-bar").getByRole("button").click();
   await expect(page.getByTestId("person-page")).toContainText("你和阿杰");
-  await expect(page.getByTestId("person-mirror")).toContainText("谁先开口");
   await expect(page.getByTestId("person-mirror")).toContainText("63%");
   await expect(page.getByTestId("person-turns")).toContainText("你坦白还在和别人聊");
-  await expect(page.getByTestId("person-view")).toContainText("阿杰 的看法");
   await page.getByTestId("person-talk").click();
-  await expect(page.getByTestId("conversation-input")).toHaveValue("关于 阿杰，");
+  await expect(page.getByTestId("thread-bar")).toContainText("只聊阿杰");
 });
 
 test("在了解的人 opens from the menu: who is chasing whom, the member's patterns, and each relationship", async ({ page, context }) => {

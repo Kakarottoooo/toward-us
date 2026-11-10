@@ -19,3 +19,11 @@
 .person-secondary { border: 1px solid var(--jian-line); background: var(--jian-paper-bright); color: var(--jian-ink); }
 .conversation-noted.person-noted { background: var(--jian-blue-soft); color: var(--jian-blue); }
 .conversation-noted .noted-open { flex: 0 0 auto; font-weight: 600; }
+/* The row switches conversations (founder 11-09): the current one is ringed, a dot marks a new reply elsewhere. */
+.person-chip { position: relative; }
+.person-chip.current .person-avatar { box-shadow: 0 0 0 2px var(--jian-paper), 0 0 0 4px var(--jian-blue); }
+.person-chip.current small { color: var(--jian-ink); font-weight: 700; }
+.person-avatar.brain { background: var(--jian-ink); color: #fff; }
+.chip-dot { position: absolute; top: 0; right: 8px; width: 10px; height: 10px; border: 2px solid var(--jian-paper); border-radius: 50%; background: #e5484d; }
+.thread-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 13px; }
+.thread-bar button { min-height: 32px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-blue); font: inherit; font-weight: 600; cursor: pointer; }

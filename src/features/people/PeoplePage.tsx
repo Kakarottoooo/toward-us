@@ -60,7 +60,7 @@ function mirrors(language: Language, numbers: Numbers | null | undefined, row: R
 }
 const minutes = (language: Language, value: number) => value < 60 ? localized(language, `${Math.round(value)} 分`, `${Math.round(value)}m`, `${Math.round(value)} min`) : localized(language, `${Math.round(value / 60)} 小时`, `${Math.round(value / 60)}h`, `${Math.round(value / 60)} h`);
 
-export function PeoplePage({ language, initialPerson, archived = false, onBack, onAsk }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+export function PeoplePage({ language, initialPerson, archived = false, onBack, onAsk, onChat }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void; onChat: (personId: string) => void }) {
   const t = tFor(language);
   const [personId, setPersonId] = useState(initialPerson);
   const [tick, setTick] = useState(0);
@@ -78,7 +78,7 @@ export function PeoplePage({ language, initialPerson, archived = false, onBack, 
     return () => { alive = false; window.clearTimeout(timer); };
   }, [language, tick, archived]);
   const kinds: Record<Kind, string> = { mutual: t("双向奔赴", "Both in", "Mutuo"), you_chase: t("你在追", "You're chasing", "Tú persigues"), they_chase: t("TA 在追", "They're chasing", "Te persigue"), early: t("刚开始", "Just started", "Empezando"), faded: t("淡了", "Faded", "Se apagó"), risk: t("要警惕", "Be careful", "Cuidado") };
-  if (personId) return <PersonPage language={language} id={personId} kinds={kinds} backLabel={archived ? t("以前的档案", "Earlier people", "Personas anteriores") : undefined} onBack={() => setPersonId("")} onAsk={onAsk} />;
+  if (personId) return <PersonPage language={language} id={personId} kinds={kinds} backLabel={archived ? t("以前的档案", "Earlier people", "Personas anteriores") : undefined} onBack={() => setPersonId("")} onChat={archived ? undefined : onChat} />;
   if (archived) return <EarlierPeople language={language} onBack={onBack} onOpen={setPersonId} />;
   // One Pinky, three stages (founder 11-09): 是的 (or 确定了 here) settles on one person and puts the others away.
   const settle = async (id: string | null) => { try { await relationshipApi(id ? `/api/people/${encodeURIComponent(id)}/choose` : "/api/people/unchoose", jsonBody(id ? { chosen: true } : {})); setTick((value) => value + 1); } catch (reason) { setError((reason as Error).message); } };
@@ -139,7 +139,7 @@ export function PeoplePage({ language, initialPerson, archived = false, onBack, 
 const chaseKind = (chase: Chase): Kind => chase === "you_much" || chase === "you" ? "you_chase" : chase === "them" || chase === "them_much" ? "they_chase" : "mutual";
 
 /** One person: the two of them as a mirror, the turning points, who they are, how the member is with them, Pinky's read. */
-function PersonPage({ language, id, kinds, backLabel, onBack, onAsk }: { language: Language; id: string; kinds: Record<Kind, string>; backLabel?: string; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+function PersonPage({ language, id, kinds, backLabel, onBack, onChat }: { language: Language; id: string; kinds: Record<Kind, string>; backLabel?: string; onBack: () => void; onChat?: (personId: string) => void }) {
   const t = tFor(language);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState("");
@@ -167,7 +167,7 @@ function PersonPage({ language, id, kinds, backLabel, onBack, onAsk }: { languag
         {read?.self && <section className="people-card"><h2>{t("你在这段关系里的样子", "You, in this one", "Tú, en esta relación")}</h2><p>{read.self}</p></section>}
         {read?.view && read.kind !== "risk" && <section className="people-card people-read" data-testid="person-view"><h2>{t("Pinky 怎么看", "How Pinky sees it", "Cómo lo ve Pinky")}</h2><p>{read.view}</p></section>}
         {!read && <section className="people-card"><h2>{t("你们之间发生过的事", "What happened between you", "Lo que ha pasado")}</h2>{detail.history.length || detail.facts.length ? <ul className="people-list">{[...detail.history, ...detail.facts].slice(0, 12).map((line) => <li key={line.id}>{line.text}</li>)}</ul> : <p className="people-muted">{t("还没记下关于 TA 的事。多发几张你们的聊天，Pinky 会慢慢看清这段关系。", "Nothing kept yet. Send more of your chats.", "Aún no hay nada. Envía más chats.")}</p>}</section>}
-        <button type="button" className="people-primary" onClick={() => onAsk(t(`关于 ${person.name}，`, `About ${person.name}: `, `Sobre ${person.name}: `), "me")} data-testid="person-talk"><ChatCircleDots size={20} weight="fill" />{t(`和 Pinky 聊${person.name}`, `Talk about ${person.name}`, `Hablar de ${person.name}`)}</button>
+        {onChat && <button type="button" className="people-primary" onClick={() => onChat(person.id)} data-testid="person-talk"><ChatCircleDots size={20} weight="fill" />{t(`和 Pinky 聊${person.name}`, `Talk about ${person.name}`, `Hablar de ${person.name}`)}</button>}
       </>}
     </main>
   </div>;
