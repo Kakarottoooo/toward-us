@@ -53,3 +53,25 @@ test("an answer written twice ('Wait, I need to return a valid object only.') is
   assert.deepEqual(answerFromText(text, schema), meant, "the last complete answer is the one it meant");
   assert.deepEqual(answerFromText(JSON.stringify(meant), schema), meant);
 });
+
+test("beside a portrait an old dislike or food note still goes along with the newest notes", async (t) => {
+  const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
+  const { join, resolve } = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const { createFileStore } = await import("../server/store.mjs");
+  const { createRelationshipRecord } = await import("../server/relationship-domain.mjs");
+  const { profileContext, BRIEF } = await import("../server/profile.mjs");
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "guard-"));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const store = await createFileStore(join(directory, "store.json"));
+  const userId = randomUUID();
+  await store.createUser({ id: userId, name: "Alex", email: `${userId}@example.invalid`, passwordHash: "x", createdAt: new Date().toISOString() });
+  const add = (fields, at) => store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId, ownerUserId: userId, visibility: "private", aiAccessScope: "private", status: "active", ...fields, ...(at ? { createdAt: at, updatedAt: at } : {}) }));
+  await add({ kind: "profile", subjectUserId: userId, category: "dislikes", text: "恐高" }, "2024-01-01T00:00:00Z");
+  for (let index = 0; index < 60; index += 1) await add({ kind: "profile", subjectUserId: userId, category: "likes", text: `喜欢第${index}种东西` });
+  await add({ kind: "portrait", subjectKey: "me", text: "画像", timeline: [], builtAt: new Date().toISOString() });
+  const facts = (await profileContext(store, userId)).me.map((item) => item.fact);
+  assert.equal(facts.length, BRIEF.facts + 1);
+  assert.ok(facts.includes("恐高"));
+});

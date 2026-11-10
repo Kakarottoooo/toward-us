@@ -319,7 +319,14 @@ export async function profileContext(store, userId) {
   const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, relationshipId) || (item.kind === "memory" && item.visibility === "private" && item.ownerUserId === userId && item.aiAccessScope === "private" && item.status === "active" && !item.archivedAt));
   // saidOn: the day the member said it (memory eval 11-09: without it Pinky could not tell which came first).
   const line = (item) => ({ id: item.id, version: item.version, category: item.category || "other", fact: item.text, ...(item.evidence?.saidAt && (item.category !== "history" || !/^\d{4}-\d{2}-\d{2}/.test(String(item.text))) ? { saidOn: String(item.evidence.saidAt).slice(0, 10) } : {}), ...(item.visibility !== "private" ? { from: item.evidence?.channel === "together" ? "said together in Us" : "they shared it with you" } : {}) });
-  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId)), limit = CONTEXT_LIMIT) => from.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, limit).map(line);
+  // Beside a portrait the newest notes go along, and every dislike and food note however old (allergies, fears and
+  // boundaries are few and the costliest to forget: 恐高 said 500 days ago, memory eval 11-10).
+  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId)), limit = CONTEXT_LIMIT) => {
+    const all = from.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    if (limit >= CONTEXT_LIMIT) return all.slice(0, limit).map(line);
+    const newest = all.slice(0, limit), guarded = all.slice(limit).filter((item) => ["dislikes", "food"].includes(item.category)).slice(0, 20);
+    return [...newest, ...guarded].map(line);
+  };
   // What happened between them is its own list, newest first by the date it starts with, so a month-old fight is still
   // there after many new preferences (founder 11-08: a month later Pinky must still remember last month's talks).
   const people = await listPeople(store, userId);
