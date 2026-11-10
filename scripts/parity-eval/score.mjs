@@ -72,6 +72,12 @@ export function markdown(report, previous = null) {
       if (old) lines.push(`- ${row.name}：对 Claude ${percent(old.comparisons.claude.rate)} → ${percent(row.comparisons.claude.rate)}；对 Codex ${percent(old.comparisons.codex.rate)} → ${percent(row.comparisons.codex.rate)}`);
     }
   }
+  if (report.replay) lines.push("## 冻结对手复用", "", `原报告 SHA-256：${report.replay.sha256}；仅复用未改流程题的对手原答案，原报告未修改。每题日期和可见资料沿用原题，产品评测进程使用逐题日期偏移；网页实时搜索本身不能回到过去。约定题重新生成三方答案并由双评委重评。`, "");
+  if (report.agreementStages?.length) {
+    lines.push("## 约定流程分步结果", "", "内容盲评比较最初可见草稿，后续操作单独核对：提交审批、本人批准、重复本人批准不得代替对方、另一独立虚构账号亲自批准。对手只有可用文字，没有产品写权限；不能称其完成真实双批准。新增流程不能直接解释为原基线的产品提升。", "",
+      "| 题目 | 阶段 | 检查 | 通过 |", "|---|---|---|---|");
+    for (const row of report.agreementStages) for (const check of row.checks) lines.push(`| ${row.id} | ${check.stage || "流程"} | ${check.name} | ${check.ok ? "是" : "否"} |`);
+  }
   for (const item of report.results) {
     lines.push("", `## ${item.id} · ${item.title}`, `办完标准：${item.completion}`, `Pinky 完成：${item.pinky?.completed ?? "待定"}；耗时 ${item.pinky?.ms ?? "未知"} ms`, `问题：${item.question}`, `回答：${item.pinky?.answer || item.pinky?.error || "无"}`, `执行证据：${JSON.stringify(item.pinky?.evidence || {})}`);
     for (const [name, comparison] of Object.entries(item.comparisons || {})) {

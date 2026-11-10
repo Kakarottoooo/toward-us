@@ -9,14 +9,22 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { cases, layers } from "./cases.mjs";
 import { invoke } from "./cli.mjs";
 import { blindPair, completionResult, decodeVerdict, judgeInstructions, judgeSchema, markdown, summarize } from "./score.mjs";
+import { corpusHash, frozenCase, frozenOpponent, installCaseClock, agreementProtocol } from "./replay.mjs";
 
-const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" } } });
+const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" } } });
 if (!/^[a-zA-Z0-9_-]+$/.test(options.label)) throw new Error("Use a simple label");
 const wanted = options.only ? new Set(options.only.split(",")) : null;
 const selected = cases.filter((item) => !wanted || wanted.has(item.id));
 if (!selected.length || wanted && selected.length !== wanted.size) throw new Error("Unknown or empty case selection");
 if (new Set(cases.map((item) => item.id)).size !== cases.length) throw new Error("Duplicate case IDs");
 for (const layer of Object.keys(layers)) if (cases.filter((item) => item.layer === layer).length < 8) throw new Error(`${layer}: at least eight cases required`);
+const caseHash = corpusHash(cases);
+const baselinePath = options["reuse-opponents"] ? resolve(options["reuse-opponents"]) : null;
+if (baselinePath && (!baselinePath.endsWith("report.json") || baselinePath.split(/[\\/]/).includes("dogfood"))) throw new Error("Provide a completed synthetic parity report.json");
+const baselineBytes = baselinePath ? await readFile(baselinePath) : null;
+const baseline = baselineBytes ? JSON.parse(baselineBytes) : null;
+if (baseline && (!baseline.endedAt || baseline.results?.length !== baseline.selected?.length)) throw new Error("Frozen baseline is not complete");
+const frozen = new Map(selected.map((item) => [item.id, frozenCase(item, baseline, caseHash)]));
 const startedAt = new Date().toISOString(), seed = randomUUID();
 const directory = resolve("work", "parity-eval", `${options.label}-${startedAt.replace(/[:.]/g, "-")}`);
 await mkdir(join(directory, "tmp"), { recursive: true });
@@ -29,11 +37,15 @@ process.env.TEMP = process.env.TMP = join(directory, "tmp");
 const { createHarness, visibleContext } = await import("./fixture.mjs");
 const { usageListeners } = await import("../../server/claude-cli-client.mjs");
 const context = new AsyncLocalStorage(), usage = [];
+const restoreClock = installCaseClock(context);
 const listener = (event) => usage.push({ ...context.getStore(), name: event.name, model: event.model, usage: event.usage, usd: event.usd });
 usageListeners.add(listener);
 const harness = await createHarness(directory, { requestContext: context });
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-  caseHash: createHash("sha256").update(JSON.stringify(cases)).digest("hex"), selected: selected.map((item) => item.id),
+  caseHash, selected: selected.map((item) => item.id),
+  protocol: { version: "agreement-flow-v2", agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
+  ...(baseline ? { replay: { source: baselinePath, sha256: createHash("sha256").update(baselineBytes).digest("hex"),
+    clock: "逐题沿用原 visible.now；仅虚构评测进程日期偏移，计时继续推进", refreshedOpponents: selected.filter((item) => item.check?.kind === "agreement").map((item) => item.id), agreementProtocol } } : {}),
   cliVersions: { claude: execFileSync("claude", ["--version"], { encoding: "utf8" }).trim() }, results: [] };
 await writeFile(join(directory, "manifest.json"), JSON.stringify(report, null, 2));
 
@@ -51,21 +63,30 @@ const opponentInstructions = `You are a general relationship assistant answering
 
 async function one(original) {
   const root = join(directory, original.id); await mkdir(root, { recursive: true });
-  const at = Date.now(), item = { ...original, question: original.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(at + Number(days) * 86400000).toISOString().slice(0, 10)), visible: visibleContext(original, at) };
+  const at = Date.now(), old = frozen.get(original.id), caseAt = old ? Date.parse(old.visible.now) : at;
+  const item = { ...original, agreementFlow: original.check?.kind === "agreement",
+    question: old?.question || original.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(caseAt + Number(days) * 86400000).toISOString().slice(0, 10)), visible: visibleContext(original, caseAt) };
   const picture = await asset(item, root);
   const visible = { ...item.visible, ...(item.modality === "file" ? { file: item.assetText } : {}) };
+  if (old && JSON.stringify(visible) !== JSON.stringify(old.visible)) throw new Error(`Frozen visible material differs: ${item.id}`);
+  const clock = old ? { at: caseAt, startedAt: at } : null;
   // No hidden history, grading rubric, completion criterion or asset transcript is sent to competitors.
   await writeFile(join(root, "visible.json"), JSON.stringify(visible, null, 2));
   const result = { id: item.id, layer: item.layer, title: item.title, completion: item.completion, question: item.question, visible, rivals: {}, comparisons: {} };
   try {
     const start = Date.now();
-    const setup = await context.run({ case: item.id, phase: "seed" }, () => harness.setup(item));
+    const setup = await context.run({ case: item.id, phase: "seed", clock }, () => harness.setup(item));
     const seedMs = Date.now() - start, probeStart = Date.now();
-    result.pinky = { ...(await context.run({ case: item.id, phase: "probe" }, () => harness.ask(setup, item, picture))), ms: Date.now() - probeStart, seedMs };
+    result.pinky = { ...(await context.run({ case: item.id, phase: "probe", clock }, () => harness.ask(setup, item, picture))), ms: Date.now() - probeStart, seedMs };
   } catch (error) { result.pinky = { error: error.message, completed: null }; }
   await writeFile(join(root, "pinky.json"), JSON.stringify(result.pinky, null, 2));
   for (const provider of ["claude", "codex"]) {
     try {
+      if (old && !item.agreementFlow) {
+        result.rivals[provider] = frozenOpponent(old, provider, report.replay.sha256);
+        if (picture && result.rivals[provider].evidence?.imageSha256 !== createHash("sha256").update(await readFile(picture)).digest("hex")) throw new Error(`Frozen image differs: ${item.id}`);
+        continue;
+      }
       result.rivals[provider] = { provider, ...(await invoke(provider, { root: join(root, "opponents"), input: JSON.stringify({ records: visible, question: item.question }), instructions: opponentInstructions, image: picture, search: true })) };
       // No database/tool access is given to competitors; their completion must be judged from usable output.
       result.rivals[provider].evidence = { mode: "直接可用的结果；没有产品数据库写入或真实账号权限", ...(picture ? { imageAttached: true, transcriptProvided: false, imageSha256: createHash("sha256").update(await readFile(picture)).digest("hex") } : {}) };
@@ -100,10 +121,12 @@ const results = new Array(selected.length);
 try {
   const worker = async () => { while (next < selected.length) { const index = next++; results[index] = await one(selected[index]); } };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(3, Number(options.concurrency) || 2)) }, worker));
-} finally { await harness.close(); usageListeners.delete(listener); }
+} finally { await harness.close(); usageListeners.delete(listener); restoreClock(); }
 report.results = results;
 report.endedAt = new Date().toISOString();
 report.summary = summarize(results, layers);
+report.agreementStages = results.filter((item) => item.pinky.evidence?.approvalFlow).map((item) => ({ id: item.id,
+  checks: item.pinky.evidence.approvalFlow.checks, completed: item.pinky.evidence.approvalFlow.completed }));
 report.usage = usage;
 const byKind = {};
 for (const event of usage) {
@@ -115,7 +138,8 @@ report.cost = { pinkyReportedUsd: usage.reduce((sum, event) => sum + (event.usd 
   byKind, unattributedCalls: usage.filter((event) => !event.case).length,
   claudeOpponentUsd: results.reduce((sum, item) => sum + (item.rivals.claude.usd || 0), 0),
   claudeJudgeUsd: results.flatMap((item) => Object.values(item.comparisons).flatMap((pair) => pair.judges)).reduce((sum, vote) => sum + (vote.usd || 0), 0), codexUsd: null, scope: "subscription list-price estimates; partial Pinky image/search usage" };
-const previous = options.compare ? JSON.parse(await readFile(resolve(options.compare), "utf8")) : null;
+report.cost.reusedOpponentAnswers = results.flatMap((item) => Object.values(item.rivals)).filter((rival) => rival.reused).length;
+const previous = options.compare ? JSON.parse(await readFile(resolve(options.compare), "utf8")) : baseline;
 await writeFile(join(directory, "report.json"), JSON.stringify(report, null, 2));
 await writeFile(join(directory, "report.md"), markdown(report, previous));
 console.log(`Report: ${join(directory, "report.md")}`);

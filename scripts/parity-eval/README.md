@@ -7,6 +7,7 @@ node --test scripts/parity-eval/score.test.mjs
 node scripts/parity-eval/run.mjs --label pilot --only tool-reminder-once,memory-recall-paired-advice,interaction-screenshot-apology
 node scripts/parity-eval/run.mjs --label baseline
 node scripts/parity-eval/run.mjs --label after --compare E:/absolute/path/report.json
+node scripts/parity-eval/run.mjs --label round1 --concurrency 1 --reuse-opponents E:/absolute/path/reviewed/report.json
 # 仅用于修正旧版漏掉聊天卡片的基线；完整运行结束后执行，不再次生成产品/对手答案。
 node scripts/parity-eval/review-baseline.mjs E:/absolute/path/report.json
 ```
@@ -16,6 +17,10 @@ node scripts/parity-eval/review-baseline.mjs E:/absolute/path/report.json
 输出在 `work/parity-eval/<label>-<UTC>/`：冻结 manifest（代码提交、场景哈希、选择范围、随机种子）、每题可见资料/原始答案/评委判断、`report.json` 和 `report.md`，以及可供排查的虚构存储。目录不提交，不自动删除，绝不能用递归强删工作区清理共享 node_modules 联接。
 
 `review-baseline` 保留原报告，复制本轮虚构存储后通过真实权限投影和只读 API 恢复聊天可见卡片；只补评答案确有新增可见内容的题，写入 `reviewed/`。修正来源哈希、代码版本、原判决、补评用量和隐私误报纠正均保留。恢复的是结束时状态，因此该补评不能冒充原时刻的浏览器录像；本语料每题账号隔离，提醒和约定没有随后编辑。新 `run` 已直接保存可见卡片，正常新基线不需要此补评。
+
+任务 08 的 `--reuse-opponents` 只读完整旧报告并核对语料哈希、逐题问题、可见资料及图片哈希；不相符就拒绝复用。Pinky 和两位评委重新运行，38 道未改流程题复用对手原答案，2 道约定题重新生成对手答案。原题的 `visible.now` 用作本次造数及产品请求的独立日历时间，计时继续推进且仅影响虚构评测进程，避免“明天”和旧记录日期漂移；网页搜索仍是当前搜索，不能宣称冻结了互联网。旧对手花费保存在 `originalCost`，不会重复计入本轮费用。
+
+约定题保留原始提问和最初的草稿内容盲评，之后模拟已明确授权的用户操作：提出者点击“发给你们俩批准”，本人批准；重复本人批准仍不能代替伴侣；另一虚构账号独立登录并批准同一版本后才生效。每个阶段通过真实 HTTP 和用户投影存证，`agreementStages` 分步计分。失败不补写存储、不强行继续。模型没有代批权限，对手没有产品写权限，报告将可用初稿与实际流程完成分开；相对于旧基线的约定完成率变化包含补流程因素，不能全算成产品改进。
 
 ## 口径
 

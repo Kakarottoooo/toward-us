@@ -5,6 +5,11 @@ import { formatVisibleAnswer, projectSnapshot, visibleContext } from "./fixture.
 import { createRelationshipRecord } from "../../server/relationship-domain.mjs";
 import { recordChecks } from "./evidence.mjs";
 import { cases, layers } from "./cases.mjs";
+import { createHarness } from "./fixture.mjs";
+import { corpusHash, frozenCase, frozenOpponent, installCaseClock } from "./replay.mjs";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 test("unknown judgments never become non-losses; disagreements are separately counted", () => {
   const row = (judges, error) => ({ layer: "memory", pinky: { completed: true, error }, rivals: { claude: {}, codex: {} }, comparisons: { claude: { judges }, codex: { judges } } });
@@ -91,4 +96,54 @@ test("corpus includes all layers, privacy repeats, and real multimodal inputs", 
   assert.equal(cases.filter((item) => item.check?.kind === "privacy" && item.probe.repeat === 3).length, 2);
   assert.ok(cases.some((item) => item.modality === "screenshot" && item.assetText));
   assert.ok(cases.some((item) => item.modality === "file" && item.assetText));
+});
+
+test("frozen replay refuses changed questions/corpus and does not count historical opponent cost again", () => {
+  const item = cases.find((entry) => entry.id === "tool-reminder-once");
+  const rival = { answer: "明天八点提醒", usd: 0.1, usage: { input_tokens: 100 }, ms: 500 };
+  const baseline = { caseHash: corpusHash(cases), results: [{ id: item.id, question: item.probe.text, visible: visibleContext(item, Date.UTC(2026, 10, 10)), rivals: { claude: rival, codex: rival } }] };
+  const row = frozenCase(item, baseline, corpusHash(cases));
+  const reused = frozenOpponent(row, "claude", "hash");
+  assert.equal(reused.answer, rival.answer); assert.equal(reused.usd, 0); assert.equal(reused.originalCost.usd, 0.1);
+  assert.equal(rival.usd, 0.1); assert.throws(() => frozenCase(item, baseline, "different"), /hash differs/);
+  assert.throws(() => frozenCase({ ...item, probe: { text: "changed" } }, baseline, corpusHash(cases)), /question differs/);
+});
+
+test("replay calendar stays case-local while timeouts advance and native Date operations work", async () => {
+  const context = new AsyncLocalStorage(), RealDate = Date, restore = installCaseClock(context);
+  try {
+    const realStart = RealDate.now(), historical = Date.parse("2026-01-01T00:00:00Z");
+    await context.run({ clock: { at: historical, startedAt: realStart } }, async () => {
+      assert.equal(new Date().toISOString().slice(0, 10), "2026-01-01");
+      assert.equal(new Date(0).toISOString(), "1970-01-01T00:00:00.000Z");
+      assert.equal(typeof Date(), "string");
+      const start = Date.now(); await new Promise((r) => setTimeout(r, 20)); assert.ok(Date.now() > start);
+    });
+    assert.ok(Math.abs(Date.now() - RealDate.now()) < 100);
+  } finally { restore(); }
+  assert.equal(Date, RealDate);
+});
+
+test("agreement replay uses actual HTTP actions and independent authenticated approvals", async (t) => {
+  const base = resolve("work", "parity-test"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "approval-"));
+  const mediator = { aiReady: false, continueTogether: async () => ({ reply: "这是草稿，小闻需要本人批准。", source: "test", actions: [],
+    draftAgreement: { title: "轮流做饭", summary: "周末轮换", terms: ["本周小安做饭，下周小闻做饭，之后每周轮换。"], unresolvedPoints: [] } }) };
+  const requestContext = new AsyncLocalStorage(), restoreClock = installCaseClock(requestContext);
+  const harness = await createHarness(directory, { mediator, requestContext });
+  t.after(async () => { await harness.close(); restoreClock(); assert.ok(resolve(directory).startsWith(`${base}\\`) || resolve(directory).startsWith(`${base}/`)); await rm(directory, { recursive: true }); });
+  const original = cases.find((entry) => entry.id === "tool-agreement-draft");
+  const item = { ...original, question: original.probe.text, agreementFlow: true };
+  const clock = { at: Date.parse("2026-01-15T12:00:00Z"), startedAt: Date.now() };
+  const setup = await requestContext.run({ case: item.id, phase: "seed", clock }, () => harness.setup(item));
+  const result = await requestContext.run({ case: item.id, phase: "probe", clock }, () => harness.ask(setup, item));
+  assert.equal(result.completed, true, JSON.stringify(result.evidence.checks));
+  assert.equal(result.evidence.approvalFlow.stages.length, 5);
+  assert.equal(result.evidence.approvalFlow.stages[2].agreement.approvedBy.length, 1);
+  assert.equal(result.evidence.approvalFlow.stages[3].agreement.approvedBy.length, 1);
+  assert.equal(result.evidence.approvalFlow.stages[4].agreement.approvedBy.length, 2);
+  assert.equal(result.evidence.persisted[0].status, "active");
+  assert.equal(result.evidence.persisted[0].effectiveAt.slice(0, 10), "2026-01-15", "HTTP handler inherits frozen case calendar");
+  assert.match(result.answer, /约定草稿/);
+  assert.doesNotMatch(result.answer, /已生效/);
 });
