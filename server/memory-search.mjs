@@ -24,7 +24,7 @@ export function terms(query) {
 const score = (text, words) => { const lower = String(text || "").toLowerCase(); return words.filter((word) => lower.includes(word)).length; };
 
 // Only explicit requests to recall a past exchange get a first-pass lookup. Ordinary coaching keeps its usual budget.
-export const asksToRecall = (text) => /(?:之前|以前|上次|当时|那天|曾经).{0,50}(?:问|答|说|建议|聊)|(?:记得|回忆).{0,30}(?:问|答|说|建议|聊)|\b(?:what|how).{0,60}\b(?:said|asked|answered|told|suggested|recommended)\b|\b(?:last time|previously|back then|recall)\b|\b(?:antes|aquella vez|la otra vez|recuerdas|dijiste|pregunté|respondiste|aconsejaste)\b/i.test(String(text || ""));
+export const asksToRecall = (text) => /(?:之前|以前|上次|当时|那天|曾经).{0,50}(?:问|答|说|建议|聊)|(?:记得|回忆).{0,30}(?:问|答|说|建议|聊)|\b(?:what|how).{0,60}\b(?:said|asked|answered|told|suggested|recommended)\b|\b(?:what|how)\s+did\s+(?:you|I|we).{0,40}\b(?:say|ask|answer|tell|suggest|recommend)\b|\b(?:last time|previously|back then|recall)\b|\b(?:antes|aquella vez|la otra vez|recuerdas|dijiste|pregunté|respondiste|aconsejaste)\b/i.test(String(text || ""));
 
 export async function prefetchRecall(options, text) {
   if (!asksToRecall(text)) return null;
