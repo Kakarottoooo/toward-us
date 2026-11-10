@@ -1,3 +1,4 @@
+import { keepMessages } from "./thread-pages.mjs";
 import { randomUUID } from "node:crypto";
 import { gettingToKnow } from "./profile.mjs";
 
@@ -27,7 +28,7 @@ export async function askToKnow(store, { userId, session, now = new Date() }) {
       `Hola, soy Pinky. Cuando no sepas qué responderle a ${partner}, envíame lo que dijo o una captura y te ayudo a entenderlo y a escribir una respuesta. Aún no te conozco, así que déjame hacerte unas preguntas; así te ayudaré mejor con ${partner}. La primera: cuando estás mal, ¿cómo quieres que ${partner} te trate?\nSi prefieres no responder, dime lo que necesitas; o toca el teléfono arriba a la derecha y habla.`);
   return store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
     if (draft.knowYouAt) return;
-    draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text, createdAt: now.toISOString() }].slice(-200);
+    keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text, createdAt: now.toISOString() }]);
     draft.knowYouAt = now.toISOString(); draft.version += 1;
   }));
 }

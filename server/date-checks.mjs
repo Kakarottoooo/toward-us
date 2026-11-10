@@ -1,3 +1,4 @@
+import { keepMessages } from "./thread-pages.mjs";
 import { randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { PROFILE_KIND } from "./profile.mjs";
@@ -45,7 +46,7 @@ export async function askAfterDate(store, { userId, session, now = new Date() })
   const text = say(language, `${when}和 ${partner} 的「${title}」怎么样？点一下就行，想多说也可以直接打字。`, `How was "${title}" with ${partner} ${when}? One tap is enough, or tell me more.`, `¿Qué tal «${title}» con ${partner} ${when}? Basta un toque, o cuéntame más.`);
   return store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
     if (askedToday(draft.dateChecks) || askedToday(draft.promiseChecks) || draft.dateChecks?.[plan.id]) return;
-    draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text, dateCheck: { milestoneId: plan.id, title, date: plan.date }, createdAt: now.toISOString() }].slice(-200);
+    keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text, dateCheck: { milestoneId: plan.id, title, date: plan.date }, createdAt: now.toISOString() }]);
     draft.dateChecks = { ...(draft.dateChecks || {}), [plan.id]: now.toISOString() }; draft.version += 1;
   }));
 }
@@ -87,7 +88,7 @@ export async function answerDateCheck(store, { userId, sessionId, messageId, rat
     await tx.createRelationshipRecord("memories", fact);
     const noted = say(language, `已记进「关于我们」：${text}。下次帮你们出主意时会参考。`, `Kept in About us: ${text}. I'll use it for your next ideas.`, `Guardado en Sobre nosotros: ${text}. Lo usaré para sus próximas ideas.`);
     return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
-      draft.messages = [...draft.messages.map((message) => message.id === messageId ? { ...message, dateAnswer: { rating, at: now.toISOString(), factId: fact.id } } : message), { id: randomUUID(), role: "assistant", kind: "noted", text: noted, noted: [fact.id], createdAt: now.toISOString() }].slice(-200);
+      keepMessages(draft, [...draft.messages.map((message) => message.id === messageId ? { ...message, dateAnswer: { rating, at: now.toISOString(), factId: fact.id } } : message), { id: randomUUID(), role: "assistant", kind: "noted", text: noted, noted: [fact.id], createdAt: now.toISOString() }]);
       draft.version += 1;
     });
   });

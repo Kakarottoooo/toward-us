@@ -1,3 +1,4 @@
+import { keepMessages } from "./thread-pages.mjs";
 import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
@@ -304,7 +305,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
         const session = await privateSessionFor(tx, note.memberId);
         const header = { zh: "Pinky 给你的私下反馈（只有你能看到）", en: "Private feedback from Pinky (only you can see this)", es: "Comentario privado de Pinky (solo tú puedes verlo)" }[session.language] || "Pinky 给你的私下反馈（只有你能看到）";
         const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, note.memberId, (draft) => {
-          draft.messages = [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: `${header}\n\n${clean(note.text, 2000)}`, askedFrom: "mediation", createdAt: new Date().toISOString() }].slice(-200);
+          keepMessages(draft, [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: `${header}\n\n${clean(note.text, 2000)}`, askedFrom: "mediation", createdAt: new Date().toISOString() }]);
           draft.version += 1;
         });
         asked.push({ id: updated.id, version: updated.version, ownerUserId: note.memberId, relationshipId });
@@ -319,7 +320,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
         const session = await privateSessionFor(tx, member.userId);
         if (!session) continue;
         const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, member.userId, (draft) => {
-          draft.messages = [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: question, askedFrom: "together", plannerQuestion: true, createdAt: new Date().toISOString() }].slice(-200);
+          keepMessages(draft, [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: question, askedFrom: "together", plannerQuestion: true, createdAt: new Date().toISOString() }]);
           draft.version += 1;
         });
         asked.push({ id: updated.id, version: updated.version, ownerUserId: member.userId, relationshipId });
