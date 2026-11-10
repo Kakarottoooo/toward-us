@@ -43,3 +43,13 @@ test("with a portrait a turn carries only the newest notes about that person; wi
   assert.equal(brief.me.length, BRIEF.facts);
   assert.equal(brief.portraits.me.portrait, "画像");
 });
+
+test("an answer written twice ('Wait, I need to return a valid object only.') is read, not asked for again", async () => {
+  const { answerFromText } = await import("../server/claude-cli-client.mjs");
+  const schema = { type: "object", required: ["reply", "actions"], properties: { reply: { type: "string" }, actions: { type: "array" } } };
+  const first = { reply: "好的，每周五晚上7点提醒你。", actions: [{ kind: "reminder", fields: { title: "买花 {周五}" } }], query: null };
+  const meant = { reply: "好的，每周五晚上7点提醒你给女朋友买花。", actions: [{ kind: "reminder", fields: { title: "给女朋友买花" } }] };
+  const text = `${JSON.stringify(first)}\n\nWait, I need to return a valid object only.\n\n${JSON.stringify(meant)}`;
+  assert.deepEqual(answerFromText(text, schema), meant, "the last complete answer is the one it meant");
+  assert.deepEqual(answerFromText(JSON.stringify(meant), schema), meant);
+});

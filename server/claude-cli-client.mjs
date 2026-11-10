@@ -27,6 +27,20 @@ export function jsonFromText(text) {
   return null;
 }
 
+/** Every complete top-level JSON object written in a text, in order (strings and escapes respected). */
+export function jsonObjects(text) {
+  const body = String(text || ""), found = [];
+  let depth = 0, start = -1, inString = false, escaped = false;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (inString) { if (escaped) escaped = false; else if (char === "\\") escaped = true; else if (char === '"') inString = false; continue; }
+    if (char === '"' && depth > 0) inString = true;
+    else if (char === "{") { if (depth === 0) start = index; depth += 1; }
+    else if (char === "}" && depth > 0 && --depth === 0) { try { const value = JSON.parse(body.slice(start, index + 1)); if (value && typeof value === "object" && !Array.isArray(value)) found.push(value); } catch { /* not JSON */ } }
+  }
+  return found;
+}
+
 // A tool-disabled CLI reply sometimes ends with empty tool-call wrappers, in several shapes (use-case test, 11-08:
 // `<invoke name="x">\n</invoke>\n</invoke>` twice after good first-date advice). The trailing block made only of such
 // tags is dropped when it opens one itself; markup that closes quoted content (`<invoke>text</invoke>`) is kept.
@@ -68,7 +82,12 @@ export function answerFromText(text, schema) {
   // held `{"User-Agent": …}`, which was taken as the turn and failed as a 502 (round 8, 11-09).
   const found = jsonFromText(text);
   const fits = found && (!schema?.required?.length || schema.required.some((key) => key in found));
-  return (fits ? found : null) || proseAsReply(text, schema);
+  if (fits) return found;
+  // The planner sometimes writes its answer, then "Wait, I need to return a valid object only." and the answer again; the
+  // whole text is not one object, and asking again strictly doubled that turn's cost and once came back as "这条看起来是一段
+  // 命令" (cost pass 11-10: a third to a half of reminder turns). Its last complete answer is the one it meant.
+  const whole = jsonObjects(text).filter((value) => (schema?.required || []).every((key) => key in value)).at(-1);
+  return whole || proseAsReply(text, schema);
 }
 
 // Scenario testing found the lightweight planner invented context and UI paths in ordinary care requests, too.
@@ -124,7 +143,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
           const stdout = systemText ? await withSystemFile(cwd, systemText, (file) => run(command, [...args, ...file, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS)) : await run(command, [...args, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
           let result;
           try { result = JSON.parse(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
-          for (const listener of usageListeners) { try { listener({ name: params.text?.format?.name || null, model, prompt, systemChars: String(systemText || "").length, usage: result.usage || {}, usd: Number(result.total_cost_usd) || 0 }); } catch {} }
+          for (const listener of usageListeners) { try { listener({ name: params.text?.format?.name || null, model, prompt, text: typeof result.result === "string" ? result.result : null, systemChars: String(systemText || "").length, usage: result.usage || {}, usd: Number(result.total_cost_usd) || 0 }); } catch {} }
           if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
           return result;
         };
