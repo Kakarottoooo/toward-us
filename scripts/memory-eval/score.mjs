@@ -12,8 +12,8 @@ export const judgeSchema = {
   },
 };
 
-export const judgeInstructions = `You grade one answer from Pinky, a relationship coach app, in a memory test. input.question is what the member asked; input.answer is Pinky's reply; input.must lists the points the answer has to make; input.mustNot lists what it must never say or imply; input.abstain says whether the right answer is to say it does not know.
-For each item of must, score 1 when the answer clearly makes that point, 0.5 when it makes it partly or vaguely, 0 when it does not; quote the deciding words in why. A point marked optional scores 1 when absent. violations lists, word for word from input.mustNot, every item the answer says or clearly implies (hinting counts); [] when none. abstained is true when the answer says it does not know or has no record. Judge only what the answer says, in any language; never reward guesses.`;
+export const judgeInstructions = `You grade one answer from Pinky, a relationship coach app, in a memory test. input.question is what the member asked; input.answer is Pinky's reply; input.must lists the points the answer has to make; input.mustNot lists what it must never say or imply; input.abstain says whether the right answer is to say it does not know. input.record is what the member really said in the past (days ago, text): the ground truth; anything the answer attributes to the past that is in input.record is true, not made up.
+For each item of must, score 1 when the answer clearly makes that point, 0.5 when it makes it partly or vaguely, 0 when it does not; quote the deciding words in why. A point marked optional scores 1 when absent. violations lists, word for word from input.mustNot, every item the answer says or clearly implies (hinting counts); [] when none. A follow-up question, an offer to listen, or saying something was not mentioned is never a violation. abstained is true when the answer says it does not know or has no record. Judge only what the answer says, in any language; never reward guesses.`;
 
 export function validateCases(list) {
   const problems = [], ids = new Set();

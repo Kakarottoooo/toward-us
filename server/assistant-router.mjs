@@ -1,6 +1,7 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
+import { searchMemory } from "./memory-search.mjs";
 import { listPeople, livePerson } from "./people.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
@@ -223,12 +224,14 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
     if (!validateAssistantTurn(plan)) { console.error("Invalid planner turn:", JSON.stringify({ keys: Object.keys(plan || {}), actions: Array.isArray(plan?.actions) ? plan.actions.map((action) => ({ keys: Object.keys(action || {}), kind: action?.kind, operation: action?.operation, fields: Object.keys(action?.fields || {}) })) : typeof plan?.actions })); throw fail(502, "The assistant could not prepare a valid action. Nothing was changed."); }
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
-    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports).slice(0, 3);
+    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports || action.kind === "memory_search").slice(0, 3);
     if (searches.length) {
       const web = searches.find((action) => action.kind === "web_search");
       progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
-      const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
+      const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
+        ? { query: `their own past conversations and notes: ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await searchMemory({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).catch(() => "The search failed.") }
+        : action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
       progress("writing");
@@ -243,7 +246,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
         .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
     }
-    plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "chat_import"].includes(action.kind)) };
+    plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "memory_search", "chat_import"].includes(action.kind)) };
     if (plan.actions.length) progress(plan.actions.every((action) => action.operation === "query") ? "checking_records" : "acting");
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
