@@ -60,6 +60,9 @@ test("messages beyond the working set are archived in order, stay readable page 
   }
   assert.deepEqual(seen.map((item) => item.id), ids.slice(0, ids.length - conversation.messages.length), "every archived message, in order, once");
   assert.deepEqual(seen.find((item) => item.id === question.id).answers, {}, "Blair never answered, so Alex's answer stays hidden in the archive too");
+  const located = (await f.request(`/together/locate?messageId=${question.id}`, "GET", null, f.b)).body;
+  assert.deepEqual(located.messages.find((item) => item.id === question.id).answers, {}, "direct navigation uses the same unrevealed-answer projection");
+  assert.deepEqual((await f.conversation()).messages.find((item) => item.id === question.id)?.answers, undefined);
   assert.equal(JSON.stringify((await olderTogetherMessages(f.store, { relationshipId: f.relationshipId, userId: f.a, before: question.id })).messages), "[]", "nothing before the first message");
   assert.deepEqual(await olderTogetherMessages(f.store, { relationshipId: f.relationshipId, userId: f.a, before: "no-such-message" }), { messages: [], more: false });
 });
