@@ -1,5 +1,6 @@
 import { listPeople, personOf, personSubject } from "./people.mjs";
 import { activePair, isProfileFact, visibleTo } from "./profile.mjs";
+import { conversationMessages, readableConversation } from "./conversation-recall.mjs";
 
 // 按需检索 (memory plan, founder 11-09: "做按需检索"). Portraits and the newest notes carry the big picture; a specific old
 // detail (what was said on a day, the exact words of an apology) lives only in the member's own past conversations and in
@@ -22,40 +23,82 @@ export function terms(query) {
 
 const score = (text, words) => { const lower = String(text || "").toLowerCase(); return words.filter((word) => lower.includes(word)).length; };
 
+// Only explicit requests to recall a past exchange get a first-pass lookup. Ordinary coaching keeps its usual budget.
+export const asksToRecall = (text) => /(?:之前|以前|上次|当时|那天|曾经).{0,50}(?:问|答|说|建议|聊)|(?:记得|回忆).{0,30}(?:问|答|说|建议|聊)|\b(?:what|how).{0,60}\b(?:said|asked|answered|told|suggested|recommended)\b|\b(?:last time|previously|back then|recall)\b|\b(?:antes|aquella vez|la otra vez|recuerdas|dijiste|pregunté|respondiste|aconsejaste)\b/i.test(String(text || ""));
+
+export async function prefetchRecall(options, text) {
+  if (!asksToRecall(text)) return null;
+  const result = await searchMemoryResults({ ...options, query: text, date: String(text).match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || "" });
+  return result.sources.length ? result : null;
+}
+
+// Pair before ranking, including a turn split across two storage pages. Never attach the next question to an answer.
+export function conversationTurns(messages) {
+  const turns = [];
+  for (const message of messages) {
+    if (!message?.text || message.kind && message.kind !== "text" || !["user", "assistant", "member", "agent"].includes(message.role)) continue;
+    const answer = ["assistant", "agent"].includes(message.role);
+    const previous = turns.at(-1);
+    if (answer && previous && !previous.answer && (!message.replyTo || previous.question?.id === message.replyTo)) previous.answer = message;
+    else turns.push(answer ? { answer: message } : { question: message });
+  }
+  return turns;
+}
+
 /**
  * Searches this member's own past conversations (pages included) and their notes, newest matches first among equals.
  * Inside a person's own conversation (`personId`), only that person's conversation and notes are searched.
  */
 export async function searchMemory({ store, userId, query = "", date = "", personId = null, limit = 10 }) {
+  return (await searchMemoryResults({ store, userId, query, date, personId, limit })).findings;
+}
+
+export async function searchMemoryResults({ store, userId, query = "", date = "", personId = null, limit = 10, channel = "me", excludeMessageId = null }) {
   const words = terms(query);
-  if (!words.length && !date) return "Nothing to search for.";
+  if (!words.length && !date) return { findings: "Nothing to search for.", sources: [] };
   const context = await store.getRelationshipContext(userId);
   const relationshipId = activePair(context) ? context.relationship.id : null;
-  const people = await listPeople(store, userId, { archived: true });
+  const people = channel === "us" ? [] : await listPeople(store, userId, { archived: true });
   const nameOf = (id) => people.find((person) => person.id === id)?.name || null;
   const hits = [];
-  const consider = (text, at, label) => {
-    if (date && !String(at || "").startsWith(date)) return;
+  const consider = (text, at, label, source = null, excerpt = null, answerAt = null) => {
+    if (date && !String(at || "").startsWith(date) && !String(answerAt || "").startsWith(date)) return;
     const value = words.length ? score(text, words) : 1;
     // A day asked for is the filter; words then only rank. Without a day, a short query needs its words, a long one two.
     if (!date && words.length && value < Math.min(2, words.length)) return;
-    hits.push({ value, at: String(at || ""), line: `[${String(at || "").slice(0, 10)} · ${label}] ${squash(text, 300)}` });
+    hits.push({ value, at: String(at || ""), source, line: `[${String(at || "").slice(0, 10)} · ${label}] ${excerpt || squash(text, 300)}${source ? ` [recall:${source.messageId}]` : ""}` });
   };
-  const threads = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((thread) => thread.ownerUserId === userId && thread.intentType === "assistant" && !thread.archivedAt && (!personId || thread.personId === personId));
+  const threads = channel === "us" ? [] : (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((thread) => thread.ownerUserId === userId && thread.intentType === "assistant" && thread.visibility === "private" && thread.status === "active" && !thread.archivedAt && !thread.withdrawnAt && thread.aiAccessScope === "private" && (!personId || thread.personId === personId));
+  const addConversation = async (thread, scope, where) => {
+    for (const { question, answer } of conversationTurns(await conversationMessages(store, userId, scope, thread))) {
+      const message = question || answer;
+      if (message.id === excludeMessageId) continue;
+      const source = { channel: scope, conversationId: thread.id, messageId: message.id, date: String(message.createdAt || "").slice(0, 10), ...(thread.personId ? { personId: thread.personId } : {}) };
+      // Separate caps keep a long question from crowding out the answer. Mark truncation rather than invent the rest.
+      const excerpt = (value) => `${squash(value, 220)}${String(value || "").length > 220 ? "…" : ""}`;
+      consider([question?.text, answer?.text].filter(Boolean).join("\n"), message.createdAt, `${where} · ${question ? scope === "us" ? "成员说" : "你说" : "Pinky 说"}`, source,
+        [question && excerpt(question.text), answer && `Pinky 当时答 (${String(answer.createdAt || "").slice(0, 10)})：${excerpt(answer.text)}`].filter(Boolean).join("\n"), answer?.createdAt);
+    }
+  };
   for (const thread of threads) {
     const where = thread.personId ? `只聊${nameOf(thread.personId) || "TA"}` : "和 Pinky 的对话";
-    for (const message of [...(thread.earlier || []).flatMap((page) => page.messages || []), ...(thread.messages || [])]) {
-      if (!message?.text || message.kind) continue;
-      consider(message.text, message.createdAt, `${where} · ${message.role === "user" ? "你说" : "Pinky 说"}`);
-    }
+    await addConversation(thread, "me", where);
   }
-  const notes = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => isProfileFact(item) && visibleTo(item, userId, relationshipId) && (!personId || item.subjectUserId === personSubject(personId)));
+  if (relationshipId && !personId) {
+    const shared = await readableConversation(store, userId, "us", `together:${relationshipId}`).catch(() => null);
+    if (shared?.aiAccessScope === "joint") await addConversation(shared, "us", "我们俩的对话");
+  }
+  const notes = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => isProfileFact(item) && visibleTo(item, userId, relationshipId) && (channel !== "us" || item.visibility === "shared" && item.aiAccessScope === "joint" && item.relationshipId === relationshipId) && (!personId || item.subjectUserId === personSubject(personId)));
   for (const note of notes) {
     const about = note.subjectUserId === userId ? "关于你" : personOf(note.subjectUserId) ? `关于${nameOf(personOf(note.subjectUserId)) || "TA"}` : note.subjectUserId ? "关于伴侣" : "关于你们";
     consider(note.text, note.evidence?.saidAt || note.createdAt, `记忆卡 · ${about}`);
     // What used to be true, with when it changed: "以前住上海" still answers "他以前住哪".
     for (const was of note.past || []) consider(was.text, was.saidAt || note.createdAt, `记忆卡 · ${about} · 以前是这样，${String(was.until || "").slice(0, 10)} 起变成：${squash(note.text, 60)}`);
   }
-  if (!hits.length) return "No matching record in their past conversations or notes.";
-  return hits.sort((a, b) => b.value - a.value || b.at.localeCompare(a.at)).slice(0, limit).map((hit) => hit.line).join("\n");
+  const selected = []; let size = 0;
+  for (const hit of hits.sort((a, b) => b.value - a.value || b.at.localeCompare(a.at)).slice(0, Math.min(10, limit))) {
+    if (size + hit.line.length + 1 > 3600) break;
+    selected.push(hit); size += hit.line.length + 1;
+  }
+  return { findings: selected.map((hit) => hit.line).join("\n") || "No matching record in their past conversations or notes.", sources: selected.flatMap((hit) => hit.source ? [hit.source] : []) };
 }

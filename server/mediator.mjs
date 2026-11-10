@@ -267,7 +267,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         const draft = result.draftAgreement ? { title: String(result.draftAgreement.title || "").trim().slice(0, 160), summary: String(result.draftAgreement.summary || "").trim().slice(0, 1200), terms: (result.draftAgreement.terms || []).map((item) => String(item).trim().slice(0, 500)).filter(Boolean).slice(0, 8), unresolvedPoints: (result.draftAgreement.unresolvedPoints || []).map((item) => String(item).trim().slice(0, 500)).filter(Boolean).slice(0, 8) } : null;
         const reply = sanitizeFollowUp(result.reply);
         // Free-form model replies stay in one language; only the fixed fallback copy carries every language.
-        return { reply: reply || fallback.reply, i18n: reply ? null : fallback.i18n, draftAgreement: !context.pendingAgreement && draft?.title && draft.summary && draft.terms.length ? draft : null, actions: sanitizeTogetherActions(result.actions).filter((action) => reply || ["web_search", "chat_search"].includes(action.kind)), waitingFor: Array.isArray(result.waitingFor) ? result.waitingFor.filter((name) => typeof name === "string" && name.trim()).map((name) => name.trim().slice(0, 80)).slice(0, 2) : [], source: "openai" };
+        return { reply: reply || fallback.reply, i18n: reply ? null : fallback.i18n, draftAgreement: !context.pendingAgreement && draft?.title && draft.summary && draft.terms.length ? draft : null, actions: sanitizeTogetherActions(result.actions).filter((action) => reply || ["web_search", "chat_search", "memory_search"].includes(action.kind)), waitingFor: Array.isArray(result.waitingFor) ? result.waitingFor.filter((name) => typeof name === "string" && name.trim()).map((name) => name.trim().slice(0, 80)).slice(0, 2) : [], source: "openai" };
       } catch (error) {
         console.error("Together agent unavailable; using local fallback:", error?.message || error);
         return { ...fallback, source: "local" };
@@ -369,7 +369,7 @@ const togetherTurnSchema = {
     actions: { type: "array", maxItems: 6, items: { type: "object", additionalProperties: false,
       required: ["kind", "operation", "targetId", "spaceId", "title", "text", "date", "layout", "done", "recurringRule", "remindDaysBefore", "photoId", "localDateTime", "idea"],
       properties: {
-        kind: { type: "string", enum: ["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment", "game"] }, operation: { type: "string", enum: ["create", "update", "archive"] },
+        kind: { type: "string", enum: ["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "memory_search", "recap", "commitment", "game"] }, operation: { type: "string", enum: ["create", "update", "archive"] },
         targetId: { type: ["string", "null"] }, spaceId: { type: ["string", "null"] }, title: { type: ["string", "null"] }, text: { type: ["string", "null"] },
         date: { type: ["string", "null"] }, layout: { type: ["string", "null"], enum: ["list", "checklist", "timeline", "gallery", "notes", null] },
         done: { type: ["boolean", "null"] }, recurringRule: { type: ["string", "null"], enum: ["once", "yearly", null] }, remindDaysBefore: { type: ["integer", "null"] }, photoId: { type: ["string", "null"] }, localDateTime: { type: ["string", "null"] }, idea: { type: ["integer", "null"] },
@@ -380,14 +380,14 @@ const togetherTurnSchema = {
   },
 };
 
-const TOGETHER_KINDS = new Set(["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "recap", "commitment", "game"]), TOGETHER_OPERATIONS = new Set(["create", "update", "archive"]);
+const TOGETHER_KINDS = new Set(["space", "space_item", "milestone", "web_search", "ask_privately", "link", "mediate", "chat_search", "memory_search", "recap", "commitment", "game"]), TOGETHER_OPERATIONS = new Set(["create", "update", "archive"]);
 function sanitizeTogetherActions(actions) {
   const text = (value, limit) => typeof value === "string" ? value.trim().slice(0, limit) : null;
   // Agreement commitments have ids like "commitment:<agreement>:v1:0".
   const id = (value) => typeof value === "string" && /^[a-zA-Z0-9:-]{1,80}$/.test(value) ? value : null;
   return (Array.isArray(actions) ? actions : []).filter((action) => action && TOGETHER_KINDS.has(action.kind) && TOGETHER_OPERATIONS.has(action.operation)).slice(0, 6).map((action) => ({
     kind: action.kind, operation: action.operation, targetId: id(action.targetId), spaceId: id(action.spaceId), title: text(action.title, 160), text: text(action.text, 2000),
-    date: typeof action.date === "string" && (action.kind === "chat_search" ? /^\d{4}-\d{2}(-\d{2})?$/ : /^\d{4}-\d{2}-\d{2}$/).test(action.date) ? action.date : null, layout: ["list", "checklist", "timeline", "gallery", "notes"].includes(action.layout) ? action.layout : null,
+    date: typeof action.date === "string" && (["chat_search", "memory_search"].includes(action.kind) ? /^\d{4}-\d{2}(-\d{2})?$/ : /^\d{4}-\d{2}-\d{2}$/).test(action.date) ? action.date : null, layout: ["list", "checklist", "timeline", "gallery", "notes"].includes(action.layout) ? action.layout : null,
     done: typeof action.done === "boolean" ? action.done : null, recurringRule: action.recurringRule === "yearly" ? "yearly" : "once",
     idea: Number.isInteger(action.idea) && action.idea >= 1 && action.idea <= 100 ? action.idea : null, photoId: id(action.photoId), localDateTime: typeof action.localDateTime === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(action.localDateTime) ? action.localDateTime : null, remindDaysBefore: Number.isInteger(action.remindDaysBefore) && action.remindDaysBefore >= 0 && action.remindDaysBefore <= 60 ? action.remindDaysBefore : null,
   }));
@@ -431,6 +431,7 @@ actions change what both of them keep, and the server applies them only together
 ${ACT_FOR_YOU}
 - recap (operation create, title = the occasion in their words or null): when they ask you to make a recap, a look back or a little story of the two of you (回顾卡 / recap / resumen). It is made separately from their shared memories and appears here in a minute: say in your reply that it is on its way, without writing its content and without mentioning who writes it.
 - mediate (operation create, no fields): when they ask you to help them work through a conflict, argument or hurt that happened in this conversation, or they want you to look at what just went wrong between them. Your reply may stay short; a separate step writes the shared reflection here and private feedback to each of them.
+- memory_search (operation create, text = key words, date = YYYY-MM or YYYY-MM-DD or null): when asked about an earlier conversation with Pinky, search the shared conversation for the original member question AND Pinky answer. This NEVER searches either person's private conversations. Explain the date, question, advice at the time, and any later changes separately. Include the exact [recall:ID] markers of up to 3 exchanges actually cited; the app makes links. Never invent a source or missing answer. No matching record means say so. After lookups, answer directly without searching again.
 - chat_search (operation create, targetId = an id from chatHistory, text = literal words to find or null, date = YYYY-MM or YYYY-MM-DD or null): chatHistory holds analyses of the couple's past chat history that BOTH of them approved putting here. Use them to help both understand their patterns, fairly and without taking sides; when they ask what exactly was said or what happened on a day, search, and you will be called again with the matching messages in context.lookups. Quote briefly.
 - The next time they meet in person (they live apart, or one is travelling: 见面, 去看你, 回来, visit): milestone with that date, recurringRule once, title as they call it ("见面" if unsure), and text exactly "next_meeting". It is counted down for both of them ("还有 12 天见面").
 - The day they got together (started dating): milestone with that date, recurringRule yearly, title as they call it, and text exactly "together_since". It sets the day their "together for N days" counter starts from and replaces any earlier one; use it only for that day.
