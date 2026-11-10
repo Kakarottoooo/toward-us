@@ -53,7 +53,8 @@ export async function createFileStore(filePath) {
       return await transactions.run(context, async () => {
         const result = await callback(store);
         if (context.dirty) {
-          await writeFile(`${filePath}.tmp`, JSON.stringify(context.state, null, 2), "utf8");
+          // Compact: after years of conversations the indented file took twice as long to write (scale test 11-09).
+          await writeFile(`${filePath}.tmp`, JSON.stringify(context.state), "utf8");
           await rename(`${filePath}.tmp`, filePath);
           committedState = context.state;
         }

@@ -2,6 +2,7 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { listPeople, personSubject } from "./people.mjs";
 import { isProfileFact } from "./profile.mjs";
 import { refreshPortraits } from "./portraits.mjs";
+import { terms } from "./memory-search.mjs";
 
 // 后台整理 (memory plan, founder 11-09: "接着做整理……反正你把所有的记忆层都完成"). Notes kept chat by chat drift: the
 // same thing said three ways, an old fact never marked as changed when a newer one came in a different chat. Once a day at
@@ -10,6 +11,9 @@ import { refreshPortraits } from "./portraits.mjs";
 // Shared notes are never touched: they are the couple's, not one member's to rewrite.
 export const STATE_KIND = "memory_state";
 const DAY_MS = 24 * 60 * 60 * 1000, MIN_FACTS = 8;
+// One call never grows with the years (scale test 11-09: after three years one member's own notes were 111k characters in
+// a single call): the newest changed notes, and the older ones most likely to repeat or contradict them.
+export const BATCH_NEW = 60, BATCH_MAX = 120;
 const squash = (value, limit) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
 const schema = { type: "object", additionalProperties: false, required: ["merges", "outdated"], properties: {
   merges: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["keep", "drop", "text"], properties: { keep: { type: "string" }, drop: { type: "array", items: { type: "string" } }, text: { type: "string" } } } },
@@ -29,6 +33,22 @@ async function supersede(tx, userId, old, by, at) {
     draft.past = [...(draft.past || []), ...(old.past || []), { text: old.text, saidAt: said(old) || null, until: said(by) || at }].slice(-12);
     draft.version += 1;
   });
+}
+
+const changedSince = (note, since) => !since || String(note.createdAt) > since || String(note.updatedAt) > since;
+const kindOf = (note) => note.category === "history" ? "history" : "lasting";
+
+/** What one tidy looks at for a subject: everything when it fits, otherwise the newest changes and their likely matches. */
+export function batchFor(notes, since) {
+  if (notes.length <= BATCH_MAX) return notes;
+  const newest = (a, b) => said(b).localeCompare(said(a));
+  const head = notes.filter((note) => changedSince(note, since)).sort(newest).slice(0, BATCH_NEW);
+  const inHead = new Set(head.map((note) => note.id));
+  const words = { history: new Set(), lasting: new Set() };
+  for (const note of head) for (const term of terms(note.text)) words[kindOf(note)].add(term);
+  const scored = notes.filter((note) => !inHead.has(note.id)).map((note) => ({ note, score: terms(note.text).filter((term) => words[kindOf(note)].has(term)).length })).filter((entry) => entry.score > 0);
+  scored.sort((a, b) => b.score - a.score || newest(a.note, b.note));
+  return [...head, ...scored.slice(0, BATCH_MAX - head.length).map((entry) => entry.note)];
 }
 
 async function subjectsOf(store, userId) {
@@ -52,10 +72,11 @@ export async function tidyMemory({ store, mediator, userId, now = Date.now(), fo
   let tidied = 0;
   for (const [, notes] of await subjectsOf(store, userId)) {
     // Only where there is something new since the last tidy, and enough to be worth a call.
-    if (notes.length < MIN_FACTS || (since && !notes.some((note) => String(note.createdAt) > since || String(note.updatedAt) > since))) continue;
-    const byId = new Map(notes.map((note) => [note.id, note]));
-    const result = await mediator.structured({ name: "memory_tidy", schema, instructions, maxOutputTokens: 1500,
-      input: JSON.stringify({ notes: notes.map((note) => ({ id: note.id, category: note.category, text: squash(note.text, 200), saidOn: said(note).slice(0, 10) })) }) });
+    if (notes.length < MIN_FACTS || (since && !notes.some((note) => changedSince(note, since)))) continue;
+    const batch = batchFor(notes, since);
+    const byId = new Map(batch.map((note) => [note.id, note]));
+    const result = await mediator.structured({ name: "memory_tidy", schema, instructions, maxOutputTokens: 2000,
+      input: JSON.stringify({ notes: batch.map((note) => ({ id: note.id, category: note.category, text: squash(note.text, 200), saidOn: said(note).slice(0, 10) })) }) });
     const at = new Date(now).toISOString(), used = new Set();
     await store.transaction(`user:${userId}`, async (tx) => {
       for (const merge of Array.isArray(result?.merges) ? result.merges : []) {
