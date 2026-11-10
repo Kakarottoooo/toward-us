@@ -1,3 +1,4 @@
+import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
 import { listPeople, livePerson } from "./people.mjs";
@@ -48,7 +49,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   };
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
-    return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), messages: session.messages.map((message) => ({
+    return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), earlierPages: session.earlier?.length || 0, messages: session.messages.map((message) => ({
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
@@ -99,6 +100,14 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (!latest) throw fail(404, "No conversation yet.");
     res.json({ session: await output((await askToKnow(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
   });
+  // The earlier pages of a long conversation (oldest first within a page); page 1 is the most recent page.
+  router.get("/assistant/sessions/:id/earlier", async (req, res) => {
+    const session = await owned(store, req.params.id, req.auth.user.id);
+    const pages = session.earlier || [], page = Math.max(1, Math.min(pages.length, Number(req.query.page) || 1));
+    if (!pages.length) return res.json({ messages: [], pages: 0 });
+    const shown = await output({ ...session, earlier: [], messages: pages[pages.length - page].messages });
+    res.json({ messages: shown.messages, page, pages: pages.length });
+  });
   router.get("/assistant/sessions/:id", async (req, res) => {
     const session = await owned(store, req.params.id, req.auth.user.id);
     res.json({ session: await output((req.query.opened === "1" && ((await askToKnow(store, { userId: req.auth.user.id, session }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session }).catch(() => null)) || await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null))) || session) });
@@ -146,6 +155,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const result = await runTurn(userId, sessionId, body, { ...options, progress });
       // A promise said here stays this member's alone; it is noticed in the background once the chat goes quiet.
       if (!result.duplicate) { promises?.notePrivate(userId, sessionId); profile?.notePrivate(userId, sessionId); }
+      if ((result.session.earlier?.length || 0) > (result.session.summarizedPages || 0)) void summarizeEarlier({ store, mediator, userId, sessionId }).catch((error) => console.error("Could not summarise the earlier conversation:", error?.message || error));
       // "我和阿杰在一起了": the one moment Pinky asks whether someone is the one (founder 11-09, three stages).
       if (!result.duplicate) {
         const person = await togetherWith(store, userId, body?.text).catch(() => null);
@@ -166,7 +176,6 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if ((!text && !photoIds.length) || !itemId) throw fail(400, "Text and a unique itemId are required.");
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId); if (photo.ownerUserId !== userId || photo.visibility !== "private") throw fail(400, "Send photos from this conversation."); }
     if (session.messages.some((message) => message.itemId === itemId)) return { session, duplicate: true };
-    if (session.messages.length >= 200) throw fail(409, say(session.language, "这段对话已满，请开始新对话。", "Start a new conversation to continue.", "Inicia una nueva conversación para continuar."));
     const records = await available(store, userId);
     await ensureMomentSpaces(store, userId);
     const userMessage = { id: randomUUID(), role: "user", text, itemId, ...(photoIds.length ? { photoIds } : {}), createdAt: new Date().toISOString() };
@@ -179,6 +188,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text, openOn: session.partnerMessage.openOn || null } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
+      ...(session.earlierSummary ? { earlier: session.earlierSummary } : {}),
       openPromises: await openPromises(store, userId, session).catch(() => []),
       notTriedYet: await notTriedYet(store, userId, "me").catch(() => []),
       gettingToKnow: await gettingToKnow(store, userId).catch(() => false),
@@ -409,7 +419,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
@@ -554,7 +564,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
     if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!session) session = await createSession(userId, { language, timezone: "UTC" });
     const saved = await store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(cards?.length ? { cards } : card ? { cards: [card] } : {}), ...(call ? { call } : {}), ...(kind ? { kind } : {}), ...(personId ? { personId } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
+      keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(cards?.length ? { cards } : card ? { cards: [card] } : {}), ...(call ? { call } : {}), ...(kind ? { kind } : {}), ...(personId ? { personId } : {}), createdAt: new Date().toISOString() }]); draft.version += 1;
     }));
     // Private sessions carry no relationship id; route the event through the member's couple so their open app refreshes.
     const context = await store.getRelationshipContext(userId);

@@ -1,3 +1,4 @@
+import { keepMessages } from "./thread-pages.mjs";
 import { randomUUID } from "node:crypto";
 
 // "Do what you said": now and then, Pinky asks one member privately how a promise from their agreements is going. The
@@ -32,7 +33,7 @@ export async function askAboutPromise(store, { userId, session, now = new Date()
   const text = say(language, `你们约定里，你答应的“${promise.description}”，最近做到了吗？`, `In your agreement you said you'd "${promise.description}". How has it gone lately?`, `En su acuerdo dijiste que harías «${promise.description}». ¿Cómo te ha ido últimamente?`);
   return store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
     if (Object.values(draft.promiseChecks || {}).some((at) => String(at).slice(0, 10) === today)) return;
-    draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text, promiseCheck: { commitmentId: promise.id }, createdAt: now.toISOString() }].slice(-200);
+    keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text, promiseCheck: { commitmentId: promise.id }, createdAt: now.toISOString() }]);
     draft.promiseChecks = { ...(draft.promiseChecks || {}), [promise.id]: now.toISOString() }; draft.version += 1;
   }));
 }

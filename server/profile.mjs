@@ -1,3 +1,4 @@
+import { keepMessages } from "./thread-pages.mjs";
 import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
@@ -151,7 +152,7 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length) draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }].slice(-200);
+      if (changed.length) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { more, sessionId });
   });
@@ -204,7 +205,7 @@ export async function scanCall({ store, mediator, userId, sessionId, noteId, row
       ? `${notedText(language, changed, { userId, partnerName: scope.b })}${say(language, `。这些只有你能看到；想让 ${partnerName} 知道哪条，点这里去「关于我们」分享。`, `. Only you see these; tap here to choose any to share with ${partnerName} in About us.`, `. Solo tú los ves; toca aquí para elegir cuáles compartir con ${partnerName} en Sobre nosotros.`)}`
       : say(language, "这次通话没记下新的东西；想补充的，随时跟我说。", "Nothing new to keep from this call; tell me more any time.", "Nada nuevo que guardar de esta llamada; cuéntame más cuando quieras.");
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text, noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }].slice(-200);
+      keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text, noted: changed.map((item) => item.id), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { sessionId });
   });
@@ -241,7 +242,7 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
     const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings: person ? findings.filter((found) => found.subject !== "both") : findings, channel: "private", sessionId }, person ? [person] : []);
     if (changed.length) await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }].slice(-200);
+      keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { sessionId });
   });
