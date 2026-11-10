@@ -68,7 +68,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 /** The member's lines in time order: the case's history among ordinary days. */
 function timeline(item, thread) {
-  const lines = (item.history || []).filter((line) => line.thread === thread).map((line) => ({ day: line.day, text: line.text }));
+  const lines = (item.history || []).filter((line) => line.thread === thread).map((line) => ({ day: line.day, text: line.text, reply: line.reply }));
   const filler = item.filler?.thread === thread ? item.filler : null;
   if (filler) for (let index = 0; index < filler.count; index += 1) lines.push({ day: filler.from + (filler.to - filler.from) * (index / Math.max(1, filler.count - 1)), text: FILLER[index % FILLER.length] });
   return lines.sort((a, b) => a.day - b.day);
@@ -80,7 +80,7 @@ async function seed(userId, sessionId, lines) {
   for (let start = 0; start < lines.length; start += 40) {
     const chunk = lines.slice(start, start + 40).flatMap((line, index) => {
       const at = new Date(now + line.day * DAY + index * 1000);
-      return [{ id: randomUUID(), role: "user", text: line.text, itemId: randomUUID(), createdAt: at.toISOString() }, { id: randomUUID(), role: "assistant", text: "嗯，我在听。", createdAt: new Date(at.getTime() + 500).toISOString() }];
+      return [{ id: randomUUID(), role: "user", text: line.text, itemId: randomUUID(), createdAt: at.toISOString() }, { id: randomUUID(), role: "assistant", text: line.reply ?? "嗯，我在听。", createdAt: new Date(at.getTime() + 500).toISOString() }];
     });
     await store.transaction(`user:${userId}`, (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       if (!draft.profileScan) draft.profileScan = { at: new Date(0).toISOString() };
@@ -139,7 +139,7 @@ async function ask(setup, item) {
     const messages = result.session.messages, asked = messages.findLastIndex((message) => message.role === "user");
     const replies = messages.slice(asked + 1).filter((message) => message.role === "assistant" && !message.kind);
     const answer = replies.map((message) => message.text).join("\n"), cards = replies.flatMap((message) => (message.cards || []).map((card) => card.kind));
-    const verdict = await model.structured({ name: "memory_judge", schema: judgeSchema, instructions: judgeInstructions, input: JSON.stringify({ question: text, answer, must: item.expect.must, mustNot: item.expect.mustNot || [], abstain: Boolean(item.expect.abstain), record: [...(item.history || []).map((line) => ({ daysAgo: -line.day, text: line.text })), ...(item.notes || []).map((note) => ({ daysAgo: -note.day, text: `${note.about}: ${note.text}` }))] }), maxOutputTokens: 800 });
+    const verdict = await model.structured({ name: "memory_judge", schema: judgeSchema, instructions: `${judgeInstructions}\nA record with role assistant is what Pinky actually replied at that time, not what the member said. A date in the answer can be checked against the record's date.`, input: JSON.stringify({ question: text, answer, must: item.expect.must, mustNot: item.expect.mustNot || [], abstain: Boolean(item.expect.abstain), record: [...(item.history || []).flatMap((line) => [{ daysAgo: -line.day, date: new Date(Date.now() + line.day * DAY).toISOString().slice(0, 10), role: "user", text: line.text }, ...(line.reply === undefined ? [] : [{ daysAgo: -line.day, date: new Date(Date.now() + line.day * DAY).toISOString().slice(0, 10), role: "assistant", text: line.reply }])]), ...(item.notes || []).map((note) => ({ daysAgo: -note.day, text: `${note.about}: ${note.text}` }))] }), maxOutputTokens: 800 });
     answers.push({ asked: text, answer, cards, verdict, grade: grade(item, verdict) });
   }
   return answers;

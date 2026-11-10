@@ -3,7 +3,7 @@
 // pages), then asks one question and grades the answer against what must and must not be in it.
 //
 // history: { day: days ago (negative), thread: "main" | a person's name (their own conversation) | "partner" (B's own),
-//            text: what the member said }. Pinky's replies in between are a short acknowledgement.
+//            text: what the member said, reply?: what Pinky replied }. Without reply, Pinky gives a short acknowledgement.
 // filler:  { count, from, to, thread } neutral daily lines spread over that time, so facts sit among ordinary talk.
 // probe:   { as: "me" | "partner", thread: "main" | a person's name, text, repeat }.
 // expect:  must: points the answer has to make; mustNot: what it must never say or imply; abstain: it should say it
@@ -24,6 +24,27 @@ export const CATEGORIES = {
 };
 
 export const cases = [
+  { id: "recall-paired-advice", category: "recall", people: [],
+    history: [{ day: -180, thread: "main", text: "我想和小闻谈分担家务，但怕一开口又吵，该怎么说？", reply: "先选双方不赶时间的时候，只说这周的一个具体例子，再提出：这周三我洗碗，你倒垃圾，我们试一周再调整。" }],
+    filler: { count: 110, from: -175, to: -2, thread: "main" },
+    probe: { thread: "main", text: "我以前问过你怎么和小闻谈分担家务，我当时问了什么，你具体怎么回答的？" },
+    expect: { must: ["说明旧对话的日期", "说明当时问的是怎么谈分担家务又避免吵架", "回忆当时建议选不赶时间的时候、举一个具体例子", "回忆具体建议是周三我洗碗、对方倒垃圾，试一周再调整"], mustNot: ["把新的建议冒充当时的原话", "把 Pinky 的回答说成用户说过或已经执行的事实"] } },
+  { id: "recall-assistant-keyword", category: "recall", people: [],
+    history: [{ day: -190, thread: "main", text: "每次说到周末安排我们就闹别扭，我怎样才能先听懂对方呢？", reply: "可以试试我叫作“双人天气预报”的小练习：两个人各说一句现在的心情，不评判，先复述对方的话，再商量一个都能接受的小安排。" }],
+    filler: { count: 110, from: -185, to: -2, thread: "main" },
+    probe: { thread: "main", text: "之前你说过一个“双人天气预报”的小练习，是我问了什么之后你说的？把当时的问答和日期一起找回来。" },
+    expect: { must: ["说明旧对话的日期", "回忆用户因周末安排闹别扭，问怎样先听懂对方", "回忆 Pinky 说的双人天气预报练习：各说心情、先复述、不评判，再商量小安排"], mustNot: ["把练习说成实际天气预报", "编造当时的问题"] } },
+  { id: "recall-advice-changed", category: "update", people: [],
+    history: [
+      { day: -160, thread: "main", text: "小闻说可以每周日聊十五分钟，复盘这周有没有互相照顾好。我怕自己会说成批评，怎么开始？", reply: "先各说一件感谢对方的事，再讲一件下周希望调整的小事。周日先试十五分钟，到时可以再调整频率。" },
+      { day: -2, thread: "main", text: "后来小闻周日要值班了，我们已经把复盘改到周二晚饭后，不再是周日。", reply: "明白，你们现在是周二晚饭后复盘，旧的周日安排已经不适用了。" }],
+    filler: { count: 110, from: -155, to: -3, thread: "main" },
+    probe: { thread: "main", text: "我最早问你周日复盘怎么开始时，你怎么回答的？请把当时的问题、建议和日期找回来，也分清现在我们改成哪天了。" },
+    expect: { must: ["说明旧对话日期和用户担心复盘说成批评的问题", "回忆当时建议先感谢对方一件事，再提下周想调整的小事", "分清当时每周日十五分钟与现在周二晚饭后的安排"], mustNot: ["把周日说成现在仍然有效的安排", "声称当时就建议周二"] } },
+  { id: "recall-answer-not-found", category: "abstain", people: [],
+    history: [{ day: -90, thread: "main", text: "今天和小闻去公园散步了。", reply: "听起来是个轻松的下午。" }],
+    probe: { thread: "main", text: "我之前问过你要不要和小闻移居冰岛，你当时具体怎么回答的？找出那段问答和日期。" },
+    expect: { must: ["明确说没有找到关于移居冰岛的旧问答，不能确认当时怎么回答的"], mustNot: ["编造曾经讨论移居冰岛的日期、问题或回答"], abstain: true } },
   { id: "recall-job-8-months", category: "recall", people: ["Lin"],
     history: [{ day: -240, thread: "main", text: "Lin 是在字节做产品经理的，平时加班很多" }],
     filler: { count: 160, from: -235, to: -3, thread: "main" },
