@@ -670,7 +670,7 @@ ${text}` : text, target);
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      {channel === "me" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => open("/?view=people&tab=compare")} onAdd={() => fileRef.current?.click()} />}
+      {channel === "me" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => open("/?view=people")} onAdd={() => fileRef.current?.click()} />}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
