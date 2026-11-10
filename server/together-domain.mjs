@@ -1,5 +1,5 @@
 import { keepMessages } from "./thread-pages.mjs";
-import { prefetchRecall, searchMemoryResults } from "./memory-search.mjs";
+import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
 import { citedReply } from "./conversation-recall.mjs";
 import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
@@ -230,7 +230,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   // Each member's own time zone (异地), so a plan to watch together can name the time on both sides.
   const zones = Object.fromEntries((await Promise.all(members.map(async (member) => [member.name, await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, member.id)).catch(() => null)]))).filter(([, value]) => value));
   const recalled = await prefetchRecall({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id }, text).catch(() => null);
-  if (recalled) context.lookups = [{ query: text, findings: recalled.findings }];
+  if (recalled) context.lookups = [recallLookup(recalled, text)];
   let turn = await mediator.continueTogether({ ...context, today, ...(Object.keys(zones).length ? { timezones: zones } : {}), webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const recallSources = recalled?.sources || [];
@@ -240,7 +240,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     progress(web ? "searching_web" : "searching_chats", web?.text || null);
     const sharedImport = async (id) => (await store.relationshipSnapshotForUser(actorUserId)).chatImports?.find((item) => item.id === id && item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt);
     const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
-      ? { query: action.text || action.date || "", findings: await searchMemoryResults({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id, query: action.text || "", date: action.date || "" }).then((result) => { recallSources.push(...result.sources); return result.findings; }).catch(() => "The search failed. Say the search failed, not that no record exists.") }
+      ? await searchMemoryResults({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id, query: action.text || "", date: action.date || "" }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, action.text || action.date || ""); }).catch(() => ({ query: action.text, findings: "The search failed. Say the search failed, not that no record exists." }))
       : action.kind === "chat_search"
       ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
       : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));

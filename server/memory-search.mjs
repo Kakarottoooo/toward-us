@@ -32,6 +32,10 @@ export async function prefetchRecall(options, text) {
   return result.sources.length ? result : null;
 }
 
+export function recallLookup(result, query) {
+  return { query, findings: result.findings, ...(result.sources.length ? { citationRule: "Use only exchanges answering the question. If none do, say no matching record; omit unrelated exchanges. For EVERY exchange used, append its EXACT [recall:...] tag to reply. The app hides the tag and renders a source button; without it the user cannot open the original. Copy the tag from findings, never invent one." } : {}) };
+}
+
 // Pair before ranking, including a turn split across two storage pages. Never attach the next question to an answer.
 export function conversationTurns(messages) {
   const turns = [];

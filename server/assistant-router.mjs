@@ -1,7 +1,7 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
-import { prefetchRecall, searchMemoryResults } from "./memory-search.mjs";
+import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
 import { citedReply, locateConversation, readableConversation, conversationMessages } from "./conversation-recall.mjs";
 import { listPeople, livePerson } from "./people.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
@@ -223,7 +223,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan; const recallSources = [];
     const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
-    if (recalled) { context.lookups = [{ query: text, findings: recalled.findings }]; recallSources.push(...recalled.sources); }
+    if (recalled) { context.lookups = [recallLookup(recalled, text)]; recallSources.push(...recalled.sources); }
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
@@ -249,7 +249,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
       const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
-        ? { query: `their own past conversations and notes: ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); return result.findings; }).catch(() => "The search failed. Say the search failed, not that no record exists.") }
+        ? await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, `${action.query || ""} ${action.fields?.date || ""}`.trim()); }).catch(() => ({ query: action.query, findings: "The search failed. Say the search failed, not that no record exists." }))
         : action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
