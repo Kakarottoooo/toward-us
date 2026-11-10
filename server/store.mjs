@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createPostgresStore } from "./postgres-store.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
@@ -26,20 +26,130 @@ export async function createStore(filePath, databaseUrl = process.env.DATABASE_U
   return createFileStore(filePath);
 }
 
-export async function createFileStore(filePath) {
+// Values in the committed state are frozen and never changed in place, so a transaction copies only what it changes
+// (founder 11-10, after the scale test: a turn copied and rewrote the whole file, so it slowed as data grew).
+const freeze = (value) => {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value)) freeze(child); }
+  return value;
+};
+/** A caller's own copy. A conversation's older pages never change once written, so they are shared, not copied. */
+export const copyEntry = (value) => {
+  if (!value || typeof value !== "object" || !Array.isArray(value.earlier)) return structuredClone(value);
+  const { earlier, ...rest } = value;
+  return { ...structuredClone(rest), earlier: [...earlier] };
+};
+const MAPS = Object.keys(EMPTY_STATE()).filter((key) => key !== "version" && key !== "relationshipGraph");
+
+/**
+ * The file store keeps everything in memory, the whole of it in `filePath`, and each committed transaction's changes as
+ * one line appended to `filePath.journal`. The log is folded into the file once it grows, and on every start, so the
+ * file alone is whole after a restart. Each fold has a generation; lines of an older one are ignored.
+ */
+export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } = {}) {
   await mkdir(dirname(filePath), { recursive: true });
+  const journalPath = `${filePath}.journal`;
   let committedState = EMPTY_STATE();
   const transactions = new AsyncLocalStorage();
   let transactionQueue = Promise.resolve();
   const state = () => transactions.getStore()?.state || committedState;
+  let generation = 0, journalBytes = 0, foldAt = foldBytes, onDisk = false;
 
   try {
-    const parsed = JSON.parse(await readFile(filePath, "utf8"));
+    const text = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(text);
+    generation = Number(parsed.journalGeneration) || 0; onDisk = true; foldAt = Math.max(foldBytes, text.length / 2);
+    delete parsed.journalGeneration;
     committedState = { ...EMPTY_STATE(), ...parsed, version: 5 };
     state().relationshipGraph = Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, parsed.relationshipGraph?.[collection] || {}]));
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
+  const mapAt = (root, path) => path.startsWith("graph.") ? root.relationshipGraph[path.slice(6)] : root[path];
+  let replayed = 0;
+  try {
+    // A line cut off by a crash, or written by a transaction that then failed, does not parse and is skipped.
+    for (const line of (await readFile(journalPath, "utf8")).split("\n")) {
+      if (!line.trim()) continue;
+      let entry; try { entry = JSON.parse(line); } catch { continue; }
+      if (entry?.g !== generation || !Array.isArray(entry.c)) continue;
+      for (const [path, key, value, from, added] of entry.c) {
+        const map = mapAt(committedState, path); if (!map) continue;
+        if (value === undefined) { delete map[key]; continue; }
+        if (from !== undefined) value.earlier = [...(map[key]?.earlier || []).slice(0, from), ...added];
+        map[key] = value;
+      }
+      replayed += 1;
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  freeze(committedState);
+
+  const fold = async (whole) => {
+    const text = JSON.stringify({ ...whole, journalGeneration: generation + 1 });
+    await writeFile(`${filePath}.tmp`, text, "utf8");
+    await rename(`${filePath}.tmp`, filePath);
+    generation += 1; onDisk = true; journalBytes = 0; foldAt = Math.max(foldBytes, text.length / 2);
+    await writeFile(journalPath, "", "utf8");
+  };
+  if (replayed) await fold(committedState);
+
+  /** A transaction's view: each map is copied (keys only) the first time it is touched; entries are copied by `own`. */
+  const begin = () => {
+    const base = committedState, targets = new Map(), views = new Map(), changed = new Map();
+    const mark = (path, key) => { if (!changed.has(path)) changed.set(path, new Set()); changed.get(path).add(key); };
+    const view = (path) => {
+      if (!views.has(path)) {
+        const target = { ...mapAt(base, path) };
+        targets.set(path, target);
+        views.set(path, new Proxy(target, {
+          set(object, key, value) { object[key] = value; mark(path, key); return true; },
+          deleteProperty(object, key) { delete object[key]; mark(path, key); return true; },
+        }));
+      }
+      return views.get(path);
+    };
+    const graph = {}, current = { version: base.version, relationshipGraph: graph };
+    for (const key of Object.keys(base)) if (!MAPS.includes(key) && key !== "relationshipGraph" && key !== "version") current[key] = base[key];
+    for (const key of MAPS) Object.defineProperty(current, key, { enumerable: true, get: () => view(key) });
+    for (const collection of GRAPH_COLLECTIONS) Object.defineProperty(graph, collection, { enumerable: true, get: () => view(`graph.${collection}`) });
+    return { state: current, base, targets, changed, owned: new Map(), dirty: false };
+  };
+  /** The entry `map[key]` as this transaction's own copy, safe to change. */
+  const own = (map, key) => {
+    const context = transactions.getStore();
+    if (!context) throw new Error("Changes to the store need a transaction.");
+    if (!context.owned.has(map)) context.owned.set(map, new Set());
+    const keys = context.owned.get(map);
+    if (!keys.has(key) && map[key] !== undefined) { map[key] = copyEntry(map[key]); keys.add(key); }
+    return map[key];
+  };
+  const commit = async (context) => {
+    const next = { ...context.base, relationshipGraph: { ...context.base.relationshipGraph } }, changes = [];
+    for (const [path, keys] of context.changed) {
+      const target = context.targets.get(path), before = mapAt(context.base, path);
+      for (const key of keys) {
+        const value = target[key];
+        if (value === undefined) { changes.push([path, key]); continue; }
+        freeze(value);
+        // Pages already written are named by count, not written again.
+        const old = before[key]?.earlier;
+        if (Array.isArray(value.earlier) && Array.isArray(old) && value.earlier.length >= old.length && old.every((page, index) => value.earlier[index] === page)) {
+          const { earlier, ...rest } = value;
+          changes.push([path, key, rest, old.length, earlier.slice(old.length)]);
+        } else changes.push([path, key, value]);
+      }
+      if (path.startsWith("graph.")) next.relationshipGraph[path.slice(6)] = target; else next[path] = target;
+    }
+    if (!changes.length) return;
+    if (!onDisk) { await fold(next); committedState = next; return; }
+    // Each line starts on its own line, so one cut off by a crash never swallows the next.
+    const line = `\n${JSON.stringify({ g: generation, c: changes })}`;
+    await appendFile(journalPath, line, "utf8");
+    journalBytes += line.length;
+    committedState = next;
+    if (journalBytes > foldAt) await fold(next).catch((error) => console.error("Could not fold the store's change log; it stays safe in the log:", error?.message || error));
+  };
 
   const persist = async () => { if (transactions.getStore()) transactions.getStore().dirty = true; };
   const transaction = async (_key, callback) => {
@@ -48,16 +158,11 @@ export async function createFileStore(filePath) {
     let release;
     transactionQueue = new Promise((resolve) => { release = resolve; });
     await previous;
-    const context = { state: structuredClone(committedState), dirty: false };
+    const context = begin();
     try {
       return await transactions.run(context, async () => {
         const result = await callback(store);
-        if (context.dirty) {
-          // Compact: after years of conversations the indented file took twice as long to write (scale test 11-09).
-          await writeFile(`${filePath}.tmp`, JSON.stringify(context.state), "utf8");
-          await rename(`${filePath}.tmp`, filePath);
-          committedState = context.state;
-        }
+        if (context.dirty) await commit(context);
         return result;
       });
     } finally { release(); }
@@ -81,7 +186,7 @@ export async function createFileStore(filePath) {
   };
 
   // Sendblue cannot remove anyone from a group, so a member's number leaving the account retires the couple's group.
-  const dropCoupleGroup = (userId) => { const relationship = state().relationships[state().memberships[userId]?.relationshipId]; if (relationship?.imessageGroupId) relationship.imessageGroupId = null; };
+  const dropCoupleGroup = (userId) => { const id = state().memberships[userId]?.relationshipId; if (state().relationships[id]?.imessageGroupId) own(state().relationships, id).imessageGroupId = null; };
 
   const implementation = {
     kind: "file",
@@ -107,18 +212,18 @@ export async function createFileStore(filePath) {
       return { ...session };
     },
     async deleteUserSessions(userId) { for (const [id, session] of Object.entries(state().sessions)) if (session.userId === userId) delete state().sessions[id]; await persist(); },
-    async updateUserPassword(userId, passwordHash) { if (!state().users[userId]) return false; state().users[userId].passwordHash = passwordHash; await persist(); return true; },
-    async updateUserLanguage(userId, language) { if (!state().users[userId]) return false; state().users[userId].language = language; await persist(); return true; },
+    async updateUserPassword(userId, passwordHash) { if (!state().users[userId]) return false; own(state().users, userId).passwordHash = passwordHash; await persist(); return true; },
+    async updateUserLanguage(userId, language) { if (!state().users[userId]) return false; own(state().users, userId).language = language; await persist(); return true; },
     async leaveRelationship(userId) {
       const context = relationshipContext(userId); if (!context) return null;
       const id = context.relationship.id;
       const members = context.members.map(({ user, ...member }) => member);
       state().formerMemberships[id] = members;
-      state().relationships[id].status = "ended"; state().relationships[id].imessageGroupId = null; state().relationships[id].updatedAt = new Date().toISOString();
-      for (const invitation of Object.values(state().invitations)) if (invitation.relationshipId === id) invitation.expiresAt = new Date().toISOString();
+      Object.assign(own(state().relationships, id), { status: "ended", imessageGroupId: null, updatedAt: new Date().toISOString() });
+      for (const [code, invitation] of Object.entries(state().invitations)) if (invitation.relationshipId === id) own(state().invitations, code).expiresAt = new Date().toISOString();
       for (const member of members) delete state().memberships[member.userId];
-      for (const collection of ["privateAgentThreads", "memories", "checkins"]) for (const record of Object.values(state().relationshipGraph[collection])) {
-        if (record.relationshipId === id && record.visibility === "private") { record.relationshipId = null; record.previousRelationshipId = id; record.status = "closed"; record.aiAccessScope = "none"; record.version += 1; }
+      for (const collection of ["privateAgentThreads", "memories", "checkins"]) for (const [key, found] of Object.entries(state().relationshipGraph[collection])) {
+        if (found.relationshipId === id && found.visibility === "private") { const record = own(state().relationshipGraph[collection], key); record.relationshipId = null; record.previousRelationshipId = id; record.status = "closed"; record.aiAccessScope = "none"; record.version += 1; }
       }
       await persist(); return { relationshipId: id, memberIds: members.map((member) => member.userId) };
     },
@@ -164,7 +269,7 @@ export async function createFileStore(filePath) {
       }
       // The streak's showed-up days (accountSettings "showedup:…") are this person's activity: they go with private data.
       for (const [id, record] of Object.entries(state().relationshipGraph.accountSettings)) if (record.ownerUserId === userId && id.startsWith("showedup:")) { delete state().relationshipGraph.accountSettings[id]; deleted += 1; }
-      for (const room of Object.values(state().rooms)) if (room.analysis?.private) delete room.analysis.private[userId];
+      for (const [code, room] of Object.entries(state().rooms)) if (room.analysis?.private && Object.hasOwn(room.analysis.private, userId)) delete own(state().rooms, code).analysis.private[userId];
       await persist(); return deleted;
     },
     async deleteAccount(userId) {
@@ -173,10 +278,13 @@ export async function createFileStore(filePath) {
       const phone = implementation.getPhoneForUser(userId);
       for (const [hash, link] of Object.entries(state().phoneLinks)) if (link.phone === phone) delete state().phoneLinks[hash];
       await store.unbindPhone(userId);
-      const user = state().users[userId]; if (!user) return false;
+      if (!state().users[userId]) return false;
+      const user = own(state().users, userId);
       delete state().userByEmail[user.email]; user.email = `${userId}@deleted.invalid`; user.name = "Deleted user"; user.passwordHash = "deleted";
-      for (const room of Object.values(state().rooms)) {
-        const participantIds = new Set((room.participants || []).filter((person) => person.userId === userId).map((person) => person.id));
+      for (const [code, found] of Object.entries(state().rooms)) {
+        const participantIds = new Set((found.participants || []).filter((person) => person.userId === userId).map((person) => person.id));
+        if (!participantIds.size && !(found.aiConversation || []).some((message) => message.userId === userId)) continue;
+        const room = own(state().rooms, code);
         for (const person of room.participants || []) if (participantIds.has(person.id)) person.name = "Deleted user";
         room.messages = (room.messages || []).filter((message) => !participantIds.has(message.participantId));
         room.aiConversation = (room.aiConversation || []).filter((message) => message.userId !== userId && !participantIds.has(message.participantId));
@@ -189,7 +297,7 @@ export async function createFileStore(filePath) {
     async bindRelationshipGroup(relationshipId, groupId) {
       const relationship = state().relationships[relationshipId];
       if (!relationship || relationship.status !== "active" || relationship.imessageGroupId) return false;
-      relationship.imessageGroupId = groupId; await persist(); return true;
+      own(state().relationships, relationshipId).imessageGroupId = groupId; await persist(); return true;
     },
     async createInvitation({ relationship, membership, invitation }) {
       if (state().memberships[membership.userId]) return null;
@@ -201,22 +309,24 @@ export async function createFileStore(filePath) {
     },
     getInvitation(code) { return state().invitations[code] ? { ...state().invitations[code] } : null; },
     async acceptInvitation(code, userId, acceptedAt) {
-      const invitation = state().invitations[code];
-      if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId) return null;
-      const relationship = state().relationships[invitation.relationshipId];
-      if (!relationship || relationship.status !== "pending") return null;
+      if (!state().invitations[code]) return null;
+      const invitation = own(state().invitations, code);
+      if (invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId) return null;
+      if (state().relationships[invitation.relationshipId]?.status !== "pending") return null;
+      const relationship = own(state().relationships, invitation.relationshipId);
       // Someone who made an invite of their own and then accepts their partner's: their solo, still-pending space ends
       // and they join. Their own private records come along, still private; anything else stays with the ended space.
-      const own = state().memberships[userId];
-      if (own) {
-        const solo = state().relationships[own.relationshipId];
-        if (solo?.status !== "pending" || Object.values(state().memberships).some((member) => member.relationshipId === solo.id && member.userId !== userId)) return null;
-        state().formerMemberships[solo.id] = [{ ...own }];
+      const mine = state().memberships[userId];
+      if (mine) {
+        const found = state().relationships[mine.relationshipId];
+        if (found?.status !== "pending" || Object.values(state().memberships).some((member) => member.relationshipId === found.id && member.userId !== userId)) return null;
+        const solo = own(state().relationships, found.id);
+        state().formerMemberships[solo.id] = [{ ...mine }];
         solo.status = "ended"; solo.updatedAt = acceptedAt;
-        for (const item of Object.values(state().invitations)) if (item.relationshipId === solo.id && !item.acceptedAt) item.expiresAt = acceptedAt;
+        for (const [key, item] of Object.entries(state().invitations)) if (item.relationshipId === solo.id && !item.acceptedAt) own(state().invitations, key).expiresAt = acceptedAt;
         delete state().memberships[userId];
-        for (const collection of GRAPH_COLLECTIONS) for (const record of Object.values(state().relationshipGraph[collection])) {
-          if (record.relationshipId === solo.id && record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) record.relationshipId = relationship.id;
+        for (const collection of GRAPH_COLLECTIONS) for (const [key, record] of Object.entries(state().relationshipGraph[collection])) {
+          if (record.relationshipId === solo.id && record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) own(state().relationshipGraph[collection], key).relationshipId = relationship.id;
         }
       }
       state().memberships[userId] = { userId, relationshipId: relationship.id, role: "B", joinedAt: acceptedAt };
@@ -235,9 +345,9 @@ export async function createFileStore(filePath) {
       return room && membership?.relationshipId === room.relationshipId ? structuredClone(room) : null;
     },
     async updateRoomForUser(code, userId, updater) {
-      const room = state().rooms[code];
       const membership = state().memberships[userId];
-      if (!room || membership?.relationshipId !== room.relationshipId) return null;
+      if (!state().rooms[code] || membership?.relationshipId !== state().rooms[code].relationshipId) return null;
+      const room = own(state().rooms, code);
       await updater(room);
       room.updatedAt = new Date().toISOString();
       await persist();
@@ -258,8 +368,8 @@ export async function createFileStore(filePath) {
     },
     getDemoRoom(code) { return state().demoRooms[code] ? structuredClone(state().demoRooms[code]) : null; },
     async updateDemoRoom(code, updater) {
-      const room = state().demoRooms[code];
-      if (!room) return null;
+      if (!state().demoRooms[code]) return null;
+      const room = own(state().demoRooms, code);
       await updater(room);
       room.updatedAt = new Date().toISOString();
       await persist();
@@ -273,8 +383,8 @@ export async function createFileStore(filePath) {
       if (changed) await persist();
     },
     async finalizeDemoRoom(demoCode, { relationship, memberships, room, convertedAt }) {
-      const demo = state().demoRooms[demoCode];
-      if (!demo || demo.status !== "active" || memberships.some((membership) => state().memberships[membership.userId])) return null;
+      if (!state().demoRooms[demoCode] || state().demoRooms[demoCode].status !== "active" || memberships.some((membership) => state().memberships[membership.userId])) return null;
+      const demo = own(state().demoRooms, demoCode);
       state().relationships[relationship.id] = structuredClone(relationship);
       for (const membership of memberships) state().memberships[membership.userId] = structuredClone(membership);
       state().rooms[room.code] = structuredClone(room);
@@ -289,31 +399,30 @@ export async function createFileStore(filePath) {
       assertCollection(collection);
       assertRecordScope(collection, record);
       if (state().relationshipGraph[collection][record.id]) throw Object.assign(new Error("Duplicate record."), { code: "23505" });
-      state().relationshipGraph[collection][record.id] = structuredClone(record);
+      state().relationshipGraph[collection][record.id] = copyEntry(record);
       await persist();
-      return structuredClone(record);
+      return copyEntry(record);
     },
     getRelationshipRecordForUser(collection, id, userId) {
       assertCollection(collection);
       const record = state().relationshipGraph[collection][id];
       const membership = state().memberships[userId];
-      return accessibleRecord(collection, record, userId) ? structuredClone(record) : null;
+      return accessibleRecord(collection, record, userId) ? copyEntry(record) : null;
     },
     listRelationshipRecordsForUser(collection, userId) {
       assertCollection(collection);
       const relationshipId = state().memberships[userId]?.relationshipId;
-      return Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map((record) => structuredClone(record));
+      return Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map(copyEntry);
     },
     async updateRelationshipRecordForUser(collection, id, userId, updater) {
       assertCollection(collection);
-      const record = state().relationshipGraph[collection][id];
-      const membership = state().memberships[userId];
-      if (!accessibleRecord(collection, record, userId)) return null;
+      if (!accessibleRecord(collection, state().relationshipGraph[collection][id], userId)) return null;
+      const record = own(state().relationshipGraph[collection], id);
       await updater(record);
       assertRecordScope(collection, record);
       record.updatedAt = new Date().toISOString();
       await persist();
-      return structuredClone(record);
+      return copyEntry(record);
     },
     async deleteRelationshipRecordForUser(collection, id, userId) {
       assertCollection(collection);
@@ -322,11 +431,11 @@ export async function createFileStore(filePath) {
       delete state().relationshipGraph[collection][id]; await persist(); return true;
     },
     async listRelationshipsForJob() { return Object.values(state().relationships).map((relationship) => ({ ...relationship })); },
-    async listRecordsForJob(collection) { assertCollection(collection); return Object.values(state().relationshipGraph[collection]).map((record) => structuredClone(record)); },
+    async listRecordsForJob(collection) { assertCollection(collection); return Object.values(state().relationshipGraph[collection]).map(copyEntry); },
     async relationshipSnapshotForUser(userId) {
       const relationshipId = state().memberships[userId]?.relationshipId;
       // Metering rows and archived Us history stay out of every snapshot; archives are read on demand by together-domain.
-      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage", "togetherArchives", "matches", "purchases", "betaCodes"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map((record) => structuredClone(record))]));
+      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage", "togetherArchives", "matches", "purchases", "betaCodes"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map(copyEntry)]));
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,
