@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { randomUUID } from "node:crypto";
 
-const { values: options } = parseArgs({ options: { years: { type: "string", default: "3" }, "per-day": { type: "string", default: "30" }, label: { type: "string", default: "run" } } });
+const { values: options } = parseArgs({ options: { years: { type: "string", default: "3" }, "per-day": { type: "string", default: "30" }, label: { type: "string", default: "run" }, keep: { type: "boolean", default: false } } });
 const YEARS = Number(options.years), PER_DAY = Number(options["per-day"]), DAYS = Math.round(YEARS * 365), DAY = 86400000;
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const directory = join(process.cwd(), "work", "memory-scale", `${options.label}-${stamp}`);
@@ -110,6 +110,17 @@ const jie = (await call("/assistant/sessions", { language: "zh", timezone: "Asia
 await step("open main conversation", () => call("/assistant/sessions", { language: "zh", timezone: "Asia/Shanghai" }, cookie));
 await step("load latest conversation", () => call("/assistant/sessions/latest", null, cookie));
 await step("one turn, main (Pinky brain)", () => call(`/assistant/sessions/${mainId}/messages`, { text: "我最近和阿杰有点别扭，你怎么看？", itemId: randomUUID() }, cookie));
+// What one turn asks of the store.
+{
+  const counts = {}, original = { transaction: store.transaction, list: store.listRelationshipRecordsForUser };
+  store.transaction = async (...args) => { const started = performance.now(); try { return await original.transaction(...args); } finally { counts.transactionMs = (counts.transactionMs || 0) + performance.now() - started; counts.transactions = (counts.transactions || 0) + 1; } };
+  store.listRelationshipRecordsForUser = (collection, ...rest) => { const started = performance.now(); const value = original.list(collection, ...rest); counts[`list ${collection}`] = (counts[`list ${collection}`] || 0) + 1; counts.listMs = (counts.listMs || 0) + performance.now() - started; return value; };
+  await call(`/assistant/sessions/${mainId}/messages`, { text: "再说说阿杰吧", itemId: randomUUID() }, cookie);
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  Object.assign(store, original);
+  results.turnStore = Object.fromEntries(Object.entries(counts).map(([key, value]) => [key, Math.round(value)]));
+  console.log("  store work in one turn (incl. background):", JSON.stringify(results.turnStore));
+}
 const sizes = (context) => Object.entries(context || {}).map(([key, value]) => [key, JSON.stringify(value ?? null).length]).sort((a, b) => b[1] - a[1]);
 results.mainContext = sizes(lastContext); console.log("  main context by part:", results.mainContext.slice(0, 10).map(([key, size]) => `${key} ${(size / 1000).toFixed(1)}k`).join(", "));
 if (lastContext?.profile) { results.profileParts = sizes(lastContext.profile); console.log("  profile by part:", results.profileParts.slice(0, 8).map(([key, size]) => `${key} ${(size / 1000).toFixed(1)}k`).join(", ")); }
@@ -121,11 +132,24 @@ await step("one person's page", () => call(`/people/${people["阿杰"].id}`, nul
 await step("memory list (关于我们)", () => call("/memories", null, cookie));
 await step("memory search, words", async () => { const found = await searchMemory({ store, userId, query: "看海 火锅" }); return { bytes: found.length }; });
 await step("memory search, a day", async () => { const found = await searchMemory({ store, userId, date: new Date(now - 400 * DAY).toISOString().slice(0, 10) }); return { bytes: found.length }; });
+await step("store: list conversations", async () => ({ bytes: JSON.stringify(await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).length }));
+await step("store: list notes", async () => ({ bytes: JSON.stringify(await store.listRelationshipRecordsForUser("memories", userId)).length }));
 await step("store write (one small change)", () => store.transaction(`user:${userId}`, (tx) => tx.updateRelationshipRecordForUser("memories", notes[0].id, userId, (draft) => { draft.version += 1; })));
 await step("background tidy (all subjects)", async () => ({ tidied: await tidyMemory({ store, mediator, userId, force: true }) }), 1);
-await step("portraits (all due)", async () => { await store.transaction(`user:${userId}`, async (tx) => { for (const item of (await tx.listRelationshipRecordsForUser("memories", userId)).filter((entry) => entry.kind === "portrait")) await tx.updateRelationshipRecordForUser("memories", item.id, userId, (draft) => { draft.basis = "stale"; draft.builtAt = "2000-01-01T00:00:00Z"; draft.version += 1; }); }); return { built: (await refreshPortraits({ store, mediator, userId })).length }; }, 1);
+// A redraw after a few days of new notes (the usual case), then one that must start over because a note was removed.
+await step("portraits, after new notes", async () => {
+  await store.transaction(`user:${userId}`, async (tx) => {
+    for (const subject of [userId, personSubject(people[LIVE[0]].id)]) for (let index = 0; index < 10; index += 1) await tx.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId, ownerUserId: userId, visibility: "private", aiAccessScope: "private", status: "active", kind: "profile", subjectUserId: subject, category: "likes", text: `新记下的第 ${index} 件事`, evidence: { channel: "private", saidAt: new Date().toISOString() } }));
+  });
+  return { built: (await refreshPortraits({ store, mediator, userId })).length };
+}, 1);
+await step("portraits, start over after a removal", async () => {
+  await store.transaction(`user:${userId}`, (tx) => tx.updateRelationshipRecordForUser("memories", notes.find((note) => note.subjectUserId === userId).id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }));
+  await store.transaction(`user:${userId}`, async (tx) => { for (const item of (await tx.listRelationshipRecordsForUser("memories", userId)).filter((entry) => entry.kind === "portrait")) await tx.updateRelationshipRecordForUser("memories", item.id, userId, (draft) => { draft.builtAt = new Date(Date.now() - 4 * DAY).toISOString(); draft.version += 1; }); });
+  return { built: (await refreshPortraits({ store, mediator, userId })).length };
+}, 1);
 
 await writeFile(join(directory, "..", `${options.label}-${stamp}.json`), JSON.stringify(results, null, 2));
 server.closeAllConnections(); await new Promise((resolve) => server.close(resolve));
-await rm(directory, { recursive: true, force: true });
+if (!options.keep) await rm(directory, { recursive: true, force: true }); else console.log(`kept ${storePath}`);
 process.exit(0);
