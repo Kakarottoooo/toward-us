@@ -138,7 +138,7 @@ async function ask(setup, item) {
     const usageStart = usage.length;
     const { result } = await call(`/assistant/sessions/${sessionId}/messages`, { text, itemId: randomUUID() }, asker.cookie);
     const quoted = JSON.stringify(text).slice(1, -1);
-    const plannerUsage = usage.slice(usageStart).filter((event) => event.name === "private_assistant_operations" && event.prompt.includes(quoted)).map(({ usage, usd }) => ({ usage, usd }));
+    const plannerUsage = usage.slice(usageStart).filter((event) => event.name === "private_assistant_operations" && event.prompt.includes(quoted)).map(({ usage, usd, prompt, text }) => ({ usage, usd, lookups: JSON.parse(prompt).lookups || [], text }));
     const messages = result.session.messages, asked = messages.findLastIndex((message) => message.role === "user");
     const replies = messages.slice(asked + 1).filter((message) => message.role === "assistant" && !message.kind);
     const answer = replies.map((message) => message.text).join("\n"), cards = replies.flatMap((message) => (message.cards || []).map((card) => card.kind));
