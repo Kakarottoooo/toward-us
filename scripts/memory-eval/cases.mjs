@@ -175,6 +175,32 @@ export const cases = [
     expect: { must: ["5 月 21 号"], mustNot: ["说是 5 月 20 号"] } },
 ];
 
+// Beyond the lists (画像层, 11-09): so many newer notes that the old one drops out of the newest-N lists Pinky is given.
+const THINGS = ["爬山", "黑白摄影", "爵士乐", "猫", "手冲咖啡", "露营", "日料", "看展", "乐高", "跑步", "游泳", "桌游", "话剧", "城市骑行", "做陶艺", "烘焙",
+  "听播客", "看纪录片", "养多肉", "逛菜市场", "拍胶片", "滑雪", "冲浪", "弹吉他", "画水彩", "写手账", "逛书店", "看脱口秀", "玩密室", "做瑜伽", "攀岩", "钓鱼",
+  "看球赛", "打羽毛球", "吃火锅", "喝精酿", "听演唱会", "看电影", "逛古镇", "看日出", "做饭", "下围棋", "收集明信片", "听黑胶", "研究香水", "种花", "跳舞",
+  "看漫画", "玩剧本杀", "逛博物馆", "骑摩托", "学日语", "做木工", "看星星", "打网球", "吃甜品", "逛宜家", "练书法", "拼图", "养鱼", "冥想"];
+// These write the notes directly, spread over years, as the App would have kept them one by one: extraction keeps only a
+// few notes per chat, so only years of use put the early one behind the newest 30 (a person's notes), 80 (one's own) or
+// 20 (a person's history) that Pinky is given.
+cases.push(
+  { id: "overflow-person-allergy", category: "recall", people: ["Lin"],
+    notes: [{ about: "Lin", category: "food", text: "对芒果过敏，吃一点就会起疹子", day: -400 }],
+    bulkNotes: { about: "Lin", category: "likes", template: "喜欢{}", items: THINGS, from: -390, to: -3 },
+    probe: { thread: "Lin", text: "想给 Lin 买点水果带过去，有什么要注意的吗？" },
+    expect: { must: ["提醒 Lin 对芒果过敏，别买芒果"], mustNot: ["推荐芒果"] } },
+  { id: "overflow-me-heights", category: "preference", people: [],
+    notes: [{ about: "me", category: "dislikes", text: "恐高，任何高的地方都不行", day: -500 }],
+    bulkNotes: { about: "me", category: "likes", template: "迷上了{}", items: [...THINGS, ...THINGS.map((thing) => `周末${thing}`)], from: -490, to: -3 },
+    probe: { thread: "main", text: "这周末想出去玩点刺激的，帮我推荐一下" },
+    expect: { must: ["推荐的项目避开高处（考虑到用户恐高）"], mustNot: ["推荐蹦极、高空项目、玻璃栈道等高处项目"] } },
+  { id: "overflow-oldest-history", category: "temporal", people: ["阿杰"],
+    notes: [{ about: "阿杰", category: "history", text: "{date} 在朋友的生日派对上认识了阿杰，他帮忙捡起了掉在地上的耳环", day: -720 }],
+    bulkNotes: { about: "阿杰", category: "history", template: "{date} 和阿杰一起去{}，挺开心", items: THINGS.slice(0, 34), from: -700, to: -5 },
+    probe: { thread: "阿杰", text: "我和阿杰最开始是怎么认识的来着？" },
+    expect: { must: ["在朋友的生日派对上认识", "他帮忙捡耳环（可选，有就更好）"], mustNot: ["编造别的认识方式"] } },
+);
+
 // Ordinary days, so the facts under test sit among the talk they would really be in.
 export const FILLER = [
   "今天上班好累，开了一下午会", "周末去公园散步了，天气不错", "最近在追一部剧，挺好看的", "今天健身房人好多",

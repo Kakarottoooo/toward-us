@@ -4,6 +4,7 @@
 // Local only, through the founder's Claude CLI; no API keys, never the dogfood server or a real account.
 //   npm run eval:memory -- [--label before] [--only id1,id2] [--concurrency 2] [--baseline]
 // --baseline also asks each question of an account with no history, to show what memory adds.
+// --no-portraits skips the standing portraits (画像层), to measure what they add.
 // Writes work/memory-eval/<label>-<time>/report.{json,md}.
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,7 +15,7 @@ if (process.env.AI_PROVIDER && process.env.AI_PROVIDER !== "claude-cli") throw n
 process.env.AI_PROVIDER = "claude-cli";
 for (const name of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) delete process.env[name];
 
-const { values: options } = parseArgs({ options: { label: { type: "string", default: "run" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, baseline: { type: "boolean", default: false } } });
+const { values: options } = parseArgs({ options: { label: { type: "string", default: "run" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, baseline: { type: "boolean", default: false }, "no-portraits": { type: "boolean", default: false } } });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const directory = join(process.cwd(), "work", "memory-eval", `${options.label}-${stamp}`);
 await mkdir(directory, { recursive: true });
@@ -24,9 +25,11 @@ process.env.TOWARD_US_MEDIA_DIR = join(directory, "media");
 const { createApiApp } = await import("../server/app.mjs");
 const { createFileStore } = await import("../server/store.mjs");
 const { createMediator } = await import("../server/mediator.mjs");
-const { personFor, listPeople } = await import("../server/people.mjs");
+const { personFor, listPeople, personSubject } = await import("../server/people.mjs");
+const { createRelationshipRecord } = await import("../server/relationship-domain.mjs");
 const { scanPrivateProfile } = await import("../server/profile.mjs");
 const { keepMessages, summarizeEarlier } = await import("../server/thread-pages.mjs");
+const { refreshPortraits } = await import("../server/portraits.mjs");
 const { cases, FILLER } = await import("./memory-eval/cases.mjs");
 const { judgeSchema, judgeInstructions, validateCases, grade, caseResult, summarize } = await import("./memory-eval/score.mjs");
 
@@ -101,6 +104,15 @@ async function setupCase(item, withHistory) {
       const who = thread === "partner" ? partner : me;
       await seed(who.user.id, await open(thread === "partner" ? "main" : thread, who), timeline(item, thread));
     }
+    // Years of notes, written as kept: each with the day it was said, older ones older.
+    const notes = [...(item.notes || []), ...(item.bulkNotes ? item.bulkNotes.items.map((thing, index, all) => ({ about: item.bulkNotes.about, category: item.bulkNotes.category, text: item.bulkNotes.template.replace("{}", thing), day: item.bulkNotes.from + (item.bulkNotes.to - item.bulkNotes.from) * (index / Math.max(1, all.length - 1)) })) : [])];
+    for (const note of notes) {
+      const at = new Date(Date.now() + note.day * DAY).toISOString();
+      await store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId: me.user.id, ownerUserId: me.user.id, visibility: "private", aiAccessScope: "private", status: "active", kind: "profile",
+        subjectUserId: note.about === "me" ? me.user.id : personSubject(people[note.about].id), category: note.category, text: note.text.replace("{date}", at.slice(0, 10)), evidence: { channel: "private", saidAt: at }, createdAt: at, updatedAt: at }));
+    }
+    // The App redraws portraits in the background after notes change; here, once everything is in.
+    if (!options["no-portraits"]) { await refreshPortraits({ store, mediator: model, userId: me.user.id }); if (partner) await refreshPortraits({ store, mediator: model, userId: partner.user.id }); }
     for (const action of item.actions || []) if (action.type === "archive") await call(`/people/${people[action.person].id}/archive`, { archived: true }, me.cookie);
   }
   return { me, partner, people, open };
