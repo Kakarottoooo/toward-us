@@ -201,6 +201,26 @@ cases.push(
     expect: { must: ["在朋友的生日派对上认识", "他帮忙捡耳环（可选，有就更好）"], mustNot: ["编造别的认识方式"] } },
 );
 
+// Specific old details (按需检索, 11-09): exact words and what was said on a given day live only in past conversations,
+// long moved into older pages. {date:N} in a probe is the day N days ago.
+cases.push(
+  { id: "detail-exact-apology", category: "recall", people: [],
+    history: [{ day: -240, thread: "main", text: "阿明今天道歉了，他说：“对不起，我不该忘了你的生日，以后每年我都提前一周订好餐厅。”" }],
+    filler: { count: 230, from: -238, to: -2, thread: "main" },
+    probe: { thread: "main", text: "阿明之前那次道歉，具体是怎么说的来着？" },
+    expect: { must: ["说出道歉的关键内容：以后每年提前一周订好餐厅", "说明大约是什么时候说的（可选，有就更好）"], mustNot: ["编造别的道歉内容"] } },
+  { id: "detail-what-on-that-day", category: "recall", people: [],
+    history: [{ day: -150, thread: "main", text: "今天去面试了一家新公司，面试官问了我很多产品设计的问题，我有点紧张" }],
+    filler: { count: 220, from: -149, to: -2, thread: "main" },
+    probe: { thread: "main", text: "{date:-150} 那天我跟你说了什么？" },
+    expect: { must: ["那天说去面试了一家新公司"], mustNot: ["把那天没说过的具体事情说成那天说的"] } },
+  { id: "detail-book-title", category: "recall", people: ["阿杰"],
+    history: [{ day: -200, thread: "阿杰", text: "阿杰推荐我看一本书，叫《被讨厌的勇气》，说对他影响很大" }],
+    filler: { count: 120, from: -198, to: -2, thread: "阿杰" },
+    probe: { thread: "阿杰", text: "阿杰之前推荐我看的那本书叫什么来着？" },
+    expect: { must: ["书名是《被讨厌的勇气》"], mustNot: ["编造别的书名"] } },
+);
+
 // Ordinary days, so the facts under test sit among the talk they would really be in.
 export const FILLER = [
   "今天上班好累，开了一下午会", "周末去公园散步了，天气不错", "最近在追一部剧，挺好看的", "今天健身房人好多",

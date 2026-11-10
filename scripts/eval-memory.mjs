@@ -124,10 +124,11 @@ async function ask(setup, item) {
   for (let round = 0; round < (item.probe.repeat || 1); round += 1) {
     // A partner asks in a new conversation each time, as they would on different days.
     const sessionId = item.probe.as === "partner" ? (await call("/assistant/sessions", { language: "zh", timezone: "Asia/Shanghai" }, asker.cookie)).result.session.id : await setup.open(item.probe.thread);
-    const { result } = await call(`/assistant/sessions/${sessionId}/messages`, { text: item.probe.text, itemId: randomUUID() }, asker.cookie);
+    const text = item.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(Date.now() + Number(days) * DAY).toISOString().slice(0, 10));
+    const { result } = await call(`/assistant/sessions/${sessionId}/messages`, { text, itemId: randomUUID() }, asker.cookie);
     const messages = result.session.messages, asked = messages.findLastIndex((message) => message.role === "user");
     const answer = messages.slice(asked + 1).filter((message) => message.role === "assistant" && !message.kind).map((message) => message.text).join("\n");
-    const verdict = await model.structured({ name: "memory_judge", schema: judgeSchema, instructions: judgeInstructions, input: JSON.stringify({ question: item.probe.text, answer, must: item.expect.must, mustNot: item.expect.mustNot || [], abstain: Boolean(item.expect.abstain) }), maxOutputTokens: 800 });
+    const verdict = await model.structured({ name: "memory_judge", schema: judgeSchema, instructions: judgeInstructions, input: JSON.stringify({ question: text, answer, must: item.expect.must, mustNot: item.expect.mustNot || [], abstain: Boolean(item.expect.abstain), record: [...(item.history || []).map((line) => ({ daysAgo: -line.day, text: line.text })), ...(item.notes || []).map((note) => ({ daysAgo: -note.day, text: `${note.about}: ${note.text}` }))] }), maxOutputTokens: 800 });
     answers.push({ answer, verdict, grade: grade(item, verdict) });
   }
   return answers;
