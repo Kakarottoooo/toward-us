@@ -7,11 +7,15 @@ node --test scripts/parity-eval/score.test.mjs
 node scripts/parity-eval/run.mjs --label pilot --only tool-reminder-once,memory-recall-paired-advice,interaction-screenshot-apology
 node scripts/parity-eval/run.mjs --label baseline
 node scripts/parity-eval/run.mjs --label after --compare E:/absolute/path/report.json
+# 仅用于修正旧版漏掉聊天卡片的基线；完整运行结束后执行，不再次生成产品/对手答案。
+node scripts/parity-eval/review-baseline.mjs E:/absolute/path/report.json
 ```
 
 先 3 题再全量，全量最多两遍。默认同时跑 2 题，`--concurrency` 最大 3；运行时不要改同一工作区代码。每层 8 题，共 40 题；记忆题复用已有事实与问答，省略长历史填充，因此不代表多年记忆压测。语音题只测转写后的文本，不是 ASR 或通话验收；图片用 sharp 生成可重复的虚构截图/海报，文件走实际导入 API。
 
 输出在 `work/parity-eval/<label>-<UTC>/`：冻结 manifest（代码提交、场景哈希、选择范围、随机种子）、每题可见资料/原始答案/评委判断、`report.json` 和 `report.md`，以及可供排查的虚构存储。目录不提交，不自动删除，绝不能用递归强删工作区清理共享 node_modules 联接。
+
+`review-baseline` 保留原报告，复制本轮虚构存储后通过真实权限投影和只读 API 恢复聊天可见卡片；只补评答案确有新增可见内容的题，写入 `reviewed/`。修正来源哈希、代码版本、原判决、补评用量和隐私误报纠正均保留。恢复的是结束时状态，因此该补评不能冒充原时刻的浏览器录像；本语料每题账号隔离，提醒和约定没有随后编辑。新 `run` 已直接保存可见卡片，正常新基线不需要此补评。
 
 ## 口径
 
