@@ -8,6 +8,8 @@ import { createFileStore } from "../server/store.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { appendTogetherMessage, olderTogetherMessages, previousDailyQuestions } from "../server/together-domain.mjs";
 import { askDailyQuestion } from "../server/daily-question.mjs";
+import { createRelationshipRecord } from "../server/relationship-domain.mjs";
+import { searchMemoryResults } from "../server/memory-search.mjs";
 
 // Us keeps a working set of 200 messages on the conversation; what came before is archived, never dropped.
 async function fixture(t) {
@@ -58,6 +60,9 @@ test("messages beyond the working set are archived in order, stay readable page 
   }
   assert.deepEqual(seen.map((item) => item.id), ids.slice(0, ids.length - conversation.messages.length), "every archived message, in order, once");
   assert.deepEqual(seen.find((item) => item.id === question.id).answers, {}, "Blair never answered, so Alex's answer stays hidden in the archive too");
+  const located = (await f.request(`/together/locate?messageId=${question.id}`, "GET", null, f.b)).body;
+  assert.deepEqual(located.messages.find((item) => item.id === question.id).answers, {}, "direct navigation uses the same unrevealed-answer projection");
+  assert.deepEqual((await f.conversation()).messages.find((item) => item.id === question.id)?.answers, undefined);
   assert.equal(JSON.stringify((await olderTogetherMessages(f.store, { relationshipId: f.relationshipId, userId: f.a, before: question.id })).messages), "[]", "nothing before the first message");
   assert.deepEqual(await olderTogetherMessages(f.store, { relationshipId: f.relationshipId, userId: f.a, before: "no-such-message" }), { messages: [], more: false });
 });
@@ -78,4 +83,29 @@ test("the daily question never repeats one the conversation has moved past", asy
   const next = await asked("2026-11-12", material);
   assert.notEqual(next, first, "the same pool slot a week later still skips it");
   assert.deepEqual(material[0].previousQuestions, [first], "the model is told what was asked before");
+});
+
+test("shared recall and HTTP jump use the same membership boundary, including archived messages and unrevealed answers", async (t) => {
+  const f = await fixture(t);
+  const question = await f.say(f.a, "Pinky，蓝色风筝的约定是什么？");
+  await f.store.transaction(`relationship:${f.relationshipId}`, (tx) => appendTogetherMessage(tx, { relationshipId: f.relationshipId, userId: f.a, actorUserId: null, source: "app", text: "蓝色风筝约定：每周一起散步。", replyTo: question.id }));
+  const secret = createRelationshipRecord({ relationshipId: null, userId: f.a, visibility: "private", aiAccessScope: "private", intentType: "assistant", messages: [{ id: randomUUID(), role: "user", text: "蓝色风筝 PRIVATE_SECRET", createdAt: question.createdAt }] });
+  await f.store.createRelationshipRecord("privateAgentThreads", secret);
+  for (let index = 0; index < 210; index++) await f.say(f.b, `other ${index}`);
+  for (const userId of [f.a, f.b]) {
+    const found = await searchMemoryResults({ store: f.store, userId, channel: "us", query: "蓝色风筝" });
+    assert.match(found.findings, /约定是什么.*\nPinky 当时答.*每周一起散步/);
+    assert.doesNotMatch(found.findings, /PRIVATE_SECRET/);
+    assert.equal(found.sources[0].messageId, question.id);
+    const result = await f.request(`/together/locate?messageId=${question.id}`, "GET", null, userId);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.messages[0].id, question.id);
+    assert.ok(result.body.messages.length <= 50);
+    assert.equal((await f.request(`/together/locate?conversationId=${secret.id}&messageId=${secret.messages[0].id}`, "GET", null, userId)).status, 404);
+  }
+  const outsider = randomUUID();
+  await f.store.createUser({ id: outsider, email: `${outsider}@example.invalid`, name: "Outside", passwordHash: "test", createdAt: new Date().toISOString() });
+  assert.equal((await f.request(`/together/locate?messageId=${question.id}`, "GET", null, outsider)).status, 409);
+  assert.equal((await f.request(`/together/locate?messageId=${question.id}`, "GET", null, "")).status, 401);
+  assert.equal((await f.request("/together/locate?messageId=missing")).status, 404);
 });

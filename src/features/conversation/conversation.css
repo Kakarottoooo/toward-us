@@ -54,6 +54,19 @@
 .conversation-earlier { align-self: center; min-height: 40px; padding: 0 18px; border: 1px solid rgba(37,37,37,.14); border-radius: 999px; background: #fffdf8; color: #5d574f; font-size: 14px; font-weight: 600; cursor: pointer; }
 .conversation-earlier:disabled { opacity: .6; cursor: default; }
 .conversation-seam { height: 0; margin-top: -14px; }
+.recall-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.recall-links button, .recall-toolbar button, .recall-date-picker button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 12px; border: 1px solid rgba(37,37,37,.24); border-radius: 14px; background: #fffdf8; color: var(--jian-blue); font: inherit; font-size: 14px; cursor: pointer; }
+.recall-links button:hover, .recall-toolbar button:hover, .recall-date-picker button:hover { background: var(--jian-blue-soft); }
+.recall-links button:focus-visible, .recall-toolbar button:focus-visible, .recall-date-picker button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.recall-links button:disabled, .recall-date-picker button:disabled { opacity: .5; cursor: default; }
+.recall-date-picker, .recall-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 6px 16px; font-size: 14px; }
+.recall-date-picker label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.recall-date-picker input { max-width: 170px; min-height: 40px; padding: 6px; border: 1px solid #b6b1aa; border-radius: 10px; background: #fffdf8; color: var(--jian-ink); font: inherit; }
+.recall-error { margin: 4px 16px 8px; color: var(--jian-red); font-size: 14px; }
+.recall-original { border-radius: 12px; transition: background-color .3s; scroll-margin-block: 16px; }
+.recall-original time { display: block; margin-bottom: 6px; color: #625c54; font-size: 13px; }
+.recall-original.is-highlighted { background-color: #ffe7a3; outline: 2px solid #b78420; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { .recall-original { transition: none; } }
 .card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .card-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 16px; border: 1px solid rgba(37,37,37,.26); border-radius: 999px; background: transparent; color: var(--jian-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
 .card-actions .card-primary { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }

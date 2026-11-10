@@ -1,4 +1,5 @@
 import express from "express";
+import { locateConversation } from "./conversation-recall.mjs";
 import { answerAgreementPoint, approveAgreement, phrasePoint, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
@@ -89,6 +90,13 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, context = await pairing(req);
     const limit = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.limit || ""), 10) || 50));
     res.json(await olderTogetherMessages(store, { relationshipId: context.relationship.id, userId, before: clean(String(req.query?.before || ""), 80), limit }));
+  });
+  router.get("/together/locate", async (req, res) => {
+    const context = await pairing(req);
+    const result = await locateConversation({ store, userId: req.auth.user.id, channel: "us", conversationId: String(req.query.conversationId || `together:${context.relationship.id}`),
+      messageId: clean(String(req.query.messageId || ""), 80), date: clean(String(req.query.date || ""), 10), timezone: clean(String(req.query.timezone || ""), 64) || "UTC", direction: clean(String(req.query.direction || ""), 10) });
+    const { record, ...page } = result;
+    res.json(page);
   });
 
   // 想你了: one tap that tells the partner they are being thought of. A second tap within 30 seconds is the same one.

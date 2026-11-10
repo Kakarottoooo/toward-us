@@ -9,7 +9,8 @@ import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { personFor, personSubject } from "../server/people.mjs";
-import { searchMemory, terms } from "../server/memory-search.mjs";
+import { conversationTurns, prefetchRecall, searchMemory, searchMemoryResults, terms } from "../server/memory-search.mjs";
+import { locateConversation, citedReply } from "../server/conversation-recall.mjs";
 
 // 按需检索 (memory plan, founder 11-09: "做按需检索"): a specific old detail is found in the member's own past
 // conversations (older pages too) and notes, with the day it was said; never in anyone else's.
@@ -32,6 +33,54 @@ async function setup(t) {
 test("query words: Latin words whole, Chinese as pairs of characters", () => {
   assert.deepEqual(terms("Lin 道歉"), ["lin", "道歉"]);
   assert.deepEqual(terms("提前订餐厅"), ["提前", "前订", "订餐", "餐厅"]);
+});
+
+test("a shared reply stays with its explicit question when the other member speaks in between", () => {
+  const first = { id: "first", role: "member", text: "Pinky, how do we plan this?" };
+  const second = { id: "second", role: "member", text: "I will be home soon." };
+  const reply = { id: "reply", role: "agent", text: "Agree on one small step.", replyTo: first.id };
+  const turns = conversationTurns([first, second, reply]);
+  assert.equal(turns[0].answer?.id, reply.id);
+  assert.equal(turns[1].answer, undefined);
+});
+
+test("an answer-only match brings the question and answer together across an archive seam", async (t) => {
+  const { store, users, thread, said } = await setup(t);
+  await thread(users[0].id, { earlier: [{ messages: [said("我该怎么开口？", "2025-03-12T10:00:00.000Z")] }],
+    messages: [said("试试紫色信封，里面写三句具体的感谢。", "2025-03-12T10:00:01.000Z", "assistant"), said("今天吃什么", "2025-03-13T10:00:00.000Z")] });
+  const found = await searchMemory({ store, userId: users[0].id, query: "紫色信封" });
+  assert.match(found, /我该怎么开口/);
+  assert.match(found, /紫色信封/);
+  assert.match(found, /2025-03-12/);
+  assert.doesNotMatch(found, /今天吃什么/);
+});
+
+test("automatic recall does not settle on a short overlapping name; an intentional name search still works", async (t) => {
+  const f = await setup(t), userId = f.users[0].id;
+  await f.thread(userId, { messages: [f.said("昨天和小夏去书店了。", "2025-03-12T10:00:00Z"), f.said("听起来很开心。", "2025-03-12T10:01:00Z", "assistant")] });
+  assert.equal(await prefetchRecall({ store: f.store, userId }, "之前我问你要不要和小夏创业，你当时怎么回答的？"), null);
+  assert.match(await searchMemory({ store: f.store, userId, query: "小夏" }), /书店/);
+  await f.thread(userId, { messages: [f.said("How should I begin?", "2025-04-12T10:00:00Z"), f.said("Send a cobalt postcard.", "2025-04-12T10:01:00Z", "assistant")] });
+  assert.ok(await prefetchRecall({ store: f.store, userId }, "What did you suggest about a cobalt postcard before?"), "two whole Latin words are not overlapping Chinese fragments");
+});
+
+test("recall sources locate an old page and local day, but never another owner's private conversation", async (t) => {
+  const f = await setup(t), [a, b] = f.users;
+  const question = f.said("紫色信封怎么写？", "2025-03-12T02:00:00.000Z");
+  const record = await f.thread(a.id, { earlier: [{ messages: [question, f.said("写三句感谢", "2025-03-12T02:00:01.000Z", "assistant")] }],
+    messages: Array.from({ length: 110 }, (_, index) => f.said(`recent ${index}`, "2026-11-01T10:00:00.000Z")) });
+  const found = await searchMemoryResults({ store: f.store, userId: a.id, query: "紫色信封" });
+  assert.equal(found.sources[0].messageId, question.id);
+  const options = { store: f.store, userId: a.id, channel: "me", conversationId: record.id };
+  const page = await locateConversation({ ...options, messageId: question.id });
+  assert.equal(page.messages[0].text, question.text);
+  assert.ok(page.messages.length <= 50 && page.after);
+  assert.equal((await locateConversation({ ...options, date: "2025-03-11", timezone: "America/Los_Angeles" })).messageId, question.id);
+  await assert.rejects(locateConversation({ ...options, userId: b.id, messageId: question.id }), { statusCode: 404 });
+  await assert.rejects(locateConversation({ ...options, date: "2025-02-30" }), { statusCode: 400 });
+  await assert.rejects(locateConversation({ ...options, date: "2025-01-01" }), { statusCode: 404 });
+  assert.deepEqual((await searchMemoryResults({ store: f.store, userId: b.id, query: "紫色信封" })).sources, []);
+  assert.deepEqual(citedReply(`当时这样说 [recall:${question.id}] [recall:forged]`, found.sources).sources, found.sources);
 });
 
 test("an old detail is found in older pages and notes, with its day, scoped to a person's own conversation when asked there", async (t) => {
@@ -57,19 +106,27 @@ test("Pinky searches when it needs an old detail and answers with what it found"
   const { store, users, thread, said } = await setup(t);
   await thread(users[0].id, { earlier: [{ messages: [said("阿明道歉说以后每年都提前一周订好餐厅", "2025-03-12T10:00:00.000Z")] }] });
   const contexts = [];
-  const mediator = { planAssistantTurn: async (context) => { contexts.push(context); return contexts.length === 1
+  const mediator = { planAssistantTurn: async (context) => { contexts.push(context); return !context.lookups
     ? { reply: "我找找。", actions: [{ kind: "memory_search", operation: "query", targetId: null, expectedVersion: null, query: "道歉 订餐厅", queryPeriod: "all", occurrence: null, fields: { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null } }] }
-    : { reply: "2025 年 3 月 12 日你说过：他道歉说以后每年都提前一周订好餐厅。", actions: [] }; } };
-  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id: users[0].id } }; next(); });
+    : { reply: "2025 年 3 月 12 日你说过：他道歉说以后每年都提前一周订好餐厅。 " + context.lookups[0].findings.match(/\[recall:[^\]]+\]/)[0], actions: [] }; } };
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id: req.headers["x-user"] || users[0].id } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
   t.after(() => new Promise((r) => server.close(r)));
   const post = async (path, body) => (await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
   const session = (await post("/assistant/sessions", { language: "zh", timezone: "UTC" })).session;
   const reply = (await post(`/assistant/sessions/${session.id}/messages`, { text: "阿明当时道歉具体说了什么？", itemId: randomUUID() })).session.messages.at(-1);
-  assert.equal(contexts.length, 2);
+  assert.equal(contexts.length, 2, "weak automatic matches leave room for a deliberate topic search");
   assert.match(contexts[1].lookups[0].findings, /2025-03-12.*提前一周订好餐厅/);
   assert.match(reply.text, /2025 年 3 月 12 日/);
+  assert.equal(reply.sources.length, 1);
+  assert.doesNotMatch(reply.text, /recall:/);
+  const source = reply.sources[0];
+  const url = `http://127.0.0.1:${server.address().port}/api/assistant/sessions/${source.conversationId}/locate?messageId=${source.messageId}`;
+  const located = await fetch(url);
+  assert.equal(located.status, 200);
+  assert.equal((await located.json()).messages[0].id, source.messageId);
+  assert.equal((await fetch(url, { headers: { "x-user": users[1].id } })).status, 404);
 });
 
 test("a day asked for finds everything said that day, whatever words come with it", async (t) => {

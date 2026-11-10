@@ -1,7 +1,8 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
-import { searchMemory } from "./memory-search.mjs";
+import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
+import { citedReply, locateConversation, readableConversation, conversationMessages } from "./conversation-recall.mjs";
 import { listPeople, livePerson } from "./people.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
@@ -50,7 +51,14 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   };
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
+    const validSources = new Map();
+    for (const source of session.messages.flatMap((message) => message.sources || [])) {
+      const key = `${source.channel}:${source.conversationId}`;
+      if (!validSources.has(key)) validSources.set(key, await readableConversation(store, session.ownerUserId, source.channel, source.conversationId)
+        .then((record) => conversationMessages(store, session.ownerUserId, source.channel, record)).then((messages) => new Set(messages.map((message) => message.id))).catch(() => new Set()));
+    }
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), earlierPages: session.earlier?.length || 0, messages: session.messages.map((message) => ({
+      ...(message.sources?.length ? { sources: message.sources.filter((source) => validSources.get(`${source.channel}:${source.conversationId}`)?.has(source.messageId)) } : {}),
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
@@ -108,6 +116,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (!pages.length) return res.json({ messages: [], pages: 0 });
     const shown = await output({ ...session, earlier: [], messages: pages[pages.length - page].messages });
     res.json({ messages: shown.messages, page, pages: pages.length });
+  });
+  router.get("/assistant/sessions/:id/locate", async (req, res) => {
+    const result = await locateConversation({ store, userId: req.auth.user.id, channel: "me", conversationId: req.params.id,
+      messageId: clean(req.query.messageId, 80), date: clean(req.query.date, 10), timezone: clean(req.query.timezone, 64) || "UTC", direction: clean(req.query.direction, 10) });
+    const shown = await output({ ...result.record, messages: result.messages });
+    const { record, ...page } = result;
+    res.json({ ...page, messages: shown.messages, ...(record.personId ? { personId: record.personId } : {}) });
   });
   router.get("/assistant/sessions/:id", async (req, res) => {
     const session = await owned(store, req.params.id, req.auth.user.id);
@@ -206,7 +221,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // Pinky answers in the interface language this member picked, whatever language they type in (founder 11-06: one language everywhere, the one each member picked).
     const language = await memberLanguage(store, userId, body?.language);
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
-    let plan;
+    let plan; const recallSources = [];
+    const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
+    if (recalled) { context.lookups = [recallLookup(recalled, text)]; recallSources.push(...recalled.sources); }
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
@@ -226,13 +243,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
     if (!validateAssistantTurn(plan)) { console.error("Invalid planner turn:", JSON.stringify({ keys: Object.keys(plan || {}), actions: Array.isArray(plan?.actions) ? plan.actions.map((action) => ({ keys: Object.keys(action || {}), kind: action?.kind, operation: action?.operation, fields: Object.keys(action?.fields || {}) })) : typeof plan?.actions })); throw fail(502, "The assistant could not prepare a valid action. Nothing was changed."); }
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
-    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports || action.kind === "memory_search").slice(0, 3);
+    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports || action.kind === "memory_search" && !recalled).slice(0, 3);
     if (searches.length) {
       const web = searches.find((action) => action.kind === "web_search");
       progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
       const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
-        ? { query: `their own past conversations and notes: ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await searchMemory({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).catch(() => "The search failed.") }
+        ? await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, `${action.query || ""} ${action.fields?.date || ""}`.trim()); }).catch(() => ({ query: action.query, findings: "The search failed. Say the search failed, not that no record exists." }))
         : action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
@@ -430,7 +447,8 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const cited = citedReply(reply, recallSources);
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
