@@ -6,13 +6,41 @@ import { createFileStore } from "../../server/store.mjs";
 import { createMediator } from "../../server/mediator.mjs";
 import { createReminderService } from "../../server/reminder-service.mjs";
 import { personFor, personSubject } from "../../server/people.mjs";
-import { createRelationshipRecord } from "../../server/relationship-domain.mjs";
+import { createRelationshipRecord, projectRecord } from "../../server/relationship-domain.mjs";
 import { scanPrivateProfile } from "../../server/profile.mjs";
 import { keepMessages, summarizeEarlier } from "../../server/thread-pages.mjs";
 import { refreshPortraits } from "../../server/portraits.mjs";
 import { tidyMemory } from "../../server/memory-tidy.mjs";
 import { FILLER } from "../memory-eval/cases.mjs";
 import { recordChecks } from "./evidence.mjs";
+
+// Store snapshots include relationship-scoped raw records; apply the same per-principal projection as the API.
+// Keep raw snapshots for actual-write checks, but never use them as evidence of another member's visibility.
+export function projectSnapshot(snapshot, userId) {
+  return Object.fromEntries(Object.entries(snapshot || {}).map(([key, records]) => [key,
+    Array.isArray(records) ? records.map((record) => projectRecord(record, userId)).filter(Boolean) : records,
+  ]));
+}
+
+// ConversationHome renders these fields in the chat itself. Reminder timezone/frequency belong to its detail page.
+function visibleCard(card) {
+  if (card.kind === "chat_import") return null; // ImportCard loads its own separately projected status.
+  if (card.kind === "partner_message") return { title: card.openOn ? `一封信 · ${card.openOn} 发给 TA` : "想对 TA 说的话", text: card.text };
+  if (card.kind === "space_share") return { title: card.shareKind === "agreement" ? "在“我们俩”起草约定" : card.shareKind === "date" ? "放进你们俩的日历" : `放进共同的“${card.title}”`, text: card.text };
+  if (card.kind === "link" && card.url) return { title: card.title };
+  return { title: card.title, text: card.text, ...(card.kind !== "space_group" && card.localDateTime ? { localDateTime: card.localDateTime } : {}) };
+}
+
+export function formatVisibleAnswer(answer, { cards = [], draft = null } = {}) {
+  const sections = [answer];
+  for (const card of cards.map(visibleCard).filter(Boolean)) {
+    sections.push([card.title, card.text, card.localDateTime?.replace("T", " ")].filter(Boolean).join("\n"));
+  }
+  if (draft) sections.push(["约定草稿", draft.title, draft.summary, ...(draft.terms || []),
+    ...(draft.unresolvedPoints?.length ? ["还没定的", ...draft.unresolvedPoints] : []),
+    "发出后，你们俩都要批准同一版本才生效。"].filter(Boolean).join("\n"));
+  return sections.filter(Boolean).join("\n\n");
+}
 
 // Same synthetic-account seeding protocol as eval-memory, reusing production memory helpers.
 export async function createHarness(directory, { requestContext } = {}) {
@@ -107,7 +135,7 @@ async function setupCase(item, withHistory) {
     const sessionId = await setup.open(item.probe.thread, asker);
     const before = await store.relationshipSnapshotForUser(asker.user.id);
     const beforeIds = new Set(Object.values(before).flatMap((value) => Array.isArray(value) ? value.map((record) => record.id) : []));
-    const peerBefore = setup.partner ? await store.relationshipSnapshotForUser(setup.partner.user.id) : null;
+    const peerBefore = setup.partner ? projectSnapshot(await store.relationshipSnapshotForUser(setup.partner.user.id), setup.partner.user.id) : null;
     const privacyChecks = [];
     if (item.check?.kind === "privacy") {
       const ownSession = await setup.open("main", setup.me);
@@ -122,8 +150,13 @@ async function setupCase(item, withHistory) {
       const uploaded = await call(`/imports?name=synthetic-chat.txt&language=zh&session=${sessionId}`, Buffer.from(item.assetText), asker.cookie, "POST", "application/octet-stream");
       let imported = uploaded.result.import;
       if (imported.status === "needs_people") {
-        const people = imported.people.map((person, index) => ({ name: person.name, role: index === 0 ? "me" : "partner" }));
-        imported = (await call(`/imports/${imported.id}/people`, { people }, asker.cookie)).result.import;
+        const names = imported.people || [];
+        const me = names.find((person) => person.role === "me")?.name
+          || names.find((person) => [asker.user.name, "Me"].includes(person.name))?.name;
+        const partner = names.find((person) => person.role === "partner")?.name
+          || names.find((person) => [item.probe.thread, item.paired?.partner].includes(person.name))?.name;
+        if (!me || !partner || me === partner) throw new Error("Synthetic import participants are ambiguous");
+        imported = (await call(`/imports/${imported.id}/people`, { me, partner }, asker.cookie)).result.import;
       }
       const limit = Date.now() + 240_000;
       while (imported.status === "analyzing" && Date.now() < limit) {
@@ -156,7 +189,11 @@ async function setupCase(item, withHistory) {
       const messages = result.session?.messages || result.conversation?.messages || [];
       const asked = messages.findLastIndex((entry) => entry.role === "user" || entry.actorUserId === asker.user.id);
       const replies = messages.slice(asked + 1).filter((entry) => entry.role === "assistant" || entry.actorUserId === null);
-      const answer = replies.map((entry) => entry.text || "").filter(Boolean).join("\n") || result.reply?.text || "";
+      const cards = replies.flatMap((entry) => entry.cards || []).map(visibleCard).filter(Boolean);
+      const rawDraft = item.channel === "shared" && !result.pendingAgreement && !result.readOnly ? result.conversation?.draftAgreement : null;
+      const draft = rawDraft ? { title: rawDraft.title, summary: rawDraft.summary, terms: rawDraft.terms, unresolvedPoints: rawDraft.unresolvedPoints } : null;
+      const text = replies.map((entry) => entry.text || "").filter(Boolean).join("\n") || result.reply?.text || "";
+      const answer = formatVisibleAnswer(text, { cards, draft });
       const sources = replies.flatMap((entry) => entry.sources || []);
       const sourceChecks = [];
       for (const source of sources) {
@@ -168,7 +205,7 @@ async function setupCase(item, withHistory) {
           sourceChecks.push({ ok: Boolean(target && original), original: target?.text || null });
         } catch { sourceChecks.push({ ok: false }); }
       }
-      rounds.push({ answer, progress, sources, sourceChecks });
+      rounds.push({ answer, cards, draft, progress, sources, sourceChecks });
     }
     let after = await store.relationshipSnapshotForUser(asker.user.id);
     // Explicit remember requests are extracted by the real background keeper after its 20-second debounce.
@@ -185,7 +222,7 @@ async function setupCase(item, withHistory) {
     const created = collection ? (after[collection] || []).filter((record) => !beforeIds.has(record.id)) : [];
     const plain = (record) => Object.fromEntries(Object.entries(record).filter(([key]) => !["passwordHash", "token", "email"].includes(key)));
     let completed = item.unsupported ? false : null;
-    const peer = setup.partner ? await store.relationshipSnapshotForUser(setup.partner.user.id) : null;
+    const peer = setup.partner ? projectSnapshot(await store.relationshipSnapshotForUser(setup.partner.user.id), setup.partner.user.id) : null;
     const checks = collection ? recordChecks(item, created, { userId: asker.user.id, partnerId: setup.partner?.user.id, personId: setup.people[item.probe.thread]?.id, peer, spaceItems: after.spaceItems }) : [];
     if (collection) completed = checks.every((check) => check.ok);
     if (item.check?.kind === "sources") completed = rounds.every((round) => round.sources.length > 0 && round.sourceChecks.every((source) => source.ok));
@@ -195,9 +232,13 @@ async function setupCase(item, withHistory) {
       privacyChecks.push({ name: "未确认的辞职内容没有进入伴侣投影", ok: !shared(peer).includes("辞职") && !shared(peerBefore).includes("辞职") });
       completed = privacyChecks.every((check) => check.ok);
     }
-    const sideEffects = Object.fromEntries(["reminders", "checkins", "memories", "agreements", "spaces", "spaceItems", "chatImports", "photos"].map((key) => [key, (after[key] || []).filter((record) => !beforeIds.has(record.id)).map(plain)]));
+    const visibleAfter = projectSnapshot(after, asker.user.id);
+    const sideEffects = Object.fromEntries(["reminders", "checkins", "memories", "agreements", "spaces", "spaceItems", "chatImports", "photos"].map((key) => [key, (visibleAfter[key] || []).filter((record) => !beforeIds.has(record.id)).map(plain)]));
     return { answer: rounds.map((round, index) => rounds.length > 1 ? `第${index + 1}次：${round.answer}` : round.answer).join("\n"), completed, evidence: {
-      rounds, persisted: created.map(plain), sideEffects, checks, privacyChecks, storedCompletion: completed, unsupported: item.unsupported || null,
+      rounds, persisted: created.map((record) => projectRecord(record, asker.user.id)).filter(Boolean).map(plain), sideEffects, checks, privacyChecks, storedCompletion: completed, unsupported: item.unsupported || null,
+      // A conversational draft precedes the separately confirmed, awaiting-approvals agreement record.
+      // Preserve it so an incomplete approval flow is never described as "no draft was saved".
+      ...(item.check?.kind === "agreement" ? { agreementDrafts: (visibleAfter.togetherConversations || []).filter((record) => record.draftAgreement).map((record) => ({ conversationId: record.id, draft: record.draftAgreement })) } : {}),
       ...(image ? { imageAttached: true, transcriptProvided: false, importStatuses: (await call("/imports", null, asker.cookie)).result.imports.map((entry) => ({ status: entry.status, messageCount: entry.messageCount })) } : {}),
       modality: item.modality || "text", boundary: "本地临时账号；没有真实发送；语音仅测转写后的文本，图片走真实导入路径" } };
   }
