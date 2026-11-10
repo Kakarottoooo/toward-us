@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { createApiApp } from "../../server/app.mjs";
 import { createFileStore } from "../../server/store.mjs";
 import { createMediator } from "../../server/mediator.mjs";
@@ -14,16 +15,21 @@ import { FILLER } from "../memory-eval/cases.mjs";
 import { recordChecks } from "./evidence.mjs";
 
 // Same synthetic-account seeding protocol as eval-memory, reusing production memory helpers.
-export async function createHarness(directory) {
+export async function createHarness(directory, { requestContext } = {}) {
   const options = {};
   const model = createMediator({ apiKey: "" });
   const store = await createFileStore(`${directory}/state.json`);
-  const server = createApiApp({ store, mediator: model, reminderService: createReminderService({ store }) }).listen(0, "127.0.0.1");
+  const app = createApiApp({ store, mediator: model, reminderService: createReminderService({ store }) });
+  // HTTP server callbacks do not inherit the client's AsyncLocalStorage. Carry only synthetic case/phase IDs.
+  const server = createServer((req, res) => requestContext
+    ? requestContext.run({ case: req.headers["x-parity-case"] || null, phase: req.headers["x-parity-phase"] || null }, () => app(req, res))
+    : app(req, res)).listen(0, "127.0.0.1");
   await new Promise((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
   const base = `http://127.0.0.1:${server.address().port}`;
   let accounts = 0;
   async function call(path, body, cookie, method = body ? "POST" : "GET", mime = "application/json") {
-    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
+    const tag = requestContext?.getStore();
+    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${path.split("?")[0]}: HTTP ${response.status} ${JSON.stringify(result).slice(0, 160)}`);
     return { result, cookie: response.headers.get("set-cookie")?.split(";")[0] };

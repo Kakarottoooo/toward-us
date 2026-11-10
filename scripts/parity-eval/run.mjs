@@ -31,7 +31,7 @@ const { usageListeners } = await import("../../server/claude-cli-client.mjs");
 const context = new AsyncLocalStorage(), usage = [];
 const listener = (event) => usage.push({ ...context.getStore(), name: event.name, model: event.model, usage: event.usage, usd: event.usd });
 usageListeners.add(listener);
-const harness = await createHarness(directory);
+const harness = await createHarness(directory, { requestContext: context });
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   caseHash: createHash("sha256").update(JSON.stringify(cases)).digest("hex"), selected: selected.map((item) => item.id),
   cliVersions: { claude: execFileSync("claude", ["--version"], { encoding: "utf8" }).trim() }, results: [] };
@@ -104,7 +104,15 @@ try {
 report.results = results;
 report.endedAt = new Date().toISOString();
 report.summary = summarize(results, layers);
+report.usage = usage;
+const byKind = {};
+for (const event of usage) {
+  const row = byKind[event.name || "other"] ||= { calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, usd: 0 };
+  row.calls++; row.input += event.usage.input_tokens || 0; row.cacheRead += event.usage.cache_read_input_tokens || 0;
+  row.cacheWrite += event.usage.cache_creation_input_tokens || 0; row.output += event.usage.output_tokens || 0; row.usd += event.usd || 0;
+}
 report.cost = { pinkyReportedUsd: usage.reduce((sum, event) => sum + (event.usd || 0), 0), pinkyReportedCalls: usage.length,
+  byKind, unattributedCalls: usage.filter((event) => !event.case).length,
   claudeOpponentUsd: results.reduce((sum, item) => sum + (item.rivals.claude.usd || 0), 0),
   claudeJudgeUsd: results.flatMap((item) => Object.values(item.comparisons).flatMap((pair) => pair.judges)).reduce((sum, vote) => sum + (vote.usd || 0), 0), codexUsd: null, scope: "subscription list-price estimates; partial Pinky image/search usage" };
 const previous = options.compare ? JSON.parse(await readFile(resolve(options.compare), "utf8")) : null;

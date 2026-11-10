@@ -14,7 +14,9 @@ export function blindPair(item, pinky, rival, judge, seed) {
   // Remove provider names from prose, but preserve the actual substance. Do not send CLI usage or internal paths.
   const mask = (value) => JSON.parse(JSON.stringify(value).replace(/Pinky|Claude|ChatGPT|Codex|OpenAI|Anthropic/gi, "助手"));
   const view = (entry) => mask({ answer: entry.answer || "" });
-  return { swap, input: mask({ question: item.question, records: item.visible, must: item.expect.must, mustNot: item.expect.mustNot || [], completion: item.completion, A: view(swap ? rival : pinky), B: view(swap ? pinky : rival) }) };
+  return { swap, input: mask({ question: item.question, records: item.visible, must: item.expect.must, mustNot: item.expect.mustNot || [],
+    completion: "只判断答案内容是否满足 must 并直接可用。不要要求提供数据库或图片读取证明，不要推断真实操作成败；这些由独立机器检查记录。确认了正确的提醒事项和时间即可满足内容标准，是否真正创建由机器另查。",
+    A: view(swap ? rival : pinky), B: view(swap ? pinky : rival) }) };
 }
 
 export function completionResult(executed, votes) {
