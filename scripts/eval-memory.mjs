@@ -135,18 +135,35 @@ async function ask(setup, item) {
     // A partner asks in a new conversation each time, as they would on different days.
     const sessionId = item.probe.as === "partner" ? (await call("/assistant/sessions", { language: "zh", timezone: "Asia/Shanghai" }, asker.cookie)).result.session.id : await setup.open(item.probe.thread);
     const text = item.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(Date.now() + Number(days) * DAY).toISOString().slice(0, 10));
+    const usageStart = usage.length;
     const { result } = await call(`/assistant/sessions/${sessionId}/messages`, { text, itemId: randomUUID() }, asker.cookie);
+    const quoted = JSON.stringify(text).slice(1, -1);
+    const plannerUsage = usage.slice(usageStart).filter((event) => event.name === "private_assistant_operations" && event.prompt.includes(quoted)).map(({ usage, usd }) => ({ usage, usd }));
     const messages = result.session.messages, asked = messages.findLastIndex((message) => message.role === "user");
     const replies = messages.slice(asked + 1).filter((message) => message.role === "assistant" && !message.kind);
     const answer = replies.map((message) => message.text).join("\n"), cards = replies.flatMap((message) => (message.cards || []).map((card) => card.kind));
+    const sources = replies.flatMap((message) => message.sources || []), sourceChecks = [];
+    for (const source of sources) {
+      const path = source.channel === "us" ? `/together/locate?conversationId=${encodeURIComponent(source.conversationId)}&messageId=${encodeURIComponent(source.messageId)}` : `/assistant/sessions/${encodeURIComponent(source.conversationId)}/locate?messageId=${encodeURIComponent(source.messageId)}`;
+      try {
+        const { result: located } = await call(path, null, asker.cookie);
+        const target = located.messages?.find((message) => message.id === source.messageId);
+        const original = (item.history || []).find((line) => line.text === target?.text || line.reply === target?.text);
+        sourceChecks.push({ messageId: source.messageId, ok: Boolean(target && original), problem: !target ? "跳转没有返回引用的原消息" : !original ? "引用不是题目中的原始问答" : "" });
+      } catch (error) { sourceChecks.push({ messageId: source.messageId, ok: false, problem: String(error.message).slice(0, 200) }); }
+    }
     const verdict = await model.structured({ name: "memory_judge", schema: judgeSchema, instructions: `${judgeInstructions}\nA record with role assistant is what Pinky actually replied at that time, not what the member said. A date in the answer can be checked against the record's date.`, input: JSON.stringify({ question: text, answer, must: item.expect.must, mustNot: item.expect.mustNot || [], abstain: Boolean(item.expect.abstain), record: [...(item.history || []).flatMap((line) => [{ daysAgo: -line.day, date: new Date(Date.now() + line.day * DAY).toISOString().slice(0, 10), role: "user", text: line.text }, ...(line.reply === undefined ? [] : [{ daysAgo: -line.day, date: new Date(Date.now() + line.day * DAY).toISOString().slice(0, 10), role: "assistant", text: line.reply }])]), ...(item.notes || []).map((note) => ({ daysAgo: -note.day, text: `${note.about}: ${note.text}` }))] }), maxOutputTokens: 800 });
-    answers.push({ asked: text, answer, cards, verdict, grade: grade(item, verdict) });
+    answers.push({ asked: text, answer, cards, sources, sourceChecks, plannerUsage, verdict, grade: grade(item, verdict) });
   }
   return answers;
 }
 
 async function check(setup, item, answers = []) {
   if (!item.check) return null;
+  if (typeof item.check.sources === "boolean") {
+    const failed = answers.filter((answer) => item.check.sources ? !answer.sources.length || answer.sourceChecks.some((source) => !source.ok) : answer.sources.length > 0);
+    return { ok: !failed.length, kept: failed.map((answer) => answer.sourceChecks.map((source) => source.problem).filter(Boolean).join("；") || (answer.sources.length ? "没有找到问答却仍引用了消息" : "没有可点击的原话出处")), problem: "原话出处检查失败" };
+  }
   // card: what Pinky did, not only what it said.
   if (item.check.card) { const missing = answers.filter((answer) => !answer.cards.includes(item.check.card)); return { ok: !missing.length, kept: missing.map((answer) => `卡片：${answer.cards.join("、") || "无"}`), problem: `没有建${item.check.card}卡片` }; }
   const records = (await store.listRelationshipRecordsForUser("memories", setup.me.user.id)).filter((record) => record.kind === "profile");
@@ -187,8 +204,8 @@ process.stdout.write("\n");
 
 const totals = summarize(results);
 
-// Cost from what the CLI reported for each call. A turn is the planner call(s) answering one probe, found by the probe's
-// words in its prompt (every case has its own account); everything else is counted by kind (background work, judge).
+// Cost from what the CLI reported for each call. Match the probe's words only during that request, so repeated privacy
+// probes do not each count all three requests. Everything else is counted by kind (background work, judge).
 const PLANNER = "private_assistant_operations";
 const tokensOf = (event) => ({ input: event.usage.input_tokens || 0, cacheWrite: event.usage.cache_creation_input_tokens || 0, cacheRead: event.usage.cache_read_input_tokens || 0, output: event.usage.output_tokens || 0, usd: event.usd });
 const add = (into, event) => { const t = tokensOf(event); into.calls += 1; for (const key of ["input", "cacheWrite", "cacheRead", "output", "usd"]) into[key] += t[key]; return into; };
@@ -199,8 +216,7 @@ const turns = [];
 for (const result of results) {
   result.cost = empty();
   for (const answer of result.answers || []) {
-    const quoted = JSON.stringify(answer.asked).slice(1, -1);
-    const calls = usage.filter((event) => event.name === PLANNER && event.prompt.includes(quoted));
+    const calls = answer.plannerUsage;
     const turn = calls.reduce(add, empty());
     turn.warm = calls.some((event) => (event.usage.cache_read_input_tokens || 0) > 0);
     turns.push(turn); for (const key of ["calls", "input", "cacheWrite", "cacheRead", "output", "usd"]) result.cost[key] += turn[key];
