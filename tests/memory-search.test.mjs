@@ -9,7 +9,7 @@ import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { personFor, personSubject } from "../server/people.mjs";
-import { conversationTurns, searchMemory, searchMemoryResults, terms } from "../server/memory-search.mjs";
+import { conversationTurns, prefetchRecall, searchMemory, searchMemoryResults, terms } from "../server/memory-search.mjs";
 import { locateConversation, citedReply } from "../server/conversation-recall.mjs";
 
 // 按需检索 (memory plan, founder 11-09: "做按需检索"): a specific old detail is found in the member's own past
@@ -53,6 +53,13 @@ test("an answer-only match brings the question and answer together across an arc
   assert.match(found, /紫色信封/);
   assert.match(found, /2025-03-12/);
   assert.doesNotMatch(found, /今天吃什么/);
+});
+
+test("automatic recall does not settle on a short overlapping name; an intentional name search still works", async (t) => {
+  const f = await setup(t), userId = f.users[0].id;
+  await f.thread(userId, { messages: [f.said("昨天和小夏去书店了。", "2025-03-12T10:00:00Z"), f.said("听起来很开心。", "2025-03-12T10:01:00Z", "assistant")] });
+  assert.equal(await prefetchRecall({ store: f.store, userId }, "之前我问你要不要和小夏创业，你当时怎么回答的？"), null);
+  assert.match(await searchMemory({ store: f.store, userId, query: "小夏" }), /书店/);
 });
 
 test("recall sources locate an old page and local day, but never another owner's private conversation", async (t) => {
@@ -107,8 +114,8 @@ test("Pinky searches when it needs an old detail and answers with what it found"
   const post = async (path, body) => (await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
   const session = (await post("/assistant/sessions", { language: "zh", timezone: "UTC" })).session;
   const reply = (await post(`/assistant/sessions/${session.id}/messages`, { text: "阿明当时道歉具体说了什么？", itemId: randomUUID() })).session.messages.at(-1);
-  assert.equal(contexts.length, 1, "explicit recall gets evidence on the first model call");
-  assert.match(contexts[0].lookups[0].findings, /2025-03-12.*提前一周订好餐厅/);
+  assert.equal(contexts.length, 2, "weak automatic matches leave room for a deliberate topic search");
+  assert.match(contexts[1].lookups[0].findings, /2025-03-12.*提前一周订好餐厅/);
   assert.match(reply.text, /2025 年 3 月 12 日/);
   assert.equal(reply.sources.length, 1);
   assert.doesNotMatch(reply.text, /recall:/);

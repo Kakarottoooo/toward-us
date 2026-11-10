@@ -28,7 +28,9 @@ export const asksToRecall = (text) => /(?:之前|以前|上次|当时|那天|曾
 
 export async function prefetchRecall(options, text) {
   if (!asksToRecall(text)) return null;
-  const result = await searchMemoryResults({ ...options, query: text, date: String(text).match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || "" });
+  // A natural-language question has incidental overlaps (two adjacent Chinese bigrams can be just one short name).
+  // Preloading must be more selective than a deliberate short search; weak hits leave query formulation to the model.
+  const result = await searchMemoryResults({ ...options, query: text, minimumMatches: 3, date: String(text).match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || "" });
   return result.sources.length ? result : null;
 }
 
@@ -61,7 +63,7 @@ export async function searchMemory({ store, userId, query = "", date = "", perso
   return (await searchMemoryResults({ store, userId, query, date, personId, limit })).findings;
 }
 
-export async function searchMemoryResults({ store, userId, query = "", date = "", personId = null, limit = 10, channel = "me", excludeMessageId = null }) {
+export async function searchMemoryResults({ store, userId, query = "", date = "", personId = null, limit = 10, channel = "me", excludeMessageId = null, minimumMatches = 2 }) {
   const words = terms(query);
   if (!words.length && !date) return { findings: "Nothing to search for.", sources: [] };
   const context = await store.getRelationshipContext(userId);
@@ -73,7 +75,7 @@ export async function searchMemoryResults({ store, userId, query = "", date = ""
     if (date && !String(at || "").startsWith(date) && !String(answerAt || "").startsWith(date)) return;
     const value = words.length ? score(text, words) : 1;
     // A day asked for is the filter; words then only rank. Without a day, a short query needs its words, a long one two.
-    if (!date && words.length && value < Math.min(2, words.length)) return;
+    if (!date && words.length && value < Math.min(minimumMatches, words.length)) return;
     hits.push({ value, at: String(at || ""), source, line: `[${String(at || "").slice(0, 10)} · ${label}] ${excerpt || squash(text, 300)}${source ? ` [recall:${source.messageId}]` : ""}` });
   };
   const threads = channel === "us" ? [] : (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((thread) => thread.ownerUserId === userId && thread.intentType === "assistant" && thread.visibility === "private" && thread.status === "active" && !thread.archivedAt && !thread.withdrawnAt && thread.aiAccessScope === "private" && (!personId || thread.personId === personId));
