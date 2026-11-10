@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blindPair, completionResult, decodeVerdict, summarize } from "./score.mjs";
-import { visibleContext } from "./fixture.mjs";
+import { projectSnapshot, visibleContext } from "./fixture.mjs";
+import { createRelationshipRecord } from "../../server/relationship-domain.mjs";
 import { recordChecks } from "./evidence.mjs";
 import { cases, layers } from "./cases.mjs";
 
@@ -24,6 +25,20 @@ test("private partner histories never reach a competitor's context", () => {
   const shared = visibleContext({ ...item, channel: "shared", probe: { thread: "main" } }, Date.UTC(2026, 10, 10));
   assert.deepEqual(shared.history, []);
   assert.deepEqual(shared.notes, []);
+});
+
+test("raw paired memories are projected before deciding whether a partner can see private content", () => {
+  const privateMemory = createRelationshipRecord({ relationshipId: "paired", userId: "alice", visibility: "private", aiAccessScope: "private", text: "我在考虑辞职" });
+  const raw = { memories: [privateMemory] };
+  assert.match(JSON.stringify(raw), /辞职/);
+  assert.deepEqual(projectSnapshot(raw, "bob").memories, []);
+  assert.match(JSON.stringify(projectSnapshot(raw, "alice")), /辞职/);
+  // A real shared disclosure must still fail the same no-disclosure predicate.
+  const disclosed = { memories: [{ ...privateMemory, visibility: "shared" }] };
+  const undisclosed = (snapshot) => !JSON.stringify(projectSnapshot(snapshot, "bob")).includes("辞职");
+  assert.equal(undisclosed(raw), true);
+  assert.equal(undisclosed(disclosed), false);
+  assert.equal(raw.memories[0].visibility, "private");
 });
 
 test("blind order decodes correctly in either direction without exposing labels", () => {
