@@ -81,6 +81,10 @@ async function withSystemFile(cwd, text, use) {
   try { return await use(["--system-prompt-file", file]); } finally { await rm(file, { force: true }).catch(() => {}); }
 }
 
+// What each call really used, as the CLI reports it (tokens, cache reads and writes, list-price cost). Evals listen here to
+// put cost next to quality (founder 11-10: cost-reduction pass, quality first); nothing in the App listens.
+export const usageListeners = new Set();
+
 export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || "sonnet", command = process.env.CLAUDE_CLI_PATH || "claude" } = {}) {
   // An empty working folder keeps project CLAUDE.md files and settings out of the call.
   const cwd = join(tmpdir(), "pinky-claude-cli");
@@ -120,6 +124,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
           const stdout = systemText ? await withSystemFile(cwd, systemText, (file) => run(command, [...args, ...file, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS)) : await run(command, [...args, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
           let result;
           try { result = JSON.parse(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
+          for (const listener of usageListeners) { try { listener({ name: params.text?.format?.name || null, model, prompt, systemChars: String(systemText || "").length, usage: result.usage || {}, usd: Number(result.total_cost_usd) || 0 }); } catch {} }
           if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
           return result;
         };

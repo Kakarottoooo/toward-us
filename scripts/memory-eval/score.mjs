@@ -1,4 +1,6 @@
-import { CATEGORIES } from "./cases.mjs";
+import { CATEGORIES as MEMORY } from "./cases.mjs";
+import { ASSISTANT_CATEGORIES } from "./assistant-cases.mjs";
+const CATEGORIES = { ...MEMORY, ...ASSISTANT_CATEGORIES };
 
 // Grading for the memory eval: each answer is split into the points it had to make (each 0, 0.5 or 1, as BEAM grades
 // "nuggets") and the things it must never say. One thing it must never say fails the answer outright, and a privacy case
