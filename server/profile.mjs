@@ -3,7 +3,8 @@ import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { listPeople, matchPerson, nameKey, personFor, personOf, personSubject } from "./people.mjs";
-import { readPortraits, refreshPortraits } from "./portraits.mjs";
+import { readPortraits } from "./portraits.mjs";
+import { maintainMemory } from "./memory-tidy.mjs";
 
 // 喜好档案 (founder 11-06): Pinky's long-term memory of each partner and of the two of them: what they like and dislike,
 // what they wish for, their habits and traits, the people and days that matter. It is kept automatically from their
@@ -88,7 +89,9 @@ async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, 
     const target = found.replaces && scoped.find((item) => item.id === found.replaces);
     if (target) {
       if (key(target.text) === key(found.fact)) continue;
-      const updated = await tx.updateRelationshipRecordForUser("memories", target.id, userId, (draft) => { draft.text = found.fact; draft.category = found.category; draft.evidence = evidence; draft.previousText = target.text; draft.version += 1; draft.updatedAt = new Date().toISOString(); });
+      const updated = await tx.updateRelationshipRecordForUser("memories", target.id, userId, (draft) => { // No longer true is kept, not erased (memory plan, 11-09): the old wording stays on the note's past with when it changed.
+      draft.past = [...(draft.past || []), { text: target.text, saidAt: target.evidence?.saidAt || null, until: found.line.createdAt || null }].slice(-12);
+      draft.text = found.fact; draft.category = found.category; draft.evidence = evidence; draft.previousText = target.text; draft.version += 1; draft.updatedAt = new Date().toISOString(); });
       if (updated) { Object.assign(target, updated); changed.push(updated); }
       continue;
     }
@@ -433,8 +436,8 @@ export function createProfileKeeper({ store, mediator, delayMs = 20_000, emit = 
     try {
       const changed = await task();
       for (const record of changed) emit(record, "profile.updated", record.visibility === "private" ? record.ownerUserId : null);
-      // New notes may change what is worth never forgetting: the portraits catch up in the background.
-      for (const owner of new Set(changed.map((record) => record.ownerUserId).filter(Boolean))) void refreshPortraits({ store, mediator, userId: owner }).catch((error) => console.error("Portrait refresh failed:", error?.message || error));
+      // New notes: tidy when due (at most daily), then let the portraits catch up, in the background.
+      for (const owner of new Set(changed.map((record) => record.ownerUserId).filter(Boolean))) void maintainMemory({ store, mediator, userId: owner }).catch((error) => console.error("Memory upkeep failed:", error?.message || error));
       if (changed.sessionId && changed.length) {
         const context = await store.getRelationshipContext(changed[0].ownerUserId);
         if (context?.relationship) emit({ id: changed.sessionId, relationshipId: context.relationship.id }, "assistant.updated", changed[0].ownerUserId);

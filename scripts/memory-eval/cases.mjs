@@ -221,6 +221,28 @@ cases.push(
     expect: { must: ["书名是《被讨厌的勇气》"], mustNot: ["编造别的书名"] } },
 );
 
+// Background tidy (整理, 11-09): the same thing kept three ways folds into one; an old fact a newer one replaced is marked
+// no longer true, kept as what used to be, so "now" and "before" both answer right.
+const OTHER_LIKES = ["爬山", "养猫", "听爵士乐", "吃日料", "跑步", "看展"].map((thing, index) => ({ about: "小林", category: "likes", text: `喜欢${thing}`, day: -350 + index * 40 }));
+const MOVED = [{ about: "Alex", category: "other", text: "住在上海，在静安区上班", day: -420 }, { about: "Alex", category: "other", text: "上个月搬到北京了，现在在望京上班", day: -15 },
+  ...["爬山", "养猫", "听爵士乐", "吃日料", "跑步", "看展", "打羽毛球"].map((thing, index) => ({ about: "Alex", category: "likes", text: `喜欢${thing}`, day: -400 + index * 50 }))];
+cases.push(
+  { id: "tidy-duplicates", category: "update", people: ["小林"],
+    notes: [{ about: "小林", category: "likes", text: "喜欢喝咖啡", day: -300 }, { about: "小林", category: "likes", text: "爱喝咖啡", day: -200 }, { about: "小林", category: "likes", text: "每天早上都要喝一杯咖啡", day: -100 }, ...OTHER_LIKES],
+    probe: { thread: "小林", text: "小林平时爱喝什么？" },
+    check: { atMost: { pattern: "咖啡", count: 1 } },
+    expect: { must: ["咖啡（每天早上一杯，可选）"], mustNot: ["编造别的饮品偏好"] } },
+  { id: "tidy-conflict-now", category: "update", people: ["Alex"],
+    notes: MOVED,
+    probe: { thread: "Alex", text: "Alex 现在住在哪个城市？" },
+    check: { superseded: "住在上海" },
+    expect: { must: ["北京"], mustNot: ["说 Alex 现在住在上海"] } },
+  { id: "tidy-conflict-before", category: "temporal", people: ["Alex"],
+    notes: MOVED,
+    probe: { thread: "Alex", text: "Alex 搬家之前住在哪？" },
+    expect: { must: ["上海"], mustNot: ["说搬家前住在北京"] } },
+);
+
 // Ordinary days, so the facts under test sit among the talk they would really be in.
 export const FILLER = [
   "今天上班好累，开了一下午会", "周末去公园散步了，天气不错", "最近在追一部剧，挺好看的", "今天健身房人好多",
