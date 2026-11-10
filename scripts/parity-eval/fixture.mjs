@@ -212,6 +212,9 @@ async function setupCase(item, withHistory) {
     const sideEffects = Object.fromEntries(["reminders", "checkins", "memories", "agreements", "spaces", "spaceItems", "chatImports", "photos"].map((key) => [key, (visibleAfter[key] || []).filter((record) => !beforeIds.has(record.id)).map(plain)]));
     return { answer: rounds.map((round, index) => rounds.length > 1 ? `第${index + 1}次：${round.answer}` : round.answer).join("\n"), completed, evidence: {
       rounds, persisted: created.map((record) => projectRecord(record, asker.user.id)).filter(Boolean).map(plain), sideEffects, checks, privacyChecks, storedCompletion: completed, unsupported: item.unsupported || null,
+      // A conversational draft precedes the separately confirmed, awaiting-approvals agreement record.
+      // Preserve it so an incomplete approval flow is never described as "no draft was saved".
+      ...(item.check?.kind === "agreement" ? { agreementDrafts: (visibleAfter.togetherConversations || []).filter((record) => record.draftAgreement).map((record) => ({ conversationId: record.id, draft: record.draftAgreement })) } : {}),
       ...(image ? { imageAttached: true, transcriptProvided: false, importStatuses: (await call("/imports", null, asker.cookie)).result.imports.map((entry) => ({ status: entry.status, messageCount: entry.messageCount })) } : {}),
       modality: item.modality || "text", boundary: "本地临时账号；没有真实发送；语音仅测转写后的文本，图片走真实导入路径" } };
   }
