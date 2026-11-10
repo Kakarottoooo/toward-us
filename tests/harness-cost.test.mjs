@@ -40,7 +40,7 @@ test("with a portrait a turn carries only the newest notes about that person; wi
   assert.equal((await profileContext(store, userId)).me.length, 60);
   await add({ kind: "portrait", subjectKey: "me", text: "画像", timeline: [], builtAt: new Date().toISOString() });
   const brief = await profileContext(store, userId);
-  assert.equal(brief.me.length, BRIEF.facts);
+  assert.equal(brief.me.length, 60, "the member's own lasting notes are never trimmed");
   assert.equal(brief.portraits.me.portrait, "画像");
 });
 
@@ -54,24 +54,27 @@ test("an answer written twice ('Wait, I need to return a valid object only.') is
   assert.deepEqual(answerFromText(JSON.stringify(meant), schema), meant);
 });
 
-test("beside a portrait an old dislike or food note still goes along with the newest notes", async (t) => {
+test("beside a person's portrait only their newest notes go along, and every old dislike or food note too", async (t) => {
   const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
   const { join, resolve } = await import("node:path");
   const { randomUUID } = await import("node:crypto");
   const { createFileStore } = await import("../server/store.mjs");
   const { createRelationshipRecord } = await import("../server/relationship-domain.mjs");
   const { profileContext, BRIEF } = await import("../server/profile.mjs");
+  const { personFor, personSubject } = await import("../server/people.mjs");
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "guard-"));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const store = await createFileStore(join(directory, "store.json"));
   const userId = randomUUID();
   await store.createUser({ id: userId, name: "Alex", email: `${userId}@example.invalid`, passwordHash: "x", createdAt: new Date().toISOString() });
+  const jie = await store.transaction(`user:${userId}`, (tx) => personFor(tx, userId, "阿杰"));
   const add = (fields, at) => store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId, ownerUserId: userId, visibility: "private", aiAccessScope: "private", status: "active", ...fields, ...(at ? { createdAt: at, updatedAt: at } : {}) }));
-  await add({ kind: "profile", subjectUserId: userId, category: "dislikes", text: "恐高" }, "2024-01-01T00:00:00Z");
-  for (let index = 0; index < 60; index += 1) await add({ kind: "profile", subjectUserId: userId, category: "likes", text: `喜欢第${index}种东西` });
-  await add({ kind: "portrait", subjectKey: "me", text: "画像", timeline: [], builtAt: new Date().toISOString() });
-  const facts = (await profileContext(store, userId)).me.map((item) => item.fact);
-  assert.equal(facts.length, BRIEF.facts + 1);
-  assert.ok(facts.includes("恐高"));
+  await add({ kind: "profile", subjectUserId: personSubject(jie.id), category: "food", text: "对芒果过敏" }, "2024-01-01T00:00:00Z");
+  for (let index = 0; index < 40; index += 1) await add({ kind: "profile", subjectUserId: personSubject(jie.id), category: "likes", text: `喜欢第${index}种东西` });
+  assert.equal((await profileContext(store, userId)).people[0].facts.length, 30);
+  await add({ kind: "portrait", subjectKey: personSubject(jie.id), text: "画像", timeline: [], builtAt: new Date().toISOString() });
+  const facts = (await profileContext(store, userId)).people[0].facts.map((item) => item.fact);
+  assert.equal(facts.length, BRIEF.personFacts + 1);
+  assert.ok(facts.includes("对芒果过敏"));
 });

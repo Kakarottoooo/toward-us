@@ -15,9 +15,10 @@ import { maintainMemory } from "./memory-tidy.mjs";
 export const CATEGORIES = ["food", "likes", "dislikes", "wishes", "traits", "people", "history", "other"];
 export const PROFILE_KIND = "profile";
 const SCAN_LIMIT = 40, SCAN_CONTEXT = 6, KNOWN_LIMIT = 150, CONTEXT_LIMIT = 80, HISTORY_LIMIT = 60;
-// Memory on demand (cost pass, founder 11-10): once a portrait holds the whole picture of someone, a turn carries only the
-// newest notes about them; an older specific comes through memory_search. Without a portrait, everything as before.
-export const BRIEF = { facts: 25, history: 15, personFacts: 10, personHistory: 6 };
+// Memory on demand (cost pass, founder 11-10): once a portrait holds the whole picture, a turn carries only the newest of
+// what happened and of each person's notes; an older specific comes through memory_search. The member's own, the partner's
+// and the couple's lasting notes stay at 80: trimming them let an old 恐高 slip in 3 of 10 runs (memory eval 11-10).
+export const BRIEF = { history: 15, personFacts: 10, personHistory: 6 };
 // The day a line was said where the member lives: "昨天" late in the evening in California is not yesterday in UTC.
 const localDay = (at, timeZone) => { try { return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at)); } catch { return String(at || "").slice(0, 10); } };
 const historyDay = (text) => /^\d{4}-\d{2}-\d{2}/.exec(text)?.[0] || "0000";
@@ -321,9 +322,9 @@ export async function profileContext(store, userId) {
   const line = (item) => ({ id: item.id, version: item.version, category: item.category || "other", fact: item.text, ...(item.evidence?.saidAt && (item.category !== "history" || !/^\d{4}-\d{2}-\d{2}/.test(String(item.text))) ? { saidOn: String(item.evidence.saidAt).slice(0, 10) } : {}), ...(item.visibility !== "private" ? { from: item.evidence?.channel === "together" ? "said together in Us" : "they shared it with you" } : {}) });
   // Beside a portrait the newest notes go along, and every dislike and food note however old (allergies, fears and
   // boundaries are few and the costliest to forget: 恐高 said 500 days ago, memory eval 11-10).
-  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId)), limit = CONTEXT_LIMIT) => {
+  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId)), limit = CONTEXT_LIMIT, brief = false) => {
     const all = from.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    if (limit >= CONTEXT_LIMIT) return all.slice(0, limit).map(line);
+    if (!brief) return all.slice(0, limit).map(line);
     const newest = all.slice(0, limit), guarded = all.slice(limit).filter((item) => ["dislikes", "food"].includes(item.category)).slice(0, 20);
     return [...newest, ...guarded].map(line);
   };
@@ -338,15 +339,15 @@ export async function profileContext(store, userId) {
   const portrait = (key) => portraits[key] ? { portrait: portraits[key].portrait, timeline: portraits[key].timeline } : undefined;
   return {
     portraits: Object.fromEntries(["me", "partner", "us"].filter((key) => portraits[key]).map((key) => [key, portrait(key)])),
-    me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId, undefined, drawn("me") ? BRIEF.facts : CONTEXT_LIMIT),
-    partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null), undefined, drawn("partner") ? BRIEF.facts : CONTEXT_LIMIT),
-    us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId), undefined, drawn("us") ? BRIEF.facts : CONTEXT_LIMIT),
+    me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId, undefined, CONTEXT_LIMIT),
+    partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null), undefined, CONTEXT_LIMIT),
+    us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId), undefined, CONTEXT_LIMIT),
     history,
     // Someone single may be getting to know several people (founder 11-09); each one's notes stay with that person.
     people: people.slice(0, 8).map((person) => {
       const theirs = records.filter((item) => isProfileFact(item) && item.subjectUserId === personSubject(person.id));
       return { id: person.id, name: person.name, ...(portraits[personSubject(person.id)] ? { portrait: portrait(personSubject(person.id)) } : {}), alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4), lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10),
-        facts: pick((item) => item.category !== "history", theirs, drawn(personSubject(person.id)) ? BRIEF.personFacts : 30), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, drawn(personSubject(person.id)) ? BRIEF.personHistory : 20).map(line) };
+        facts: pick((item) => item.category !== "history", theirs, drawn(personSubject(person.id)) ? BRIEF.personFacts : 30, drawn(personSubject(person.id))), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, drawn(personSubject(person.id)) ? BRIEF.personHistory : 20).map(line) };
     }),
   };
 }
