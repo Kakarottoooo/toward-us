@@ -25,11 +25,12 @@ const condition = /预算|不超过|以内|上限|过敏|营业|开放|搬到|bu
 const uncertain = /没(?:有)?(?:核实|确认|查到)|未(?:核实|确认|查证)|待(?:核实|确认)|需(?:要)?(?:向|与)?.{0,15}(?:确认|核实)|估(?:算|计)|暂按|以.{0,15}为准|unverified|not (?:yet )?(?:verified|confirmed)|could not verify|estimate|check .{0,30}(?:hours|price|ingredient)|sin confirmar|no (?:está )?verificad|estimad/i;
 const capWords = /上限|最多|不超过|控制在|封顶|限额|预留|预算|以内|at most|up to|cap|allowance|budget|maximum|presupuesto|máximo/i;
 
-export function requiresPlanConstraints(context, reply = "") {
+export function requiresPlanConstraints(context, reply = null) {
   const question = lastQuestion(context);
   // Recall and recording are not new plans. Do not reject a clarification or a
   // failed lookup merely because the request mentioned money.
   if (!proposed.test(question) || !condition.test(`${question} ${JSON.stringify(context?.profile || context?.sharedProfile || {})}`) || /之前.*(?:怎么|什么)|回忆|记账|报销|recall|reimburse/i.test(question)) return false;
+  if (reply === null) return true;
   return /\d+(?:\.\d+)?\s*(?:元|美元|欧元|人民币|dollars?|euros?)|[$€£]\s*\d|\d{1,2}:\d{2}|花生|peanut|餐|菜|meal|dish/i.test(reply);
 }
 
@@ -69,7 +70,7 @@ export function checkPlanConstraints(check, { context = {}, reply = "" } = {}) {
     issue("invalid_constraints", "Provide the complete planConstraints object or null for non-planning replies.");
     return { ok: false, issues, unverified, totalUpper };
   }
-  const source = sourceText(context), users = JSON.stringify((context.messages || []).filter((m) => m.role === "user" || m.role === "member").map((m) => m.text));
+  const source = sourceText(context), users = sourceText({ ...context, lookups: [] });
   if (requiresPlanConstraints(context, reply) && !check.budget && !check.location && !check.visits.length && !check.food.length) issue("empty_constraints", "The plan's hard conditions cannot be bypassed with an empty object.");
   const allergyMeal = /过敏|allerg|alerg/i.test(`${lastQuestion(context)} ${JSON.stringify(context.profile || context.sharedProfile || {})}`) && /晚饭|午饭|餐|菜|吃|meal|dinner|food|comida/i.test(lastQuestion(context));
   if (allergyMeal && !check.food.length) issue("missing_food", "A meal plan with a known allergy must check the selected food and excluded ingredients.");
@@ -131,6 +132,7 @@ export function checkPlanConstraints(check, { context = {}, reply = "" } = {}) {
   for (const food of check.food.slice(0, 12)) {
     if (!food || typeof food !== "object") { issue("invalid_food", "Each selected dish must list known exclusions and ingredient evidence."); continue; }
     const avoid = Array.isArray(food.avoid) ? food.avoid.filter(Boolean) : [];
+    if (avoid.some((allergen) => normalized(food.name).includes(normalized(allergen)))) issue("allergen_conflict", `${food.name}: the selected dish itself names an excluded ingredient; remove it.`);
     if (allergyMeal && !avoid.length) issue("missing_allergens", `${food.name}: known allergy restrictions cannot be omitted.`);
     for (const allergen of avoid) if (!normalized(source).includes(normalized(allergen))) issue("unsupported_allergen", `${food.name}: the excluded ingredient is not in visible source evidence.`);
     if (!Array.isArray(food.ingredients) || !quoted(food.sourceQuote, source)) { if (avoid.length) unknown(`${food.name} ingredients and cross-contact`); continue; }

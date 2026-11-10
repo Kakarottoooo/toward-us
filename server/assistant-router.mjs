@@ -1,4 +1,6 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
+import { finishReply } from "./reply-contract.mjs";
+import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
 import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
@@ -195,7 +197,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const records = await available(store, userId);
     await ensureMomentSpaces(store, userId);
     const userMessage = { id: randomUUID(), role: "user", text, itemId, ...(photoIds.length ? { photoIds } : {}), createdAt: new Date().toISOString() };
-    const context = {
+    let context = {
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
       // A voice call appears as its captions, so the user can refer back to what was said on the call.
@@ -254,9 +256,23 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
       progress("writing");
+      context = { ...context, lookups };
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
+    }
+    // Check proposed plans before any write. One repair attempt is bounded; a
+    // second contradiction is an honest non-completion, never a claimed success.
+    let checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
+    if (!checked.ok) {
+      progress("writing");
+      try {
+        plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
+          correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language));
+      } catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
+      if (!validateAssistantTurn(plan)) throw unavailable();
+      checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
+      if (!checked.ok) plan = { reply: say(language, "这份安排还没通过预算或条件核对，我暂时不能把它当作可执行方案；相关价格、地点、日期和安全条件仍需核实。", "This plan has not passed the budget or constraint checks, so I cannot present it as ready to use; its prices, location, dates and safety conditions still need verification.", "El plan aún no supera la comprobación de presupuesto o condiciones; faltan por verificar precios, lugar, fechas y seguridad."), actions: [] };
     }
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
     if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
@@ -445,7 +461,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       // ("我来找找…结果会直接显示给你"), which left the person waiting for nothing, or invited a made-up memory (founder 11-07).
       const foundNothing = searched.length && searched.length === plan.actions.length && searched.every((count) => count === 0);
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
-        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
+        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(clean(plan.reply, 1200), { request: text, language, receipts: replies }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const cited = citedReply(reply, recallSources);
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });

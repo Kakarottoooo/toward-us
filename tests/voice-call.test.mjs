@@ -51,8 +51,8 @@ test("a private call starts with the member's recent conversation, runs delegate
   assert.deepEqual(f.provider.started[0].input.map((item) => item.role), ["user", "assistant"]);
   const turn = await f.request("/voice/turn", "POST", { id: started.body.id, turnId: "d1", text: "Remember that I want to apologize first" });
   assert.equal(turn.status, 200, JSON.stringify(turn.body));
-  assert.equal(turn.body.spoken, "Saved it.");
-  assert.equal((await f.request("/voice/turn", "POST", { id: started.body.id, turnId: "d1", text: "Remember that I want to apologize first" })).body.spoken, "Saved it.", "a repeated delegation is answered once");
+  assert.equal(turn.body.spoken, "这轮没有新增记录。");
+  assert.equal((await f.request("/voice/turn", "POST", { id: started.body.id, turnId: "d1", text: "Remember that I want to apologize first" })).body.spoken, "这轮没有新增记录。", "a repeated delegation is answered once");
   assert.equal((await f.request("/voice/turn", "POST", { id: started.body.id, turnId: "d2", text: "x" }, f.people[1].id)).status, 404, "nobody else can act inside this call");
   assert.equal((await f.request("/voice/close", "POST", { id: started.body.id })).status, 200);
   assert.deepEqual(f.provider.hungUp, ["live_1"]);

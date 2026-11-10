@@ -1,4 +1,5 @@
 import { keepMessages } from "./thread-pages.mjs";
+import { wantsOneSentence } from "./reply-contract.mjs";
 import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
@@ -160,7 +161,7 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
+      if (changed.length && !wantsOneSentence(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { more, sessionId });
   });
@@ -222,7 +223,7 @@ export async function scanCall({ store, mediator, userId, sessionId, noteId, row
 /** Reads a chat between the member and their partner that the member brought privately (screenshots or pasted text with a
  * question, the reply coach) and keeps what it shows about either of them, privately for the member (founder 11-08: "用得越多
  * 越懂她"). Runs after the answer, so it never slows it down; B's own words are the evidence about B. */
-export async function scanBroughtChat({ store, mediator, userId, sessionId, sourceId, messages, personId = null, at = new Date().toISOString() }) {
+export async function scanBroughtChat({ store, mediator, userId, sessionId, sourceId, messages, personId = null, quiet = false, at = new Date().toISOString() }) {
   if (!mediator?.structured) return [];
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
   if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
@@ -249,7 +250,7 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
     const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings: person ? findings.filter((found) => found.subject !== "both") : findings, channel: "private", sessionId }, person ? [person] : []);
-    if (changed.length) await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
+    if (changed.length && !quiet) await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { sessionId });

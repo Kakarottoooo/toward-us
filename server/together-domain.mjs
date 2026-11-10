@@ -1,4 +1,6 @@
 import { keepMessages } from "./thread-pages.mjs";
+import { checkPlanConstraints } from "./plan-constraints.mjs";
+import { finishReply } from "./reply-contract.mjs";
 import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
 import { citedReply } from "./conversation-recall.mjs";
 import { randomUUID } from "node:crypto";
@@ -245,7 +247,15 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
       ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
       : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));
     progress("writing");
+    context.lookups = lookups;
     turn = await mediator.continueTogether({ ...context, today, webSearch: true, lookups }, language);
+  }
+  let checked = checkPlanConstraints(turn.planConstraints, { context, reply: turn.reply });
+  if (!checked.ok) {
+    turn = await mediator.continueTogether({ ...context, today, timezones: zones, webSearch: Boolean(mediator.webSearch), constraintErrors: checked.issues,
+      rejectedPlan: turn, correction: "Revise the proposal to satisfy these code checks before any action. Preserve the requested deliverables." }, language);
+    checked = checkPlanConstraints(turn.planConstraints, { context, reply: turn.reply });
+    if (!checked.ok) turn = { actions: [], draftAgreement: null, reply: language === "en" ? "This plan still needs its budget and conditions verified before it can be used." : language === "es" ? "Falta verificar el presupuesto y las condiciones antes de usar este plan." : "这份安排的预算和条件仍未通过核对，暂时不能当作可执行方案。" };
   }
   turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search", "memory_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
@@ -267,7 +277,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
     const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked, timezone, language });
     const awaiting = outcome.awaiting || (outcome.waitingFor || []).map((name) => members.find((member) => member.name && member.name.toLowerCase() === String(name).toLowerCase())?.id).filter(Boolean);
-    const cited = citedReply(outcome.reply, recallSources);
+    // Shared write receipts remain transaction-backed. A no-action answer cannot
+    // claim it saved a memory merely because related context was retrieved.
+    const cited = citedReply(made.length || outcome.draftAgreement ? outcome.reply : finishReply(outcome.reply, { request: text, language }), recallSources);
     const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: cited.reply, i18n: outcome.i18n || null, awaiting, refs: [...made, ...cited.sources.map((item) => ({ type: "conversation", id: item.messageId, ...item })), ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
     if (!outcome.draftAgreement) return result;
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });

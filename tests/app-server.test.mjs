@@ -105,14 +105,14 @@ test("screenshot questions use the capable vision model once, while transcriptio
   });
 });
 
-test("shared agreement drafting keeps unstated rotation details out of binding terms", async () => {
+test("shared agreement drafting preserves given rules and labels reversible defaults as proposals", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     globalThis.fetch = async (_url, init) => {
       const instructions = JSON.parse(init.body).input[0].content;
-      assert.match(instructions, /ONLY arrangements the partners actually stated/);
-      assert.match(instructions, /never your advice, moral judgments or invented duties/);
-      assert.match(instructions, /rotation unit and who starts in unresolvedPoints/);
-      assert.match(instructions, /do not pick a day, meal, deadline or fallback/);
+      assert.match(instructions, /Keep each agreed rule once/);
+      assert.match(instructions, /Do not list a detail already supplied as unresolved/);
+      assert.match(instructions, /default clearly labeled as a suggestion they can change/);
+      assert.match(instructions, /Never approve anything for them/);
       return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Draft ready.", draftAgreement: null, actions: [], waitingFor: [] }) }] }] }), { headers: { "content-type": "application/json" } });
     };
     await createMediator({ apiKey: "test-key" }).continueTogether({ messages: [{ role: "member", text: "Pinky，我们说好以后周末轮流做饭" }] }, "zh");
