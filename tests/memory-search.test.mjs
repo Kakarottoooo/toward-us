@@ -90,7 +90,7 @@ test("Pinky searches when it needs an old detail and answers with what it found"
   const contexts = [];
   const mediator = { planAssistantTurn: async (context) => { contexts.push(context); return !context.lookups
     ? { reply: "我找找。", actions: [{ kind: "memory_search", operation: "query", targetId: null, expectedVersion: null, query: "道歉 订餐厅", queryPeriod: "all", occurrence: null, fields: { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null } }] }
-    : { reply: "2025 年 3 月 12 日你说过：他道歉说以后每年都提前一周订好餐厅。", actions: [] }; } };
+    : { reply: "2025 年 3 月 12 日你说过：他道歉说以后每年都提前一周订好餐厅。 " + context.lookups[0].findings.match(/\[recall:[^\]]+\]/)[0], actions: [] }; } };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id: req.headers["x-user"] || users[0].id } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
@@ -101,6 +101,14 @@ test("Pinky searches when it needs an old detail and answers with what it found"
   assert.equal(contexts.length, 1, "explicit recall gets evidence on the first model call");
   assert.match(contexts[0].lookups[0].findings, /2025-03-12.*提前一周订好餐厅/);
   assert.match(reply.text, /2025 年 3 月 12 日/);
+  assert.equal(reply.sources.length, 1);
+  assert.doesNotMatch(reply.text, /recall:/);
+  const source = reply.sources[0];
+  const url = `http://127.0.0.1:${server.address().port}/api/assistant/sessions/${source.conversationId}/locate?messageId=${source.messageId}`;
+  const located = await fetch(url);
+  assert.equal(located.status, 200);
+  assert.equal((await located.json()).messages[0].id, source.messageId);
+  assert.equal((await fetch(url, { headers: { "x-user": users[1].id } })).status, 404);
 });
 
 test("a day asked for finds everything said that day, whatever words come with it", async (t) => {
