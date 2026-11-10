@@ -18,7 +18,7 @@ type Summary = { id: string; relationshipId?: string; issueId: string; text: str
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account"; days?: number | null } | { kind: "withdraw"; summary: Summary };
 type Page = "main" | "access" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character";
-type SettingsProps = { initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
+type SettingsProps = { initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 function downloadFile(contents: string, filename: string, type: string) {
@@ -35,7 +35,7 @@ function Row({ icon, tone = "blue", label, value, onClick, danger = false, testI
 const Group = ({ title, note, children }: { title?: string; note?: string; children: ReactNode }) => <section className="settings-group">{title && <h2>{title}</h2>}<div className="settings-card">{children}</div>{note && <p className="settings-note">{note}</p>}</section>;
 
 /** Settings: account, language, privacy and data, each one row deep; every irreversible step is confirmed in a sheet with the password. */
-export function SettingsPage({ initialPage, onAsk, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
+export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [page, setPage] = useState<Page>(initialPage || "main");
@@ -124,6 +124,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       <Row icon={<ClockCounterClockwise size={18} weight="bold" />} tone="blue" label={t("私人内容保留", "Keep private content", "Conservar lo privado")} value={data ? period(data.privateRetentionDays) : ""} onClick={() => open("retention")} />
       <Row icon={<Eye size={18} weight="bold" />} tone="pink" label={titles.summaries} value={data ? String(confirmedSummaries.length) : ""} onClick={() => open("summaries")} />
       <Row icon={<ListChecks size={18} weight="bold" />} tone="gray" label={titles.history} onClick={() => open("history")} />
+      {relationshipId && onEarlierPeople && <Row icon={<Eye size={18} weight="bold" />} tone="gray" label={t("以前的档案", "Earlier people", "Personas anteriores")} onClick={onEarlierPeople} testId="settings-earlier-people" />}
     </Group>
     <Group title={t("账号与数据", "Account and data", "Cuenta y datos")}>
       <Row icon={<Key size={18} weight="bold" />} tone="gray" label={titles.recovery} value={data ? data.recoveryEnabled ? t("已设置", "On", "Activado") : t("未设置", "Off", "Desactivado") : ""} onClick={() => open("recovery")} />

@@ -1,6 +1,7 @@
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { readWants, writeWants } from "./people-compare.mjs";
+import { choose, markAsked, settle, stageOf, unchoose } from "./people-stages.mjs";
 
 // Pinky works for someone single too (founder 11-09: "有很多个暧昧对象……Pinky 要能识别对面是不同的人……哪个人最后评估下来是
 // 比较适合我的"). Each person they are getting to know is a private record of theirs, never a user and never shared: the
@@ -65,11 +66,13 @@ export function createPeopleRouter({ store, emit = () => {}, comparer = null }) 
   };
   router.get("/people", async (req, res) => {
     const userId = req.auth.user.id;
+    await settle(store, userId).catch((error) => console.error("Could not settle the stage:", error?.message || error));
     const records = await store.listRelationshipRecordsForUser("memories", userId);
     const counts = new Map();
     for (const record of records) if (record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && String(record.subjectUserId || "").startsWith("person:")) counts.set(personOf(record.subjectUserId), (counts.get(personOf(record.subjectUserId)) || 0) + 1);
     const people = await listPeople(store, userId, { archived: req.query.archived === "1" }), { seenAt } = await readWants(store, userId);
-    res.json({ people: people.map((person) => projectPerson(person, counts.get(person.id) || 0)), alerts: people.filter((person) => alerted(person, seenAt)).length });
+    const { stage, chosen } = await stageOf(store, userId);
+    res.json({ people: people.map((person) => projectPerson(person, counts.get(person.id) || 0)), alerts: stage === "together" ? 0 : people.filter((person) => alerted(person, seenAt)).length, stage, chosen: chosen ? projectPerson(chosen) : null });
     // The reading is made ahead of time whenever their notes change, so 我的 TA 们 is ready when opened.
     if (comparer) comparer.current(userId, languageOf(req)).catch(() => {});
   });
@@ -79,7 +82,8 @@ export function createPeopleRouter({ store, emit = () => {}, comparer = null }) 
     const people = await listPeople(store, userId);
     const reading = comparer ? await comparer.current(userId, languageOf(req)) : { status: "unavailable" };
     if (req.query.seen === "1") await writeWants(store, userId, { seenAt: new Date().toISOString() });
-    res.json({ ...reading, people: people.map((person) => projectPerson(person)) });
+    const { stage, chosen } = await stageOf(store, userId);
+    res.json({ ...reading, people: people.map((person) => projectPerson(person)), stage, chosen: chosen ? projectPerson(chosen) : null });
   });
   // One card: what Pinky keeps about this person, newest first, and what happened between them by date.
   router.get("/people/:id", async (req, res) => {
@@ -121,6 +125,23 @@ export function createPeopleRouter({ store, emit = () => {}, comparer = null }) 
     });
     emit(kept, "person.updated", userId);
     res.json({ person: projectPerson(kept) });
+  });
+  // The one moment that matters (founder 11-09, three stages): 是的 settles on this person and puts the others away; 还没有
+  // only keeps Pinky from asking again for a while.
+  router.post("/people/:id/choose", async (req, res) => {
+    const userId = req.auth.user.id;
+    const chosen = await store.transaction(`user:${userId}`, async (tx) => {
+      await owned(tx, req.params.id, userId);
+      return req.body?.chosen === false ? markAsked(tx, userId, req.params.id) : choose(tx, userId, req.params.id);
+    });
+    emit(chosen, "person.updated", userId);
+    res.json({ ...(await stageOf(store, userId)), person: projectPerson(chosen) });
+  });
+  // Not the one after all: the people put away for them come back.
+  router.post("/people/unchoose", async (req, res) => {
+    const userId = req.auth.user.id;
+    await store.transaction(`user:${userId}`, (tx) => unchoose(tx, userId));
+    res.json(await stageOf(store, userId));
   });
   router.post("/people/:id/archive", async (req, res) => {
     const userId = req.auth.user.id, archived = req.body?.archived !== false;

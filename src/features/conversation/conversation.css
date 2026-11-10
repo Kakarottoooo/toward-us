@@ -283,3 +283,8 @@
 
 /* Read by screen readers only: who will see what you type (the visible tabs and the welcome tour say it once). */
 .composer-audience-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* One Pinky, three stages (founder 11-09): "我们俩 · 邀请 X" once settled on one, and Pinky's one question in Just me. */
+.conversation-segments .tab-sub { overflow: hidden; color: var(--jian-muted); font-size: 12px; font-weight: 500; text-overflow: ellipsis; }
+.together-ask-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.together-ask-actions button { min-height: 44px; padding: 0 20px; border: 1px solid var(--jian-line); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-weight: 700; cursor: pointer; }
+.together-ask-actions .card-primary { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }

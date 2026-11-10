@@ -1,4 +1,5 @@
 import { gettingToKnow, profileContext } from "./profile.mjs";
+import { markAsked, togetherWith } from "./people-stages.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -47,7 +48,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
-      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.kind === "noted" ? { kind: "noted", ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
@@ -135,6 +136,16 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const result = await runTurn(userId, sessionId, body, { ...options, progress });
       // A promise said here stays this member's alone; it is noticed in the background once the chat goes quiet.
       if (!result.duplicate) { promises?.notePrivate(userId, sessionId); profile?.notePrivate(userId, sessionId); }
+      // "我和阿杰在一起了": the one moment Pinky asks whether someone is the one (founder 11-09, three stages).
+      if (!result.duplicate) {
+        const person = await togetherWith(store, userId, body?.text).catch(() => null);
+        if (person) {
+          await store.transaction(`user:${userId}`, (tx) => markAsked(tx, userId, person.id));
+          const name = person.name.replace(/[（(][^）)]*[）)]/g, "").trim() || person.name;
+          const asked = await postNote(userId, { sessionId: result.session.id, language: result.session.language, kind: "together_ask", personId: person.id, text: say(result.session.language, `听起来你和${name}确定了？`, `Sounds like you and ${name} are together?`, `¿Parece que tú y ${name} están juntos?`) }).catch(() => null);
+          if (asked) result.session = asked;
+        }
+      }
       return result;
     } finally { progress(null); }
   };

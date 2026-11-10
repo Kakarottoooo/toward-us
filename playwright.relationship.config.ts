@@ -4,7 +4,7 @@ const port = Number(process.env.PINKY_TEST_PORT || 5181);
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["**/relationship-agent.spec.ts", "**/open-without-flash.spec.ts", "**/decision-lifecycle.spec.ts", "**/personal-lifecycle.spec.ts", "**/assistant-workflows.spec.ts", "**/daily-question-draft.spec.ts", "**/profile-visibility.spec.ts", "**/pairing-recovery.spec.ts", "**/composer-audience.spec.ts", "**/game-question-choice.spec.ts", "**/people-row.spec.ts", "**/suggestions-on-open.spec.ts"],
+  testMatch: ["**/relationship-agent.spec.ts", "**/open-without-flash.spec.ts", "**/decision-lifecycle.spec.ts", "**/personal-lifecycle.spec.ts", "**/assistant-workflows.spec.ts", "**/daily-question-draft.spec.ts", "**/profile-visibility.spec.ts", "**/pairing-recovery.spec.ts", "**/composer-audience.spec.ts", "**/game-question-choice.spec.ts", "**/people-row.spec.ts", "**/suggestions-on-open.spec.ts", "**/three-stages.spec.ts"],
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 15_000 },

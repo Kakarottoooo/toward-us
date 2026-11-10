@@ -72,3 +72,10 @@
 .people-trait-grid span { color: var(--jian-muted); font-size: 12px; line-height: 1.45; }
 .people-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding-left: 18px; line-height: 1.5; }
 .people-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; align-self: flex-start; min-height: 48px; padding: 0 20px; border: 0; border-radius: 999px; background: var(--jian-blue); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+
+/* Three stages (founder 11-09): the quiet question under someone mutual for three weeks. */
+.people-person-wrap { display: flex; flex-direction: column; gap: 6px; }
+.people-settle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 13px; line-height: 1.5; }
+.people-settle button { flex: 0 0 auto; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--jian-blue); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.people-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.people-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 20px; border: 1px solid var(--jian-line); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-weight: 700; cursor: pointer; }

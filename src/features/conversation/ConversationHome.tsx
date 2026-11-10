@@ -26,7 +26,7 @@ import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
 import { MatchInviteCard } from "../games/MatchInviteCard";
-import { PeopleRow, PersonSheet, usePeople, type Person } from "../people/People";
+import { PeopleRow, PersonSheet, TogetherSheet, plainName, usePeople, type Person } from "../people/People";
 import "./conversation.css";
 
 type Channel = "me" | "us";
@@ -147,7 +147,24 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const restoring = useRef<Promise<Session | null> | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   // 我的 TA 们 (founder 11-09): reloaded as the private chat grows, since a new note may have filed someone new.
-  const people = usePeople(session?.messages.length || 0, language);
+  const [peopleTick, setPeopleTick] = useState(0);
+  const peopleState = usePeople(`${session?.messages.length || 0}:${peopleTick}`, language);
+  const people = peopleState.people;
+  // One Pinky, three stages (founder 11-09): what the home shows follows where the member is.
+  // Someone who has already sent their partner an invite is on the couple path, so Us stays (pairing tests, 11-09).
+  const stage = paired ? "together" : pairing?.status === "pending" && peopleState.stage === "dating" ? "inviting" : peopleState.stage;
+  const [settledOn, setTogetherPerson] = useState<Person | null>(null);
+  const [putAway, setPutAway] = useState(0);
+  const [answered, setAnswered] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`pinky-together-asked:${user.id}`) || "[]"); } catch { return []; } });
+  const answerTogether = async (messageId: string, personId: string, yes: boolean) => {
+    const next = [...answered, messageId]; setAnswered(next);
+    try { localStorage.setItem(`pinky-together-asked:${user.id}`, JSON.stringify(next)); } catch { /* the buttons simply show again */ }
+    try {
+      await relationshipApi(`/api/people/${encodeURIComponent(personId)}/choose`, jsonBody({ chosen: yes }));
+      if (yes) { setPutAway(Math.max(0, people.length - 1)); setTogetherPerson(people.find((item) => item.id === personId) || null); }
+      setPeopleTick((value) => value + 1);
+    } catch (error) { setNotice((error as Error).message); }
+  };
   const [person, setPerson] = useState<Person | null>(null);
   const audienceId = useId();
   const endRef = useRef<HTMLDivElement>(null);
@@ -665,17 +682,17 @@ ${text}` : text, target);
         <button className="conversation-menu" onClick={openDrawer} aria-label={t("打开菜单", "Open menu", "Abrir menú")} aria-expanded={drawer} data-testid="open-drawer"><List size={24} /></button>
         {usHidden ? <div className="conversation-segments single"><button type="button" className="active" aria-current="page"><LockKey size={17} />{t("只有我", "Just me", "Solo yo")}</button></div> : <div className="conversation-segments" role="tablist" aria-label={t("对话频道", "Conversation channel", "Canal de conversación")}>
           <button role="tab" aria-selected={channel === "me"} className={channel === "me" ? "active" : ""} onClick={() => switchChannel("me")}><LockKey size={17} />{t("只有我", "Just me", "Solo yo")}{unreadMe && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
-          <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={17} />{t("我们俩", "Us", "Nosotros")}{unreadUs && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>
+          {stage === "dating" && channel !== "us" ? <button type="button" onClick={() => open("/?view=people")} data-testid="tab-people"><UsersThree size={17} />{t("在了解的人", "People", "Personas")}</button> : <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={17} />{t("我们俩", "Us", "Nosotros")}{stage === "chosen" && peopleState.chosen && <small className="tab-sub">{t(` · 邀请${plainName(peopleState.chosen.name)}`, ` · invite ${plainName(peopleState.chosen.name)}`, ` · invitar`)}</small>}{unreadUs && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>}
         </div>}
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      {channel === "me" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => open("/?view=people")} onAdd={() => fileRef.current?.click()} />}
+      {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} onOpen={(item) => { keyboard.hide(); setPerson(item); }} onCompare={() => open("/?view=people")} onAdd={() => fileRef.current?.click()} />}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">
-      {channel === "me" ? <>{session && !privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about) setPerson(about); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{t("查看", "Open", "Ver")}</span>}</button>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>)}</> :
+      {channel === "me" ? <>{session && !privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask"><p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about) setPerson(about); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{t("查看", "Open", "Ver")}</span>}</button>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article>{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>)}</> :
         !paired ? invite : <>{together && !sharedMessages.length && usEmpty}
           {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()} data-testid="earlier-messages">{loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
           {sharedMessages.slice(0, olderMessages.length).map(sharedMessage)}<div ref={olderRef} className="conversation-seam" aria-hidden="true" />{sharedMessages.slice(olderMessages.length).map((message, index) => sharedMessage(message, index + olderMessages.length))}
@@ -689,6 +706,7 @@ ${text}` : text, target);
       {showIdeas && suggest(ideas[channel], channel)}
       <div ref={endRef} />
     </main></MobileScroll></div>
+    <TogetherSheet language={language} person={settledOn} others={putAway} onClose={() => setTogetherPerson(null)} onInvite={() => { setTogetherPerson(null); switchChannel("us"); }} />
     <PersonSheet language={language} person={person} onClose={() => setPerson(null)} onChat={talkAbout} onFull={(item) => { setPerson(null); open(`/?view=people&person=${encodeURIComponent(item.id)}`); }} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {!call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
@@ -772,7 +790,7 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
   const layoutIcon: Record<string, ReactNode> = { checklist: <ListChecks size={22} />, timeline: <ClockCounterClockwise size={22} />, gallery: <Images size={22} />, notes: <NotePencil size={22} />, list: <ListBullets size={22} /> };
   const spaceRow = (space: SpaceSummary): DrawerItem => ({ key: `space-${space.id}`, icon: layoutIcon[space.layout] || layoutIcon.list, label: space.title, onClick: () => onOpen(`/?view=space&space=${encodeURIComponent(space.id)}`) });
   const ours = spaces.filter((space) => space.visibility === "shared").map(spaceRow);
-  const mine = [peopleRow, ...spaces.filter((space) => space.visibility === "private").map(spaceRow), ...(chats ? [{ key: "imports", icon: <ChatsCircle size={22} />, label: t("聊天记录", "Chat history", "Historial de chat"), onClick: () => onOpen("/?view=import") }] : []), cycleRow];
+  const mine = [...(paired ? [] : [peopleRow]), ...spaces.filter((space) => space.visibility === "private").map(spaceRow), ...(chats ? [{ key: "imports", icon: <ChatsCircle size={22} />, label: t("聊天记录", "Chat history", "Historial de chat"), onClick: () => onOpen("/?view=import") }] : []), cycleRow];
   const together = home?.since ? togetherStats(home.since, new Date().toLocaleDateString("en-CA")) : null;
   const row = (item: DrawerItem) => <button key={item.key} className="drawer-row" onClick={item.onClick} data-testid={`drawer-${item.key}`}>{item.icon}<span>{item.label}</span>{!!item.badge && <em aria-label={t(`${item.badge} 件待处理`, `${item.badge} waiting`, `${item.badge} pendientes`)}>{item.badge}</em>}</button>;
   return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
