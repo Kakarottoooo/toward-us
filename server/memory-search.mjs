@@ -30,7 +30,7 @@ export async function prefetchRecall(options, text) {
   if (!asksToRecall(text)) return null;
   // A natural-language question has incidental overlaps (two adjacent Chinese bigrams can be just one short name).
   // Preloading must be more selective than a deliberate short search; weak hits leave query formulation to the model.
-  const result = await searchMemoryResults({ ...options, query: text, minimumMatches: 3, date: String(text).match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || "" });
+  const result = await searchMemoryResults({ ...options, query: text, minimumMatches: CJK.test(text) ? 3 : 2, date: String(text).match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || "" });
   return result.sources.length ? result : null;
 }
 

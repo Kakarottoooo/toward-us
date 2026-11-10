@@ -60,6 +60,8 @@ test("automatic recall does not settle on a short overlapping name; an intention
   await f.thread(userId, { messages: [f.said("昨天和小夏去书店了。", "2025-03-12T10:00:00Z"), f.said("听起来很开心。", "2025-03-12T10:01:00Z", "assistant")] });
   assert.equal(await prefetchRecall({ store: f.store, userId }, "之前我问你要不要和小夏创业，你当时怎么回答的？"), null);
   assert.match(await searchMemory({ store: f.store, userId, query: "小夏" }), /书店/);
+  await f.thread(userId, { messages: [f.said("How should I begin?", "2025-04-12T10:00:00Z"), f.said("Send a cobalt postcard.", "2025-04-12T10:01:00Z", "assistant")] });
+  assert.ok(await prefetchRecall({ store: f.store, userId }, "What did you suggest about a cobalt postcard before?"), "two whole Latin words are not overlapping Chinese fragments");
 });
 
 test("recall sources locate an old page and local day, but never another owner's private conversation", async (t) => {
