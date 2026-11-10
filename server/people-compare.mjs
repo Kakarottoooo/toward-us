@@ -15,6 +15,8 @@ export const DEPTH = ["shallow", "medium", "deep"];
 export const SHARES = ["me", "even", "them", "unknown"];
 export const WANT_KINDS = ["must", "nice", "never"];
 export const WANTS_KIND = "dating_wants";
+// The last reading is kept on the member's own record, so a restart does not pay for the same reading again (cost pass 11-10).
+export const READING_KIND = "people_reading";
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const str = { type: "string" };
 const list = (items, maxItems) => ({ type: "array", maxItems, items });
@@ -165,7 +167,9 @@ export function createPeopleComparer({ store, mediator }) {
         const result = await mediator.structured({ name: "people_reading", schema, instructions: instructions(language), input: JSON.stringify(found.input), maxOutputTokens: 5000 });
         const reading = clean(result, found.input);
         await keepPlaces(userId, reading).catch((error) => console.error("Could not keep where each person stands:", error?.message || error));
-        kept.set(userId, { basis: found.basis, language, at: new Date().toISOString(), reading });
+        const entry = { basis: found.basis, language, at: new Date().toISOString(), reading };
+        kept.set(userId, entry);
+        await saveReading(userId, entry).catch((error) => console.error("Could not keep the reading:", error?.message || error));
       } catch (error) {
         console.error("Could not read the people:", error?.message || error);
         kept.set(userId, { ...(kept.get(userId) || {}), failedBasis: found.basis, failedAt: Date.now() });
@@ -175,10 +179,17 @@ export function createPeopleComparer({ store, mediator }) {
     return job;
   };
   /** The reading as the page shows it, with each person's counted numbers; starts a new one when anything it reads changed. */
+  const saveReading = (userId, entry) => store.transaction(`user:${userId}`, async (tx) => {
+    const record = (await tx.listRelationshipRecordsForUser("memories", userId)).find((item) => item.kind === READING_KIND && item.ownerUserId === userId);
+    if (record) return tx.updateRelationshipRecordForUser("memories", record.id, userId, (draft) => { draft.entry = entry; draft.version += 1; });
+    return tx.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId, ownerUserId: userId, visibility: "private", aiAccessScope: "none", status: "active", provenanceSource: "agent", kind: READING_KIND, entry }));
+  });
+  const savedReading = async (userId) => (await store.listRelationshipRecordsForUser("memories", userId)).find((item) => item.kind === READING_KIND && item.ownerUserId === userId)?.entry || null;
   async function current(userId, language = "zh") {
     if (!mediator?.structured) return { status: "unavailable" };
     const found = await gather(store, userId);
     if (found.few) return { status: "few" };
+    if (!kept.has(userId)) { const saved = await savedReading(userId).catch(() => null); if (saved?.reading) kept.set(userId, saved); }
     const last = kept.get(userId);
     const fresh = last?.reading && last.basis === found.basis && last.language === language;
     const failed = last?.failedBasis === found.basis && Date.now() - last.failedAt < RETRY_AFTER_MS;
