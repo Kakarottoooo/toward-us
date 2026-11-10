@@ -9,7 +9,7 @@ import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { personFor, personSubject } from "../server/people.mjs";
-import { searchMemory, searchMemoryResults, terms } from "../server/memory-search.mjs";
+import { conversationTurns, searchMemory, searchMemoryResults, terms } from "../server/memory-search.mjs";
 import { locateConversation, citedReply } from "../server/conversation-recall.mjs";
 
 // 按需检索 (memory plan, founder 11-09: "做按需检索"): a specific old detail is found in the member's own past
@@ -33,6 +33,15 @@ async function setup(t) {
 test("query words: Latin words whole, Chinese as pairs of characters", () => {
   assert.deepEqual(terms("Lin 道歉"), ["lin", "道歉"]);
   assert.deepEqual(terms("提前订餐厅"), ["提前", "前订", "订餐", "餐厅"]);
+});
+
+test("a shared reply stays with its explicit question when the other member speaks in between", () => {
+  const first = { id: "first", role: "member", text: "Pinky, how do we plan this?" };
+  const second = { id: "second", role: "member", text: "I will be home soon." };
+  const reply = { id: "reply", role: "agent", text: "Agree on one small step.", replyTo: first.id };
+  const turns = conversationTurns([first, second, reply]);
+  assert.equal(turns[0].answer?.id, reply.id);
+  assert.equal(turns[1].answer, undefined);
 });
 
 test("an answer-only match brings the question and answer together across an archive seam", async (t) => {

@@ -38,13 +38,17 @@ export function recallLookup(result, query) {
 
 // Pair before ranking, including a turn split across two storage pages. Never attach the next question to an answer.
 export function conversationTurns(messages) {
-  const turns = [];
+  const turns = [], questions = new Map();
   for (const message of messages) {
     if (!message?.text || message.kind && message.kind !== "text" || !["user", "assistant", "member", "agent"].includes(message.role)) continue;
     const answer = ["assistant", "agent"].includes(message.role);
-    const previous = turns.at(-1);
-    if (answer && previous && !previous.answer && (!message.replyTo || previous.question?.id === message.replyTo)) previous.answer = message;
-    else turns.push(answer ? { answer: message } : { question: message });
+    const previous = message.replyTo ? questions.get(message.replyTo) : turns.at(-1);
+    if (answer && previous?.question && !previous.answer) previous.answer = message;
+    else {
+      const turn = answer ? { answer: message } : { question: message };
+      turns.push(turn);
+      if (!answer) questions.set(message.id, turn);
+    }
   }
   return turns;
 }
