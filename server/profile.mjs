@@ -15,6 +15,9 @@ import { maintainMemory } from "./memory-tidy.mjs";
 export const CATEGORIES = ["food", "likes", "dislikes", "wishes", "traits", "people", "history", "other"];
 export const PROFILE_KIND = "profile";
 const SCAN_LIMIT = 40, SCAN_CONTEXT = 6, KNOWN_LIMIT = 150, CONTEXT_LIMIT = 80, HISTORY_LIMIT = 60;
+// Memory on demand (cost pass, founder 11-10): once a portrait holds the whole picture of someone, a turn carries only the
+// newest notes about them; an older specific comes through memory_search. Without a portrait, everything as before.
+export const BRIEF = { facts: 25, history: 15, personFacts: 10, personHistory: 6 };
 // The day a line was said where the member lives: "昨天" late in the evening in California is not yesterday in UTC.
 const localDay = (at, timeZone) => { try { return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at)); } catch { return String(at || "").slice(0, 10); } };
 const historyDay = (text) => /^\d{4}-\d{2}-\d{2}/.exec(text)?.[0] || "0000";
@@ -316,26 +319,27 @@ export async function profileContext(store, userId) {
   const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => visibleTo(item, userId, relationshipId) || (item.kind === "memory" && item.visibility === "private" && item.ownerUserId === userId && item.aiAccessScope === "private" && item.status === "active" && !item.archivedAt));
   // saidOn: the day the member said it (memory eval 11-09: without it Pinky could not tell which came first).
   const line = (item) => ({ id: item.id, version: item.version, category: item.category || "other", fact: item.text, ...(item.evidence?.saidAt && (item.category !== "history" || !/^\d{4}-\d{2}-\d{2}/.test(String(item.text))) ? { saidOn: String(item.evidence.saidAt).slice(0, 10) } : {}), ...(item.visibility !== "private" ? { from: item.evidence?.channel === "together" ? "said together in Us" : "they shared it with you" } : {}) });
-  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId))) => from.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CONTEXT_LIMIT).map(line);
+  const pick = (test, from = records.filter((item) => !personOf(item.subjectUserId)), limit = CONTEXT_LIMIT) => from.filter(test).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, limit).map(line);
   // What happened between them is its own list, newest first by the date it starts with, so a month-old fight is still
   // there after many new preferences (founder 11-08: a month later Pinky must still remember last month's talks).
   const people = await listPeople(store, userId);
-  const history = records.filter((item) => isProfileFact(item) && item.category === "history" && !personOf(item.subjectUserId)).sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, HISTORY_LIMIT).map(line);
-  const lasting = (item) => !isProfileFact(item) || item.category !== "history";
-  // Standing portraits built from every note, including the old ones no longer listed above (画像层, 11-09).
+  // Standing portraits built from every note, including the old ones no longer listed below (画像层, 11-09).
   const portraits = await readPortraits(store, userId).catch(() => ({}));
+  const drawn = (key) => Boolean(portraits[key]);
+  const history = records.filter((item) => isProfileFact(item) && item.category === "history" && !personOf(item.subjectUserId)).sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, drawn("us") || drawn("partner") || drawn("me") ? BRIEF.history : HISTORY_LIMIT).map(line);
+  const lasting = (item) => !isProfileFact(item) || item.category !== "history";
   const portrait = (key) => portraits[key] ? { portrait: portraits[key].portrait, timeline: portraits[key].timeline } : undefined;
   return {
     portraits: Object.fromEntries(["me", "partner", "us"].filter((key) => portraits[key]).map((key) => [key, portrait(key)])),
-    me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId),
-    partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null)),
-    us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId)),
+    me: pick((item) => lasting(item) && isProfileFact(item) && item.subjectUserId === userId, undefined, drawn("me") ? BRIEF.facts : CONTEXT_LIMIT),
+    partner: pick((item) => lasting(item) && isProfileFact(item) && isPartner(item.subjectUserId, userId, partner?.userId || null), undefined, drawn("partner") ? BRIEF.facts : CONTEXT_LIMIT),
+    us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId), undefined, drawn("us") ? BRIEF.facts : CONTEXT_LIMIT),
     history,
     // Someone single may be getting to know several people (founder 11-09); each one's notes stay with that person.
     people: people.slice(0, 8).map((person) => {
       const theirs = records.filter((item) => isProfileFact(item) && item.subjectUserId === personSubject(person.id));
       return { id: person.id, name: person.name, ...(portraits[personSubject(person.id)] ? { portrait: portrait(personSubject(person.id)) } : {}), alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4), lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10),
-        facts: pick((item) => item.category !== "history", theirs).slice(0, 30), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, 20).map(line) };
+        facts: pick((item) => item.category !== "history", theirs, drawn(personSubject(person.id)) ? BRIEF.personFacts : 30), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, drawn(personSubject(person.id)) ? BRIEF.personHistory : 20).map(line) };
     }),
   };
 }

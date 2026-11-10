@@ -21,3 +21,25 @@ test("the system part is the same bytes for every member, turn and day, and is c
   assert.deepEqual(body.system, [{ type: "text", text: "Stable instructions.", cache_control: { type: "ephemeral" } }]);
   assert.equal(body.messages[0].content, "volatile context", "what changes every turn comes after the cached part");
 });
+
+test("with a portrait a turn carries only the newest notes about that person; without one, everything as before", async (t) => {
+  const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
+  const { join, resolve } = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const { createFileStore } = await import("../server/store.mjs");
+  const { createRelationshipRecord } = await import("../server/relationship-domain.mjs");
+  const { profileContext, BRIEF } = await import("../server/profile.mjs");
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "brief-"));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const store = await createFileStore(join(directory, "store.json"));
+  const userId = randomUUID();
+  await store.createUser({ id: userId, name: "Alex", email: `${userId}@example.invalid`, passwordHash: "x", createdAt: new Date().toISOString() });
+  const add = (fields) => store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null, userId, ownerUserId: userId, visibility: "private", aiAccessScope: "private", status: "active", ...fields }));
+  for (let index = 0; index < 60; index += 1) await add({ kind: "profile", subjectUserId: userId, category: "likes", text: `喜欢第${index}种东西` });
+  assert.equal((await profileContext(store, userId)).me.length, 60);
+  await add({ kind: "portrait", subjectKey: "me", text: "画像", timeline: [], builtAt: new Date().toISOString() });
+  const brief = await profileContext(store, userId);
+  assert.equal(brief.me.length, BRIEF.facts);
+  assert.equal(brief.portraits.me.portrait, "画像");
+});
