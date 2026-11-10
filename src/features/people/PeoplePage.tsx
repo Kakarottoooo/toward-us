@@ -2,8 +2,8 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { ArrowLeft, ChatCircleDots, Warning } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
-import { relationshipApi } from "../relationship/api";
-import { Avatar, personColor } from "./People";
+import { jsonBody, relationshipApi } from "../relationship/api";
+import { Avatar, personColor, plainName } from "./People";
 import "./people-page.css";
 
 // 在了解的人 (founder 11-09, third mockup): a page for seeing each relationship, not for tasks. Who is chasing whom and how
@@ -14,8 +14,8 @@ type Chase = "you_much" | "you" | "even" | "them" | "them_much";
 type Row = { id: string; name: string; kind: Kind; chase: Chase; depth: "shallow" | "medium" | "deep"; shares: "me" | "even" | "them" | "unknown"; view: string; self: string; quote: { text: string; who: "me" | "them"; date: string } | null; traits: Array<{ text: string; evidence: string }>; turns: Array<{ date: string; up: boolean; title: string; quote: string; note: string }> };
 type Side = { messages: number; questions: number; chars: number };
 type Numbers = { me: Side; them: Side; starts: { me: number; them: number } | null; replyMinutes: { me: number | null; them: number | null } | null; lateNight: { me: number; them: number } | null; longestSilence: number | null; first: string | null; last: string | null };
-type PersonInfo = { id: string; name: string; lastSeenAt: string; createdAt?: string; stage: Kind | null; chase: Chase | null; previousChase: Chase | null; chaseAt: string | null };
-type Board = { status: "ready" | "pending" | "failed" | "few" | "unavailable"; stale?: boolean; reading?: { insights: Array<{ headline: string; evidence: string }>; people: Row[] }; numbers?: Record<string, Numbers | null>; people: PersonInfo[] };
+type PersonInfo = { id: string; name: string; lastSeenAt: string; createdAt?: string; archived?: boolean; stageAt?: string | null; stage: Kind | null; chase: Chase | null; previousChase: Chase | null; chaseAt: string | null };
+type Board = { status: "ready" | "pending" | "failed" | "few" | "unavailable"; stale?: boolean; reading?: { insights: Array<{ headline: string; evidence: string }>; people: Row[] }; numbers?: Record<string, Numbers | null>; people: PersonInfo[]; stage?: "dating" | "chosen" | "together"; chosen?: PersonInfo | null };
 type Line = { id: string; category: string; text: string };
 type Detail = { person: PersonInfo; facts: Line[]; history: Line[]; numbers: Numbers | null; read: Row | null };
 
@@ -60,9 +60,10 @@ function mirrors(language: Language, numbers: Numbers | null | undefined, row: R
 }
 const minutes = (language: Language, value: number) => value < 60 ? localized(language, `${Math.round(value)} 分`, `${Math.round(value)}m`, `${Math.round(value)} min`) : localized(language, `${Math.round(value / 60)} 小时`, `${Math.round(value / 60)}h`, `${Math.round(value / 60)} h`);
 
-export function PeoplePage({ language, initialPerson, onBack, onAsk }: { language: Language; initialPerson: string; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+export function PeoplePage({ language, initialPerson, archived = false, onBack, onAsk }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = tFor(language);
   const [personId, setPersonId] = useState(initialPerson);
+  const [tick, setTick] = useState(0);
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -73,11 +74,14 @@ export function PeoplePage({ language, initialPerson, onBack, onAsk }: { languag
       // A new reading is being made in the background: look again until it is in.
       if ((result.status === "pending" || result.stale) && ++tries < 60) timer = window.setTimeout(() => load(false), 3000);
     }).catch((reason) => { if (alive) setError((reason as Error).message); });
-    void load(true);
+    if (!archived) void load(true);
     return () => { alive = false; window.clearTimeout(timer); };
-  }, [language]);
+  }, [language, tick, archived]);
   const kinds: Record<Kind, string> = { mutual: t("双向奔赴", "Both in", "Mutuo"), you_chase: t("你在追", "You're chasing", "Tú persigues"), they_chase: t("TA 在追", "They're chasing", "Te persigue"), early: t("刚开始", "Just started", "Empezando"), faded: t("淡了", "Faded", "Se apagó"), risk: t("要警惕", "Be careful", "Cuidado") };
-  if (personId) return <PersonPage language={language} id={personId} kinds={kinds} onBack={() => setPersonId("")} onAsk={onAsk} />;
+  if (personId) return <PersonPage language={language} id={personId} kinds={kinds} backLabel={archived ? t("以前的档案", "Earlier people", "Personas anteriores") : undefined} onBack={() => setPersonId("")} onAsk={onAsk} />;
+  if (archived) return <EarlierPeople language={language} onBack={onBack} onOpen={setPersonId} />;
+  // One Pinky, three stages (founder 11-09): 是的 (or 确定了 here) settles on one person and puts the others away.
+  const settle = async (id: string | null) => { try { await relationshipApi(id ? `/api/people/${encodeURIComponent(id)}/choose` : "/api/people/unchoose", jsonBody(id ? { chosen: true } : {})); setTick((value) => value + 1); } catch (reason) { setError((reason as Error).message); } };
 
   const reading = board?.status === "ready" ? board.reading || null : null;
   const rowOf = (id: string) => reading?.people.find((row) => row.id === id) || null;
@@ -94,6 +98,8 @@ export function PeoplePage({ language, initialPerson, onBack, onAsk }: { languag
       {error && <p className="people-error" role="alert">{error}</p>}
       {!board ? <p className="people-muted">{t("正在打开…", "Opening…", "Abriendo…")}</p>
         : !people.length ? <p className="people-muted">{t("还没有在了解的人。在“只有我”发一张和 TA 的聊天截图，Pinky 会自动建档。", "Nobody yet. Send a chat screenshot in Just me and Pinky files them.", "Nadie aún. Envía una captura en Solo yo y Pinky la archiva.")}</p>
+        : board.stage === "chosen" && board.chosen ? <section className="people-card people-read" data-testid="people-chosen"><h2>{t(`你已经确定了${plainName(board.chosen.name)}`, `You've settled on ${plainName(board.chosen.name)}`, `Elegiste a ${plainName(board.chosen.name)}`)}</h2><p>{t("其他人先收起来了，不会删除，在 设置 → 隐私 → 以前的档案 里还能看到。", "The others are put away, not deleted; find them in Settings → Privacy → Earlier people.", "Las demás quedan guardadas en Ajustes → Privacidad.")}</p>
+          <div className="people-actions"><button type="button" className="people-primary" onClick={() => onAsk("", "us")} data-testid="people-invite">{t(`邀请${plainName(board.chosen.name)}一起用 Pinky`, `Invite ${plainName(board.chosen.name)} to Pinky`, `Invitar a ${plainName(board.chosen.name)}`)}</button><button type="button" className="people-secondary" onClick={() => void settle(null)} data-testid="people-unchoose">{t("其实还没确定", "Not settled after all", "Aún no")}</button></div></section>
         : board.status === "few" ? <p className="people-muted">{t("再认识一个人，Pinky 就会把你们的关系放在一起看。", "With one more person, Pinky shows your relationships side by side.", "Con una persona más, Pinky muestra todo junto.")}</p>
         : !reading ? <p className="people-muted">{board.status === "failed" ? t("这次没能看完，稍后再打开。", "Couldn't finish this time. Open it again later.", "No pude terminar. Vuelve más tarde.") : t("Pinky 正在看你们的聊天…", "Pinky is reading your chats…", "Pinky está leyendo sus chats…")}</p>
         : <>
@@ -114,14 +120,16 @@ export function PeoplePage({ language, initialPerson, onBack, onAsk }: { languag
             {reading.insights.map((item, index) => <div key={index} className="people-insight"><b>{item.headline}</b><span>{item.evidence}</span></div>)}</section>}
           <section className="people-section"><h2>{t("每个人", "Each person", "Cada persona")}</h2>
             {sorted.map((person) => { const row = rowOf(person.id); const color = personColor(person.name); const risk = row?.kind === "risk";
-              return <button key={person.id} type="button" className={`people-person-card ${risk ? "risk" : ""} kind-${row?.kind || "none"}`} onClick={() => setPersonId(person.id)} data-testid="people-person">
+              // Mutual for three weeks: the quiet place to ask whether this is the one (the chat asks when they say so).
+              const longMutual = board.stage === "dating" && row?.kind === "mutual" && person.stage === "mutual" && person.stageAt && days(person.stageAt) >= 21;
+              return <div key={person.id} className="people-person-wrap"><button type="button" className={`people-person-card ${risk ? "risk" : ""} kind-${row?.kind || "none"}`} onClick={() => setPersonId(person.id)} data-testid="people-person">
                 <span className="person-card-head"><Avatar name={person.name} /><span><strong>{person.name}</strong><small>{since(language, person, board.numbers?.[person.id])}</small></span>{row && <span className={`people-kind kind-${row.kind}`}>{kinds[row.kind]}</span>}</span>
                 {risk ? <span className="people-risk-text"><Warning size={16} weight="fill" />{row!.view}</span> : <>
                   {mirrors(language, board.numbers?.[person.id], row, color, false)}
                   {!!row?.traits.length && <span className="people-traits">{row.traits.slice(0, 3).map((trait, index) => <span key={index}>{trait.text}</span>)}</span>}
                   {row?.quote && <span className="people-quote">“{row.quote.text}” <small>{row.quote.who === "me" ? t("你", "you", "tú") : "TA"} · {row.quote.date}</small></span>}
                 </>}
-              </button>; })}
+              </button>{longMutual && <div className="people-settle" data-testid="people-settle"><span>{t(`你们双向奔赴三周了。和${plainName(person.name)}确定了吗？`, `Mutual for three weeks. Settled on ${plainName(person.name)}?`, `Tres semanas de ida y vuelta. ¿Es ${plainName(person.name)}?`)}</span><button type="button" onClick={() => void settle(person.id)}>{t("确定了", "Yes", "Sí")}</button></div>}</div>; })}
           </section>
         </>}
     </main>
@@ -131,7 +139,7 @@ export function PeoplePage({ language, initialPerson, onBack, onAsk }: { languag
 const chaseKind = (chase: Chase): Kind => chase === "you_much" || chase === "you" ? "you_chase" : chase === "them" || chase === "them_much" ? "they_chase" : "mutual";
 
 /** One person: the two of them as a mirror, the turning points, who they are, how the member is with them, Pinky's read. */
-function PersonPage({ language, id, kinds, onBack, onAsk }: { language: Language; id: string; kinds: Record<Kind, string>; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+function PersonPage({ language, id, kinds, backLabel, onBack, onAsk }: { language: Language; id: string; kinds: Record<Kind, string>; backLabel?: string; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = tFor(language);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState("");
@@ -145,7 +153,7 @@ function PersonPage({ language, id, kinds, onBack, onAsk }: { language: Language
   const rows = person ? mirrors(language, numbers, read, color, true) : [];
   const count = numbers ? numbers.me.messages + numbers.them.messages : 0;
   return <div className="paper-screen relationship-shell people-screen" data-testid="person-page">
-    <header className="page-header"><button className="page-back" onClick={onBack} data-testid="person-back"><ArrowLeft size={20} />{t("在了解的人", "People", "Personas")}</button></header>
+    <header className="page-header"><button className="page-back" onClick={onBack} data-testid="person-back"><ArrowLeft size={20} />{backLabel || t("在了解的人", "People", "Personas")}</button></header>
     <main className="relationship-main people-main">
       {error && <p className="people-error" role="alert">{error}</p>}
       {!detail ? !error && <p className="people-muted">{t("正在打开…", "Opening…", "Abriendo…")}</p> : person && <>
@@ -161,6 +169,25 @@ function PersonPage({ language, id, kinds, onBack, onAsk }: { language: Language
         {!read && <section className="people-card"><h2>{t("你们之间发生过的事", "What happened between you", "Lo que ha pasado")}</h2>{detail.history.length || detail.facts.length ? <ul className="people-list">{[...detail.history, ...detail.facts].slice(0, 12).map((line) => <li key={line.id}>{line.text}</li>)}</ul> : <p className="people-muted">{t("还没记下关于 TA 的事。多发几张你们的聊天，Pinky 会慢慢看清这段关系。", "Nothing kept yet. Send more of your chats.", "Aún no hay nada. Envía más chats.")}</p>}</section>}
         <button type="button" className="people-primary" onClick={() => onAsk(t(`关于 ${person.name}，`, `About ${person.name}: `, `Sobre ${person.name}: `), "me")} data-testid="person-talk"><ChatCircleDots size={20} weight="fill" />{t(`和 Pinky 聊${person.name}`, `Talk about ${person.name}`, `Hablar de ${person.name}`)}</button>
       </>}
+    </main>
+  </div>;
+}
+
+/** 以前的档案 (Settings → Privacy, once together): the people put away, kept and still readable, never shown to the partner. */
+function EarlierPeople({ language, onBack, onOpen }: { language: Language; onBack: () => void; onOpen: (id: string) => void }) {
+  const t = tFor(language);
+  const [people, setPeople] = useState<PersonInfo[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    relationshipApi<{ people: PersonInfo[] }>(`/api/people?archived=1&language=${language}`).then((result) => { if (alive) setPeople(result.people.filter((person) => person.archived)); }).catch(() => { if (alive) setPeople([]); });
+    return () => { alive = false; };
+  }, [language]);
+  return <div className="paper-screen relationship-shell people-screen" data-testid="people-earlier">
+    <PageHeader language={language} title={t("以前的档案", "Earlier people", "Personas anteriores")} onBack={onBack} backLabel={t("设置", "Settings", "Ajustes")} />
+    <main className="relationship-main people-main">
+      <p className="people-muted small">{t("只有你看得到。你的伴侣永远看不到这里。", "Only you can see this. Your partner never will.", "Solo tú lo ves. Tu pareja nunca lo verá.")}</p>
+      {!people ? <p className="people-muted">{t("正在打开…", "Opening…", "Abriendo…")}</p> : !people.length ? <p className="people-muted">{t("没有收起来的人。", "Nobody put away.", "Nadie guardado.")}</p>
+        : people.map((person) => <button key={person.id} type="button" className="people-person-card" onClick={() => onOpen(person.id)} data-testid="people-earlier-row"><span className="person-card-head"><Avatar name={person.name} /><span><strong>{person.name}</strong><small>{t("收起来了", "Put away", "Guardada")}</small></span></span></button>)}
     </main>
   </div>;
 }
