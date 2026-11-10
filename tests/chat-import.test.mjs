@@ -532,3 +532,19 @@ test("a screenshot chat with someone other than the partner goes on that person'
   const notes = all.filter((message) => message.kind === "noted" && message.personId);
   assert.deepEqual(notes.map((message) => message.text), ["已为 Lily 建档", "已为 阿杰 建档"], "each new card is announced once, after its answer");
 });
+
+test("a screenshot sent in a person's own conversation goes on that person, whatever name the chat shows", async (t) => {
+  // Founder 11-09: one conversation per person; what is sent there is about them.
+  const { listPeople, personFor } = await import("../server/people.mjs");
+  const f = await fixture(t, { screenshots: () => [{ mine: false, name: "Jay", text: "Hike this weekend?", time: null }], planner: (context) => context.transcript ? { observations: [], uncertainties: [], reply: "Say yes.", actions: [] } : { reply: "Reading.", actions: [action("chat_import", "create")] } });
+  const jie = await f.store.transaction(`user:${f.people[0].id}`, (tx) => personFor(tx, f.people[0].id, "阿杰"));
+  const thread = (await f.request("/assistant/sessions", "POST", { language: "zh", timezone: "UTC", personId: jie.id })).body.session;
+  const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  assert.equal((await f.request(`/assistant/sessions/${thread.id}/messages`, "POST", { text: "他这么说什么意思？", itemId: randomUUID(), photoIds: [photo.id] })).status, 200);
+  let imports = [];
+  for (let index = 0; index < 150 && !imports.length; index += 1) { imports = (await f.request("/imports")).body.imports; await new Promise((r) => setTimeout(r, 20)); }
+  const chat = await f.ready(imports[0].id);
+  assert.equal((await f.store.getRelationshipRecordForUser("chatImports", chat.id, f.people[0].id)).personId, jie.id);
+  assert.deepEqual((await listPeople(f.store, f.people[0].id)).map((person) => person.name), ["阿杰"], "no card is made for the name on the screenshot");
+});

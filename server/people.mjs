@@ -72,7 +72,8 @@ export function createPeopleRouter({ store, emit = () => {}, comparer = null }) 
     for (const record of records) if (record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && String(record.subjectUserId || "").startsWith("person:")) counts.set(personOf(record.subjectUserId), (counts.get(personOf(record.subjectUserId)) || 0) + 1);
     const people = await listPeople(store, userId, { archived: req.query.archived === "1" }), { seenAt } = await readWants(store, userId);
     const { stage, chosen } = await stageOf(store, userId);
-    res.json({ people: people.map((person) => projectPerson(person, counts.get(person.id) || 0)), alerts: stage === "together" ? 0 : people.filter((person) => alerted(person, seenAt)).length, stage, chosen: chosen ? projectPerson(chosen) : null });
+    const threads = new Map((await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.personId && record.ownerUserId === userId && !record.archivedAt).map((record) => [record.personId, { id: record.id, updatedAt: record.updatedAt, lastFrom: record.messages?.at(-1)?.role || null }]));
+    res.json({ people: people.map((person) => ({ ...projectPerson(person, counts.get(person.id) || 0), thread: threads.get(person.id) || null })), alerts: stage === "together" ? 0 : people.filter((person) => alerted(person, seenAt)).length, stage, chosen: chosen ? projectPerson(chosen) : null });
     // The reading is made ahead of time whenever their notes change, so 我的 TA 们 is ready when opened.
     if (comparer) comparer.current(userId, languageOf(req)).catch(() => {});
   });

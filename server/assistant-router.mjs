@@ -1,5 +1,6 @@
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
+import { listPeople, livePerson } from "./people.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -47,7 +48,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   };
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
-    return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
+    return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), messages: session.messages.map((message) => ({
       id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
@@ -64,9 +65,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     })) };
   };
   // `channel` marks a session owned by a channel adapter (iMessage keeps one running session per member and language).
-  const createSession = async (userId, { language, timezone, channel = null }) => {
+  const createSession = async (userId, { language, timezone, channel = null, personId = null }) => {
     try { new Intl.DateTimeFormat("en", { timeZone: timezone }); } catch { throw fail(400, "Invalid IANA time zone."); }
-    const session = privateRecord(userId, { intentType: "assistant", language, timezone, messages: [], aiAccessScope: "private", ...(channel ? { channel } : {}) });
+    const session = privateRecord(userId, { intentType: "assistant", language, timezone, messages: [], aiAccessScope: "private", ...(channel ? { channel } : {}), ...(personId ? { personId } : {}) });
     await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const sessions = (await tx.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && !record.archivedAt);
@@ -77,6 +78,15 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   };
   router.post("/assistant/sessions", async (req, res) => {
     const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    // A person's own conversation: one per person, reopened rather than made twice. Only someone this member is getting to know.
+    const personId = clean(req.body?.personId, 80);
+    if (personId) {
+      const userId = req.auth.user.id;
+      const person = (await listPeople(store, userId)).find((item) => item.id === personId && livePerson(item, userId));
+      if (!person) throw fail(404, "Not found.");
+      const existing = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).find((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.personId === personId && !record.archivedAt && record.status === "active");
+      return res.status(existing ? 200 : 201).json({ session: await output(existing || await createSession(userId, { language, timezone: clean(req.body?.timezone, 64) || "UTC", personId })) });
+    }
     const session = await createSession(req.auth.user.id, { language, timezone: clean(req.body?.timezone, 64) || "UTC" });
     // Made because they opened Just me (not because they started typing): if Pinky barely knows them yet (judged from what it
     // has kept), it speaks first with its opening question.
@@ -84,7 +94,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   });
   // The member's most recent App conversation, for a device that has not remembered one (it may hold a question from Us).
   router.get("/assistant/sessions/latest", async (req, res) => {
-    const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
+    const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.personId && !record.channel);
     const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!latest) throw fail(404, "No conversation yet.");
     res.json({ session: await output((await askToKnow(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
@@ -173,7 +183,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       notTriedYet: await notTriedYet(store, userId, "me").catch(() => []),
       gettingToKnow: await gettingToKnow(store, userId).catch(() => false),
       cycle: await cycleContext(store, userId, localTime(new Date(), session.timezone).slice(0, 10)).catch(() => null),
-      profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
+      profile: await profileContext(store, userId).then((profile) => session.personId ? { ...profile, people: (profile.people || []).filter((person) => person.id === session.personId) } : profile).catch(() => ({ me: [], partner: [], us: [] })),
+      // A person's own conversation (founder 11-09): everything here is about this one person.
+      ...(session.personId ? { focus: await listPeople(store, userId, { archived: true }).then((people) => { const person = people.find((item) => item.id === session.personId); return person ? { personId: person.id, name: person.name } : null; }).catch(() => null) } : {}),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
       screenshotConversation: chatImports?.screenshotContext ? await chatImports.screenshotContext(userId, session.id) : null,
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),

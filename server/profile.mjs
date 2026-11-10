@@ -139,8 +139,10 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
     const label = (subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : personOf(subjectUserId) ? people.find((person) => person.id === personOf(subjectUserId))?.name || null : "both";
     const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
     const input = { known, messages: [...before.map((item) => ({ id: item.id, from: item.role === "user" ? "A" : "Pinky", text: String(item.text).slice(0, 600), isNew: false })), ...fresh.map((item) => ({ id: item.id, from: "A", date: localDay(item.createdAt, session.timezone), text: String(item.text).slice(0, 1200), isNew: true }))] };
-    const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, privateChat: true }) + PEOPLE_NOTE(people), input: JSON.stringify(input), maxOutputTokens: 900 });
-    findings = verifyFacts(result?.facts, fresh, () => true);
+    // A person's own conversation (founder 11-09): "TA" and anyone unnamed there is that person, never the partner.
+    const focus = session.personId ? people.find((person) => person.id === session.personId) || null : null;
+    const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: focus ? focus.name : scope.b, privateChat: true }) + PEOPLE_NOTE(people), input: JSON.stringify(input), maxOutputTokens: 900 });
+    findings = verifyFacts(result?.facts, fresh, () => true).map((found) => focus && (found.subject === "B" || found.subject === "both") && !found.person ? { ...found, subject: "B", person: focus.name } : found);
   }
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];

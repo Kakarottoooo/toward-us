@@ -273,6 +273,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   // the chat with the partner and keeps no person.
   async function attachPerson(user, record) {
     if (record.sync || record.personId) return record;
+    const thread = record.sessionId ? await Promise.resolve().then(() => store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, user.id)).catch(() => null) : null;
+    if (thread?.personId && thread.ownerUserId === user.id) return update(record, user.id, (draft) => { draft.personId = thread.personId; });
     const name = record.people?.find((person) => person.role === "partner")?.name;
     if (!name) return record;
     const pairing = await store.getRelationshipContext(user.id);

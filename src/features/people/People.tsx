@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, UsersThree } from "@phosphor-icons/react";
+import { Plus } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { BottomSheet, Carousel } from "../../mobile";
 import { relationshipApi } from "../relationship/api";
@@ -8,11 +8,10 @@ import "./people.css";
 // 我的 TA 们 (founder 11-09: someone single may be getting to know several people, and must find this without being taught).
 // The cards appear by themselves: a chat screenshot with someone new files them, and from then on they sit in a row at the
 // top of Just me. Tapping one shows what Pinky keeps about them; 对比 and 完整档案 open the 我的 TA 们 page.
-export type Person = { id: string; name: string; aliases: string[]; archived: boolean; lastSeenAt: string; facts: number };
+export type Person = { id: string; name: string; aliases: string[]; archived: boolean; lastSeenAt: string; facts: number; thread?: { id: string; updatedAt: string; lastFrom: string | null } | null };
 /** One Pinky, three stages (founder 11-09): getting to know several people, settled on one, together in Pinky. */
 export type Stage = "dating" | "chosen" | "together";
 export type PeopleState = { people: Person[]; stage: Stage; chosen: Person | null };
-type Line = { id: string; category: string; text: string; quote: string | null };
 
 const COLORS = ["#d9677c", "#2c8f86", "#c98a1c", "#5b6fd6", "#8a5cc2", "#3f8f4f"];
 /** The same colour for a name every time, so a person is recognised at a glance. */
@@ -58,41 +57,15 @@ export function TogetherSheet({ language, person, others, onClose, onInvite }: {
   </BottomSheet>;
 }
 
-export function PeopleRow({ language, people, onOpen, onCompare, onAdd }: { language: Language; people: Person[]; onOpen: (person: Person) => void; onCompare: () => void; onAdd: () => void }) {
+export function PeopleRow({ language, people, current, unread, brainUnread, onBrain, onOpen, onAdd }: { language: Language; people: Person[]; current: string | null; unread: string[]; brainUnread: boolean; onBrain: () => void; onOpen: (person: Person) => void; onAdd: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   if (!people.length) return null;
-  return <Carousel ariaLabel={t("我在了解的人", "People I'm getting to know", "Personas que estoy conociendo")} className="people-row" contentClassName="people-row-track">
-    {people.length > 1 && <button type="button" className="person-chip" onClick={onCompare} data-testid="people-compare"><span className="person-avatar compare"><UsersThree size={20} /></span><small>{t("对比", "Compare", "Comparar")}</small></button>}
-    {people.map((person) => <button key={person.id} type="button" className="person-chip" onClick={() => onOpen(person)} data-testid="person-chip"><Avatar name={person.name} /><small>{person.name}</small></button>)}
+  // Founder 11-09: "点击一个人，然后自动是一个会话……还有一个主会话，就算大脑，可以问所有人的关系".
+  return <Carousel ariaLabel={t("对话", "Conversations", "Conversaciones")} className="people-row" contentClassName="people-row-track">
+    <button type="button" className={`person-chip ${current === null ? "current" : ""}`} onClick={onBrain} aria-current={current === null ? "true" : undefined} data-testid="thread-brain"><span className="person-avatar brain">P</span>{brainUnread && current !== null && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>Pinky</small></button>
+    {people.map((person) => <button key={person.id} type="button" className={`person-chip ${current === person.id ? "current" : ""}`} onClick={() => onOpen(person)} aria-current={current === person.id ? "true" : undefined} data-testid="person-chip"><Avatar name={person.name} />{unread.includes(person.id) && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>{person.name}</small></button>)}
     <button type="button" className="person-chip" onClick={onAdd} data-testid="person-add"><span className="person-avatar add"><Plus size={18} /></span><small>{t("新的人", "Someone new", "Alguien nuevo")}</small></button>
   </Carousel>;
 }
 
-/** One person's card: what Pinky keeps about them and what happened, with talking to Pinky about them as the next step. */
-export function PersonSheet({ language, person, onClose, onChat, onFull }: { language: Language; person: Person | null; onClose: () => void; onChat: (person: Person) => void; onFull: (person: Person) => void }) {
-  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [detail, setDetail] = useState<{ facts: Line[]; history: Line[] } | null>(null);
-  useEffect(() => {
-    setDetail(null);
-    if (!person) return;
-    let alive = true;
-    relationshipApi<{ facts: Line[]; history: Line[] }>(`/api/people/${encodeURIComponent(person.id)}`).then((result) => { if (alive) setDetail(result); }).catch(() => { if (alive) setDetail({ facts: [], history: [] }); });
-    return () => { alive = false; };
-  }, [person?.id]);
-  const empty = detail && !detail.facts.length && !detail.history.length;
-  return <BottomSheet open={Boolean(person)} onOpenChange={(next) => { if (!next) onClose(); }} title={person?.name || ""} description={t("只有你看得到", "Only you can see this", "Solo tú lo ves")}>
-    {person && <div className="person-sheet" data-testid="person-sheet">
-      {!detail ? <p className="person-muted">{t("正在打开…", "Opening…", "Abriendo…")}</p>
-        : empty ? <p className="person-muted">{t(`还没记下关于 ${person.name} 的事。多发几张你们的聊天，或者直接跟 Pinky 说说 TA。`, `Nothing kept about ${person.name} yet. Send more of your chats, or tell Pinky about them.`, `Aún no hay nada sobre ${person.name}. Envía más chats o cuéntale a Pinky.`)}</p>
-        : <>
-          {!!detail.history.length && <section><h3>{t("你们之间发生过的事", "What happened between you", "Lo que ha pasado")}</h3><ul>{detail.history.slice(0, 6).map((line) => <li key={line.id}>{line.text}</li>)}</ul></section>}
-          {!!detail.facts.length && <section><h3>{t("关于 TA", "About them", "Sobre esta persona")}</h3><ul>{detail.facts.slice(0, 10).map((line) => <li key={line.id}>{line.text}</li>)}</ul></section>}
-        </>}
-      <div className="person-actions">
-        <button type="button" className="person-primary" onClick={() => onChat(person)} data-testid="person-chat">{t(`和 Pinky 聊 ${person.name}`, `Talk about ${person.name}`, `Hablar de ${person.name}`)}</button>
-        <button type="button" className="person-secondary" onClick={() => onFull(person)} data-testid="person-full">{t("完整档案", "Full page", "Ficha completa")}</button>
-      </div>
-    </div>}
-  </BottomSheet>;
-}
 
