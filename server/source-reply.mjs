@@ -18,7 +18,7 @@ Only when checkScope is true, also flag answers to things the user did not ask: 
 export const sourceCheckInstructions = sourceCheckBaseInstructions + `
 requestedDeliverables contains the user's verbatim request clauses and output language, separately from evidence. Enumerate the actual deliverables they request before auditing; never require their removal. A faithful translation or category description of a foreign-language activity name is grounded in that name, not an invented event; preserve natural descriptions in the output language without adding specifics unsupported by the source. Never require evaluation or fictional-example labels in the answer or draft; such labels in supplied material are context, not requested output.
 For each unsupported or unrequested passage that can safely be removed, put its exact text and field in removals. Include its complete sentence: the server deletes whole sentences, never negations or conditions alone. Do not remove a required deliverable or a faithful translation. If an issue requires adding missing content, describe it in deliveryIssues, not removals.
-When previousReply is supplied, this is the final audit of a rewrite. Audit the current reply AND sendableDraft afresh against the same request and sources, including newly introduced acceptance or commitments, lost deliverables and unwanted labels. previousReply is only comparison material, never evidence or authorization. No further rewrite will follow; any remaining semantic issue causes rollback to previousReply with only its previously identified deletions.`;
+When previousReply is supplied, this is the final audit of a rewrite. Audit the current reply AND sendableDraft afresh against the same request and sources, including newly introduced acceptance or commitments, lost deliverables and unwanted labels. previousReply is only comparison material, never evidence or authorization. No further rewrite will follow. If the rewrite has a semantic issue, removals must instead identify exact sentences to delete FROM previousReply for the rollback, including its original unsupported or unrequested content. Preserve its requested deliverables. If the rewrite is clean, return removals:[]. deliveryIssues contains only actual defects in the current reply, never positive assessment notes.`;
 
 function deletionOnly(reply, removals, language) {
   const remove = (text, field) => [...new Intl.Segmenter(language, { granularity: "sentence" }).segment(text)]
@@ -36,14 +36,13 @@ function deletionOnly(reply, removals, language) {
   };
 }
 
-function originalRemovals(reply, result) {
+function originalRemovals(reply, result, finalCheck) {
   const parts = typeof reply === "string" ? { reply } : reply;
-  const removals = [...result.removals];
+  const removals = [...result.removals, ...finalCheck.removals];
   for (const row of result.claims.filter((claim) => !claim.supported)) {
     const fields = Object.keys(parts).filter((field) => row.claim.trim() && parts[field]?.includes(row.claim));
-    // Never revive a known unsupported claim just because the checker omitted its
-    // deletion span. An unlocatable claim cannot safely authorize a prose fallback.
-    if (!fields.length) throw new Error("Cannot locate unsupported original claim for deletion");
+    // Claims may be paraphrases with commentary; only exact original spans can
+    // authorize deletion. The final audit supplies original sentences separately.
     removals.push(...fields.map((field) => ({ field, text: row.claim })));
   }
   return removals;
@@ -88,7 +87,7 @@ export async function prepareSourceReply(reply, { sendableDraft, sources = [], r
   // Check the exact prose/draft that can be delivered. Do not generate again after
   // this check: rollback is a server-only deletion of the pre-rewrite version.
   const finalCheck = await check(revised, reply);
-  const final = semanticIssues(finalCheck).length ? deletionOnly(reply, originalRemovals(reply, result), language) : revised;
+  const final = semanticIssues(finalCheck).length ? deletionOnly(reply, originalRemovals(reply, result, finalCheck), language) : revised;
   if (!renderReply(final).trim()) throw new Error("Source repair left no safe reply");
   return restore(await repairReplyFormat(final, { request, language }));
 }

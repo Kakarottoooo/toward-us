@@ -91,3 +91,25 @@ test("final audit failures stop without retry or delivering unchecked revised te
     assert.equal(checks, 2); assert.equal(rewrites, 1);
   }
 });
+
+test("captured rollback handles paraphrased claims and deletes original extras after an off-task rewrite", async () => {
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/source-rollback-replay.json", import.meta.url), "utf8"));
+  for (const id of ["interaction-file-chat", "interaction-mobile-short-reply"]) {
+    const events = fixture.events.filter(e => e.case === id).slice(-3);
+    const original = JSON.parse(events[0].prompt), first = JSON.parse(events[0].text);
+    const final = JSON.parse(events[2].text);
+    // New final-audit contract: deletion spans target the original, never invented
+    // corrections or commentary in claims. Preserve actual captured bad rewrites.
+    if (id === "interaction-mobile-short-reply") final.removals = [{ field: "reply", text: "今天先好好歇一歇，之后想聊随时来找我。" }];
+    let checks = 0;
+    const result = await prepareSourceReply(original.reply, { ...original, mediator: {
+      async checkReplySources() { return ++checks === 1 ? first : final; },
+      async rewriteReply() { try { return JSON.parse(events[1].text); } catch { return events[1].text; } },
+    } });
+    assert.equal(checks, 2);
+    if (id === "interaction-file-chat") {
+      assert.match(result, /10月1日/); assert.match(result, /10月8日/); assert.match(result, /尽早告诉我/);
+      assert.doesNotMatch(result, /临近时才说去不了|没有分享给任何人|我理解你工作忙/);
+    } else assert.equal(result, "那就好，听你这么说我也松了口气。");
+  }
+});
