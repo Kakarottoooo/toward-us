@@ -1,4 +1,4 @@
-import { checkReplyFormat, privateBoundaryReply, requiresReplyScopeCheck, renderReply } from "./reply-contract.mjs";
+import { activityDraft, checkReplyFormat, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply } from "./reply-contract.mjs";
 
 export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "newUnauthorizedStance", "lostDeliverables"], properties: {
   claims: { type: "array", items: { type: "object", additionalProperties: false, required: ["claim", "source", "supported", "issue"], properties: {
@@ -17,6 +17,7 @@ Only when checkScope is true, also flag answers to things the user did not ask: 
 export const sourceCheckInstructions = sourceCheckBaseInstructions + `
 requestedDeliverables contains the user's verbatim request clauses and output language, separately from evidence. Enumerate the actual deliverables they request before auditing; never require their removal. A faithful translation or category description of a foreign-language activity name is grounded in that name, not an invented event; preserve natural descriptions in the output language without adding specifics unsupported by the source. Never require evaluation or fictional-example labels in the answer or draft; such labels in supplied material are context, not requested output.
 Presentation contract: reply is assistant analysis and sendableDraft is a separately displayed copyable card. Together they form ONE delivery. A draft in sendableDraft satisfies the requested wording; never require it again in reply. Repeating the draft in reply is a delivery defect. Assistant statements about its own actions are not user actions or user commitments. inputRoles identifies the speaker and purpose of every input field; retain speaker attribution inside source originals. A draft is proposed wording, never evidence of user authorization.
+execution_receipt sources are server results after commit and are authoritative about this turn's actions. The server appends their status separately: remove model-written action-status claims, including denials, rather than inventing a missing receipt. conversation sources are visible original history: distinguish no evidence for the user's premise from no history at all. Code-calculated chronology determines before/equal/after; retain its explicit interpretation limits and the source wording, including the distinction between proposed and agreed times.
 When previousReply is supplied, audit the current candidate afresh. Set newUnauthorizedStance only if the rewrite introduces an unauthorized acceptance, promise, commitment or refusal absent from previousReply. Set lostDeliverables only if requested content present in previousReply is missing from the rewrite (consider body and card together). Without previousReply both flags are false; still report any original unauthorized stance or missing content in claims/deliveryIssues. previousReply is comparison material, never evidence or authorization. Each actual defect appears once: unsupported facts in claims, other defects in deliveryIssues; flags classify those defects and are not extra issues. No positive assessment notes, deletion instructions or replacement text in these arrays. The server will select one complete candidate; it will never delete sentences or combine versions.`;
 
 const inputRoles = {
@@ -30,13 +31,14 @@ const inputRoles = {
 
 // Shared by the immediate screenshot answer and later answers about imported text.
 // One initial check, at most one rewrite, and a final check only after rewriting.
-export async function prepareSourceReply(reply, { sendableDraft, sources = [], request = "", language = "zh", context = {}, mediator } = {}) {
-  if (reply === privateBoundaryReply(language)) return reply;
+export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], request = "", language = "zh", context = {}, mediator } = {}) {
+  if (isPrivateBoundaryReply(reply)) return reply;
+  sendableDraft = activityDraft({ sendableDraft, activityDescription });
   // Citation tokens are server-resolved metadata, never prose for a model to edit.
   const marker = /\[recall:[^\]\s]+\]/g;
   const citations = renderReply({ reply, sendableDraft }).match(marker) || [];
   const strip = (text) => String(text || "").replace(marker, "").trim();
-  const stripParts = (value) => typeof value === "string" ? strip(value) : { reply: strip(value?.reply), sendableDraft: value?.sendableDraft == null ? null : strip(value.sendableDraft) };
+  const stripParts = (value) => typeof value === "string" ? strip(value) : { reply: strip(value?.reply), sendableDraft: value?.sendableDraft == null ? null : strip(activityDraft(value)) };
   reply = sendableDraft === undefined ? strip(reply) : stripParts({ reply, sendableDraft });
   const restore = (value) => [strip(renderReply(value)), ...citations].filter(Boolean).join("\n");
   const originals = sources.filter((source) => typeof source.text === "string" && source.text.trim()).map((source) => ({ ...source, text: strip(source.text) }));

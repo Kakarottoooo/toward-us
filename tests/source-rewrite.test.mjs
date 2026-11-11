@@ -2,12 +2,81 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { prepareSourceReply, sourceCheckInstructions, sourceCheckSchema } from "../server/source-reply.mjs";
-import { renderReply } from "../server/reply-contract.mjs";
+import { finishReply, privateBoundaryReply, renderReply } from "../server/reply-contract.mjs";
+import { sourceChronology } from "../server/source-chronology.mjs";
 
 const clean = () => ({ claims: [], deliveryIssues: [], newUnauthorizedStance: false, lostDeliverables: false });
 const defect = (n = 1) => ({ ...clean(), deliveryIssues: Array.from({ length: n }, (_, i) => `defect ${i}`) });
 const original = { reply: "原稿分析，不代表用户承诺。", sendableDraft: "我们再商量一下好吗？" };
 const revised = { reply: "改写分析。", sendableDraft: "我们再确认一下好吗？" };
+
+const round14 = JSON.parse(readFileSync(new URL("./fixtures/task36-receipt-replay.json", import.meta.url), "utf8"));
+for (const row of round14.rows) test(`round14 verbatim replay keeps evidence boundaries: ${row.id}`, async () => {
+  if (row.id.startsWith("memory-partner-")) {
+    for (let index = 0; index < 3; index++) {
+      const reply = privateBoundaryReply("zh", index);
+      assert.doesNotMatch(reply, /私聊|私密|秘密|告诉过我|反复|追问/);
+      assert.notEqual(reply, privateBoundaryReply("zh", (index + 1) % 3));
+      assert.match(reply, /直接问|问 TA|约个/);
+    }
+  }
+  if (row.id === "plan-recall-then-remind") {
+    assert.match(row.answer, /提醒目前也还没有设置/);
+    const receipt = "已设好提醒：沟通，2026-11-12 20:00 (Asia/Shanghai)。";
+    const result = finishReply(row.answer, { receipts: [receipt], reminderWritten: true, formatChecked: true });
+    assert.doesNotMatch(result, /还没有设置/); assert.match(result, /已设好提醒/);
+    assert.match(row.visible.history[0].answer, /提高了声音/);
+    assert.deepEqual(JSON.parse(row.events[0].prompt).sources, [], "captured source gap, not an alleged new model result");
+  }
+  if (row.id === "memory-abstain-false-premise") {
+    assert.match(row.answer, /没有聊天记录可以查/);
+    assert.ok(row.visible.history.length > 0, "the original false denial contradicts the visible input");
+  }
+  if (row.id === "interaction-file-chat") {
+    const messages = row.visible.file.split("\n").map(line => {
+      const [, at, sender, text] = line.match(/^\[(.*?)\] (.*?): (.*)$/);
+      return { at: at.replace(" ", "T") + ":00Z", sender, text };
+    });
+    const evidence = sourceChronology(messages);
+    assert.match(evidence, /19:45/); assert.match(evidence, /19:30/);
+    assert.equal((evidence.match(/after \/ 晚于/g) || []).length, 2);
+    assert.doesNotMatch(evidence, /before \/ 早于|at \/ 正好/);
+  }
+  // Replay saved checks/rewrites, not a new quality score. Each recorded pipeline
+  // still delivers one complete candidate; no model calls or action runs.
+  for (let index = 0; index < row.events.length; index++) {
+    const event = row.events[index];
+    if (event.name !== "reply_source_check") continue;
+    const input = JSON.parse(event.prompt);
+    if (input.previousReply) continue;
+    const repair = row.events[index + 1]?.name === "reply_format_repair" ? row.events[index + 1] : null;
+    let checks = 0, rewritten;
+    const result = await prepareSourceReply(input.reply, { ...input, mediator: {
+      async checkReplySources() { return JSON.parse((checks++ ? row.events[index + 2] : event).text); },
+      async rewriteReply() { if (!repair) throw Error("No captured rewrite"); rewritten = JSON.parse(repair.text); return rewritten; },
+    } });
+    assert.ok([renderReply(input), renderReply(rewritten)].includes(result));
+  }
+});
+
+test("activity descriptions are rendered before checking and survive intact selection", async () => {
+  const result = await prepareSourceReply("两人160元，没有预订。", { sendableDraft: "一起去{{activityDescription}}好吗？", activityDescription: "植物拓印体验",
+    sources: [{ text: "Botanical Printing, 80 per person" }], mediator: {
+      async checkReplySources(input) { assert.equal(input.sendableDraft, "一起去植物拓印体验好吗？"); return clean(); },
+    } });
+  assert.match(result, /一起去植物拓印体验好吗/);
+  assert.doesNotMatch(result, /activityDescription/);
+});
+
+test("import chronology distinguishes before, equal and after without converting the wall clock", () => {
+  const rows = [{ sender: "A", at: "2026-08-04T17:00:00Z", text: "See you at six?" },
+    ...["17:45", "18:00", "18:20"].map(time => ({ sender: "B", at: `2026-08-04T${time}:00Z`, text: "An update" }))];
+  const result = sourceChronology(rows);
+  assert.match(result, /before \/ 早于/); assert.match(result, /at \/ 正好/); assert.match(result, /after \/ 晚于/);
+  assert.match(result, /18:00/); assert.match(result, /inferred/);
+  assert.equal(sourceChronology([{ ...rows[0], text: "See you tomorrow at six?" }, ...rows.slice(1)]), "");
+  assert.equal(sourceChronology([rows[0], { ...rows[3], at: "2026-08-05T18:20:00Z" }]), "");
+});
 
 test("selection keeps exactly one complete version, with hard regressions taking precedence", async () => {
   for (const [before, after, winner] of [

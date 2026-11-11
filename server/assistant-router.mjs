@@ -1,11 +1,11 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
+import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
-import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
+import { asksToRecall, prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
 import { citedReply, locateConversation, readableConversation, conversationMessages } from "./conversation-recall.mjs";
 import { listPeople, livePerson } from "./people.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
@@ -226,6 +226,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const language = await memberLanguage(store, userId, body?.language);
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan; const recallSources = [], replySources = [];
+    const boundaryIndex = session.messages.filter((message) => message.role === "assistant" && isPrivateBoundaryReply(message.text)).length;
+    const normalizePlan = (value) => normalizeAssistantTurn(value, language, boundaryIndex);
+    // These are the same owner-projected inputs the planner saw, not another member's history.
+    const history = session.messages.slice(-29).map(({ role, text, createdAt, call }) => ({ role, text, createdAt, ...(call ? { call: call.rows } : {}) })), historySources = [];
+    if (history.length) historySources.push({ kind: "conversation", text: JSON.stringify(history) });
+    if (Object.values(context.profile).some((value) => Array.isArray(value) ? value.length : Boolean(value))) historySources.push({ kind: "visible_memory", text: JSON.stringify(context.profile) });
     if (context.screenshotConversation?.transcript) replySources.push({ kind: "import", text: context.screenshotConversation.transcript });
     if (transcript || /^(?:这是.{0,12})?(?:语音转写|语音的转写|voice transcript|transcripci[oó]n)/iu.test(text)) replySources.push({ kind: "transcript", text });
     if (replySources.some((source) => source.kind === "transcript")) context.sourceTranscript = text;
@@ -236,17 +242,17 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
-    plan = normalizeAssistantTurn(plan, language);
+    plan = normalizePlan(plan);
     // A plan with no words and no action was shown as the generic "你想创建、查找还是修改什么？" (use-case regression 11-09:
     // asked what to bring to meet her parents). The model is asked once more before that fallback can appear.
     if (validateAssistantTurn(plan) && !clean(plan.reply, 1200) && !clean(plan.sendableDraft, 1200) && !plan.actions.length) {
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language), language); }
+      try { plan = normalizePlan(await mediator.planAssistantTurn(context, language)); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     }
     // A malformed answer is asked for once more before the member sees an error (memory eval 11-09: an old question
     // after a long history came back as a 502 about one time in three).
     if (!validateAssistantTurn(plan)) {
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language), language); }
+      try { plan = normalizePlan(await mediator.planAssistantTurn(context, language)); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     }
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
@@ -269,7 +275,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
       progress("writing");
       context = { ...context, lookups };
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language), language); }
+      try { plan = normalizePlan(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     }
@@ -279,18 +285,12 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (!checked.ok) {
       progress("writing");
       try {
-        plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
-          correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language), language);
+        plan = normalizePlan(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
+          correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language));
       } catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw unavailable();
       checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
       if (!checked.ok) plan = { reply: say(language, "这份安排还没通过预算或条件核对，我暂时不能把它当作可执行方案；相关价格、地点、日期和安全条件仍需核实。", "This plan has not passed the budget or constraint checks, so I cannot present it as ready to use; its prices, location, dates and safety conditions still need verification.", "El plan aún no supera la comprobación de presupuesto o condiciones; faltan por verificar precios, lugar, fechas y seguridad."), actions: [] };
-    }
-    // Repair prose only, before writes; never rerun an action to fix formatting.
-    if (!plan.actions.some((action) => action.kind === "chat_import")) {
-      // Only a persistent import may be unrelated to a later greeting. Sources
-      // supplied or searched in this turn cannot be disabled by the planner.
-      plan.reply = await prepareSourceReply(plan.reply, { sendableDraft: plan.sendableDraft, sources: replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false), request: text, language, context, mediator });
     }
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
@@ -304,7 +304,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     plan = { ...plan, actions: webTurn.results.length ? [] : plan.actions.filter((action) => !["web_read", "web_search", "chat_search", "memory_search", "chat_import"].includes(action.kind)) };
     if (plan.actions.length) progress(plan.actions.every((action) => action.operation === "query") ? "checking_records" : "acting");
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
-    const updated = await store.transaction("reminder-delivery", async (tx) => {
+    let delivery;
+    let updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
@@ -474,20 +475,48 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           replies.push(action.operation === "archive" ? say(session.language, "已暂停这条个人提醒。", "This personal reminder is paused.", "Este recordatorio personal está pausado.") : record.occurrenceOriginalDueAt ? say(session.language, `已保存个人提醒：${record.title}。仅下次为 ${at}，后续仍按原来的每周安排。`, `Saved personal reminder: ${record.title}. Only the next occurrence is ${at}; later reminders keep the original weekly schedule.`, `Recordatorio personal guardado: ${record.title}. Solo la próxima vez será ${at}; las siguientes mantienen el horario semanal original.`) : say(session.language, `已保存个人提醒：${record.title}，${at}${record.frequency === "weekly" ? "，每周重复" : ""}。`, `Saved personal reminder: ${record.title}, ${at}${record.frequency === "weekly" ? ", every week" : ""}.`, `Recordatorio personal guardado: ${record.title}, ${at}${record.frequency === "weekly" ? ", cada semana" : ""}.`));
         } else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "已保存私人记录，未授权 AI 在其他对话中使用。", "Saved privately, without permission for AI use in other conversations.", "Se guardó en privado, sin autorizar el uso de la IA en otras conversaciones."));
       }
-      // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
+      // Commit actions and a receipt-safe initial answer atomically. Audit only after commit,
+      // outside the storage lock; retries of itemId can never execute the actions again.
       // A prepared booking or purchase is summarized by the server from what it actually prepared, never by the model, which
       // tends to restate the details or call it booked.
       // A turn that only looked things up and found nothing says so plainly: the model's own line often promised results
       // ("我来找找…结果会直接显示给你"), which left the person waiting for nothing, or invited a made-up memory (founder 11-07).
       const foundNothing = searched.length && searched.length === plan.actions.length && searched.every((count) => count === 0);
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
-        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(clean(plan.reply, 1200), { request: text, language, formatChecked: true, receipts: replies, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
+        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, formatChecked: true, receipts: replies, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
+      delivery = { replies, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
       return saved;
     });
+    if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
+      const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
+      const unrelated = plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
+      const audited = await prepareSourceReply(plan.reply, { sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+        sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
+          ...(unrelated ? [] : historySources),
+          ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator });
+      const own = finishReply(audited, { request: text, language, formatChecked: true, receipts: delivery.replies,
+        reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") });
+      const reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, delivery.askBack].filter(Boolean).join("\n");
+      const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+      if (cited.reply) updated = await store.transaction("reminder-delivery", async tx => {
+        await liveUser(tx, userId, true);
+        const latest = await owned(tx, session.id, userId);
+        // Another turn or deletion wins; never overwrite its state with a stale audit.
+        if (latest.version !== updated.version) return latest;
+        return tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, draft => {
+          const message = draft.messages.find(message => message.id === delivery.messageId);
+          if (!message) return;
+          message.text = cited.reply;
+          if (cited.sources.length) message.sources = cited.sources;
+          else delete message.sources;
+          draft.version += 1;
+        });
+      });
+    }
     if (readingScreenshots && !raced) {
       void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
         .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, replacesScreenshotReplyTo: userMessage.id, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));

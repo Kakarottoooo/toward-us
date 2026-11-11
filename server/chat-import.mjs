@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
 import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
+import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import express from "express";
@@ -326,8 +327,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         try {
           const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (typeof answer?.reply !== "string" || !(answer.reply.trim() || answer.sendableDraft?.trim())) throw new Error("Empty screenshot answer");
-          const reply = await prepareSourceReply(answer.reply.trim(), { sendableDraft: answer.sendableDraft, request: request.text, language: record.language,
-            sources: [{ kind: "image_transcript", text: JSON.stringify(messages.map((message) => ({ ...message, at: message.at?.slice(0, 19).replace("T", " ") || null }))) }], context: { names }, mediator });
+          const reply = await prepareSourceReply(answer.reply.trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+            sources: [{ kind: "image_transcript", text: JSON.stringify(messages.map((message) => ({ ...message, at: message.at?.slice(0, 19).replace("T", " ") || null }))) + sourceChronology(messages) }], context: { names }, mediator });
           text = finishReply(reply, { request: request.text, language: record.language, formatChecked: true });
         } catch (error) {
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
@@ -364,7 +365,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const analysis = { ...await mediator.structured({ name: "chat_history_report", schema: reportSchema, instructions: reportInstructions(names, record.language), input: input.slice(0, 400_000), maxOutputTokens: 6000 }) };
     if (!answeredScreenshot && (!record.sync || !record.analysis)) analysis.message = await prepareSourceReply(analysis.message, {
       request: "Summarize the imported conversation briefly.", language: record.language,
-      sources: [{ kind: "import", text: chunks.join("\n").slice(0, 400_000) }], context: { names }, mediator,
+      sources: [{ kind: "import", text: chunks.join("\n").slice(0, 400_000) + sourceChronology(messages) }], context: { names }, mediator,
     });
     const first = !record.analysis;
     const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); draft.analyzedAt = draft.completedAt; draft.analyzedCount = record.messageCount; draft.analyzedThrough = record.lastAt || null; draft.analysisError = null; });
@@ -412,7 +413,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const source = names.me && names.partner && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
     // Reporting's 400-character line preview can omit the very words the user needs judged. Keep full lines here.
     const full = source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : message.sender === names.partner ? "[partner]" : "[other]"} ${message.at ? `${message.at.slice(0, 19).replace("T", " ")} ` : ""}${message.sender}: ${message.text || "[media]"}`).join("\n") || "";
-    const transcript = full.slice(0, 40_000) || null;
+    const transcript = full ? full.slice(0, 40_000) + sourceChronology(source.conversation.messages.filter(message => full.slice(0, 40_000).includes(message.text))) : null;
     return { status: transcript ? "ready" : record.status, names, transcript, truncated: full.length > 40_000 };
   };
 

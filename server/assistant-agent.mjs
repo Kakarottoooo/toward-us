@@ -10,7 +10,7 @@ const handoffSchema = { anyOf: [{ type: "object", additionalProperties: false, r
   phone: nullableString, website: nullableString, store: nullableString, budget: nullableString } }, { type: "null" }] };
 
 export const assistantTurnSchema = {
-  type: "object", additionalProperties: false, required: ["reply", "sendableDraft", "actions"],
+  type: "object", additionalProperties: false, required: ["reply", "sendableDraft", "activityDescription", "actions"],
   properties: {
     ...replyPartsSchema.properties,
     actions: { type: "array", maxItems: 8, items: {
@@ -141,7 +141,7 @@ ${replyContractInstructions}`;
 
 export function validateAssistantTurn(plan) {
   const exact = (object, keys) => object && typeof object === "object" && !Array.isArray(object) && Object.keys(object).length === keys.length && keys.every((key) => Object.hasOwn(object, key));
-  if (!exact(plan, ["reply", "actions", ...(Object.hasOwn(plan || {}, "sendableDraft") ? ["sendableDraft"] : []), ...(Object.hasOwn(plan || {}, "planConstraints") ? ["planConstraints"] : []), ...(Object.hasOwn(plan || {}, "sourceBased") ? ["sourceBased"] : [])]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || (plan.sendableDraft != null && (typeof plan.sendableDraft !== "string" || plan.sendableDraft.length > 2000)) || !Array.isArray(plan.actions) || plan.actions.length > 8 || Object.hasOwn(plan, "sourceBased") && typeof plan.sourceBased !== "boolean") return false;
+  if (!exact(plan, ["reply", "actions", ...(Object.hasOwn(plan || {}, "sendableDraft") ? ["sendableDraft"] : []), ...(Object.hasOwn(plan || {}, "activityDescription") ? ["activityDescription"] : []), ...(Object.hasOwn(plan || {}, "planConstraints") ? ["planConstraints"] : []), ...(Object.hasOwn(plan || {}, "sourceBased") ? ["sourceBased"] : [])]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || (plan.sendableDraft != null && (typeof plan.sendableDraft !== "string" || plan.sendableDraft.length > 2000)) || (plan.activityDescription != null && (typeof plan.activityDescription !== "string" || plan.activityDescription.length > 300)) || !Array.isArray(plan.actions) || plan.actions.length > 8 || Object.hasOwn(plan, "sourceBased") && typeof plan.sourceBased !== "boolean") return false;
   return plan.actions.every((action) => exact(action, ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"])
     && ["query", "create", "update", "archive", "book_table", "buy"].includes(action.operation)
     && (action.kind === "handoff") === ["book_table", "buy"].includes(action.operation)
@@ -173,18 +173,18 @@ export function validateAssistantTurn(plan) {
 }
 
 /** Older planners and fixtures omit the space fields; treat them as unset. */
-export function normalizeAssistantTurn(plan, language = "zh") {
+export function normalizeAssistantTurn(plan, language = "zh", boundaryIndex = 0) {
   if (!plan || !Array.isArray(plan.actions)) return plan;
   // Semantic classification is part of the existing planner call. Render its
   // private-access refusal locally, before any lookup, rewrite or mutation.
-  if (plan.privateBoundary === true) return { reply: privateBoundaryReply(language), actions: [] };
+  if (plan.privateBoundary === true) return { reply: privateBoundaryReply(language, boundaryIndex), actions: [] };
   if (plan.privateBoundary === false) { const { privateBoundary, ...ordinary } = plan; plan = ordinary; }
   // The planner sometimes repeats an action's empty fields at the top of its answer (query: null, queryPeriod: "all",
   // occurrence: null) next to a good reply; the exact-key check then refused the whole turn with a 502 (use-case test,
   // 11-08: about 1 in 4 times when a user told Pinky about her boyfriend). Empty extras are dropped; any with content
   // still fail validation.
-  const { reply, sendableDraft, actions, planConstraints, sourceBased, ...extra } = plan;
-  if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "sendableDraft") ? { sendableDraft } : {}), ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}), ...(Object.hasOwn(plan, "sourceBased") ? { sourceBased } : {}) };
+  const { reply, sendableDraft, activityDescription, actions, planConstraints, sourceBased, ...extra } = plan;
+  if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "sendableDraft") ? { sendableDraft } : {}), ...(Object.hasOwn(plan, "activityDescription") ? { activityDescription } : {}), ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}), ...(Object.hasOwn(plan, "sourceBased") ? { sourceBased } : {}) };
   return { ...plan, actions: plan.actions.map((action) => {
     if (!action?.fields || typeof action.fields !== "object") return action;
     const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...action.fields };

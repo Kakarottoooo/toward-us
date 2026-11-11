@@ -13,7 +13,7 @@ import { usesCheaperModel } from "./ai-budget.mjs";
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
 const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
-const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft"], properties: {
+const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"], properties: {
   observations: { type: "array", items: { type: "string" }, maxItems: 3 },
   uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
   ...replyPartsSchema.properties,

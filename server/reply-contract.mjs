@@ -61,15 +61,22 @@ function copyableDraft(text) {
   if (last && !text.slice(last.end).trim() && !text.slice(text.lastIndexOf("\n", last.start - 1) + 1, last.start).trim()) return last.text;
   return null;
 }
-export const replyPartsSchema = { type: "object", additionalProperties: false, required: ["reply", "sendableDraft"], properties: {
+export const replyPartsSchema = { type: "object", additionalProperties: false, required: ["reply", "sendableDraft", "activityDescription"], properties: {
   reply: { type: "string", description: "Analysis/facts only; empty for drafting-only requests." },
   sendableDraft: { type: ["string", "null"], description: "Copyable message, no label/outer quotes; null if not requested." },
+  activityDescription: { type: ["string", "null"], description: "Natural activity description in the output language (Chinese for zh), grounded in the source activity name; null unless drafting an activity invitation. Use {{activityDescription}} in sendableDraft where this description belongs." },
 } };
 
 export function renderReply(reply) {
   if (typeof reply === "string") return reply;
-  const body = String(reply?.reply || "").trim(), draft = reply?.sendableDraft?.trim();
+  const body = String(reply?.reply || "").trim(), draft = activityDraft(reply);
   return draft ? body ? `${body}\n\n“${draft}”` : draft : body;
+}
+
+export function activityDraft(reply) {
+  const draft = reply?.sendableDraft?.trim(), description = reply?.activityDescription?.trim();
+  if (!draft || !description) return draft;
+  return draft.includes("{{activityDescription}}") ? draft.replaceAll("{{activityDescription}}", description) : `${description}：${draft}`;
 }
 
 export function checkReplyFormat(reply, request = "", language = "zh") {
@@ -93,7 +100,7 @@ export function checkReplyFormat(reply, request = "", language = "zh") {
 
 export async function repairReplyFormat(reply, { request = "", language = "zh", rewrite } = {}) {
   // The server's privacy response must never re-enter model prose generation.
-  if (reply === privateBoundaryReply(language)) return reply;
+  if (isPrivateBoundaryReply(reply)) return reply;
   const checked = checkReplyFormat(reply, request, language);
   if (checked.ok) return reply;
   const revised = rewrite ? await rewrite({ reply, issues: checked.issues }) : null;
@@ -113,8 +120,9 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);
   // Receipts are server-authored after successful writes, never planner-provided flags.
-  let text = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part)).join("").trim();
-  if (removed && receipts.length) text = [text, ...receipts].filter(Boolean).join("\n");
+  let text = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part)
+    && !(receipts.length && describesActionStatus(part))).join("").trim();
+  if (receipts.length) text = [text, ...receipts].filter(Boolean).join("\n");
   if (reminderRemoved && !reminderWritten) text = [text, language === "en" ? "No reminder was created in this turn." : language === "es" ? "No se creó ningún recordatorio en este turno." : "这轮尚未创建提醒。"].filter(Boolean).join("\n");
   if (!text && removed) text = language === "en" ? "No new record was saved in this turn." : language === "es" ? "No se guardó ningún registro nuevo en este turno." : "这轮没有新增记录。";
   // Private replies have already been checked/repaired; preserve the existing shared-chat path.
@@ -122,9 +130,22 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   return text;
 }
 
-export const privateBoundaryReply = (language) => language === "en" ? "I can only help you work through information you provide or that is explicitly shared with you." : language === "es" ? "Solo puedo ayudarte con la información que tú aportes o que se haya compartido explícitamente contigo." : "我只能根据你提供或明确共享的信息帮你梳理。";
+// Positive AND negative model status claims yield to the actual operation receipts.
+const describesActionStatus = (text) => /(?:提醒|记录|草稿|计划).{0,45}(?:设|创建|保存|写入|回执|安排|完成)|(?:未|没|不|已).{0,35}(?:设置|创建|保存|写入)|\b(?:reminder|record|draft).{0,70}\b(?:set|created|saved|scheduled|ready|receipt)|\b(?:recordatorio|registro|borrador).{0,70}\b(?:programad|cread|guardad|list)/iu.test(text);
+
+const privateReplies = {
+  zh: ["我没法判断对方的想法或安排。可以直接问：‘你愿意和我聊聊你现在的想法吗？’", "对方怎么想、有什么安排，我没法替 TA 判断。你可以说说自己的感受，再问 TA 愿意分享什么。", "我不能替对方确认想法或安排。如果 TA 还没准备好说，可以先约个愿意聊的时间，或等 TA 自己揭晓。"],
+  en: ["I can't determine what they think or plan. You could ask: ‘Would you like to tell me what's on your mind?’", "I can't speak for their thoughts or plans. You can share how you feel and ask what they're comfortable sharing.", "I can't confirm their thoughts or plans. If they aren't ready to talk, agree on a time or let them reveal it themselves."],
+  es: ["No puedo saber qué piensa o planea la otra persona. Puedes preguntarle: ‘¿Te gustaría contarme qué estás pensando?’", "No puedo hablar por sus ideas o planes. Puedes expresar cómo te sientes y preguntar qué quiere compartir.", "No puedo confirmar sus ideas o planes. Si aún no quiere hablar, acuerden un momento o deja que lo cuente por su cuenta."],
+};
+export const privateBoundaryReply = (language, index = 0) => (privateReplies[language] || privateReplies.zh)[index % 3];
+export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
 
 export const replyContractInstructions = `Only requested content; respect sentence/line/character limits. When schema includes sendableDraft: drafts go only there (no labels/quotes), null if unrequested; reply holds only analysis, empty for draft-only requests. Mixed requests: at most two brief analysis sentences. No feelings, affection, promises or acceptance absent from the user's words. Describe foreign activities naturally in Chinese. For bookable activities or "don't book", state no booking was made. Raw sources outrank summaries; preserve speakers, claims and times; states are not outcomes. Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports writes; reminders need actions after lookup. No invented events or interrogation. Privacy: one neutral boundary, no access claims, private-chat hints or comments on persistence.
 Scope examples (not facts):
 Q: Which shelf now? Moved A to C. Good: "C." Bad: "C, formerly A, then corrected." Give only the requested value.
-Q: The printer works; one warm reply. Good: "Glad it worked!" Bad: "Glad it worked; remember to clean it." No unasked advice.`;
+Q: The printer works; one warm reply. Good: "Glad it worked!" Bad: "Glad it worked; remember to clean it." No unasked advice.
+Q: Thanks for helping me fix the printer; one warm reply. Good: "You're welcome, I'm glad it helped!" Bad: "The printer works." Receive gratitude rather than merely restating an outcome.
+Q: A coworker threatens to exclude me unless I lend my badge; help me set a boundary. Good: "I won't lend my badge; please stop pressuring me with exclusion." Bad: "I prefer to keep my badge." Name and firmly reject the pressure, without inventing affection or commitments.
+Q: Notifications came after our agreed start; ask for an improvement. Good: "Please let me know before our agreed start time if plans change." Bad: "Please tell me soon." Tie the request to an observable deadline from the source.
+Activity invitations: put a natural description in activityDescription in the output language, grounded in the activity name, and use {{activityDescription}} inside sendableDraft. The server inserts it before audit and display; do not rely on the foreign name alone.`;
