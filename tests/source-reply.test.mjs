@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareSourceReply, sourceCheckInstructions } from "../server/source-reply.mjs";
-import { privateBoundaryReply, requiresReplyScopeCheck } from "../server/reply-contract.mjs";
+import { privateBoundaryReply, requiresReplyScopeCheck, checkReplyFormat } from "../server/reply-contract.mjs";
 
 test("ordinary conversation and the server privacy boundary make no source call", async () => {
   const mediator = { checkReplySources() { throw Error("unneeded"); }, rewriteReply() { throw Error("unneeded"); } };
@@ -90,4 +90,40 @@ test("invalid or failed source checks never silently claim verification or retry
   let calls = 0;
   await assert.rejects(prepareSourceReply("答复", { sources: [{ text: "来源" }], mediator: { checkReplySources: async () => { calls++; throw Error("quota"); } } }), /quota/);
   assert.equal(calls, 1);
+});
+
+import { citedReply } from "../server/conversation-recall.mjs";
+test("structured draft is checked independently of analysis and arbitrary labels", () => {
+  const request = "先分析，再给我一句回复。";
+  assert.equal(checkReplyFormat({ reply: "原文说了两件事。需要分开看。", sendableDraft: "我们再商量一下好吗？" }, request).ok, true);
+  assert.equal(checkReplyFormat({ reply: "分析中的引文：‘可以。’", sendableDraft: null }, request).ok, false);
+  assert.equal(checkReplyFormat({ reply: "分析。", sendableDraft: "可以。明天见。" }, request).ok, false);
+});
+
+test("source repair preserves citation metadata and checks structured copy", async () => {
+  const sources = [{ messageId: "old" }, { messageId: "new" }];
+  const reply = "旧安排十五分钟。[recall:old]现在改了日期，仍是十五分钟。[recall:new]";
+  const result = await prepareSourceReply(reply, { sources: [{ kind: "recall", text: "旧安排十五分钟；新安排只确认日期。" }], request: "以前和现在分别怎么安排？", mediator: {
+    async checkReplySources(input) {
+      assert.doesNotMatch(input.reply, /\[recall:/);
+      assert.doesNotMatch(JSON.stringify(input.sources), /\[recall:/);
+      return { claims: [{ claim: "仍是十五分钟", source: "新安排只确认日期", supported: false, issue: "新安排没有时长" }], deliveryIssues: [] };
+    },
+    async rewriteReply(input) {
+      assert.doesNotMatch(input.reply, /\[recall:/);
+      return { reply: "旧安排十五分钟；新安排只确认日期，时长未说明。[recall:forged]", sendableDraft: null };
+    },
+  } });
+  assert.deepEqual(citedReply(result, sources).sources, sources);
+  assert.deepEqual(result.match(/\[recall:[^\]]+\]/g), ["[recall:old]", "[recall:new]"]);
+});
+
+test("structured wording-only reply renders the field without a label or analysis", async () => {
+  const result = await prepareSourceReply("", { sendableDraft: "刚才说重了，对不起。", request: "帮我写一句道歉", mediator: {
+    async checkReplySources(input) {
+      assert.equal(input.sendableDraft, "刚才说重了，对不起。");
+      return { claims: [], deliveryIssues: [] };
+    },
+  } });
+  assert.equal(result, "刚才说重了，对不起。");
 });

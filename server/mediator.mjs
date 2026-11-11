@@ -5,7 +5,7 @@ import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
 import { assistantInstructions, assistantTurnSchema, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
 import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
-import { replyContractInstructions } from "./reply-contract.mjs";
+import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mjs";
 import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { usesCheaperModel } from "./ai-budget.mjs";
@@ -13,10 +13,10 @@ import { usesCheaperModel } from "./ai-budget.mjs";
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
 const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
-const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply"], properties: {
+const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft"], properties: {
   observations: { type: "array", items: { type: "string" }, maxItems: 3 },
   uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
-  reply: { type: "string" },
+  ...replyPartsSchema.properties,
 } };
 
 const analysisSchema = {
@@ -134,10 +134,10 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
     async rewriteReply(context, language = "zh") {
       const response = await client.responses.create({
         model, store: false, max_output_tokens: 1400,
-        text: { format: { type: "json_schema", name: "reply_format_repair", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply"], properties: { reply: { type: "string" } } } } },
+        text: { format: { type: "json_schema", name: "reply_format_repair", strict: true, schema: replyPartsSchema } },
         input: [{ role: "developer", content: `Rewrite only the reply in ${language}. Fix the supplied source, scope, missing-content and format issues once, preserving every requested deliverable and the supplied evidence. Remove unrequested extras identified by the check. Original source text outranks the rejected reply and summaries. Do not add facts or perform actions. ${replyContractInstructions}` }, { role: "user", content: JSON.stringify(context) }],
       }, INTERACTIVE);
-      return JSON.parse(response.output_text).reply;
+      return JSON.parse(response.output_text);
     },
     async planAssistantTurn(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });

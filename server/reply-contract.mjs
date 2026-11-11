@@ -61,19 +61,32 @@ function copyableDraft(text) {
   if (last && !text.slice(last.end).trim() && !text.slice(text.lastIndexOf("\n", last.start - 1) + 1, last.start).trim()) return last.text;
   return null;
 }
+export const replyPartsSchema = { type: "object", additionalProperties: false, required: ["reply", "sendableDraft"], properties: {
+  reply: { type: "string", description: "Analysis/facts only; empty for drafting-only requests." },
+  sendableDraft: { type: ["string", "null"], description: "Copyable message, no label/outer quotes; null if not requested." },
+} };
+
+export function renderReply(reply) {
+  if (typeof reply === "string") return reply;
+  const body = String(reply?.reply || "").trim(), draft = reply?.sendableDraft?.trim();
+  return draft ? body ? `${body}\n\n“${draft}”` : draft : body;
+}
+
 export function checkReplyFormat(reply, request = "", language = "zh") {
   const limits = formatLimits(request), issues = [];
-  let text = String(reply || "").trim();
+  const structured = reply && typeof reply === "object" && Object.hasOwn(reply, "sendableDraft");
+  const rendered = renderReply(reply);
+  let text = rendered.trim();
   if (limits.sentences && draftOnlyLimit(request)) {
-    const draft = copyableDraft(text);
+    const draft = structured ? reply.sendableDraft?.trim() : copyableDraft(text);
     if (!draft) issues.push("Separate the requested copyable draft from analysis with an explicit reply label or a final quoted paragraph; source quotations do not count as a draft.");
     text = draft || text;
   }
   const sentenceCount = segments(text, language).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
   if (limits.sentences && sentenceCount !== limits.sentences) issues.push(`Expected ${limits.sentences} sentence; found ${sentenceCount}.`);
-  const lines = String(reply || "").trim().split(/\r?\n/).filter((line) => line.trim()).length;
+  const lines = rendered.trim().split(/\r?\n/).filter((line) => line.trim()).length;
   if (limits.lines && lines !== limits.lines) issues.push(`Expected ${limits.lines} nonempty lines; found ${lines}.`);
-  const chars = [...String(reply || "").replace(/\s/gu, "")].length;
+  const chars = [...rendered.replace(/\s/gu, "")].length;
   if (limits.chars && chars > limits.chars) issues.push(`Maximum ${limits.chars} characters; found ${chars}.`);
   return { ok: !issues.length, issues };
 }
@@ -84,15 +97,16 @@ export async function repairReplyFormat(reply, { request = "", language = "zh", 
   const checked = checkReplyFormat(reply, request, language);
   if (checked.ok) return reply;
   const revised = rewrite ? await rewrite({ reply, issues: checked.issues }) : null;
-  if (typeof revised === "string" && checkReplyFormat(revised, request, language).ok) return revised;
+  if (renderReply(revised).trim() && checkReplyFormat(revised, request, language).ok) return revised;
   // Keep the most complete deliverable: never replace usable wording with only an error.
   // Prefer an identifiable draft, then fewer format violations; retain the full text
   // so shortening cannot silently remove a condition, negation or factual answer.
-  const candidates = [revised, reply].filter((value) => typeof value === "string" && value.trim());
-  candidates.sort((a, b) => Number(Boolean(copyableDraft(b))) - Number(Boolean(copyableDraft(a)))
+  const candidates = [revised, reply].filter((value) => renderReply(value).trim());
+  const draft = (value) => typeof value === "object" ? value.sendableDraft : copyableDraft(value);
+  candidates.sort((a, b) => Number(Boolean(draft(b))) - Number(Boolean(draft(a)))
     || checkReplyFormat(a, request, language).issues.length - checkReplyFormat(b, request, language).issues.length);
   const note = language === "en" ? "The format still needs adjusting." : language === "es" ? "El formato aún necesita ajustes." : "格式还需调整。";
-  return [candidates[0], note].filter(Boolean).join("\n");
+  return [renderReply(candidates[0]), note].filter(Boolean).join("\n");
 }
 
 export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false } = {}) {
@@ -111,7 +125,7 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
 
 export const privateBoundaryReply = (language) => language === "en" ? "I can only help you work through information you provide or that is explicitly shared with you." : language === "es" ? "Solo puedo ayudarte con la información que tú aportes o que se haya compartido explícitamente contigo." : "我只能根据你提供或明确共享的信息帮你梳理。";
 
-export const replyContractInstructions = `Deliver only what was asked; sentence/line/character limits override extras. Wording-only: draft only. Mixed request: at most two brief analysis sentences, then a reply label and quoted draft. Never add feelings, affection, promises or acceptance absent from the user's words. In Chinese, translate foreign activity names into natural Chinese activity descriptions. For bookable poster/page activities or "don't book" requests, explicitly say no booking was made. Raw transcript outranks summaries: preserve speakers, claims and timestamps; ongoing states are not outcomes. Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports writes; reminders need actions after lookup. Unsupported events remain unestablished; help, never interrogate. Privacy: one neutral boundary, no access claims, private-chat hints or comments on persistence.
+export const replyContractInstructions = `Only requested content; respect sentence/line/character limits. When schema includes sendableDraft: drafts go only there (no labels/quotes), null if unrequested; reply holds only analysis, empty for draft-only requests. Mixed requests: at most two brief analysis sentences. No feelings, affection, promises or acceptance absent from the user's words. Describe foreign activities naturally in Chinese. For bookable activities or "don't book", state no booking was made. Raw sources outrank summaries; preserve speakers, claims and times; states are not outcomes. Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports writes; reminders need actions after lookup. No invented events or interrogation. Privacy: one neutral boundary, no access claims, private-chat hints or comments on persistence.
 Scope examples (not facts):
 Q: Which shelf now? Moved A to C. Good: "C." Bad: "C, formerly A, then corrected." Give only the requested value.
-Q: The printer works; one warm reply. Good: "Glad it worked!" Bad: "Glad it worked; remember to clean it." No unasked advice, even within one sentence.`;
+Q: The printer works; one warm reply. Good: "Glad it worked!" Bad: "Glad it worked; remember to clean it." No unasked advice.`;

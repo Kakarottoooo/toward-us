@@ -38,7 +38,7 @@ test("a concrete apology request gets ordinary private wording without invented 
     assert.match(prompt, /give a copyable draft now/);
     assert.match(prompt, /without excuses, therapist language, assumed feelings or setting/);
     assert.match(prompt, /"Don't send" means private wording only, actions:\[\]/);
-    assert.match(prompt, /Put the COMPLETE apology itself inside reply/);
+    assert.match(prompt, /Put the COMPLETE apology itself inside sendableDraft/);
     assert.match(prompt, /Do not demand forgiveness or add an interview question/);
     assert.match(prompt, /private draft are not an agreed commitment/);
   }
@@ -76,7 +76,7 @@ test("love letters use personal private drafts and require an explicit schedulin
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /writing or revising means private wording, actions:\[\], even with an anniversary date/);
-    assert.match(prompt, /Put the COMPLETE letter in reply using only visible facts and the user's voice and length/);
+    assert.match(prompt, /Put the COMPLETE letter in sendableDraft using only visible facts and the user's voice and length/);
     assert.match(prompt, /Omit facts with unclear actors; invent no memories, pet names or vows/);
     assert.match(prompt, /never splice catchphrases/);
     assert.match(prompt, /No preamble, feature offer, interview or scheduling question when details suffice/);
@@ -253,21 +253,21 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   const { proseAsReply } = await import("../server/claude-cli-client.mjs");
   const { assistantTurnSchema } = await import("../server/assistant-agent.mjs");
   const prose = "两年异地真的不容易。\n\n先各自写下首选方案和底线，再坐下来对照。";
-  assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, actions: [] });
-  assert.deepEqual(proseAsReply(`${prose}\n<invoke name="x">\n</invoke>\n</function_calls>`, assistantTurnSchema), { reply: prose, actions: [] });
-  assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', actions: [] }, "nonempty quoted markup is preserved");
+  assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, sendableDraft: null, actions: [] });
+  assert.deepEqual(proseAsReply(`${prose}\n<invoke name="x">\n</invoke>\n</function_calls>`, assistantTurnSchema), { reply: prose, sendableDraft: null, actions: [] });
+  assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', sendableDraft: null, actions: [] }, "nonempty quoted markup is preserved");
   const doubled = `${prose}\n\n<invoke name="x">\n</invoke>\n</invoke>\n\n\n<invoke name="x">\n</invoke>\n</invoke>`;
-  assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, actions: [] }, "use-case test 11-08: repeated empty wrappers");
+  assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, sendableDraft: null, actions: [] }, "use-case test 11-08: repeated empty wrappers");
   const called = `${prose}\n<invoke name="Bash">\n<parameter name="command">echo done</parameter>\n</invoke>`;
-  assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 6: a written-out tool call with arguments");
-  assert.deepEqual(proseAsReply(`${called}\n_ctx`, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 8: stray text after the call");
+  assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, sendableDraft: null, actions: [] }, "use-case round 6: a written-out tool call with arguments");
+  assert.deepEqual(proseAsReply(`${called}\n_ctx`, assistantTurnSchema), { reply: prose, sendableDraft: null, actions: [] }, "use-case round 8: stray text after the call");
   const { answerFromText } = await import("../server/claude-cli-client.mjs");
   const scraper = '可以这样写：\nheaders = {"User-Agent": "Mozilla/5.0"}\nrequests.get(url, headers=headers)';
   assert.equal(answerFromText(scraper, assistantTurnSchema)?.["User-Agent"], undefined, "use-case round 8: a JSON object from code in the prose is not the turn");
   assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema), { reply: "好", actions: [] });
   assert.equal(answerFromText("约定起草好了。", assistantTurnSchema, { allowProseReply: false }), null, "a required structured turn cannot silently lose its actions");
   assert.equal(answerFromText('{"reply":"起草好了"}', assistantTurnSchema, { allowProseReply: false }), null, "incomplete JSON also needs the strict fallback");
-  assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema, { allowProseReply: false }), { reply: "好", actions: [] });
+  assert.deepEqual(answerFromText('{"reply":"好","sendableDraft":null,"actions":[]}', assistantTurnSchema, { allowProseReply: false }), { reply: "好", sendableDraft: null, actions: [] });
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");

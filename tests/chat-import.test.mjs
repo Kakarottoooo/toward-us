@@ -221,7 +221,7 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   assert.equal(f.calls.rewrites.length, 1);
   assert.match(f.calls.rewrites[0].issues.join(" "), /Expected 1 sentence/);
   assert.equal(f.calls.rewrites[0].request, "Give me only one sentence to apologize.");
-  assert.equal(JSON.parse(f.calls.rewrites[0].sources[0].text)[0].text, "I waited.");
+  assert.match(f.calls.rewrites[0].sources[0].text, /\[partner\] Blair: I waited\./);
 });
 
 test("captured mixed screenshot reply reaches repair rather than passing on an analysis quotation", async (t) => {
@@ -334,7 +334,7 @@ test("pasted-chat questions read complete lines before the history report, only 
   const f = await fixture(t, { beforeStructured: async () => held, planner: () => ({ reply: "Private answer.", actions: [] }) });
   t.after(() => release());
   const lastWords = "I only told you at seven; you had already waited an hour.";
-  const paste = `Alex: Dinner at six.\nBlair: I'll be there.\nAlex: ${"Work updates. ".repeat(100)}${lastWords}\nBlair: I needed you to tell me before six.`;
+  const paste = `[2026-10-01 17:00] Alex: Dinner at six.\n[2026-10-01 17:01] Blair: I'll be there.\n[2026-10-01 19:00] Alex: ${"Work updates. ".repeat(100)}${lastWords}\n[2026-10-01 19:45] Blair: I needed you to tell me before six.`;
   const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "content-type": "text/plain" }, body: paste });
   assert.equal(response.status, 201);
   const imported = (await response.json()).import;
@@ -343,10 +343,13 @@ test("pasted-chat questions read complete lines before the history report, only 
   await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: question, itemId: randomUUID() });
   const context = f.calls.planner.at(-1).screenshotConversation;
   assert.equal(context?.status, "ready");
-  assert.match(context.transcript, /\[you\] Alex: Dinner at six/);
+  assert.match(context.transcript, /\[you\] 2026-10-01 17:00:00 Alex: Dinner at six/);
   assert.ok(context.transcript.includes(lastWords), "a long individual line must not lose its decisive ending");
-  assert.match(context.transcript, /\[partner\] Blair: I needed/);
+  assert.match(context.transcript, /\[partner\] 2026-10-01 19:45:00 Blair: I needed/);
   assert.equal(context.truncated, false);
+  assert.match(context.transcript, /2026-10-01 19:45/);
+  assert.doesNotMatch(context.transcript, /T19:45.*Z/);
+  assert.ok(f.calls.sourceChecks.some((input) => input.sources.some((source) => source.text.includes("2026-10-01 19:45"))));
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /original is readable NOW/);

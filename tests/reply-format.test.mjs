@@ -85,3 +85,12 @@ test("analysis quotes cannot stand in for the requested final draft", async () =
     ["es", "¿Qué pasó? Solo una frase.", 'Dijo "más tarde". Respuesta: Entiendo. ¿Cambiamos la hora?'],
   ]) assert.equal(checkReplyFormat(answer, question, language).ok, false);
 });
+
+test("captured round 23, 24 and 26 drafts use the structured field without label guessing", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const rows = JSON.parse(await readFile(new URL("./fixtures/structured-reply-replay.json", import.meta.url), "utf8"));
+  for (const row of rows) {
+    assert.equal(checkReplyFormat({ reply: row.reply, sendableDraft: row.draft }, row.request).ok, true, row.source);
+    assert.equal(checkReplyFormat({ reply: row.raw, sendableDraft: null }, row.request).ok, false, "explicit empty field never falls back to label guessing");
+  }
+});

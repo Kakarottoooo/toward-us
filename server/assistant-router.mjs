@@ -232,14 +232,14 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const webTurn = createWebTurn({ reader: mediator.readonlyWeb, failures: session.webFailures });
 
     const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
-    if (recalled) { context.lookups = [...(context.lookups || []), recallLookup(recalled, text)]; recallSources.push(...recalled.sources); }
+    if (recalled) { context.lookups = [...(context.lookups || []), recallLookup(recalled, text)]; recallSources.push(...recalled.sources); replySources.push({ kind: "recall", text: recalled.findings }); }
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     plan = normalizeAssistantTurn(plan, language);
     // A plan with no words and no action was shown as the generic "你想创建、查找还是修改什么？" (use-case regression 11-09:
     // asked what to bring to meet her parents). The model is asked once more before that fallback can appear.
-    if (validateAssistantTurn(plan) && !clean(plan.reply, 1200) && !plan.actions.length) {
+    if (validateAssistantTurn(plan) && !clean(plan.reply, 1200) && !clean(plan.sendableDraft, 1200) && !plan.actions.length) {
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language), language); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     }
@@ -258,7 +258,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
       const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
-        ? await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, `${action.query || ""} ${action.fields?.date || ""}`.trim()); }).catch(() => ({ query: action.query, findings: "The search failed. Say the search failed, not that no record exists." }))
+        ? await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); replySources.push({ kind: "recall", text: result.findings }); return recallLookup(result, `${action.query || ""} ${action.fields?.date || ""}`.trim()); }).catch(() => ({ query: action.query, findings: "The search failed. Say the search failed, not that no record exists." }))
         : action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
         : action.kind === "web_read" ? { query: action.query, findings: action.query }
@@ -290,7 +290,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (!plan.actions.some((action) => action.kind === "chat_import")) {
       // Only a persistent import may be unrelated to a later greeting. Sources
       // supplied or searched in this turn cannot be disabled by the planner.
-      plan.reply = await prepareSourceReply(plan.reply, { sources: replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false), request: text, language, context, mediator });
+      plan.reply = await prepareSourceReply(plan.reply, { sendableDraft: plan.sendableDraft, sources: replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false), request: text, language, context, mediator });
     }
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
