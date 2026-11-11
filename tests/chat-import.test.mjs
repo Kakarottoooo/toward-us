@@ -17,7 +17,7 @@ const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: nu
 const whatsapp = ["[1/2/24, 9:00:00 PM] Alex: are you coming home soon", "[1/2/24, 9:20:00 PM] Blair: running late, sorry", "[1/2/24, 9:21:00 PM] Alex: you always say that", "[1/3/24, 8:00:00 AM] Blair: I'm sorry about last night", "[1/3/24, 8:05:00 AM] Alex: thank you, I love you"].join("\n");
 const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "each on a laptop, episode 12" }], message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], removals: [], deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
   const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
@@ -255,7 +255,7 @@ test("import answers check original text, while an unrelated turn with the same 
   const revised = "Blair said they were running late, not that the meeting was canceled.";
   const f = await fixture(t, {
     planner: (context) => context.messages.at(-1).text === "Thanks" ? { reply: "You're welcome.", sourceBased: false, actions: [] } : { reply: original, sourceBased: true, actions: [] },
-    sourceCheck: ({ reply, sources }) => { assert.match(sources[0].text, /running late/); return { claims: reply === original ? [{ claim: "canceled", source: "running late, sorry", supported: false, issue: "Do not convert lateness into cancellation." }] : [], deliveryIssues: [] }; },
+    sourceCheck: ({ reply, sources }) => { assert.match(sources[0].text, /running late/); return { claims: reply === original ? [{ claim: "canceled", source: "running late, sorry", supported: false, issue: "Do not convert lateness into cancellation." }] : [], removals: [], deliveryIssues: [] }; },
     rewrite: ({ sources, issues }) => { assert.match(sources[0].text, /running late/); assert.match(issues.join(" "), /cancellation/); return revised; },
   });
   const uploaded = await f.upload(whatsapp, "chat.txt", f.people[0].id, f.session.id);
@@ -266,9 +266,9 @@ test("import answers check original text, while an unrelated turn with the same 
   const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What happened?", itemId: randomUUID() });
   assert.equal(response.status, 200, JSON.stringify(response.body));
   assert.equal(response.body.session.messages.at(-1).text, revised);
-  assert.equal(f.calls.sourceChecks.length, before + 1);
+  assert.equal(f.calls.sourceChecks.length, before + 2);
   await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Thanks", itemId: randomUUID() });
-  assert.equal(f.calls.sourceChecks.length, before + 1);
+  assert.equal(f.calls.sourceChecks.length, before + 2);
 });
 
 test("a current chat search cannot skip checking its original through a false source flag", async (t) => {
