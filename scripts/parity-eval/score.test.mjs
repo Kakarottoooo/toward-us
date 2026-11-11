@@ -38,7 +38,7 @@ test("unknown judgments never become non-losses; disagreements are separately co
   const row = (judges, error) => ({ layer: "memory", pinky: { completed: true, error }, rivals: { claude: {}, codex: {} }, comparisons: { claude: { judges }, codex: { judges } } });
   const rows = [row([{ outcome: "loss" }, { outcome: "loss" }]), row([{ outcome: "win" }, { outcome: "loss" }]), row([{ outcome: "tie" }, { error: "timeout" }]), row([{ outcome: "tie" }, { outcome: "tie" }], "HTTP 503")];
   const summary = summarize(rows, layers).memory;
-  assert.deepEqual(summary.comparisons.claude, { loss: 1, notLose: 1, disagreement: 1, pending: 2, rate: 0.25 });
+  assert.deepEqual(summary.comparisons.claude, { loss: 1, notLose: 0, disagreement: 1, pending: 2, rate: 0 });
   assert.equal(summary.reached, false);
 });
 
