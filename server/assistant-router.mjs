@@ -286,12 +286,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (wantsOneSentence(text) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
     if (webTurn.results.length) plan = { ...plan, actions: [] };
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
-    if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
-      // Its question is read with the screenshots, never again by the private profile scan (watch 11-09).
-      userMessage.screenshots = true;
-      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
-        .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
-    }
+    const readingScreenshots = Boolean(chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import"));
+    if (readingScreenshots) userMessage.screenshots = true;
     // Untrusted public pages can inform an answer, never grant a write. A later
     // explicit user turn can use the ordinary confirmation/action path.
     plan = { ...plan, actions: webTurn.results.length ? [] : plan.actions.filter((action) => !["web_read", "web_search", "chat_search", "memory_search", "chat_import"].includes(action.kind)) };
@@ -477,10 +473,14 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(clean(plan.reply, 1200), { request: text, language, receipts: replies }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });
+    if (readingScreenshots && !raced) {
+      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
+        .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, replacesScreenshotReplyTo: userMessage.id, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
+    }
     for (const { kind, record } of changes) emit(record, `${kind === "plan" ? "private_agent_thread" : kind}.updated`, userId);
     void recordUsage(store, { userId, action: "private_message", channel });
     return { session: updated, duplicate: raced };
@@ -617,11 +617,18 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
   });
   // Background work (a finished chat import) reports into the member's App conversation: the one it started from if it
   // still exists, else their latest, else a new one.
-  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null, kind = null, personId = null }) {
+  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null, kind = null, personId = null, replacesScreenshotReplyTo = null }) {
     let session = sessionId ? await owned(store, sessionId, userId).catch(() => null) : null;
     if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!session) session = await createSession(userId, { language, timezone: "UTC" });
     const saved = await store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
+      const pending = replacesScreenshotReplyTo && draft.messages.find((message) => message.role === "assistant" && message.screenshotReplyTo === replacesScreenshotReplyTo);
+      if (pending) {
+        pending.text = clean(text, 2000); pending.cards = cards?.length ? cards : card ? [card] : [];
+        delete pending.screenshotReplyTo;
+        draft.version += 1;
+        return;
+      }
       keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(cards?.length ? { cards } : card ? { cards: [card] } : {}), ...(call ? { call } : {}), ...(kind ? { kind } : {}), ...(personId ? { personId } : {}), createdAt: new Date().toISOString() }]); draft.version += 1;
     }));
     // Private sessions carry no relationship id; route the event through the member's couple so their open app refreshes.

@@ -189,7 +189,7 @@ async function setupCase(item, withHistory) {
             const imports = (await call("/imports", null, asker.cookie)).result.imports;
             const messages = result.session?.messages || [];
             const afterQuestion = messages.slice(messages.findLastIndex((entry) => entry.role === "user") + 1);
-            if (imports.length && imports.every((entry) => !["analyzing", "reading"].includes(entry.status)) && afterQuestion.filter((entry) => entry.role === "assistant").length > 1) break;
+            if (imports.length && imports.every((entry) => !["analyzing", "reading"].includes(entry.status)) && afterQuestion.some((entry) => entry.cards?.some((card) => card.kind === "chat_import"))) break;
             if (result.session?.messages?.some((entry) => /截图没能读|截图里没有读到/.test(entry.text || ""))) break;
             await new Promise((resolve) => setTimeout(resolve, 500));
             result = (await call(`/assistant/sessions/${sessionId}`, null, asker.cookie)).result;
