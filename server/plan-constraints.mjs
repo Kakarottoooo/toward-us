@@ -22,7 +22,7 @@ const finite = (value) => typeof value === "number" && Number.isFinite(value) &&
 const lastQuestion = (context) => [...(context?.messages || [])].reverse().find((item) => item.role === "user" || item.role === "member")?.text || "";
 const proposed = /安排|规划|计划|方案|选.*(?:晚饭|午饭|餐|菜)|吃什么|做什么|plan\b|itinerary|choose.*(?:meal|dinner)|planear|itinerario/i;
 const condition = /预算|不超过|以内|上限|过敏|营业|开放|搬到|budget|under\s*[$€£\d]|allerg|opening|presupuesto|alerg/i;
-const uncertain = /没(?:有)?(?:核实|确认|查到)|未(?:核实|确认|查证)|待(?:核实|确认)|需(?:要)?(?:向|与)?.{0,15}(?:确认|核实)|估(?:算|计)|暂按|以.{0,15}为准|unverified|not (?:yet )?(?:verified|confirmed)|could not verify|estimate|check .{0,30}(?:hours|price|ingredient)|sin confirmar|no (?:está )?verificad|estimad/i;
+const uncertain = /(?:没(?:有|法)?|无法|不能)(?:核实|确认|查到)|未(?:核实|确认|查证)|待(?:核实|确认)|需(?:要)?(?:向|与)?.{0,15}(?:确认|核实)|估(?:算|计)|暂按|以.{0,15}为准|unverified|not (?:yet )?(?:verified|confirmed)|(?:could|can) not verify|cannot verify|estimate|check .{0,30}(?:hours|price|ingredient)|sin confirmar|no (?:está )?verificad|estimad/i;
 const capWords = /上限|最多|不超过|控制在|封顶|限额|预留|预算|以内|at most|up to|cap|allowance|budget|maximum|presupuesto|máximo/i;
 
 export function requiresPlanConstraints(context, reply = null) {
@@ -135,10 +135,10 @@ export function checkPlanConstraints(check, { context = {}, reply = "" } = {}) {
     if (avoid.some((allergen) => normalized(food.name).includes(normalized(allergen)))) issue("allergen_conflict", `${food.name}: the selected dish itself names an excluded ingredient; remove it.`);
     if (allergyMeal && !avoid.length) issue("missing_allergens", `${food.name}: known allergy restrictions cannot be omitted.`);
     for (const allergen of avoid) if (!normalized(source).includes(normalized(allergen))) issue("unsupported_allergen", `${food.name}: the excluded ingredient is not in visible source evidence.`);
+    if (Array.isArray(food.ingredients) && food.ingredients.some((ingredient) => avoid.some((allergen) => normalized(ingredient).includes(normalized(allergen))))) issue("allergen_conflict", `${food.name}: contains an excluded ingredient; remove it from the selected meal.`);
     if (!Array.isArray(food.ingredients) || !quoted(food.sourceQuote, source)) { if (avoid.length) unknown(`${food.name} ingredients and cross-contact`); continue; }
     for (const ingredient of food.ingredients) {
       if (!normalized(food.sourceQuote).includes(normalized(ingredient))) issue("unsupported_ingredient", `${food.name}: ingredients must be quoted, not inferred from a dish name.`);
-      if (avoid.some((allergen) => normalized(ingredient).includes(normalized(allergen)))) issue("allergen_conflict", `${food.name}: contains an excluded ingredient; remove it from the selected meal.`);
     }
   }
   return { ok: !issues.length, issues, unverified, totalUpper };

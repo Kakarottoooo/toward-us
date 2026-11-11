@@ -214,6 +214,9 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   const scraper = '可以这样写：\nheaders = {"User-Agent": "Mozilla/5.0"}\nrequests.get(url, headers=headers)';
   assert.equal(answerFromText(scraper, assistantTurnSchema)?.["User-Agent"], undefined, "use-case round 8: a JSON object from code in the prose is not the turn");
   assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema), { reply: "好", actions: [] });
+  assert.equal(answerFromText("约定起草好了。", assistantTurnSchema, { allowProseReply: false }), null, "a required structured turn cannot silently lose its actions");
+  assert.equal(answerFromText('{"reply":"起草好了"}', assistantTurnSchema, { allowProseReply: false }), null, "incomplete JSON also needs the strict fallback");
+  assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema, { allowProseReply: false }), { reply: "好", actions: [] });
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");

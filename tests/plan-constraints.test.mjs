@@ -100,8 +100,10 @@ test("allergens exclude known ingredients; unknown ingredients require uncertain
   const ctx = context("对花生过敏，选晚饭", { lookups: [{ findings: "沙拉含生菜、花生酱。" }] });
   const food = { name: "沙拉", avoid: ["花生"], ingredients: ["生菜", "花生酱"], sourceQuote: "沙拉含生菜、花生酱。" };
   assert.ok(codes(checkPlanConstraints({ ...empty(), food: [food] }, { context: ctx, reply: "选沙拉。" })).includes("allergen_conflict"));
+  assert.ok(codes(checkPlanConstraints({ ...empty(), food: [{ ...food, sourceQuote: null }] }, { context: ctx, reply: "配料我没法核实。" })).includes("allergen_conflict"), "uncertain sourcing never excuses a listed allergen");
   const unknown = { ...food, ingredients: null, sourceQuote: null };
   assert.equal(checkPlanConstraints({ ...empty(), food: [unknown] }, { context: ctx, reply: "配料及交叉接触风险尚未核实，先向店员确认。" }).ok, true);
+  assert.equal(checkPlanConstraints({ ...empty(), food: [unknown] }, { context: ctx, reply: "具体配料我没法核实，买之前看配料表，避免花生残留。" }).ok, true, "the real replay's explicit uncertainty is not a confirmed-safety claim");
   assert.equal(checkPlanConstraints({ ...empty(), food: [unknown] }, { context: ctx, reply: "可以放心吃。" }).ok, false);
 });
 

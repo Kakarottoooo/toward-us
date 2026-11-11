@@ -1,6 +1,6 @@
 // node scripts/parity-eval/run.mjs --only id1,id2,id3 --label pilot
 // node scripts/parity-eval/run.mjs --label baseline [--compare previous/report.json]
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -42,7 +42,11 @@ const { createHarness, visibleContext } = await import("./fixture.mjs");
 const { usageListeners } = await import("../../server/claude-cli-client.mjs");
 const context = new AsyncLocalStorage(), usage = [];
 const restoreClock = installCaseClock(context);
-const listener = (event) => usage.push({ ...context.getStore(), name: event.name, model: event.model, usage: event.usage, usd: event.usd });
+const listener = (event) => {
+  usage.push({ ...context.getStore(), name: event.name, model: event.model, usage: event.usage, usd: event.usd });
+  // Synthetic diagnostic evidence only; never included in blind judge inputs.
+  if (["private_assistant_operations", "together_turn"].includes(event.name)) appendFileSync(join(directory, "planner-output.jsonl"), `${JSON.stringify({ ...context.getStore(), name: event.name, text: event.text })}\n`);
+};
 usageListeners.add(listener);
 const harness = await createHarness(directory, { requestContext: context });
 let checkpointResults = [];
@@ -105,7 +109,7 @@ async function one(original) {
   for (const provider of ["claude", "codex"]) {
     const rival = result.rivals[provider], judges = [];
     if (!result.pinky.error && !rival.error) for (const judge of (options.economy ? ["codex", "claude"] : ["claude", "codex"])) {
-      if (options.economy && judge === "claude" && judges[0]?.outcome === "win") break;
+      if (options.economy && judge === "claude" && !["loss", "tie"].includes(judges[0]?.outcome)) break;
       const pair = blindPair(judgedItem, result.pinky, rival, judge, seed);
       try {
         const raw = await context.run({ case: item.id, phase: `judge:${provider}:${judge}` }, () => invoke(judge, { root: join(root, "judges"), input: JSON.stringify(pair.input), instructions: judgeInstructions, schema: judgeSchema }));

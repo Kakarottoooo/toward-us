@@ -201,7 +201,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
       // A voice call appears as its captions, so the user can refer back to what was said on the call.
-      messages: [...session.messages.map(({ role, text, call }) => ({ role, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
+      messages: [...session.messages.map(({ role, text, call, createdAt }) => ({ role, createdAt, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
       // Notes kept about people are already in context.profile with their ids; Pinky's own bookkeeping (people, portraits,
       // tidy state, what the member wants) is never a record to act on (scale test 11-09: after years these crowded out the rest).
       records: records.filter(({ kind, record }) => kind !== "memory" || !record.kind || record.kind === "memory").slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}), ...(kind === "checkin" ? { date: localTime(record.createdAt, session.timezone).slice(0, 10) } : {}) })),

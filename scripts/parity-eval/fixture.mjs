@@ -180,7 +180,7 @@ async function setupCase(item, withHistory) {
           const limit = Date.now() + 600_000;
           while (Date.now() < limit) {
             const imports = (await call("/imports", null, asker.cookie)).result.imports;
-            if (imports.length && imports.every((entry) => !["analyzing", "reading"].includes(entry.status))) break;
+            if (imports.every((entry) => !["analyzing", "reading"].includes(entry.status)) && (imports.length || Date.now() > limit - 597_000)) break;
             if (result.session?.messages?.some((entry) => /截图没能读|截图里没有读到/.test(entry.text || ""))) break;
             await new Promise((resolve) => setTimeout(resolve, 500));
             result = (await call(`/assistant/sessions/${sessionId}`, null, asker.cookie)).result;
