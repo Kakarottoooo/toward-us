@@ -147,3 +147,16 @@ test("agreement replay uses actual HTTP actions and independent authenticated ap
   assert.match(result.answer, /约定草稿/);
   assert.doesNotMatch(result.answer, /已生效/);
 });
+
+
+test("economy judging accepts a Codex win but requires Claude for a tie or loss", async () => {
+  const { comparisonReady } = await import("./score.mjs");
+  const { quotaError } = await import("./call-guard.mjs");
+  assert.equal(comparisonReady({policy: "codex-first", judges: [{judge: "codex", outcome: "win"}]}), true);
+  for (const outcome of ["tie", "loss"]) assert.equal(comparisonReady({policy: "codex-first", judges: [{judge: "codex", outcome}]}), false);
+  assert.equal(comparisonReady({policy: "codex-first", judges: [{judge: "codex", outcome: "loss"}, {judge: "claude", outcome: "tie"}]}), true);
+  assert.equal(comparisonReady({policy: "codex-first", judges: [{judge: "codex", error: "quota"}]}), false);
+  assert.equal(quotaError("You've hit your weekly limit · resets 6pm"), true);
+  assert.equal(quotaError('{"error":"rate_limit_error"}'), true);
+  assert.equal(quotaError("I respect your boundaries and limits."), false);
+});

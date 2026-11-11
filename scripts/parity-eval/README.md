@@ -34,3 +34,8 @@ node scripts/parity-eval/review-baseline.mjs E:/absolute/path/report.json
 - `--compare` 保留题目选择与语料版本检查；不同题目不能解释为产品进步。同题单轮差异也未扣除模型噪声，只有独立重复运行才能估计噪声。
 
 测试已由 `tests/memory-eval.test.mjs` 纳入既有 CI，不调用任何模型。无需改 CI、依赖或部署。
+
+
+## 2026-11-11 省额度续跑
+
+用户最新授权覆盖旧全量规则：`--economy --reuse-opponents <冻结report.json> --only <受影响题列表> --concurrency 1`。所有对手（含约定题）均复用冻结答案；仅 Codex 先评，判输或平才由 Claude 复核。没有调用的第二票不伪造；混合总表明确区分实测题与沿用题，严格完成按本轮实际票数报告，不与旧四票口径混同。`calls.jsonl` 记录所有产品、读图、搜索及评委 CLI 调用；额度错误立刻保存中间证据、终止本次评测的子进程和主进程，不重试。另有每次运行最多 120 次 Claude 调用的上限，避免异常循环消耗手机共用订阅；达到上限同样停止，不能自动再开一轮绕过它。
