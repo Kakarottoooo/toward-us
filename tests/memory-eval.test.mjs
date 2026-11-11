@@ -5,6 +5,7 @@ import { caseResult, grade, summarize, validateCases } from "../scripts/memory-e
 // Keep the parity harness's evidence/denominator contracts in the existing CI entrypoint; no live model calls.
 import "../scripts/parity-eval/score.test.mjs";
 import "./round4.test.mjs";
+import "./reply-format.test.mjs";
 
 // The memory eval's own cases and grading (founder 11-09: "先搭测试集"); the run itself needs the Claude CLI.
 test("every memory case is well formed and every category has cases", () => {

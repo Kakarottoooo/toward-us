@@ -15,7 +15,7 @@ import { installCallGuard } from "./call-guard.mjs";
 import { comparisonReady } from "./score.mjs";
 import { corpusHash, frozenCase, frozenOpponent, installCaseClock, agreementProtocol } from "./replay.mjs";
 
-const { values: options } = parseArgs({ options: { "cases-file": { type: "string" }, label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "batch-review": { type: "boolean", default: false }, "budget-file": { type: "string" }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
+const { values: options } = parseArgs({ options: { "product-only": { type: "boolean", default: false }, "cases-file": { type: "string" }, label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "batch-review": { type: "boolean", default: false }, "budget-file": { type: "string" }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
 if (!/^[a-zA-Z0-9_-]+$/.test(options.label)) throw new Error("Use a simple label");
 const spentCalls = Number(options["spent-calls"]);
 if (!Number.isInteger(spentCalls) || spentCalls < 0 || spentCalls >= 180) throw new Error("Invalid prior call count");
@@ -25,7 +25,7 @@ const external = options["cases-file"] ? await loadCasesFile(options["cases-file
 if (external && readonlySite) throw new Error("External cases cannot mix with readonly/round2");
 const cases = external?.cases || (options.round2 ? [...originalCases.filter((item) => item.layer !== "environment"), ...webCases] : readonlySite ? webCases : originalCases);
 if (readonlySite) options.economy = true;
-const batchReview = Boolean(external) || options.round2 || options["batch-review"];
+const batchReview = !options["product-only"] && (Boolean(external) || options.round2 || options["batch-review"]);
 const wanted = options.round2 ? new Set(cases.map((item) => item.id)) : options.only ? new Set(options.only.split(",")) : null;
 const selected = cases.filter((item) => !wanted || wanted.has(item.id)).sort((a, b) => Number(b.layer === "interaction") - Number(a.layer === "interaction"));
 if (!selected.length || wanted && selected.length !== wanted.size) throw new Error("Unknown or empty case selection");
@@ -75,7 +75,7 @@ if (readonlyMediator) {
 }
 const harness = await createHarness(directory, { requestContext: context, mediator: readonlyMediator });
 let checkpointResults = []; const packets = [];
-const guard = installCallGuard({ directory, context, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, budgetFile: options["budget-file"] ? resolve(options["budget-file"]) : undefined, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) });
+const guard = installCallGuard({ directory, context, maxClaudeTurns: 119, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, budgetFile: options["budget-file"] ? resolve(options["budget-file"]) : undefined, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) });
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   caseHash, ...(external ? { externalSource: external.source, excludedFromScores: external.source.purpose === "examples" } : {}), selected: selected.map((item) => item.id),
   protocol: { priorCalls: spentCalls, batchSize: batchReview ? 8 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
@@ -130,6 +130,15 @@ async function one(original) {
     result.pinky.evidence.readonly = { pages, machine, expectedStatus: item.readonly.status, querySucceeded: item.readonly.status === "ok", boundary: "Failed-page cases score honest handling, not a successful lookup; competitors receive the identical observed page data." };
   }
   await writeFile(join(root, "pinky.json"), JSON.stringify(result.pinky, null, 2));
+  if (options["product-only"]) {
+    result.pinky.machineCompleted = result.pinky.completed;
+    result.cost = usage.filter((event) => event.case === item.id);
+    result.ms = Date.now() - at;
+    await writeFile(join(root, "result.json"), JSON.stringify(result, null, 2));
+    checkpointResults.push(result);
+    console.log(`${item.id}: product sample saved; ${Math.round(result.ms / 1000)}s`);
+    return result;
+  }
   for (const provider of ["claude", "codex"]) {
     try {
       if (old && (options.economy || !item.agreementFlow)) {
@@ -198,8 +207,9 @@ if (options.round2) report.replay.webSource = baseline.webSource;
 if (readonlySite) report.readonly = { corpusVersion: "public-readonly-v1", requests: readonlySite.requests, scopeChanged: true, originalEnvironmentCasesPreserved: true, competitorMode: "同一实际公开网页观察的回答对比；对手没有本地浏览器执行权限，不声称同工具环境对标" };
 guard?.restore();
 report.endedAt = new Date().toISOString();
-report.summary = external?.source.purpose === "examples" ? {} : summarize(report.results, layers);
-report.measuredSummary = external?.source.purpose === "examples" ? {} : summarize(results, layers);
+report.productOnly = Boolean(options["product-only"]);
+report.summary = options["product-only"] || external?.source.purpose === "examples" ? {} : summarize(report.results, layers);
+report.measuredSummary = options["product-only"] || external?.source.purpose === "examples" ? {} : summarize(results, layers);
 report.agreementStages = results.filter((item) => item.pinky.evidence?.approvalFlow).map((item) => ({ id: item.id,
   checks: item.pinky.evidence.approvalFlow.checks, completed: item.pinky.evidence.approvalFlow.completed }));
 report.usage = usage;
@@ -211,7 +221,7 @@ for (const event of usage) {
 }
 report.cost = { pinkyReportedUsd: usage.reduce((sum, event) => sum + (event.usd || 0), 0), pinkyReportedCalls: usage.length,
   byKind, unattributedCalls: usage.filter((event) => !event.case).length,
-  claudeOpponentUsd: results.reduce((sum, item) => sum + (item.rivals.claude.usd || 0), 0),
+  claudeOpponentUsd: results.reduce((sum, item) => sum + (item.rivals.claude?.usd || 0), 0),
   claudeJudgeUsd: results.flatMap((item) => Object.values(item.comparisons).flatMap((pair) => pair.judges)).reduce((sum, vote) => sum + (vote.usd || 0), 0), codexUsd: null, scope: "subscription list-price estimates; partial Pinky image/search usage" };
 report.cost.reusedOpponentAnswers = results.flatMap((item) => Object.values(item.rivals)).filter((rival) => rival.reused).length;
 const previous = options.compare ? JSON.parse(await readFile(resolve(options.compare), "utf8")) : baseline;

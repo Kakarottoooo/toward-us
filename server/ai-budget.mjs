@@ -43,7 +43,7 @@ export const usesCheaperModel = (feature) => featureKind(feature) !== "interacti
 // Mediator method -> feature. `structured` calls are named by their schema name (the feature names above).
 const METHODS = {
   structured: (params) => params?.name || "structured", readScreenshots: () => "chat_screenshots",
-  planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
+  planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: () => "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
   continuePrivateAgentThread: () => "private_agent", summarizePerspective: () => "perspective_summary", generateDecisionOptions: () => "decision_options",
   continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", transcribe: () => "transcription", createRealtimeSession: () => "realtime_voice",
 };

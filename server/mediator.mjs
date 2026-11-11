@@ -122,6 +122,14 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       }, INTERACTIVE);
       return JSON.parse(response.output_text);
     },
+    async rewriteReply(context, language = "zh") {
+      const response = await client.responses.create({
+        model, store: false, max_output_tokens: 1400,
+        text: { format: { type: "json_schema", name: "reply_format_repair", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply"], properties: { reply: { type: "string" } } } } },
+        input: [{ role: "developer", content: `Rewrite only the reply in ${language}. Fix the supplied format issues once, preserving every requested deliverable and the supplied evidence. Do not add facts or perform actions. ${replyContractInstructions}` }, { role: "user", content: JSON.stringify(context) }],
+      }, INTERACTIVE);
+      return JSON.parse(response.output_text).reply;
+    },
     async planAssistantTurn(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
       // With images, require an explicit routing decision even when the planner writes actions:[]. Real-model

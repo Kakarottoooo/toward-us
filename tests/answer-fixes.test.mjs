@@ -112,14 +112,14 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...patch });
 const action = (patch = {}) => ({ kind: "checkin", operation: "query", targetId: null, expectedVersion: null, fields: fields(), query: "妈妈", queryPeriod: "all", occurrence: null, ...patch });
 
-async function setup(t, plan) {
+async function setup(t, plan, rewriteReply) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "answers-"));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const store = await createFileStore(join(directory, "store.json"));
   const id = randomUUID();
   await store.createUser({ id, email: `${id}@example.invalid`, name: "Ziwei", passwordHash: "test", createdAt: new Date().toISOString() });
-  const mediator = { planAssistantTurn: async () => plan() };
+  const mediator = { planAssistantTurn: async () => plan(), rewriteReply };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
@@ -150,9 +150,11 @@ test("a reply cannot claim a memory write when this turn executed none", async (
 });
 
 test("an explicit single-sentence answer has no unsolicited closing", async (t) => {
-  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }));
+  let repairs = 0;
+  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }), async ({ issues }) => { repairs++; assert.ok(issues.length); return "我也替你开心。"; });
   assert.equal((await say("谢谢，今天聊完好多了，只回我一句就好。")).text, "我也替你开心。");
   assert.equal((await say("谢谢，就像手机聊天那样回我一句，不要列清单。")).text, "我也替你开心。");
+  assert.equal(repairs, 2);
 });
 
 test("a requested draft sentence does not truncate the accompanying file analysis", async (t) => {

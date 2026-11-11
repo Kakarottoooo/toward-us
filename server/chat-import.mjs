@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
-import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
+import { finishReply, wantsOneSentence, repairReplyFormat } from "./reply-contract.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import express from "express";
@@ -325,7 +325,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         try {
           const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (typeof answer?.reply !== "string" || !answer.reply.trim()) throw new Error("Empty screenshot answer");
-          text = finishReply(answer.reply.trim().slice(0, 2000), { request: request.text, language: record.language });
+          const reply = await repairReplyFormat(answer.reply.trim(), { request: request.text, language: record.language,
+            rewrite: (rejected) => mediator.rewriteReply({ request: request.text, names, transcript: messages, ...rejected }, record.language) });
+          text = finishReply(reply, { request: request.text, language: record.language, formatChecked: true });
         } catch (error) {
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
         }
