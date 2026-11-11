@@ -26,7 +26,30 @@ test("only one prose repair is allowed, with reasons and honest fallback", async
   } });
   assert.equal(calls, 1);
   assert.match(result, /格式/);
+  assert.match(result, /好。/, "even unsuccessful format repair delivers usable wording");
   assert.equal(await repairReplyFormat("谢谢你。", { request: "回我一句", rewrite: () => { throw Error("unneeded"); } }), "谢谢你。");
+});
+
+test("captured natural draft labels work across interface languages without accepting source quotes", () => {
+  const captured = "你不是太敏感，Sam 用分手和“你爱我就该给”来施压确实越界了，回复可以这样写：“密码我不会给，这和爱不爱是两回事”";
+  const question = "看截图，是我太敏感了吗？帮我写一句能守住边界的回复。";
+  for (const label of ["回复可以这样写", "可以这样发", "你可以说", "你可以这样回复", "可复制的回复"]) {
+    assert.equal(checkReplyFormat(captured.replace("回复可以这样写", label), question).ok, true, label);
+  }
+  for (const [language, request, labels, draft] of [
+    ["en", "What happened? Then draft just one sentence.", ["You can say", "You could reply", "You can write", "Reply like this"], "I will keep my password private."],
+    ["es", "¿Qué pasó? Solo una frase.", ["Puedes decir", "Podrías responder", "Puedes escribir", "Respuesta sugerida"], "Prefiero mantener mi contraseña privada."],
+  ]) for (const label of labels) {
+    assert.equal(checkReplyFormat(`Context. ${label}: “${draft}”`, request, language).ok, true, label);
+    assert.equal(checkReplyFormat(`Context says “${label}: ${draft}” is a quotation.`, request, language).ok, false);
+  }
+});
+
+test("failed mixed-format repair retains the complete closest draft and analysis", async () => {
+  const reply = "双方需要重新确认时间。回复：我愿意再约。请提前告诉我。";
+  const result = await repairReplyFormat(reply, { request: "发生什么了？再给我一句回复。", rewrite: async () => reply });
+  assert.ok(result.includes(reply));
+  assert.match(result, /格式/);
 });
 
 test("analysis quotes cannot stand in for the requested final draft", async () => {

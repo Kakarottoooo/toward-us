@@ -1,5 +1,6 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { finishReply, wantsOneSentence, repairReplyFormat } from "./reply-contract.mjs";
+import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
+import { prepareSourceReply } from "./source-reply.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
@@ -188,7 +189,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       return result;
     } finally { progress(null); }
   };
-  const runTurn = async (userId, sessionId, body, { channel = "app", progress }) => {
+  const runTurn = async (userId, sessionId, body, { channel = "app", progress, transcript = false }) => {
     const session = await owned(store, sessionId, userId);
     const text = clean(body?.text, 2000); const itemId = clean(body?.itemId, 120);
     const photoIds = Array.isArray(body?.photoIds) ? [...new Set(body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
@@ -224,7 +225,10 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // Pinky answers in the interface language this member picked, whatever language they type in (founder 11-06: one language everywhere, the one each member picked).
     const language = await memberLanguage(store, userId, body?.language);
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
-    let plan; const recallSources = [];
+    let plan; const recallSources = [], replySources = [];
+    if (context.screenshotConversation?.transcript) replySources.push({ kind: "import", text: context.screenshotConversation.transcript });
+    if (transcript || /^(?:这是.{0,12})?(?:语音转写|语音的转写|voice transcript|transcripci[oó]n)/iu.test(text)) replySources.push({ kind: "transcript", text });
+    if (replySources.some((source) => source.kind === "transcript")) context.sourceTranscript = text;
     const webTurn = createWebTurn({ reader: mediator.readonlyWeb, failures: session.webFailures });
 
     const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
@@ -260,6 +264,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         : action.kind === "web_read" ? { query: action.query, findings: action.query }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
       const urls = lookups.filter((_, index) => ["web_search", "web_read"].includes(searches[index].kind)).flatMap((row) => pageUrls(row.findings));
+      for (let index = 0; index < searches.length; index++) if (searches[index].kind === "chat_search") replySources.push({ kind: "import_search", text: typeof lookups[index].findings === "string" ? lookups[index].findings : JSON.stringify(lookups[index].findings) });
       if (urls.length) context.webPages = await webTurn.read(urls);
       if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
       progress("writing");
@@ -283,8 +288,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     // Repair prose only, before writes; never rerun an action to fix formatting.
     if (!plan.actions.some((action) => action.kind === "chat_import")) {
-      plan.reply = await repairReplyFormat(plan.reply, { request: text, language,
-        rewrite: (rejected) => mediator.rewriteReply({ context, request: text, ...rejected }, language) });
+      plan.reply = await prepareSourceReply(plan.reply, { sources: plan.sourceBased === false ? [] : replySources, request: text, language, context, mediator });
     }
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
@@ -490,7 +494,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
     void recordUsage(store, { userId, action: "private_message", channel });
     return { session: updated, duplicate: raced };
   };
-  const append = async (req, res) => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body)).session) });
+  const append = async (req, res) => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body, { transcript: req.path.endsWith("/transcripts") })).session) });
   // Only an explicit confirm of the current card's digest moves the polished text (never the member's raw words) into the shared conversation.
   const confirmShare = async (userId, sessionId, body, { channel = "app" } = {}) => {
     const session = await owned(store, sessionId, userId);

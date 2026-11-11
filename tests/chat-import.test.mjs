@@ -17,7 +17,7 @@ const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: nu
 const whatsapp = ["[1/2/24, 9:00:00 PM] Alex: are you coming home soon", "[1/2/24, 9:20:00 PM] Blair: running late, sorry", "[1/2/24, 9:21:00 PM] Alex: you always say that", "[1/3/24, 8:00:00 AM] Blair: I'm sorry about last night", "[1/3/24, 8:05:00 AM] Alex: thank you, I love you"].join("\n");
 const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "each on a laptop, episode 12" }], message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, beforeStructured = async () => {} } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
   const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
@@ -27,10 +27,11 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: people[0].id, role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: people[0].id, expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, people[1].id, new Date().toISOString());
-  const calls = { planner: [], shared: [], structured: [], screenshots: [], rewrites: [] };
+  const calls = { planner: [], shared: [], structured: [], screenshots: [], rewrites: [], sourceChecks: [] };
   const mediator = {
     planAssistantTurn: async (context) => { calls.planner.push(context); return planner(context); },
     answerScreenshot: async (context) => { calls.planner.push(context); return planner(context); },
+    checkReplySources: async (context) => { calls.sourceChecks.push(context); return sourceCheck(context); },
     rewriteReply: async (context) => { calls.rewrites.push(context); if (!rewrite) throw new Error("Unexpected reply repair"); return rewrite(context); },
     continueTogether: async (context) => { calls.shared.push(context); return shared(context); },
     structured: async ({ name, input }) => { calls.structured.push({ name, input }); await beforeStructured(name); return name === "chat_history_part" ? { episodes: [{ date: "2024-01-02", kind: "conflict", title: "Late again", summary: "Blair was late.", speaker: "Alex", quote: "you always say that" }], themes: ["lateness"], tone: "tense" } : report; },
@@ -88,6 +89,8 @@ test("screenshot advice reads the actual exchange, answers the original question
   assert.ok(!JSON.stringify(session).includes("Internal grounding only"));
   assert.ok(!JSON.stringify(session).includes("Internal unknowns only"));
   assert.equal(f.calls.screenshots.length, 1);
+  assert.equal(f.calls.sourceChecks.length, 1);
+  assert.match(f.calls.sourceChecks[0].sources[0].text, /I waited forty minutes/);
   const context = f.calls.planner.find((call) => call.transcript);
   assert.equal(context.question, question);
   assert.match(context.transcript, /\[partner\] Blair: I waited forty minutes/);
@@ -218,7 +221,7 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   assert.equal(f.calls.rewrites.length, 1);
   assert.match(f.calls.rewrites[0].issues.join(" "), /Expected 1 sentence/);
   assert.equal(f.calls.rewrites[0].request, "Give me only one sentence to apologize.");
-  assert.equal(f.calls.rewrites[0].transcript[0].text, "I waited.");
+  assert.equal(JSON.parse(f.calls.rewrites[0].sources[0].text)[0].text, "I waited.");
 });
 
 test("captured mixed screenshot reply reaches repair rather than passing on an analysis quotation", async (t) => {
@@ -245,6 +248,27 @@ test("captured mixed screenshot reply reaches repair rather than passing on an a
   assert.equal(session.messages.at(-1).text, revised);
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}`, "GET", null, f.people[1].id)).status, 404);
   await f.ready((await f.request("/imports")).body.imports[0].id);
+});
+
+test("import answers check original text, while an unrelated turn with the same stored import skips it", async (t) => {
+  const original = "Blair canceled the meeting.";
+  const revised = "Blair said they were running late, not that the meeting was canceled.";
+  const f = await fixture(t, {
+    planner: (context) => context.messages.at(-1).text === "Thanks" ? { reply: "You're welcome.", sourceBased: false, actions: [] } : { reply: original, sourceBased: true, actions: [] },
+    sourceCheck: ({ reply, sources }) => { assert.match(sources[0].text, /running late/); return { claims: reply === original ? [{ claim: "canceled", source: "running late, sorry", supported: false, issue: "Do not convert lateness into cancellation." }] : [], deliveryIssues: [] }; },
+    rewrite: ({ sources, issues }) => { assert.match(sources[0].text, /running late/); assert.match(issues.join(" "), /cancellation/); return revised; },
+  });
+  const uploaded = await f.upload(whatsapp, "chat.txt", f.people[0].id, f.session.id);
+  const id = uploaded.body.import.id;
+  await f.request(`/imports/${id}/people`, "POST", { me: "Alex", partner: "Blair" });
+  await f.ready(id);
+  const before = f.calls.sourceChecks.length;
+  const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What happened?", itemId: randomUUID() });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.session.messages.at(-1).text, revised);
+  assert.equal(f.calls.sourceChecks.length, before + 1);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Thanks", itemId: randomUUID() });
+  assert.equal(f.calls.sourceChecks.length, before + 1);
 });
 
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {

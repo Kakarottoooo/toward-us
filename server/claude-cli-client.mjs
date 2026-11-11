@@ -144,7 +144,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
           const stdout = systemText ? await withSystemFile(cwd, systemText, (file) => run(command, [...args, ...file, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS)) : await run(command, [...args, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
           let result;
           try { result = claudeResult(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
-          for (const listener of usageListeners) { try { listener({ name: params.text?.format?.name || null, model, prompt, text: typeof result.result === "string" ? result.result : null, systemChars: String(systemText || "").length, usage: result.usage || {}, usd: Number(result.total_cost_usd) || 0 }); } catch {} }
+          for (const listener of usageListeners) { try { listener({ name: params.text?.format?.name || null, model, prompt, text: typeof result.result === "string" ? result.result : null, turns: result.num_turns ?? null, systemChars: String(systemText || "").length, usage: result.usage || {}, usd: Number(result.total_cost_usd) || 0 }); } catch {} }
           if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
           return result;
         };

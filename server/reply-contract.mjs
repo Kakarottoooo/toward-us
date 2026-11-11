@@ -40,7 +40,7 @@ function copyableDraft(text) {
   const quotes = quotedDrafts(text);
   // Prefer an explicit delivery label outside quoted source material. In particular,
   // an inline quotation INSIDE an unquoted draft is not the draft itself.
-  const labels = [...text.matchAll(/(?:^|[\n。！？.!?，,；;])\s*(?:(?:现在)?(?:你)?可以(?:这样|这么)?(?:(?:平和|温和|简短|直接)地)?(?:说|回|回复)|(?:最终|可发|可复制)?(?:回复|文案)|draft|reply|respuesta)\s*[：:]\s*/giu)]
+  const labels = [...text.matchAll(/(?:^|[\n。！？.!?，,；;])\s*(?:(?:(?:回复|文案)(?:可以)?|(?:现在)?(?:你)?可以)(?:这样|这么)?(?:(?:平和|温和|简短|直接)地)?(?:说|回|回复|写|发)|(?:最终|可发|可复制)?(?:的)?(?:回复|文案)|(?:you\s+(?:can|could)\s+(?:say|reply|write|send)|(?:draft|reply)(?:\s+like\s+this)?)|(?:(?:puedes|podrías)\s+(?:decir|responder|escribir|enviar)|respuesta(?:\s+sugerida)?))\s*[：:]\s*/giu)]
     .filter((match) => !quotes.some((quote) => match.index >= quote.start && match.index < quote.end));
   if (labels.length) {
     const label = labels.at(-1), start = label.index + label[0].length;
@@ -77,7 +77,14 @@ export async function repairReplyFormat(reply, { request = "", language = "zh", 
   if (checked.ok) return reply;
   const revised = rewrite ? await rewrite({ reply, issues: checked.issues }) : null;
   if (typeof revised === "string" && checkReplyFormat(revised, request, language).ok) return revised;
-  return language === "en" ? "I couldn't produce the requested format this time." : language === "es" ? "Esta vez no pude preparar el formato solicitado." : "这次没能按你要求的格式写好。";
+  // Keep the most complete deliverable: never replace usable wording with only an error.
+  // Prefer an identifiable draft, then fewer format violations; retain the full text
+  // so shortening cannot silently remove a condition, negation or factual answer.
+  const candidates = [revised, reply].filter((value) => typeof value === "string" && value.trim());
+  candidates.sort((a, b) => Number(Boolean(copyableDraft(b))) - Number(Boolean(copyableDraft(a)))
+    || checkReplyFormat(a, request, language).issues.length - checkReplyFormat(b, request, language).issues.length);
+  const note = language === "en" ? "The format still needs adjusting." : language === "es" ? "El formato aún necesita ajustes." : "格式还需调整。";
+  return [candidates[0], note].filter(Boolean).join("\n");
 }
 
 export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false } = {}) {
@@ -96,4 +103,7 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
 
 export const privateBoundaryReply = (language) => language === "en" ? "I can only help you work through information you provide or that is explicitly shared with you." : language === "es" ? "Solo puedo ayudarte con la información que tú aportes o que se haya compartido explícitamente contigo." : "我只能根据你提供或明确共享的信息帮你梳理。";
 
-export const replyContractInstructions = `Final reply check: deliver only what was asked. Sentence/line/character limits override advice and feature offers. Acknowledgments need warmth, not advice. Wording-only: draft only. Mixed request: at most two brief analysis sentences, then a reply label and quoted draft. Never add feelings, affection, promises or acceptance absent from the user's own words; a boundary needs no affectionate preamble. Describe activity types naturally. Raw transcript outranks summaries: preserve speaker, exact claim and timestamps; an ongoing state is not an outcome (still under review does not mean rejected). Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports committed writes; reminders still need actions after lookup. If asked not to book, say no booking was made. Unsupported events remain unestablished; help sort known facts, never interrogate. Privacy: one neutral boundary per reply, no access claims, private-chat hints or comments on persistence.`;
+export const replyContractInstructions = `Deliver only what was asked; sentence/line/character limits override extras. Wording-only: draft only. Mixed request: at most two brief analysis sentences, then a reply label and quoted draft. Never add feelings, affection, promises or acceptance absent from the user's words. In Chinese, translate foreign activity names into natural Chinese activity descriptions. For bookable poster/page activities or "don't book" requests, explicitly say no booking was made. Raw transcript outranks summaries: preserve speakers, claims and timestamps; ongoing states are not outcomes. Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports writes; reminders need actions after lookup. Unsupported events remain unestablished; help, never interrogate. Privacy: one neutral boundary, no access claims, private-chat hints or comments on persistence.
+Scope examples (not facts):
+Q: Which shelf now? Moved A to C. Good: "C." Bad: "C, formerly A, then corrected." Give only the requested value.
+Q: The printer works; one warm reply. Good: "Glad it worked!" Bad: "Glad it worked; remember to clean it." No unasked advice, even within one sentence.`;

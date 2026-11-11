@@ -33,6 +33,7 @@ const FEATURES = {
   demo_analysis: "interactive", demo_answer: "interactive", transcription: "interactive", realtime_voice: "interactive",
   couple_promises: "background", couple_profile: "background", couple_game: "background", daily_question: "background", daily_reaction: "background", composer_suggestions: "background",
   ludo_tasks: "background",
+  reply_source_check: "background",
   couple_recap: "background", shared_translation: "background", feedback_triage: "background", agreement_commitments: "background", photo_memory: "background", pet_draw: "background", pet_guess: "background", soup_puzzle: "background", soup_answer: "background",
   chat_history_part: "chat_import", chat_history_report: "chat_import", chat_screenshots: "chat_import",
 };
@@ -43,6 +44,7 @@ export const usesCheaperModel = (feature) => featureKind(feature) !== "interacti
 // Mediator method -> feature. `structured` calls are named by their schema name (the feature names above).
 const METHODS = {
   structured: (params) => params?.name || "structured", readScreenshots: () => "chat_screenshots",
+  checkReplySources: () => "reply_source_check",
   planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: () => "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
   continuePrivateAgentThread: () => "private_agent", summarizePerspective: () => "perspective_summary", generateDecisionOptions: () => "decision_options",
   continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", transcribe: () => "transcription", createRealtimeSession: () => "realtime_voice",

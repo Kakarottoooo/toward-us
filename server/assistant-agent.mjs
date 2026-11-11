@@ -141,7 +141,7 @@ ${replyContractInstructions}`;
 
 export function validateAssistantTurn(plan) {
   const exact = (object, keys) => object && typeof object === "object" && !Array.isArray(object) && Object.keys(object).length === keys.length && keys.every((key) => Object.hasOwn(object, key));
-  if (!exact(plan, ["reply", "actions", ...(Object.hasOwn(plan || {}, "planConstraints") ? ["planConstraints"] : [])]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || !Array.isArray(plan.actions) || plan.actions.length > 8) return false;
+  if (!exact(plan, ["reply", "actions", ...(Object.hasOwn(plan || {}, "planConstraints") ? ["planConstraints"] : []), ...(Object.hasOwn(plan || {}, "sourceBased") ? ["sourceBased"] : [])]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || !Array.isArray(plan.actions) || plan.actions.length > 8 || Object.hasOwn(plan, "sourceBased") && typeof plan.sourceBased !== "boolean") return false;
   return plan.actions.every((action) => exact(action, ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"])
     && ["query", "create", "update", "archive", "book_table", "buy"].includes(action.operation)
     && (action.kind === "handoff") === ["book_table", "buy"].includes(action.operation)
@@ -183,8 +183,8 @@ export function normalizeAssistantTurn(plan, language = "zh") {
   // occurrence: null) next to a good reply; the exact-key check then refused the whole turn with a 502 (use-case test,
   // 11-08: about 1 in 4 times when a user told Pinky about her boyfriend). Empty extras are dropped; any with content
   // still fail validation.
-  const { reply, actions, planConstraints, ...extra } = plan;
-  if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}) };
+  const { reply, actions, planConstraints, sourceBased, ...extra } = plan;
+  if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}), ...(Object.hasOwn(plan, "sourceBased") ? { sourceBased } : {}) };
   return { ...plan, actions: plan.actions.map((action) => {
     if (!action?.fields || typeof action.fields !== "object") return action;
     const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...action.fields };

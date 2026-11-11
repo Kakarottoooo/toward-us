@@ -6,6 +6,7 @@ import { localDecisionOptions } from "./relationship-domain.mjs";
 import { assistantInstructions, assistantTurnSchema, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
 import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
 import { replyContractInstructions } from "./reply-contract.mjs";
+import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { usesCheaperModel } from "./ai-budget.mjs";
 
@@ -122,11 +123,19 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       }, INTERACTIVE);
       return JSON.parse(response.output_text);
     },
+    async checkReplySources(context, language = "zh") {
+      const response = await cheap.responses.create({
+        model: cheapModel, store: false, max_output_tokens: 2200,
+        text: { format: { type: "json_schema", name: "reply_source_check", strict: true, schema: sourceCheckSchema } },
+        input: [{ role: "developer", content: `${sourceCheckInstructions}\nThe reply language is ${language}.` }, { role: "user", content: JSON.stringify(context) }],
+      }, INTERACTIVE);
+      return JSON.parse(response.output_text);
+    },
     async rewriteReply(context, language = "zh") {
       const response = await client.responses.create({
         model, store: false, max_output_tokens: 1400,
         text: { format: { type: "json_schema", name: "reply_format_repair", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply"], properties: { reply: { type: "string" } } } } },
-        input: [{ role: "developer", content: `Rewrite only the reply in ${language}. Fix the supplied format issues once, preserving every requested deliverable and the supplied evidence. Do not add facts or perform actions. ${replyContractInstructions}` }, { role: "user", content: JSON.stringify(context) }],
+        input: [{ role: "developer", content: `Rewrite only the reply in ${language}. Fix the supplied source and format issues once, preserving every requested deliverable and the supplied evidence. Original source text outranks the rejected reply and summaries. Do not add facts or perform actions. ${replyContractInstructions}` }, { role: "user", content: JSON.stringify(context) }],
       }, INTERACTIVE);
       return JSON.parse(response.output_text).reply;
     },
@@ -141,7 +150,9 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       }
       const checkedPlan = Boolean(context.constraintErrors) || requiresPlanConstraints(context);
       const privateSchema = { ...assistantTurnSchema, required: [...assistantTurnSchema.required, "privateBoundary"], properties: { ...assistantTurnSchema.properties, privateBoundary: { type: "boolean" } } };
-      const baseSchema = checkedPlan ? { ...privateSchema, required: [...privateSchema.required, "planConstraints"], properties: { ...privateSchema.properties, planConstraints: planConstraintsSchema } } : privateSchema;
+      const hasSources = Boolean(context.screenshotConversation?.transcript || context.sourceTranscript || context.lookups?.some((row) => row.query?.startsWith("chat history")));
+      const sourceSchema = hasSources ? { ...privateSchema, required: [...privateSchema.required, "sourceBased"], properties: { ...privateSchema.properties, sourceBased: { type: "boolean", description: "True if the reply uses facts from the supplied image/file/chat transcript; false for unrelated ordinary conversation, greetings or acknowledgments." } } } : privateSchema;
+      const baseSchema = checkedPlan ? { ...sourceSchema, required: [...sourceSchema.required, "planConstraints"], properties: { ...sourceSchema.properties, planConstraints: planConstraintsSchema } } : sourceSchema;
       const schema = withPhotos ? { ...baseSchema, required: [...baseSchema.required, "readChatScreenshots"], properties: { ...baseSchema.properties, readChatScreenshots: { type: "boolean" } } } : baseSchema;
       const instructions = assistantInstructions(language) + (requiresPlanDelivery(context) ? "\n" + planDeliveryInstructions : "") + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
       const response = await client.responses.create({
