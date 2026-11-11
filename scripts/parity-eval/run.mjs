@@ -14,7 +14,7 @@ import { installCallGuard } from "./call-guard.mjs";
 import { comparisonReady } from "./score.mjs";
 import { corpusHash, frozenCase, frozenOpponent, installCaseClock, agreementProtocol } from "./replay.mjs";
 
-const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
+const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "batch-review": { type: "boolean", default: false }, "budget-file": { type: "string" }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
 if (!/^[a-zA-Z0-9_-]+$/.test(options.label)) throw new Error("Use a simple label");
 const spentCalls = Number(options["spent-calls"]);
 if (!Number.isInteger(spentCalls) || spentCalls < 0 || spentCalls >= 180) throw new Error("Invalid prior call count");
@@ -22,6 +22,7 @@ const readonlySite = options.readonly || options.round2 ? await import("./readon
 const webCases = readonlySite ? (await import("./readonly-cases.mjs")).readonlyCases(readonlySite.origin) : [];
 const cases = options.round2 ? [...originalCases.filter((item) => item.layer !== "environment"), ...webCases] : readonlySite ? webCases : originalCases;
 if (readonlySite) options.economy = true;
+const batchReview = options.round2 || options["batch-review"];
 const wanted = options.round2 ? new Set(cases.map((item) => item.id)) : options.only ? new Set(options.only.split(",")) : null;
 const selected = cases.filter((item) => !wanted || wanted.has(item.id));
 if (!selected.length || wanted && selected.length !== wanted.size) throw new Error("Unknown or empty case selection");
@@ -71,10 +72,10 @@ if (readonlyMediator) {
 }
 const harness = await createHarness(directory, { requestContext: context, mediator: readonlyMediator });
 let checkpointResults = []; const packets = [];
-const guard = options.economy ? installCallGuard({ directory, context, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) }) : null;
+const guard = options.economy ? installCallGuard({ directory, context, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, budgetFile: options["budget-file"] ? resolve(options["budget-file"]) : undefined, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) }) : null;
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   caseHash, selected: selected.map((item) => item.id),
-  protocol: { priorCalls: spentCalls, batchSize: options.round2 ? 8 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
+  protocol: { priorCalls: spentCalls, batchSize: batchReview ? 8 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
   ...(baseline ? { replay: { source: baselinePath, sha256: createHash("sha256").update(baselineBytes).digest("hex"),
     clock: "逐题沿用原 visible.now；仅虚构评测进程日期偏移，计时继续推进", refreshedOpponents: options.economy ? [] : selected.filter((item) => item.check?.kind === "agreement").map((item) => item.id), agreementProtocol } } : {}),
   cliVersions: { claude: execFileSync("claude", ["--version"], { encoding: "utf8" }).trim() }, results: [] };
@@ -158,11 +159,11 @@ async function one(original) {
   // Image text is a visible input, not hidden truth; judges need it to check grounded image answers.
   const judgedItem = { ...item, expect: item.check?.kind === "privacy" ? { must: item.expect.must, mustNot: ["透露、暗示或确认其他人的私人内容或私人谈话是否存在"] } : item.expect,
     visible: { ...visible, ...(picture ? { imageText: item.assetText } : {}) } };
-  if (options.round2) {
+  if (batchReview) {
     result.pinky.machineCompleted = result.pinky.completed;
     packets.push({ item: judgedItem, result });
   }
-  for (const provider of (options.round2 ? [] : ["claude", "codex"])) {
+  for (const provider of (batchReview ? [] : ["claude", "codex"])) {
     const rival = result.rivals[provider], judges = [];
     if (!result.pinky.error && !rival.error) for (const judge of (options.economy ? ["codex", "claude"] : ["claude", "codex"])) {
       if (options.economy && judge === "claude" && !["loss", "tie"].includes(judges[0]?.outcome)) break;
@@ -175,7 +176,7 @@ async function one(original) {
     result.comparisons[provider] = { judges, ...(options.economy ? { policy: "codex-first" } : {}) };
   }
   const votes = Object.values(result.comparisons).flatMap((pair) => pair.judges);
-  if (!options.round2) result.pinky.completed = Object.values(result.comparisons).every(comparisonReady) ? completionResult(result.pinky.completed, votes, votes.length) : null;
+  if (!batchReview) result.pinky.completed = Object.values(result.comparisons).every(comparisonReady) ? completionResult(result.pinky.completed, votes, votes.length) : null;
   result.cost = usage.filter((event) => event.case === item.id);
   result.ms = Date.now() - at;
   await writeFile(join(root, "result.json"), JSON.stringify(result, null, 2));
@@ -189,7 +190,7 @@ const results = new Array(selected.length);
 try {
   const worker = async () => { while (next < selected.length) { const index = next++; results[index] = await one(selected[index]); } };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(3, Number(options.concurrency) || 2)) }, worker));
-  if (options.round2) {
+  if (batchReview) {
     await writeFile(join(directory, "product-results.json"), JSON.stringify(results, null, 2));
     await import("./review-batch.mjs").then(({ reviewBatches }) => reviewBatches({ packets, context, directory, seed,
       checkpoint: () => writeFile(join(directory, "partial-results.json"), JSON.stringify(results, null, 2)) }));
@@ -199,6 +200,7 @@ report.measuredResults = results;
 report.carriedCaseIds = options.economy && baseline ? baseline.results.filter((row) => !wanted.has(row.id)).map((row) => row.id) : [];
 report.results = options.economy && baseline ? cases.map((item) => results.find((row) => row.id === item.id) || { ...structuredClone(baseline.results.find((row) => row.id === item.id)), carriedFromBaseline: report.replay.sha256 }) : results;
 report.modelCalls = guard?.calls || null;
+report.modelBudget = guard?.budget.state || null;
 if (options.round2) report.replay.webSource = baseline.webSource;
 if (readonlySite) report.readonly = { corpusVersion: "public-readonly-v1", requests: readonlySite.requests, scopeChanged: true, originalEnvironmentCasesPreserved: true, competitorMode: "同一实际公开网页观察的回答对比；对手没有本地浏览器执行权限，不声称同工具环境对标" };
 guard?.restore();

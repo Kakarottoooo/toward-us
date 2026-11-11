@@ -4,6 +4,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { budgetedModelCall } from "./model-call-budget.mjs";
 
 // Local dogfooding only: answers the OpenAI `responses.create` text calls through the `claude` CLI signed in with the
 // founder's Claude subscription. It never runs tools, keeps no session, and loads no user settings, hooks or MCP
@@ -159,6 +160,11 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
 }
 
 function run(command, args, input, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const turns = args.includes("--json-schema") || args.includes("Read") ? 6 : args.includes("WebSearch") ? 4 : 1;
+  return budgetedModelCall("claude", args, (bounded) => runProcess(command, bounded, input, cwd, timeoutMs), turns);
+}
+
+function runProcess(command, args, input, cwd, timeoutMs) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let stdout = "", stderr = "";

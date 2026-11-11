@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { jsonObjects } from "../../server/claude-cli-client.mjs";
+import { budgetedModelCall } from "../../server/model-call-budget.mjs";
 
 // Authentication remains in the installed subscription CLIs. No auth/config file is read or copied.
 export function run(command, args, input, cwd, timeout = 180_000) {
@@ -30,6 +31,7 @@ export async function invoke(provider, { root, input, instructions, schema, imag
   await mkdir(cwd, { recursive: true });
   const system = join(cwd, "instructions.txt");
   await writeFile(system, instructions);
+  await writeFile(join(cwd, "input.json"), input);
   if (provider === "claude") {
     const args = ["-p", "--output-format", "json", "--model", "sonnet", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "project", "--disable-slash-commands", "--restricted", "--permission-mode", "dontAsk", "--system-prompt-file", system];
     const allowed = [search ? "WebSearch" : "", image ? "Read" : ""].filter(Boolean).join(",");
@@ -43,7 +45,8 @@ export async function invoke(provider, { root, input, instructions, schema, imag
       prompt += `\nAttached synthetic image: ${localImage}`;
     }
     if (schema) prompt += `\nReturn exactly one JSON object matching: ${JSON.stringify(schema)}`;
-    const { stdout, ms } = await run("claude", args, prompt, cwd);
+    const { stdout, ms } = await budgetedModelCall("claude", args, (bounded) => run("claude", bounded, prompt, cwd), search || image ? 6 : 1);
+    await writeFile(join(cwd, "response.json"), stdout);
     const raw = JSON.parse(stdout);
     if (raw.is_error) throw new Error("Claude subscription returned an error");
     const answer = String(raw.result || "");
@@ -59,7 +62,8 @@ export async function invoke(provider, { root, input, instructions, schema, imag
   // npm's Windows command wrapper is not spawn-able without a shell. Invoke its JS entry point directly.
   const command = process.platform === "win32" ? process.execPath : "codex";
   if (process.platform === "win32") args.unshift(join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "npm", "node_modules", "@openai", "codex", "bin", "codex.js"));
-  const { stdout, ms } = await run(command, args, input, cwd);
+  const { stdout, ms } = await budgetedModelCall("codex", args, (bounded) => run(command, bounded, input, cwd));
+  await writeFile(join(cwd, "events.jsonl"), stdout);
   const events = stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
   if (events.some((event) => event.type === "turn.failed")) throw new Error("Codex subscription turn failed");
   const answer = await readFile(output, "utf8");

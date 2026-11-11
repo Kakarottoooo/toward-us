@@ -3,6 +3,16 @@ import { test } from "node:test";
 import { checkPlanConstraints, requiresPlanConstraints, requiresPlanDelivery } from "../server/plan-constraints.mjs";
 import { finishReply, wantsOneSentence } from "../server/reply-contract.mjs";
 
+test("reminder claims require a reminder write, not an unrelated memory receipt", () => {
+  for (const reply of ["我只准备了明天晚上8点的提醒。", "已设好提醒。", "已准备提醒。", "我会明晚提醒你。", "I have scheduled a reminder.", "He preparado un recordatorio."]) {
+    const actual = finishReply(reply, { receipts: ["已保存私人记录。"] });
+    assert.match(actual, /这轮尚未创建提醒/);
+    assert.ok(!actual.includes(reply));
+  }
+  assert.equal(finishReply("尚未设置提醒。"), "尚未设置提醒。");
+  assert.equal(finishReply("你可以设置提醒。"), "你可以设置提醒。");
+});
+
 test("draft-only scope does not discard a separate factual question or assessment", () => {
   const question = "看聊天截图，帮我写一句自然的道歉话，不要发送。";
   assert.equal(wantsOneSentence(question), false);

@@ -40,6 +40,26 @@ async function fixture(t, planner) {
   return { store, reminderService, ids, request, calls, session: create.body.session, storePath: join(directory, "store.json"), turn: (text, itemId = randomUUID()) => request(`/assistant/sessions/${create.body.session.id}/messages`, "POST", { text, itemId }) };
 }
 
+test("a reminder promise without an action never becomes a receipt", async (t) => {
+  const f = await fixture(t, () => ({ reply: "I have prepared a reminder for tomorrow at eight. Here is your apology: I am sorry.", actions: [] }));
+  const response = await f.turn("Recall the apology and remind me tomorrow at eight, do not send it");
+  assert.equal(response.status, 200);
+  const answer = response.body.session.messages.at(-1).text;
+  assert.doesNotMatch(answer, /have prepared/);
+  assert.match(answer, /这轮尚未创建提醒/);
+  assert.match(answer, /I am sorry/);
+  assert.equal((await f.store.relationshipSnapshotForUser(f.ids[0])).reminders.length, 0);
+});
+
+test("a committed reminder replaces a model promise with its actual persisted time", async (t) => {
+  const f = await fixture(t, () => ({ reply: "I have prepared a reminder for tomorrow at eight.", actions: [action("reminder", "create", { fields: fields({ title: "Apologize", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "once" }) })] }));
+  const response = await f.turn("Remind me to apologize on September 11 at eight");
+  assert.equal(response.status, 200);
+  assert.match(response.body.session.messages.at(-1).text, /Saved personal reminder: Apologize/);
+  assert.doesNotMatch(response.body.session.messages.at(-1).text, /No reminder was created|have prepared/);
+  assert.equal((await f.store.relationshipSnapshotForUser(f.ids[0])).reminders.length, 1);
+});
+
 test("spoken reminder creation, continuation and cancellation update one durable private reminder", async (t) => {
   const f = await fixture(t, (context) => {
     const target = context.records.find((r) => r.kind === "reminder");

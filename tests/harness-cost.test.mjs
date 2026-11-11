@@ -2,6 +2,34 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAnthropicClient } from "../server/anthropic-client.mjs";
 import { assistantInstructions } from "../server/assistant-agent.mjs";
+import { createModelCallBudget, setModelCallBudget, budgetedModelCall } from "../server/model-call-budget.mjs";
+
+test("model budget reserves concurrent internal turns and reconciles CLI num_turns", async (t) => {
+  const budget = createModelCallBudget({ maxClaudeTurns: 4, maxCodexCalls: 2 });
+  setModelCallBudget(budget); t.after(() => setModelCallBudget(null));
+  const first = budget.reserve("claude", 3);
+  const second = budget.reserve("claude", 3);
+  assert.equal(second.maxTurns, 1);
+  second.finish('{"num_turns":1}'); first.finish('{"num_turns":2}');
+  let dispatched = 0;
+  await budgetedModelCall("claude", [], async (args) => { dispatched++; assert.deepEqual(args, ["--max-turns", "1"]); return '{"num_turns":1}'; }, 6);
+  assert.equal(budget.state.claudeTurns, 4);
+  await assert.rejects(budgetedModelCall("claude", [], async () => { dispatched++; }), /budget reached/);
+  assert.equal(dispatched, 1);
+});
+
+test("unknown metadata, quota errors and Codex exhaustion stop subsequent requests", () => {
+  const unknown = createModelCallBudget();
+  assert.throws(() => unknown.reserve("claude", 6).finish("bad output"), /num_turns missing/);
+  assert.equal(unknown.state.claudeTurns, 6);
+  assert.throws(() => unknown.reserve("claude"), /num_turns missing/);
+  const quota = createModelCallBudget();
+  assert.throws(() => quota.reserve("claude").finish(JSON.stringify({ num_turns: 1, result: "You've hit your usage limit" })), /quota error/);
+  assert.throws(() => quota.reserve("codex"), /quota error/);
+  const codex = createModelCallBudget({ maxCodexCalls: 1 });
+  codex.reserve("codex").finish("");
+  assert.throws(() => codex.reserve("codex"), /budget reached/);
+});
 
 // Cost pass on the harness (founder 11-10: "首先得先保证我们的模型输出结果保质保量，然后再开始节省成本").
 

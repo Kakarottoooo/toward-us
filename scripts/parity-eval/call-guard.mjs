@@ -2,12 +2,15 @@ import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createModelCallBudget, setModelCallBudget } from "../../server/model-call-budget.mjs";
 
 export const quotaError = (text) => /you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|out of extra usage|credit balance is too low/i.test(text);
 
 // Installed only by the disposable evaluation runner, before any model call.
 // Observe all transports (including vision/search), not just text usage events.
-export function installCallGuard({ directory, context, maxClaudeCalls = 120, maxCalls = Infinity, checkpoint }) {
+export function installCallGuard({ directory, context, maxClaudeCalls = 120, maxCalls = Infinity, maxClaudeTurns = 120, maxCodexCalls = 40, budgetFile = join(directory, "model-budget.json"), checkpoint }) {
+  const budget = createModelCallBudget({ maxClaudeTurns, maxCodexCalls, file: budgetFile, context, onStop: (reason) => stop(reason) });
+  setModelCallBudget(budget);
   const original = childProcess.spawn, children = new Set(), calls = [];
   let stopped = false;
   const log = (event) => appendFileSync(join(directory, "calls.jsonl"), `${JSON.stringify(event)}\n`);
@@ -51,5 +54,5 @@ export function installCallGuard({ directory, context, maxClaudeCalls = 120, max
     return child;
   };
   syncBuiltinESMExports();
-  return { calls, restore: () => { childProcess.spawn = original; syncBuiltinESMExports(); } };
+  return { calls, budget, restore: () => { childProcess.spawn = original; syncBuiltinESMExports(); setModelCallBudget(null); } };
 }

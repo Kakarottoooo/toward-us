@@ -139,7 +139,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         model, store: false, max_output_tokens: checkedPlan ? 2400 : 1400,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
         input: [{ role: "developer", content: instructions }, { role: "user", content: JSON.stringify(context) }],
-      }, { ...INTERACTIVE, allowProseReply: !checkedPlan });
+      }, { ...INTERACTIVE, allowProseReply: false });
       const { readChatScreenshots, ...plan } = JSON.parse(response.output_text);
       if (withPhotos && typeof readChatScreenshots !== "boolean") throw new Error("The assistant did not decide how to read the attachments.");
       if (withPhotos && readChatScreenshots === true && Array.isArray(plan.actions) && !plan.actions.some((action) => action.kind === "chat_import")) {
