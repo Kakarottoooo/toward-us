@@ -4,7 +4,7 @@ const segments = (text, language) => [...new Intl.Segmenter(language || "zh", { 
 const claimsWrite = (text) => savedClaim.test(text) && !/(?:没有|并未|尚未|未曾|不能|not |never |cannot |can't |no se |no he )[^。！？.!?]{0,45}(?:已|记|保存|saved|stored|recorded|noted|kept|guardado|registrado|anotado)/iu.test(text);
 
 export function wantsOneSentence(request) {
-  return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|用)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "");
+  return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|(?:^|[，。！？\n])(?:请)?用|回复?我?)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "");
 }
 
 export function finishReply(reply, { request = "", language = "zh", receipts = [] } = {}) {

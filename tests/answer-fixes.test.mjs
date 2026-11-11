@@ -152,6 +152,13 @@ test("a reply cannot claim a memory write when this turn executed none", async (
 test("an explicit single-sentence answer has no unsolicited closing", async (t) => {
   const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }));
   assert.equal((await say("谢谢，今天聊完好多了，只回我一句就好。")).text, "我也替你开心。");
+  assert.equal((await say("谢谢，就像手机聊天那样回我一句，不要列清单。")).text, "我也替你开心。");
+});
+
+test("a requested draft sentence does not truncate the accompanying file analysis", async (t) => {
+  const answer = "两次都是约定时间过后才告知。10月1日19:45还在工作，10月8日19:30才说来不了。可以说：计划有变化时，请在约定时间前告诉我。";
+  const { say } = await setup(t, () => ({ reply: answer, actions: [] }));
+  assert.equal((await say("读这个聊天记录，引用两个日期，再给我一句平和提出改进要求的话。")).text, answer);
 });
 
 test("a successful reminder uses its actual receipt instead of a fabricated profile claim", async (t) => {
