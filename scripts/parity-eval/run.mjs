@@ -43,7 +43,7 @@ if (options.round2) {
   const webPath = resolve(options["readonly-baseline"]);
   if (webPath.split(/[\\/]/).includes("dogfood")) throw new Error("Synthetic source only");
   const bytes = await readFile(webPath); webBaseline = JSON.parse(bytes);
-  baseline = { ...baseline, caseHash, ...(external ? { externalSource: external.source, excludedFromScores: external.source.purpose === "examples" } : {}), selected: cases.map((row) => row.id), results: [...baseline.results.filter((row) => row.layer !== "environment"), ...webBaseline.results], webSource: { path: webPath, sha256: createHash("sha256").update(bytes).digest("hex") } };
+  baseline = { ...baseline, caseHash, selected: cases.map((row) => row.id), results: [...baseline.results.filter((row) => row.layer !== "environment"), ...webBaseline.results], webSource: { path: webPath, sha256: createHash("sha256").update(bytes).digest("hex") } };
 }
 if (baseline && (!baseline.endedAt || baseline.results?.length !== baseline.selected?.length)) throw new Error("Frozen baseline is not complete");
 if (options.economy && (!readonlySite && (!baseline || !wanted) || options.concurrency !== "1")) throw new Error("Economy replay requires frozen opponents, an explicit affected-case list and concurrency 1");
@@ -77,7 +77,7 @@ const harness = await createHarness(directory, { requestContext: context, mediat
 let checkpointResults = []; const packets = [];
 const guard = installCallGuard({ directory, context, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, budgetFile: options["budget-file"] ? resolve(options["budget-file"]) : undefined, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) });
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-  caseHash, selected: selected.map((item) => item.id),
+  caseHash, ...(external ? { externalSource: external.source, excludedFromScores: external.source.purpose === "examples" } : {}), selected: selected.map((item) => item.id),
   protocol: { priorCalls: spentCalls, batchSize: batchReview ? 8 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
   ...(baseline ? { replay: { source: baselinePath, sha256: createHash("sha256").update(baselineBytes).digest("hex"),
     clock: "逐题沿用原 visible.now；仅虚构评测进程日期偏移，计时继续推进", refreshedOpponents: options.economy ? [] : selected.filter((item) => item.check?.kind === "agreement").map((item) => item.id), agreementProtocol } } : {}),
