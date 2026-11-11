@@ -8,7 +8,7 @@ export const quotaError = (text) => /you.ve hit your[^\n]{0,80}limit|(?:usage|ra
 
 // Installed only by the disposable evaluation runner, before any model call.
 // Observe all transports (including vision/search), not just text usage events.
-export function installCallGuard({ directory, context, maxClaudeCalls = 120, maxCalls = Infinity, maxClaudeTurns = 120, maxCodexCalls = 40, budgetFile = join(directory, "model-budget.json"), checkpoint }) {
+export function installCallGuard({ directory, context, maxClaudeCalls = 120, maxCalls = Infinity, maxClaudeTurns = 120, maxCodexCalls = 40, budgetFile = join(directory, "model-budget.json"), checkpoint, disallowClaude = false }) {
   const budget = createModelCallBudget({ maxClaudeTurns, maxCodexCalls, file: budgetFile, context, onStop: (reason) => stop(reason) });
   setModelCallBudget(budget);
   const original = childProcess.spawn, children = new Set(), calls = [];
@@ -31,6 +31,7 @@ export function installCallGuard({ directory, context, maxClaudeCalls = 120, max
   };
   childProcess.spawn = function (command, args = [], options) {
     const provider = /(?:^|[\\/])claude(?:\.exe|\.cmd)?$/i.test(command) ? "claude" : args.some((arg) => /codex[\\/]bin[\\/]codex\.js$/.test(arg)) || /(?:^|[\\/])codex$/.test(command) ? "codex" : null;
+    if (provider === "claude" && disallowClaude) stop("Claude product transport forbidden in Codex evaluation");
     if (provider && calls.length >= maxCalls) stop("total model call budget reached");
     if (provider === "claude" && calls.filter((call) => call.provider === "claude").length >= maxClaudeCalls) stop("evaluation Claude call budget reached");
     const child = original(command, args, options);
@@ -55,5 +56,12 @@ export function installCallGuard({ directory, context, maxClaudeCalls = 120, max
     return child;
   };
   syncBuiltinESMExports();
-  return { calls, budget, restore: () => { childProcess.spawn = original; syncBuiltinESMExports(); setModelCallBudget(null); } };
+  return { calls, budget, stop,
+    async drain({ debounceMs = 0 } = {}) {
+      // The real profile keeper debounces for 20 seconds. Product-only runs must
+      // include that work instead of exiting before its model calls are charged.
+      if (debounceMs) await new Promise((resolve) => setTimeout(resolve, debounceMs));
+      while (children.size) await Promise.all([...children].map(child => new Promise(resolve => child.once("close", resolve))));
+    },
+    restore: () => { childProcess.spawn = original; syncBuiltinESMExports(); setModelCallBudget(null); } };
 }

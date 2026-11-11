@@ -1,10 +1,13 @@
 import { activityDraft, checkReplyFormat, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply, replyFormatRequirements } from "./reply-contract.mjs";
 
-export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "newUnauthorizedStance", "lostDeliverables"], properties: {
+export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "stanceChecks", "newUnauthorizedStance", "lostDeliverables"], properties: {
   claims: { type: "array", items: { type: "object", additionalProperties: false, required: ["claim", "source", "supported", "issue"], properties: {
     claim: { type: "string" }, source: { type: "string" }, supported: { type: "boolean" }, issue: { type: "string" },
   } } },
   deliveryIssues: { type: "array", items: { type: "string" } },
+  stanceChecks: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "requiredStance", "present", "draftQuote"], properties: {
+    id: { type: "string" }, requiredStance: { type: "string" }, present: { type: "boolean" }, draftQuote: { type: "string" },
+  } } },
   newUnauthorizedStance: { type: "boolean" },
   lostDeliverables: { type: "boolean" },
 } };
@@ -17,6 +20,8 @@ Only when checkScope is true, also flag answers to things the user did not ask: 
 export const sourceCheckInstructions = sourceCheckBaseInstructions + `
 requestedDeliverables contains the user's verbatim request clauses and output language, separately from evidence. Enumerate the actual deliverables they request before auditing; never require their removal. A faithful translation or category description of a foreign-language activity name is grounded in that name, not an invented event; preserve natural descriptions in the output language without adding specifics unsupported by the source. Never require evaluation or fictional-example labels in the answer or draft; such labels in supplied material are context, not requested output.
 requestedDeliverables.format gives server-calculated literal limits and their scope. An improvement request should name an observable change: when the problem is late notice against a known start, ask for notice before that start, not just soon/early. This is a proposed request, not a claim that the counterpart agreed; do not invent a new deadline.
+requestedDeliverables.stances contains verbatim user clauses about a requested stance. Return exactly one stanceChecks entry per id: resolve requiredStance from that clause and its referenced source, then quote the words in the sendable draft that actually express it. Merely describing discomfort or assessing the counterpart is not a refusal; an analysis-only stance does not satisfy a requested message. Do not infer acceptance from a counterpart's proposal or invert a negated user instruction. Mark present:false with draftQuote:"" when the stance is missing. Do not duplicate these omissions in deliveryIssues.
+For a summary of multiple cited exchanges, check each instance separately. If it is true for only some instances, return supported:false in claims, even when the individual quotations are accurate. Unsupported dates, inferred outcomes and overbroad summaries are factual grounding defects, never mere wording issues in deliveryIssues.
 Presentation contract: reply is assistant analysis and sendableDraft is a separately displayed copyable card. Together they form ONE delivery. A draft in sendableDraft satisfies the requested wording; never require it again in reply. Repeating the draft in reply is a delivery defect. Assistant statements about its own actions are not user actions or user commitments. inputRoles identifies the speaker and purpose of every input field; retain speaker attribution inside source originals. A draft is proposed wording, never evidence of user authorization.
 execution_receipt sources are server results after commit and are authoritative about this turn's actions. The server appends their status separately: remove model-written action-status claims, including denials, rather than inventing a missing receipt. conversation sources are visible original history: distinguish no evidence for the user's premise from no history at all. Code-calculated chronology determines before/equal/after; retain its explicit interpretation limits and the source wording, including the distinction between proposed and agreed times.
 When previousReply is supplied, audit the current candidate afresh. Set newUnauthorizedStance only if the rewrite introduces an unauthorized acceptance, promise, commitment or refusal absent from previousReply. Set lostDeliverables only if requested content present in previousReply is missing from the rewrite (consider body and card together). Without previousReply both flags are false; still report any original unauthorized stance or missing content in claims/deliveryIssues. previousReply is comparison material, never evidence or authorization. Each actual defect appears once: unsupported facts in claims, other defects in deliveryIssues; flags classify those defects and are not extra issues. No positive assessment notes, deletion instructions or replacement text in these arrays. The server will select one complete candidate; it will never delete sentences or combine versions.`;
@@ -44,8 +49,12 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   const restore = (value) => [strip(renderReply(value)), ...citations].filter(Boolean).join("\n");
   const originals = sources.filter((source) => typeof source.text === "string" && source.text.trim()).map((source) => ({ ...source, text: strip(source.text) }));
   // Preserve exact user clauses instead of asking a model to summarize away a requirement.
-  const requestedDeliverables = { language, format: replyFormatRequirements(request), clauses: [...new Intl.Segmenter(language, { granularity: "sentence" }).segment(request)]
-    .map(({ segment }) => segment.trim()).filter(Boolean) };
+  const clauses = [...new Intl.Segmenter(language, { granularity: "sentence" }).segment(request)].map(({ segment }) => segment.trim()).filter(Boolean);
+  // Preserve the clause, including negation and referenced context. Semantic
+  // interpretation belongs to the existing audit, not keyword-generated prose.
+  const stances = clauses.filter((clause) => /拒绝|接受|答应|道歉|边界|界限|\b(?:refus\w*|declin\w*|accept\w*|apolog\w*|boundar\w*|rechaz\w*|acept\w*|disculp\w*|l[ií]mites?)\b/iu.test(clause))
+    .map((clause, index) => ({ id: `stance-${index + 1}`, clause }));
+  const requestedDeliverables = { language, format: replyFormatRequirements(request), clauses, stances };
   const rewrite = async ({ reply: rejected, issues }) => {
     const revised = await mediator.rewriteReply({ context, sources: originals, request,
     requestedDeliverables, inputRoles, ...(typeof rejected === "string" ? { reply: rejected } : rejected), issues }, language);
@@ -55,7 +64,7 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   };
   const checkScope = requiresReplyScopeCheck(request);
   const formatIssues = checkReplyFormat(reply, request, language).issues;
-  if (!originals.length && !checkScope && !formatIssues.length) return restore(reply);
+  if (!originals.length && !checkScope && !formatIssues.length && !stances.length) return restore(reply);
   const check = async (candidate, previousReply) => {
     const result = await mediator.checkReplySources({ request, requestedDeliverables, inputRoles, ...(typeof candidate === "string" ? { reply: candidate } : candidate),
       sources: originals, checkScope, ...(previousReply === undefined ? {} : { previousReply }) }, language);
@@ -64,22 +73,34 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
       || result.deliveryIssues.some((issue) => typeof issue !== "string")) throw new Error("Invalid source check");
     return result;
   };
-  const semanticIssues = (result) => [...result.claims.filter((row) => !row.supported).map((row) => `Claim: ${row.claim}; source: ${row.source || "absent"}; correction: ${row.issue}`),
+  const missingStances = (result, candidate) => stances.filter(({ id }) => {
+    const checks = result.stanceChecks?.filter((row) => row.id === id) || [];
+    const draft = typeof candidate === "string" ? candidate : candidate.sendableDraft || "";
+    return checks.length !== 1 || checks[0].present !== true || !checks[0].requiredStance?.trim()
+      || !checks[0].draftQuote?.trim() || !draft.includes(checks[0].draftQuote);
+  });
+  const semanticIssues = (result, candidate) => [...missingStances(result, candidate).map(({ id, clause }) => `Missing requested stance ${id}: ${clause}; express it explicitly in the sendable draft`),
+    ...result.claims.filter((row) => !row.supported).map((row) => `Claim: ${row.claim}; source: ${row.source || "absent"}; correction: ${row.issue}`),
     ...result.deliveryIssues];
+  // Lexicographic priority: requested stance, factual grounding, then wording
+  // and literal format. Any number of cosmetic fixes cannot offset a false fact.
+  const rank = (result, candidate, issues) => [missingStances(result, candidate).length, result.claims.filter((row) => !row.supported).length, issues.length];
   let stage = "initial-check";
   try {
     const result = await check(reply);
-    const issues = [...semanticIssues(result), ...formatIssues];
+    const issues = [...semanticIssues(result, reply), ...formatIssues];
     if (!issues.length) return restore(reply);
     stage = "rewrite";
     const revised = await rewrite({ reply, issues });
     if (!renderReply(revised).trim()) throw new Error("Empty source repair");
     stage = "final-check";
     const finalCheck = await check(revised, reply);
-    const revisedIssues = [...semanticIssues(finalCheck), ...checkReplyFormat(revised, request, language).issues];
-    const useOriginal = finalCheck.newUnauthorizedStance || finalCheck.lostDeliverables || issues.length < revisedIssues.length;
+    const revisedIssues = [...semanticIssues(finalCheck, revised), ...checkReplyFormat(revised, request, language).issues];
+    const originalRank = rank(result, reply, issues), revisedRank = rank(finalCheck, revised, revisedIssues);
+    const difference = originalRank.map((value, index) => value - revisedRank[index]).find((value) => value !== 0) || 0;
+    const useOriginal = finalCheck.newUnauthorizedStance || finalCheck.lostDeliverables || difference < 0;
     console.info("[source-reply]", JSON.stringify({ selected: useOriginal ? "original" : "rewrite", originalIssues: issues.length,
-      revisedIssues: revisedIssues.length, newUnauthorizedStance: finalCheck.newUnauthorizedStance, lostDeliverables: finalCheck.lostDeliverables }));
+      revisedIssues: revisedIssues.length, originalRank, revisedRank, newUnauthorizedStance: finalCheck.newUnauthorizedStance, lostDeliverables: finalCheck.lostDeliverables }));
     return restore(useOriginal ? reply : revised);
   } catch (error) {
     // No generated error text, partial rollback, retry or unchecked rewrite.

@@ -75,8 +75,16 @@ export const replyPartsSchema = { type: "object", additionalProperties: false, r
 
 export function renderReply(reply) {
   if (typeof reply === "string") return reply;
-  const body = String(reply?.reply || "").trim(), draft = activityDraft(reply);
-  return draft ? body ? `${body}\n\n“${draft}”` : draft : body;
+  const body = String(reply?.reply || "").trim();
+  let draft = activityDraft(reply);
+  // A structured field already identifies the draft. Strip only wrappers around
+  // the entire field; quoted source words inside the message remain untouched.
+  while (draft) {
+    const whole = quotedDrafts(draft).find((quote) => quote.start === 0 && quote.end === draft.length);
+    if (!whole) break;
+    draft = whole.text.trim();
+  }
+  return [body, draft].filter(Boolean).join("\n\n");
 }
 
 export function activityDraft(reply) {

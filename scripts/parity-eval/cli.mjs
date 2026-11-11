@@ -13,7 +13,7 @@ export async function run(command, args, input, cwd, timeout = 180_000) {
   return { stdout, ms: performance.now() - started };
 }
 
-export async function invoke(provider, { root, input, instructions, schema, image, search = false }) {
+export async function invoke(provider, { root, input, instructions, schema, image, images = [], search = false, model, callBudget = budgetedModelCall, timeout = 180_000 }) {
   const cwd = join(root, randomUUID());
   await mkdir(cwd, { recursive: true });
   const system = join(cwd, "instructions.txt");
@@ -43,17 +43,20 @@ export async function invoke(provider, { root, input, instructions, schema, imag
   const args = ["exec", "--ignore-user-config", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--json", "--color", "never", "-C", cwd,
     "-c", "project_doc_max_bytes=0", "-c", "features.shell_tool=false", "-c", "features.memories=false", "-c", "features.multi_agent=false",
     "-c", `web_search=\"${search ? "live" : "disabled"}\"`, "-c", `model_instructions_file=${JSON.stringify(system.replaceAll("\\", "/"))}`, "-o", output];
+  if (model) args.push("--model", model, "-c", 'forced_login_method="chatgpt"', "-c", 'model_provider="openai"',
+    "-c", 'model_reasoning_effort="low"', "-c", "features.apps=false");
   if (schema) { const file = join(cwd, "schema.json"); await writeFile(file, JSON.stringify(schema)); args.push("--output-schema", file); }
   if (image) args.push("--image", image);
+  for (const path of images) args.push("--image", path);
   args.push("-");
   // npm's Windows command wrapper is not spawn-able without a shell. Invoke its JS entry point directly.
   const command = process.platform === "win32" ? process.execPath : "codex";
   if (process.platform === "win32") args.unshift(join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "npm", "node_modules", "@openai", "codex", "bin", "codex.js"));
-  const { stdout, ms } = await budgetedModelCall("codex", args, (bounded) => run(command, bounded, input, cwd));
+  const { stdout, ms } = await callBudget("codex", args, (bounded) => run(command, bounded, input, cwd, timeout));
   await writeFile(join(cwd, "events.jsonl"), stdout);
   const events = stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
   if (events.some((event) => event.type === "turn.failed")) throw new Error("Codex subscription turn failed");
   const answer = await readFile(output, "utf8");
   return { answer, value: schema ? JSON.parse(answer) : null, ms, usage: events.findLast((event) => event.type === "turn.completed")?.usage || null, usd: null,
-    model: "Codex CLI default (--ignore-user-config); not ChatGPT web", toolCalls: events.filter((event) => event.type === "item.completed" && !["agent_message", "reasoning"].includes(event.item?.type)).length };
+    model: model || "Codex CLI default (--ignore-user-config); not ChatGPT web", toolCalls: events.filter((event) => event.type === "item.completed" && !["agent_message", "reasoning"].includes(event.item?.type)).length };
 }
