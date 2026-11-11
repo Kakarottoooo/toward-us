@@ -25,7 +25,7 @@ test("only one prose repair is allowed, with reasons and honest fallback", async
     calls++; assert.ok(issues.some((x) => x.includes("sentence"))); return "好。谢谢。";
   } });
   assert.equal(calls, 1);
-  assert.match(result, /格式/);
+  assert.doesNotMatch(result, /格式还需调整/);
   assert.match(result, /好。/, "even unsuccessful format repair delivers usable wording");
   assert.equal(await repairReplyFormat("谢谢你。", { request: "回我一句", rewrite: () => { throw Error("unneeded"); } }), "谢谢你。");
 });
@@ -56,7 +56,7 @@ test("failed mixed-format repair retains the complete closest draft and analysis
   const reply = "双方需要重新确认时间。回复：我愿意再约。请提前告诉我。";
   const result = await repairReplyFormat(reply, { request: "发生什么了？再给我一句回复。", rewrite: async () => reply });
   assert.ok(result.includes(reply));
-  assert.match(result, /格式/);
+  assert.doesNotMatch(result, /格式还需调整/);
 });
 
 test("analysis quotes cannot stand in for the requested final draft", async () => {

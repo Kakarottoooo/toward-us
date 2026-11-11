@@ -39,7 +39,7 @@ test.describe("recall navigation", () => {
         expect(input.sources[0].kind).toBe("recall");
         expect(input.sources[0].text).toContain("sapphire lantern");
         expect(input.reply).not.toContain("[recall:");
-        return { claims: [], removals: [], deliveryIssues: [] };
+        return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
       },
     };
     const app = createApiApp({ store, mediator });

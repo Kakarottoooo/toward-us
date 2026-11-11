@@ -1,115 +1,116 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { prepareSourceReply, sourceCheckInstructions } from "../server/source-reply.mjs";
+import { prepareSourceReply, sourceCheckInstructions, sourceCheckSchema } from "../server/source-reply.mjs";
+import { renderReply } from "../server/reply-contract.mjs";
 
-const clean = () => ({ claims: [], deliveryIssues: [], removals: [] });
+const clean = () => ({ claims: [], deliveryIssues: [], newUnauthorizedStance: false, lostDeliverables: false });
+const defect = (n = 1) => ({ ...clean(), deliveryIssues: Array.from({ length: n }, (_, i) => `defect ${i}`) });
+const original = { reply: "原稿分析，不代表用户承诺。", sendableDraft: "我们再商量一下好吗？" };
+const revised = { reply: "改写分析。", sendableDraft: "我们再确认一下好吗？" };
 
-test("a rewrite's new acceptance is checked in both fields and rolls back to deletion-only original", async () => {
-  for (const field of ["reply", "sendableDraft"]) {
-    const original = { reply: "双方都可以把话说清楚。早点休息。", sendableDraft: "刚才我说重了，我们再商量一下好吗？" };
+test("selection keeps exactly one complete version, with hard regressions taking precedence", async () => {
+  for (const [before, after, winner] of [
+    [defect(2), defect(1), revised], [defect(1), defect(2), original], [defect(1), defect(1), revised],
+    [defect(2), { ...clean(), newUnauthorizedStance: true }, original],
+    [defect(2), { ...clean(), lostDeliverables: true }, original],
+  ]) {
     let checks = 0, rewrites = 0;
-    const answer = await prepareSourceReply(original.reply, { sendableDraft: original.sendableDraft, request: "先评理，再给我一句回复。", sources: [{ text: "对方：改成八点半？我：你怎么又改时间。" }], mediator: {
+    const result = await prepareSourceReply(original.reply, { ...original, sources: [{ text: "来源" }], mediator: {
       async checkReplySources(input) {
-        checks++;
-        if (checks === 1) return { ...clean(), deliveryIssues: ["删除未请求的休息建议"], removals: [{ field: "reply", text: "早点休息。" }] };
-        assert.match(input[field], /八点半可以/);
+        if (++checks === 1) return before;
         assert.deepEqual(input.previousReply, original);
-        return { ...clean(), claims: [{ claim: "八点半可以", source: "", supported: false, issue: "用户未接受提议" }] };
+        return after;
       },
-      async rewriteReply() { rewrites++; return { ...original, [field]: original[field] + "八点半可以。" }; },
+      async rewriteReply() { rewrites++; return revised; },
     } });
+    assert.equal(result, renderReply(winner));
     assert.equal(checks, 2); assert.equal(rewrites, 1);
-    assert.equal(answer, "双方都可以把话说清楚。\n\n“刚才我说重了，我们再商量一下好吗？”");
   }
 });
 
-test("a format-only rewrite also receives a final semantic check", async () => {
+test("unauthorized acceptance, commitment and refusal in either field return the intact original", async () => {
+  for (const field of ["reply", "sendableDraft"]) for (const stance of ["八点半可以。", "我保证去。", "我拒绝参加。"] ) {
+    const result = await prepareSourceReply(original.reply, { ...original, sources: [{ text: "对方提议八点半；用户尚未回应。" }], mediator: {
+      async checkReplySources(input) { return input.previousReply ? { ...clean(), newUnauthorizedStance: true } : defect(); },
+      async rewriteReply() { return { ...revised, [field]: stance }; },
+    } });
+    assert.equal(result, renderReply(original));
+  }
+});
+
+test("timeouts, malformed checks, parse failures and empty rewrites retain a complete answer without retry", async () => {
+  for (const stage of ["initial-check", "rewrite", "final-check"]) for (const mode of ["timeout", "parse", "invalid"]) {
+    let checks = 0, rewrites = 0;
+    const fail = () => {
+      if (mode === "invalid") return stage === "rewrite" ? { reply: "", sendableDraft: null } : null;
+      if (mode === "parse") return JSON.parse("not JSON");
+      throw Object.assign(Error("timeout"), { code: "ETIMEDOUT" });
+    };
+    const result = await prepareSourceReply(original.reply, { ...original, sources: [{ text: "来源" }], mediator: {
+      async checkReplySources() {
+        checks++;
+        return stage === (checks === 1 ? "initial-check" : "final-check") ? fail() : defect();
+      },
+      async rewriteReply() { rewrites++; return stage === "rewrite" ? fail() : revised; },
+    } });
+    assert.equal(result, renderReply(original));
+    assert.equal(checks, stage === "final-check" ? 2 : 1);
+    assert.equal(rewrites, stage === "initial-check" ? 0 : 1);
+    assert.doesNotMatch(result, /这次没能回答|格式还需调整/);
+  }
+});
+
+test("format-only rewrites are reviewed and tied issue counts choose the rewrite", async () => {
   let checks = 0;
-  const answer = await prepareSourceReply("谢谢。真开心。", { request: "用1行回答", mediator: {
-    async checkReplySources() { checks++; return clean(); },
-    async rewriteReply() { throw Error("already fits; no rewrite"); },
-  } });
-  assert.equal(answer, "谢谢。真开心。"); assert.equal(checks, 1);
-  checks = 0;
-  await prepareSourceReply("谢谢。\n真开心。", { request: "用1行回答", mediator: {
+  const result = await prepareSourceReply("谢谢。真开心。", { request: "只回一句", mediator: {
     async checkReplySources() { checks++; return clean(); },
     async rewriteReply() { return { reply: "谢谢，真开心。", sendableDraft: null }; },
   } });
-  assert.equal(checks, 2);
+  assert.equal(result, "谢谢，真开心。"); assert.equal(checks, 2);
 });
 
-test("rollback deletes whole sentences, never just a negation or generated replacement", async () => {
-  const answer = await prepareSourceReply("我没有接受邀请。我们再聊聊。", { request: "回我一句", mediator: {
-    async checkReplySources(input) { return input.previousReply
-      ? { ...clean(), deliveryIssues: ["新加了承诺"] }
-      : { ...clean(), deliveryIssues: ["删除第一句"], removals: [{ field: "reply", text: "没有" }, { field: "reply", text: "伪造替换" }] }; },
-    async rewriteReply() { return { reply: "我答应了。", sendableDraft: null }; },
-  } });
-  assert.equal(answer, "我们再聊聊。");
-});
-
-test("REPORT-27 lines 8-9 replay preserves requested Chinese invitation and booking status", async () => {
-  const fixture = JSON.parse(readFileSync(new URL("./fixtures/source-rewrite-replay.json", import.meta.url), "utf8"));
-  const original = JSON.parse(fixture.check.prompt), badRewrite = JSON.parse(fixture.rewrite.text);
-  assert.match(badRewrite.sendableDraft, /虚构活动示例/);
-  assert.doesNotMatch(badRewrite.sendableDraft, /陶艺/);
-  let checks = 0;
-  const answer = await prepareSourceReply(original.reply, { ...original, mediator: {
+test("body, copyable card and source speakers have explicit distinct roles", async () => {
+  assert.equal(Object.hasOwn(sourceCheckSchema.properties, "removals"), false);
+  assert.match(sourceCheckInstructions, /Together they form ONE delivery/);
+  assert.match(sourceCheckInstructions, /never require it again in reply/);
+  assert.match(sourceCheckInstructions, /faithful translation or category description/);
+  const result = await prepareSourceReply("我没有预订。", { sendableDraft: "一起去陶艺活动好吗？", request: "写一句邀约，不要预订。", sources: [{ text: "[用户] 想去看看。[助手] 我没有预订。[海报] Clay Together" }], mediator: {
     async checkReplySources(input) {
-      checks++;
-      assert.equal(input.requestedDeliverables.language, "zh");
-      assert.ok(input.requestedDeliverables.clauses.some(clause => clause.includes("一句邀约，不要预订")));
-      assert.ok(input.requestedDeliverables.clauses.some(clause => clause.includes("多少钱，几点结束")));
-      assert.match(sourceCheckInstructions, /faithful translation or category description/);
-      assert.match(sourceCheckInstructions, /Never require evaluation or fictional-example labels/);
+      assert.match(input.inputRoles.reply, /assistant/);
+      assert.match(input.inputRoles.sendableDraft, /not evidence/);
+      assert.match(input.inputRoles.sources, /speaker attribution/);
+      assert.match(input.sources[0].text, /\[用户\].*\[助手\].*\[海报\]/);
       return clean();
     },
-    async rewriteReply() { throw Error("requested content must not be removed"); },
+    async rewriteReply() { throw Error("card already delivers the invitation"); },
   } });
-  assert.equal(checks, 1);
-  assert.match(answer, /陶艺活动/); assert.match(answer, /240/); assert.match(answer, /16:00/); assert.match(answer, /没有预订/);
-  assert.doesNotMatch(answer, /虚构活动示例/);
+  assert.equal(result, '我没有预订。\n\n“一起去陶艺活动好吗？”');
 });
 
-test("rollback never restores a known unsupported original fact when removal spans were omitted", async () => {
-  const answer = await prepareSourceReply("活动已经取消。我们再确认一下。", { request: "帮我写一句话", sources: [{ text: "还在讨论" }], mediator: {
-    async checkReplySources(input) { return input.previousReply ? { ...clean(), deliveryIssues: ["改写擅自答应"] }
-      : { ...clean(), claims: [{ claim: "活动已经取消", source: "还在讨论", supported: false, issue: "尚未决定" }] }; },
-    async rewriteReply() { return { reply: "", sendableDraft: "我答应参加。" }; },
+const replay = JSON.parse(readFileSync(new URL("./fixtures/source-selection-replay.json", import.meta.url), "utf8"));
+for (const row of replay.rows) test(`captured failure returns a whole candidate: ${row.id}`, async () => {
+  const input = JSON.parse(row.events[0].prompt);
+  const first = JSON.parse(row.events[0].text);
+  // Old observations stay verbatim in the fixture. Only the two new booleans are
+  // supplied by this deterministic test, never represented as fresh model evidence.
+  const adapt = (value) => ({ ...value, newUnauthorizedStance: row.reviewFlag === "newUnauthorizedStance", lostDeliverables: row.reviewFlag === "lostDeliverables" });
+  const capturedRewrite = row.events.find(e => e.name === "reply_format_repair");
+  let checks = 0, candidate;
+  if (capturedRewrite) { try { candidate = JSON.parse(capturedRewrite.text); } catch { candidate = capturedRewrite.text; } }
+  const result = await prepareSourceReply(input.reply, { ...input, mediator: {
+    async checkReplySources() {
+      if (++checks === 1) return { ...adapt(first), newUnauthorizedStance: false, lostDeliverables: false };
+      const last = row.events.at(-1);
+      return adapt(last.name === "reply_source_check" ? JSON.parse(last.text) : defect());
+    },
+    async rewriteReply() {
+      if (row.reviewFlag === "timeout") throw Object.assign(Error("captured timeout"), { code: "ETIMEDOUT" });
+      return candidate;
+    },
   } });
-  assert.equal(answer, "我们再确认一下。");
-});
-
-test("final audit failures stop without retry or delivering unchecked revised text", async () => {
-  for (const fail of [() => null, () => { throw Error("quota"); }]) {
-    let checks = 0, rewrites = 0;
-    await assert.rejects(prepareSourceReply("谢谢。真开心。", { request: "只回一句", mediator: {
-      async checkReplySources() { return ++checks === 1 ? clean() : fail(); },
-      async rewriteReply() { rewrites++; return { reply: "谢谢，真开心。", sendableDraft: null }; },
-    } }), /Invalid source check|quota/);
-    assert.equal(checks, 2); assert.equal(rewrites, 1);
-  }
-});
-
-test("captured rollback handles paraphrased claims and deletes original extras after an off-task rewrite", async () => {
-  const fixture = JSON.parse(readFileSync(new URL("./fixtures/source-rollback-replay.json", import.meta.url), "utf8"));
-  for (const id of ["interaction-file-chat", "interaction-mobile-short-reply"]) {
-    const events = fixture.events.filter(e => e.case === id).slice(-3);
-    const original = JSON.parse(events[0].prompt), first = JSON.parse(events[0].text);
-    const final = JSON.parse(events[2].text);
-    // New final-audit contract: deletion spans target the original, never invented
-    // corrections or commentary in claims. Preserve actual captured bad rewrites.
-    if (id === "interaction-mobile-short-reply") final.removals = [{ field: "reply", text: "今天先好好歇一歇，之后想聊随时来找我。" }];
-    let checks = 0;
-    const result = await prepareSourceReply(original.reply, { ...original, mediator: {
-      async checkReplySources() { return ++checks === 1 ? first : final; },
-      async rewriteReply() { try { return JSON.parse(events[1].text); } catch { return events[1].text; } },
-    } });
-    assert.equal(checks, 2);
-    if (id === "interaction-file-chat") {
-      assert.match(result, /10月1日/); assert.match(result, /10月8日/); assert.match(result, /尽早告诉我/);
-      assert.doesNotMatch(result, /临近时才说去不了|没有分享给任何人|我理解你工作忙/);
-    } else assert.equal(result, "那就好，听你这么说我也松了口气。");
-  }
+  assert.ok([renderReply(input), renderReply(candidate)].includes(result), "never delete, splice or add error prose");
+  assert.ok(result.trim());
+  assert.doesNotMatch(result, /这次没能回答|格式还需调整/);
+  if (row.reviewFlag) assert.equal(result, renderReply(input));
 });

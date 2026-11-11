@@ -112,7 +112,7 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...patch });
 const action = (patch = {}) => ({ kind: "checkin", operation: "query", targetId: null, expectedVersion: null, fields: fields(), query: "妈妈", queryPeriod: "all", occurrence: null, ...patch });
 
-async function setup(t, plan, rewriteReply, checkReplySources = async () => ({ claims: [], removals: [], deliveryIssues: [] })) {
+async function setup(t, plan, rewriteReply, checkReplySources = async () => ({ claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] })) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "answers-"));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
@@ -159,7 +159,7 @@ test("an explicit voice transcript cannot skip the source check through planner 
     checks++;
     assert.equal(sources[0].kind, "transcript");
     assert.match(sources[0].text, /四点/);
-    return { claims: [], removals: [], deliveryIssues: [] };
+    return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
   });
   assert.equal((await say("语音转写：三点，改成四点。最后是几点？")).text, "最后说的是四点。");
   assert.equal(checks, 1);
@@ -182,7 +182,7 @@ test("the transcript endpoint checks the corrected source before writing exactly
     checks++; assert.equal((await reminders()).length, 0, "check precedes the action");
     assert.deepEqual(sources, [{ kind: "transcript", text: "明天下午三点，啊不对，四点提醒我买生日蛋糕。" }]);
     assert.equal(checkScope, false);
-    return { claims: [], removals: [], deliveryIssues: [] };
+    return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
   });
   await say("明天下午三点，啊不对，四点提醒我买生日蛋糕。", "transcripts");
   const saved = await reminders();

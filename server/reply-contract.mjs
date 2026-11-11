@@ -105,8 +105,7 @@ export async function repairReplyFormat(reply, { request = "", language = "zh", 
   const draft = (value) => typeof value === "object" ? value.sendableDraft : copyableDraft(value);
   candidates.sort((a, b) => Number(Boolean(draft(b))) - Number(Boolean(draft(a)))
     || checkReplyFormat(a, request, language).issues.length - checkReplyFormat(b, request, language).issues.length);
-  const note = language === "en" ? "The format still needs adjusting." : language === "es" ? "El formato aún necesita ajustes." : "格式还需调整。";
-  return [renderReply(candidates[0]), note].filter(Boolean).join("\n");
+  return renderReply(candidates[0]);
 }
 
 export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false } = {}) {

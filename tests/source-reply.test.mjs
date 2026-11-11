@@ -27,7 +27,7 @@ test("source, missing assessment, scope and format issues share one check and on
   const actual = await prepareSourceReply(reply, { request, sources, mediator: {
     async checkReplySources(input) {
       checks++; assert.equal(input.checkScope, true); assert.deepEqual(input.sources, sources);
-      return { claims: [], removals: [], deliveryIssues: input.previousReply ? [] : ["缺少对感情施压行为是否合理的评价；仅拒交密码不够"] };
+      return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: input.previousReply ? [] : ["缺少对感情施压行为是否合理的评价；仅拒交密码不够"] };
     },
     async rewriteReply(input) {
       repairs++; assert.equal(input.request, request); assert.deepEqual(input.sources, sources);
@@ -51,7 +51,7 @@ test("scope-only checks repair the captured short reply and current-value answer
       async checkReplySources(input) {
         checks++; assert.equal(input.checkScope, true); assert.equal(input.request, request);
         assert.deepEqual(input.sources, []);
-        return { claims: [], removals: [], deliveryIssues: input.previousReply ? [] : [issue] };
+        return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: input.previousReply ? [] : [issue] };
       },
       async rewriteReply(input) {
         rewrites++; assert.equal(input.request, request); assert.ok(input.issues.includes(issue)); return corrected;
@@ -69,7 +69,7 @@ test("each source defect is passed to one repair, with original text, never exec
     async checkReplySources(input) { checks++; assert.deepEqual(input.sources, sources); return { claims: input.previousReply ? [] : [
       { claim: "临近时", source: "19:00；19:45", supported: false, issue: "晚于约定45分钟" },
       { claim: "来不了", source: "还在上班", supported: false, issue: "没有说最终是否到场" },
-    ], removals: [], deliveryIssues: [] }; },
+    ], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; },
     async rewriteReply(input) { repairs++; assert.deepEqual(input.sources, sources); assert.equal(input.issues.length, 2); return "晚于约定45分钟才说还在上班。"; },
   } });
   assert.equal(result, "晚于约定45分钟才说还在上班。"); assert.equal(checks, 2); assert.equal(repairs, 1);
@@ -77,18 +77,18 @@ test("each source defect is passed to one repair, with original text, never exec
 
 test("format downgrade retains the corrected content, never revives inaccurate original", async () => {
   const result = await prepareSourceReply("明天已取消。", { sources: [{ text: "还在讨论" }], request: "回我一句", mediator: {
-    async checkReplySources(input) { return { claims: input.previousReply ? [] : [{ claim: "已取消", source: "还在讨论", supported: false, issue: "尚未决定" }], removals: [], deliveryIssues: [] }; },
+    async checkReplySources(input) { return { claims: input.previousReply ? [] : [{ claim: "已取消", source: "还在讨论", supported: false, issue: "尚未决定" }], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; },
     async rewriteReply() { return "尚未决定。还在讨论。"; },
   } });
-  assert.match(result, /尚未决定/); assert.match(result, /格式/); assert.doesNotMatch(result, /已取消/);
+  assert.match(result, /尚未决定/); assert.doesNotMatch(result, /格式还需调整/); assert.doesNotMatch(result, /已取消/);
 });
 
 test("invalid or failed source checks never silently claim verification or retry", async () => {
-  for (const result of [null, {}, { claims: [{ supported: "false" }], removals: [], deliveryIssues: [] }]) {
-    await assert.rejects(prepareSourceReply("答复", { sources: [{ text: "来源" }], mediator: { checkReplySources: async () => result } }), /Invalid source check/);
+  for (const result of [null, {}, { claims: [{ supported: "false" }], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }]) {
+    assert.equal(await prepareSourceReply("答复", { sources: [{ text: "来源" }], mediator: { checkReplySources: async () => result } }), "答复");
   }
   let calls = 0;
-  await assert.rejects(prepareSourceReply("答复", { sources: [{ text: "来源" }], mediator: { checkReplySources: async () => { calls++; throw Error("quota"); } } }), /quota/);
+  assert.equal(await prepareSourceReply("答复", { sources: [{ text: "来源" }], mediator: { checkReplySources: async () => { calls++; throw Error("quota"); } } }), "答复");
   assert.equal(calls, 1);
 });
 
@@ -107,7 +107,7 @@ test("source repair preserves citation metadata and checks structured copy", asy
     async checkReplySources(input) {
       assert.doesNotMatch(input.reply, /\[recall:/);
       assert.doesNotMatch(JSON.stringify(input.sources), /\[recall:/);
-      return { claims: input.previousReply ? [] : [{ claim: "仍是十五分钟", source: "新安排只确认日期", supported: false, issue: "新安排没有时长" }], removals: [], deliveryIssues: [] };
+      return { claims: input.previousReply ? [] : [{ claim: "仍是十五分钟", source: "新安排只确认日期", supported: false, issue: "新安排没有时长" }], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
     },
     async rewriteReply(input) {
       assert.doesNotMatch(input.reply, /\[recall:/);
@@ -122,7 +122,7 @@ test("structured wording-only reply renders the field without a label or analysi
   const result = await prepareSourceReply("", { sendableDraft: "刚才说重了，对不起。", request: "帮我写一句道歉", mediator: {
     async checkReplySources(input) {
       assert.equal(input.sendableDraft, "刚才说重了，对不起。");
-      return { claims: [], removals: [], deliveryIssues: [] };
+      return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
     },
   } });
   assert.equal(result, "刚才说重了，对不起。");
