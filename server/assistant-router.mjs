@@ -1,5 +1,5 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { finishReply } from "./reply-contract.mjs";
+import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
@@ -274,6 +274,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
       if (!checked.ok) plan = { reply: say(language, "这份安排还没通过预算或条件核对，我暂时不能把它当作可执行方案；相关价格、地点、日期和安全条件仍需核实。", "This plan has not passed the budget or constraint checks, so I cannot present it as ready to use; its prices, location, dates and safety conditions still need verification.", "El plan aún no supera la comprobación de presupuesto o condiciones; faltan por verificar precios, lugar, fechas y seguridad."), actions: [] };
     }
+    // A short conversational acknowledgement is not consent to create a mood
+    // card; an explicit diary/recording request still keeps its normal action.
+    if (wantsOneSentence(text) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
     if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
       // Its question is read with the screenshots, never again by the private profile scan (watch 11-09).

@@ -161,6 +161,14 @@ test("a requested draft sentence does not truncate the accompanying file analysi
   assert.equal((await say("读这个聊天记录，引用两个日期，再给我一句平和提出改进要求的话。")).text, answer);
 });
 
+test("one-sentence acknowledgement does not create an unsolicited mood card", async (t) => {
+  const { say } = await setup(t, () => ({ reply: "我也替你开心。", actions: [action({ kind: "checkin", operation: "create", query: null, fields: fields({ text: "今天好多了", mood: "good" }) })] }));
+  const reply = await say("今天好多了，就像手机聊天那样回我一句。");
+  assert.equal(reply.text, "我也替你开心。");
+  assert.deepEqual(reply.cards, []);
+  assert.equal((await say("帮我记录心情：今天好多了，只回我一句。")).cards.length, 1, "an explicitly requested check-in is preserved");
+});
+
 test("a successful reminder uses its actual receipt instead of a fabricated profile claim", async (t) => {
   const { say } = await setup(t, () => ({ reply: "已记进 Sam 的档案。", actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "买花", localDateTime: "2027-05-12T20:00", timezone: "UTC", frequency: "once" }) })] }));
   const reply = await say("2027年5月12日晚上8点提醒我买花");
