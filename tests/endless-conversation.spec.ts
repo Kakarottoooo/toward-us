@@ -33,7 +33,15 @@ test.describe("recall navigation", () => {
     await mkdir(resolve("work"), { recursive: true });
     directory = await mkdtemp(resolve("work/recall-browser-"));
     store = await createFileStore(join(directory, "state.json"));
-    const mediator = { planAssistantTurn: async (context: any) => ({ reply: `2025-03-12: You asked how to thank someone. I suggested a sapphire lantern. ${context.lookups?.[0]?.findings.match(/\[recall:[^\]]+\]/)?.[0] || ""}`, actions: [] }) };
+    const mediator = {
+      planAssistantTurn: async (context: any) => ({ reply: `2025-03-12: You asked how to thank someone. I suggested a sapphire lantern. ${context.lookups?.[0]?.findings.match(/\[recall:[^\]]+\]/)?.[0] || ""}`, actions: [] }),
+      checkReplySources: async (input: any) => {
+        expect(input.sources[0].kind).toBe("recall");
+        expect(input.sources[0].text).toContain("sapphire lantern");
+        expect(input.reply).not.toContain("[recall:");
+        return { claims: [], deliveryIssues: [] };
+      },
+    };
     const app = createApiApp({ store, mediator });
     // Reuse Vite's source middleware so this spec also runs before the CI build step.
     const { createServer } = await import("vite");
