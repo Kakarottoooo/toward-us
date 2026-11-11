@@ -8,8 +8,31 @@ import { cases, layers } from "./cases.mjs";
 import { createHarness } from "./fixture.mjs";
 import { corpusHash, frozenCase, frozenOpponent, installCaseClock } from "./replay.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { reviewBatches } from "./review-batch.mjs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+
+test("batched reviewers never see the same product answer against both rivals in one call", async (t) => {
+  const directory = await mkdtemp(join(resolve("work"), "review-batch-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const packets = [0, 1].map((id) => ({
+    item: { id: String(id), question: `question-${id}`, visible: {}, expect: { must: [], mustNot: [] } },
+    result: { id: String(id), pinky: { answer: `product-${id}`, machineCompleted: true }, comparisons: {},
+      rivals: { claude: { provider: "claude", answer: `first-${id}` }, codex: { provider: "codex", answer: `second-${id}` } } },
+  }));
+  for (const { result } of packets) await mkdir(join(directory, result.id));
+  let calls = 0;
+  await reviewBatches({ packets, directory, context: new AsyncLocalStorage(), seed: "test", checkpoint: async () => {}, batchSize: 16,
+    invokeJudge: async (_judge, { input }) => {
+      calls++;
+      const batch = JSON.parse(input);
+      assert.equal(new Set(batch.map((row) => row.question)).size, batch.length);
+      assert.ok(batch.every((row) => /^packet-\d+$/.test(row.id)));
+      return { value: { verdicts: batch.map(({ id }) => ({ id, verdict: { winner: "tie", aComplete: true, bComplete: true, aViolations: [], bViolations: [], reason: "Both satisfy the packet." } })) } };
+    } });
+  assert.equal(calls, 4);
+  assert.ok(packets.every(({ result }) => result.pinky.completed && Object.values(result.comparisons).every((pair) => pair.judges.length === 2)));
+});
 
 test("unknown judgments never become non-losses; disagreements are separately counted", () => {
   const row = (judges, error) => ({ layer: "memory", pinky: { completed: true, error }, rivals: { claude: {}, codex: {} }, comparisons: { claude: { judges }, codex: { judges } } });

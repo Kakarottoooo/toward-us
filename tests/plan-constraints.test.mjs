@@ -5,8 +5,9 @@ import { finishReply, wantsOneSentence } from "../server/reply-contract.mjs";
 
 test("draft-only scope does not discard a separate factual question or assessment", () => {
   const question = "看聊天截图，帮我写一句自然的道歉话，不要发送。";
-  assert.equal(wantsOneSentence(question), true);
-  assert.equal(finishReply("刚才说得太绝对了，对不起。你还可以解释一下。", { request: question }), "刚才说得太绝对了，对不起。");
+  assert.equal(wantsOneSentence(question), false);
+  const answer = "那句话说得太绝对了。可以回：刚才说得太重，对不起。";
+  assert.equal(finishReply(answer, { request: question }), answer, "an explanation before a draft must not cause the draft to be discarded");
   for (const q of ["两人多少钱，几点结束？帮我写一句邀约。", "是我太敏感了吗？帮我写一句回复。", "引用两个日期，再给一句话。"])
     assert.equal(wantsOneSentence(q), false);
 });

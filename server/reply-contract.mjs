@@ -4,8 +4,6 @@ const segments = (text, language) => [...new Intl.Segmenter(language || "zh", { 
 const claimsWrite = (text) => savedClaim.test(text) && !/(?:没有|并未|尚未|未曾|不能|not |never |cannot |can't |no se |no he )[^。！？.!?]{0,45}(?:已|记|保存|saved|stored|recorded|noted|kept|guardado|registrado|anotado)/iu.test(text);
 
 export function wantsOneSentence(request) {
-  // Draft-only wording need not contain “只”; preserve separate questions.
-  if (/帮我写一句[^。！？\n]*(?:话|道歉|回复)/u.test(request || "") && !/[?？]|评评理|分析|多少钱|几点|引用|解释/u.test(request || "")) return true;
   return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|(?:^|[，。！？\n])(?:请)?用|回复?我?)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "");
 }
 
