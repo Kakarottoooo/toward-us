@@ -169,7 +169,9 @@ test("facts from a private chat are kept for their owner alone, noted in the cha
   // Later lines: a change replaces the old fact, a repeat adds nothing.
   await store.updateRelationshipRecordForUser("privateAgentThreads", session.id, a.user.id, (draft) => { draft.messages.push({ id: "m3", role: "user", text: "其实我现在开始吃香菜了。Mia 真的很怕别人催", createdAt: new Date().toISOString() }); });
   const cilantro = kept[0];
-  const again = fakeModel((input) => {
+  const again = fakeModel((input, instructions) => {
+    assert.match(instructions, /replacement arrangement contains only attributes confirmed by its new source quote/);
+    assert.match(instructions, /Omitted attributes are unknown/);
     assert.ok(input.known.some((item) => item.id === cilantro.id && item.subject === "A" && item.fact === "不吃香菜"), "the model sees what is already known");
     return [fact({ messageId: "m3", quote: "其实我现在开始吃香菜了", fact: "现在吃香菜了", replaces: cilantro.id }), fact({ messageId: "m3", quote: "Mia 真的很怕别人催", subject: "B", category: "dislikes", fact: "最怕别人催" })];
   });
