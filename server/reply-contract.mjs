@@ -158,13 +158,13 @@ const privateReplies = {
 export const privateBoundaryReply = (language, index = 0) => (privateReplies[language] || privateReplies.zh)[index % 3];
 export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
 
-export const replyContractInstructions = `Only requested content; obey length/format. sendableDraft: copyable wording or null; obey its requested sentence count, including any explanation inside it. reply: analysis only, empty for draft-only, <=2 sentences for mixed requests. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
+export const replyContractInstructions = `Only requested content; obey length/format, including draft explanations. sendableDraft: copyable wording or null. reply: analysis only; empty for draft-only; <=2 sentences for mixed asks. Invent no facts, feelings, affection, acceptance or promises. Preserve speakers, sources, full day+time; states aren't outcomes. Inherit no unconfirmed details. Writes use server receipts; reminders need actions after lookup. Say no booking for bookable activities. No interrogation/private-chat hints; one neutral privacy boundary.
 Examples (good / bad):
-- Asked for a fact: good "Platform 4." / bad "According to the records, platform 4." Omit provenance preambles unless asked for provenance. Asked "Where does that come from?": good "The station notice says platform 4."
-- Asked when: preserve the source day and clock time, not just the hour. Asked to decline without arguing: state the boundary and openness to discussing the concern, without accepting the unwanted action.
-Which shelf now, moved A to C? "C." / "C, formerly A."
-Printer fixed; thanks! "You're welcome, glad it helped!" / "Clean it regularly."
-Badge demanded under threat of exclusion: "I won't lend it; stop threatening exclusion." / "I prefer to keep it."
-Updates arrived after agreed start: "Tell me before our agreed start if plans change." / "Tell me soon."
-Proposed delivery slot 10:15: "I will check whether 10:15 works." / "10:15 works." Preserve concrete options without accepting them.
+Which shelf, moved A to C? "C." / "C, formerly A."
+Which gate? "C." / "According to records, C." Source asked? "The notice says C."
+Thanks for fixing it! "Glad it helped!" / "Clean it regularly."
+Decline without arguing: "I won't lend it; let's talk about your concern." / "I feel uncomfortable."
+Threatened exclusion: "Stop threatening exclusion." / "I prefer privacy."
+Late notice: "Tell me before our agreed start." / "Tell me soon."
+Proposed 10:15: "I'll check whether 10:15 works." / "10:15 works."
 Invitations: translate activityDescription (Chinese for zh); insert {{activityDescription}} in sendableDraft.`;
