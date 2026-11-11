@@ -112,7 +112,7 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...patch });
 const action = (patch = {}) => ({ kind: "checkin", operation: "query", targetId: null, expectedVersion: null, fields: fields(), query: "妈妈", queryPeriod: "all", occurrence: null, ...patch });
 
-async function setup(t, plan, rewriteReply, checkReplySources) {
+async function setup(t, plan, rewriteReply, checkReplySources = async () => ({ claims: [], deliveryIssues: [] })) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "answers-"));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
@@ -127,7 +127,11 @@ async function setup(t, plan, rewriteReply, checkReplySources) {
   t.after(() => new Promise((r) => server.close(r)));
   const request = async (path, body) => (await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
   const session = (await request("/assistant/sessions", { language: "zh", timezone: "UTC" })).session;
-  return { reminders: () => createReminderService({ store }).listReminders(id), say: async (text) => (await request(`/assistant/sessions/${session.id}/messages`, { text, itemId: randomUUID() })).session.messages.at(-1) };
+  return { reminders: () => createReminderService({ store }).listReminders(id), say: async (text, route = "messages") => {
+    const response = await request(`/assistant/sessions/${session.id}/${route}`, { text, itemId: randomUUID() });
+    assert.ok(response.session, JSON.stringify(response));
+    return response.session.messages.at(-1);
+  } };
 }
 
 test("a contradictory plan is repaired once before any associated write can execute", async (t) => {
@@ -167,6 +171,24 @@ test("an explicit single-sentence answer has no unsolicited closing", async (t) 
   assert.equal((await say("谢谢，今天聊完好多了，只回我一句就好。")).text, "我也替你开心。");
   assert.equal((await say("谢谢，就像手机聊天那样回我一句，不要列清单。")).text, "我也替你开心。");
   assert.equal(repairs, 2);
+});
+
+test("the transcript endpoint checks the corrected source before writing exactly one reminder", async (t) => {
+  let checks = 0;
+  const due = `${new Date(Date.now() + 86400_000).toISOString().slice(0, 10)}T16:00`;
+  const { say, reminders } = await setup(t, () => ({ reply: "生日蛋糕按最后说的下午四点。", sourceBased: false,
+    actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "买生日蛋糕", localDateTime: due, timezone: "UTC", frequency: "once" }) })],
+  }), undefined, async ({ sources, checkScope }) => {
+    checks++; assert.equal((await reminders()).length, 0, "check precedes the action");
+    assert.deepEqual(sources, [{ kind: "transcript", text: "明天下午三点，啊不对，四点提醒我买生日蛋糕。" }]);
+    assert.equal(checkScope, false);
+    return { claims: [], deliveryIssues: [] };
+  });
+  await say("明天下午三点，啊不对，四点提醒我买生日蛋糕。", "transcripts");
+  const saved = await reminders();
+  assert.equal(checks, 1); assert.equal(saved.length, 1);
+  assert.equal(saved[0].dueAt, `${due}:00.000Z`);
+  assert.equal(saved[0].visibility, "private");
 });
 
 test("a requested draft sentence does not truncate the accompanying file analysis", async (t) => {

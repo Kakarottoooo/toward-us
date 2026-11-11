@@ -271,6 +271,24 @@ test("import answers check original text, while an unrelated turn with the same 
   assert.equal(f.calls.sourceChecks.length, before + 1);
 });
 
+test("a current chat search cannot skip checking its original through a false source flag", async (t) => {
+  let importId;
+  const f = await fixture(t, {
+    planner: context => context.lookups?.length
+      ? { reply: "Blair was running late.", sourceBased: false, actions: [] }
+      : { reply: "Let me check.", actions: [action("chat_search", "query", { targetId: importId, query: "running late" })] },
+  });
+  const uploaded = await f.upload(whatsapp, "chat.txt", f.people[0].id, f.session.id);
+  importId = uploaded.body.import.id;
+  await f.request(`/imports/${uploaded.body.import.id}/people`, "POST", { me: "Alex", partner: "Blair" });
+  await f.ready(uploaded.body.import.id);
+  const before = f.calls.sourceChecks.length;
+  const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Find the original conversation about running late.", itemId: randomUUID() });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(f.calls.sourceChecks.length, before + 1);
+  assert.ok(f.calls.sourceChecks.at(-1).sources.some(source => source.kind === "import_search" && source.text.includes("running late")));
+});
+
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
   let release;
   const held = new Promise((resolve) => { release = resolve; });

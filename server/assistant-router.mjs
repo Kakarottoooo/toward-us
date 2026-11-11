@@ -288,7 +288,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     // Repair prose only, before writes; never rerun an action to fix formatting.
     if (!plan.actions.some((action) => action.kind === "chat_import")) {
-      plan.reply = await prepareSourceReply(plan.reply, { sources: replySources.filter((source) => source.kind === "transcript" || plan.sourceBased !== false), request: text, language, context, mediator });
+      // Only a persistent import may be unrelated to a later greeting. Sources
+      // supplied or searched in this turn cannot be disabled by the planner.
+      plan.reply = await prepareSourceReply(plan.reply, { sources: replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false), request: text, language, context, mediator });
     }
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
