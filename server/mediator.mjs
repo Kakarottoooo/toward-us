@@ -128,7 +128,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         model: cheapModel, store: false, max_output_tokens: 2200,
         text: { format: { type: "json_schema", name: "reply_source_check", strict: true, schema: sourceCheckSchema } },
         input: [{ role: "developer", content: `${sourceCheckInstructions}\nThe reply language is ${language}.` }, { role: "user", content: JSON.stringify(context) }],
-      }, INTERACTIVE);
+      }, { ...INTERACTIVE, allowSchemaRetry: false, allowProseReply: false });
       return JSON.parse(response.output_text);
     },
     async rewriteReply(context, language = "zh") {
@@ -136,7 +136,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         model, store: false, max_output_tokens: 1400,
         text: { format: { type: "json_schema", name: "reply_format_repair", strict: true, schema: replyPartsSchema } },
         input: [{ role: "developer", content: `Rewrite only the reply in ${language}. Fix the supplied source, scope, missing-content and format issues once, preserving every requested deliverable and the supplied evidence. Remove unrequested extras identified by the check. Original source text outranks the rejected reply and summaries. Do not add facts or perform actions. ${replyContractInstructions}` }, { role: "user", content: JSON.stringify(context) }],
-      }, INTERACTIVE);
+      }, { ...INTERACTIVE, allowSchemaRetry: false, allowProseReply: false });
       return JSON.parse(response.output_text);
     },
     async planAssistantTurn(context, language = "zh") {

@@ -114,3 +114,37 @@ for (const row of replay.rows) test(`captured failure returns a whole candidate:
   assert.doesNotMatch(result, /这次没能回答|格式还需调整/);
   if (row.reviewFlag) assert.equal(result, renderReply(input));
 });
+
+test("real mediator and CLI adapter do not retry or reinterpret malformed check/rewrite output", async (t) => {
+  const childProcess = (await import("node:child_process")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  const { resolve } = await import("node:path");
+  const saved = Object.fromEntries(["AI_PROVIDER", "TMP", "TEMP"].map(key => [key, process.env[key]]));
+  process.env.AI_PROVIDER = "claude-cli";
+  process.env.TMP = process.env.TEMP = resolve("work");
+  let calls = 0;
+  const mock = t.mock.method(childProcess, "spawn", () => {
+    calls++;
+    const child = new EventEmitter();
+    child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    child.stdin.on("finish", () => queueMicrotask(() => {
+      child.stdout.end(JSON.stringify({ result: "Unstructured prose instead of the required JSON", num_turns: 1 }));
+      child.emit("close", 0);
+    }));
+    return child;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mock.mock.restore(); syncBuiltinESMExports();
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  });
+  const { createMediator } = await import("../server/mediator.mjs");
+  const mediator = createMediator({ apiKey: "" });
+  await assert.rejects(mediator.checkReplySources({ request: "request", reply: "draft" }), /schema retry disabled/);
+  assert.equal(calls, 1);
+  await assert.rejects(mediator.rewriteReply({ request: "request", reply: "draft", issues: ["issue"] }), /schema retry disabled/);
+  assert.equal(calls, 2, "one transport call per stage, never a strict-schema retry");
+});
+

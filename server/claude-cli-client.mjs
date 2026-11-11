@@ -153,6 +153,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         const parsed = answerFromText(firstText, schema, { allowProseReply: options.allowProseReply !== false });
         if (parsed && typeof parsed.reply === "string") parsed.reply = withoutToolMarkup(parsed.reply);
         if (parsed) return { output_text: JSON.stringify(parsed) };
+        if (options.allowSchemaRetry === false) throw new Error("Invalid structured reply; schema retry disabled");
         return { output_text: JSON.stringify((await call(["--json-schema", JSON.stringify(schema)], system)).structured_output ?? {}) };
       },
     },
