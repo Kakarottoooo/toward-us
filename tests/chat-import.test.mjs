@@ -221,7 +221,7 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   assert.equal(f.calls.rewrites.length, 1);
   assert.match(f.calls.rewrites[0].issues.join(" "), /Expected 1 sentence/);
   assert.equal(f.calls.rewrites[0].request, "Give me only one sentence to apologize.");
-  assert.equal(JSON.parse(f.calls.rewrites[0].sources[0].text)[0].text, "I waited.");
+  assert.match(f.calls.rewrites[0].sources[0].text, /partner \|[^\n]+\nI waited\./);
 });
 
 test("captured mixed screenshot reply reaches repair rather than passing on an analysis quotation", async (t) => {

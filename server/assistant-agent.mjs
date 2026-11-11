@@ -1,7 +1,7 @@
 import { readonlyWebInstructions } from "./readonly-web.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { replyContractInstructions, privateBoundaryReply, replyPartsSchema } from "./reply-contract.mjs";
-const sourceGrounding = `Ground analysis AND drafts in supplied images, files, transcripts or recalled records. Preserve speakers, exact words and requested dates. Ongoing states are not outcomes; generalizations must hold for every cited instance. Never attribute another speaker's demands or feelings to the user, or add unsupported events, admissions, motives or chronology. Drafting-only requests get just the draft within requested limits.`;
+const sourceGrounding = `Ground all prose in visible sources; keep speakers/dates; states aren't outcomes; summaries cover every instance. Set unsupportedPremise to any unrecorded event assumed by the question, else null. Never assume it later, even in questions. Never invent events, feelings or consent.`;
 const nullableString = { type: ["string", "null"] };
 const handoffKeys = ["name", "area", "date", "time", "partySize", "phone", "website", "store", "budget"];
 // A booking or purchase Pinky prepares as tap-to-finish links (handoffs.mjs); null on every other action.
@@ -141,7 +141,7 @@ ${replyContractInstructions}`;
 
 export function validateAssistantTurn(plan) {
   const exact = (object, keys) => object && typeof object === "object" && !Array.isArray(object) && Object.keys(object).length === keys.length && keys.every((key) => Object.hasOwn(object, key));
-  if (!exact(plan, ["reply", "actions", ...(Object.hasOwn(plan || {}, "sendableDraft") ? ["sendableDraft"] : []), ...(Object.hasOwn(plan || {}, "activityDescription") ? ["activityDescription"] : []), ...(Object.hasOwn(plan || {}, "planConstraints") ? ["planConstraints"] : []), ...(Object.hasOwn(plan || {}, "sourceBased") ? ["sourceBased"] : [])]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || (plan.sendableDraft != null && (typeof plan.sendableDraft !== "string" || plan.sendableDraft.length > 2000)) || (plan.activityDescription != null && (typeof plan.activityDescription !== "string" || plan.activityDescription.length > 300)) || !Array.isArray(plan.actions) || plan.actions.length > 8 || Object.hasOwn(plan, "sourceBased") && typeof plan.sourceBased !== "boolean") return false;
+  if (!exact(plan, ["reply", "actions", ...(Object.hasOwn(plan || {}, "sendableDraft") ? ["sendableDraft"] : []), ...(Object.hasOwn(plan || {}, "activityDescription") ? ["activityDescription"] : []), ...(Object.hasOwn(plan || {}, "planConstraints") ? ["planConstraints"] : []), ...(Object.hasOwn(plan || {}, "sourceBased") ? ["sourceBased"] : []), ...(Object.hasOwn(plan || {}, "unsupportedPremise") ? ["unsupportedPremise"] : [])]) || typeof plan.reply !== "string" || plan.reply.length > 2000 || (plan.sendableDraft != null && (typeof plan.sendableDraft !== "string" || plan.sendableDraft.length > 2000)) || (plan.activityDescription != null && (typeof plan.activityDescription !== "string" || plan.activityDescription.length > 300)) || !Array.isArray(plan.actions) || plan.actions.length > 8 || Object.hasOwn(plan, "sourceBased") && typeof plan.sourceBased !== "boolean" || (plan.unsupportedPremise != null && (typeof plan.unsupportedPremise !== "string" || plan.unsupportedPremise.length > 2000))) return false;
   return plan.actions.every((action) => exact(action, ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"])
     && ["query", "create", "update", "archive", "book_table", "buy"].includes(action.operation)
     && (action.kind === "handoff") === ["book_table", "buy"].includes(action.operation)
@@ -183,8 +183,8 @@ export function normalizeAssistantTurn(plan, language = "zh", boundaryIndex = 0)
   // occurrence: null) next to a good reply; the exact-key check then refused the whole turn with a 502 (use-case test,
   // 11-08: about 1 in 4 times when a user told Pinky about her boyfriend). Empty extras are dropped; any with content
   // still fail validation.
-  const { reply, sendableDraft, activityDescription, actions, planConstraints, sourceBased, ...extra } = plan;
-  if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "sendableDraft") ? { sendableDraft } : {}), ...(Object.hasOwn(plan, "activityDescription") ? { activityDescription } : {}), ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}), ...(Object.hasOwn(plan, "sourceBased") ? { sourceBased } : {}) };
+  const { reply, sendableDraft, activityDescription, actions, planConstraints, sourceBased, unsupportedPremise, ...extra } = plan;
+  if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "sendableDraft") ? { sendableDraft } : {}), ...(Object.hasOwn(plan, "activityDescription") ? { activityDescription } : {}), ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}), ...(Object.hasOwn(plan, "sourceBased") ? { sourceBased } : {}), ...(Object.hasOwn(plan, "unsupportedPremise") ? { unsupportedPremise } : {}) };
   return { ...plan, actions: plan.actions.map((action) => {
     if (!action?.fields || typeof action.fields !== "object") return action;
     const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...action.fields };

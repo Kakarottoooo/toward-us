@@ -154,7 +154,7 @@ test("body, copyable card and source speakers have explicit distinct roles", asy
     },
     async rewriteReply() { throw Error("card already delivers the invitation"); },
   } });
-  assert.equal(result, '我没有预订。\n\n“一起去陶艺活动好吗？”');
+  assert.equal(result, '我没有预订。\n\n一起去陶艺活动好吗？');
 });
 
 const replay = JSON.parse(readFileSync(new URL("./fixtures/source-selection-replay.json", import.meta.url), "utf8"));

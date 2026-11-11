@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { register } from "node:module";
 import { cases as originalCases, layers } from "./cases.mjs";
 import { loadCasesFile, renderAsset } from "./external-cases.mjs";
 import { invoke } from "./cli.mjs";
@@ -15,8 +16,10 @@ import { installCallGuard } from "./call-guard.mjs";
 import { comparisonReady } from "./score.mjs";
 import { corpusHash, frozenCase, frozenOpponent, installCaseClock, agreementProtocol } from "./replay.mjs";
 
-const { values: options } = parseArgs({ options: { "product-only": { type: "boolean", default: false }, "cases-file": { type: "string" }, label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "batch-review": { type: "boolean", default: false }, "budget-file": { type: "string" }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
+const { values: options } = parseArgs({ options: { "product-provider": { type: "string", default: "claude" }, "max-claude-turns": { type: "string", default: "119" }, "max-codex-calls": { type: "string", default: "40" }, "max-product-calls": { type: "string", default: "60" }, "product-budget-file": { type: "string" }, "product-only": { type: "boolean", default: false }, "cases-file": { type: "string" }, label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "batch-review": { type: "boolean", default: false }, "budget-file": { type: "string" }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
 if (!/^[a-zA-Z0-9_-]+$/.test(options.label)) throw new Error("Use a simple label");
+if (!["claude", "codex"].includes(options["product-provider"])) throw Error("Unknown product provider");
+if (options["product-provider"] === "codex" && (!options["product-only"] || options.concurrency !== "1")) throw Error("Codex product evaluations are serial and product-only");
 const spentCalls = Number(options["spent-calls"]);
 if (!Number.isInteger(spentCalls) || spentCalls < 0 || spentCalls >= 180) throw new Error("Invalid prior call count");
 const readonlySite = options.readonly || options.round2 ? await import("./readonly-site.mjs").then((module) => module.createReadonlySite({ port: Number(options["readonly-port"]) || 0 })) : null;
@@ -52,17 +55,21 @@ const startedAt = new Date().toISOString(), seed = randomUUID();
 const directory = resolve("work", "parity-eval", `${options.label}-${startedAt.replace(/[:.]/g, "-")}`);
 await mkdir(join(directory, "tmp"), { recursive: true });
 // Process-only isolation. Never load .env, database URLs, delivery credentials or real media.
-for (const name of Object.keys(process.env)) if (/^(OPENAI_|ANTHROPIC_API_|SENDBLUE_|SMTP_|RESEND_|VAPID_|APNS_|STRIPE_|DATABASE_URL$|TOWARD_US_|REMINDER_RUN_SECRET$)/.test(name)) delete process.env[name];
+for (const name of Object.keys(process.env)) if (/^(OPENAI_|ANTHROPIC_|SENDBLUE_|SMTP_|RESEND_|VAPID_|APNS_|STRIPE_|DATABASE_URL$|TOWARD_US_|REMINDER_RUN_SECRET$)/.test(name)) delete process.env[name];
 process.env.AI_PROVIDER = "claude-cli";
+process.env.CLAUDE_CLI_MODEL = "sonnet";
+process.env.CLAUDE_CLI_BACKGROUND_MODEL = "haiku";
 process.env.TOWARD_US_MEDIA_DIR = join(directory, "media");
 process.env.TOWARD_US_DATA_FILE = join(directory, "state.json");
 process.env.TEMP = process.env.TMP = join(directory, "tmp");
+if (options["product-provider"] === "codex") register(new URL("./codex-loader.mjs", import.meta.url));
 const { createHarness, visibleContext } = await import("./fixture.mjs");
 const { usageListeners } = await import("../../server/claude-cli-client.mjs");
 const context = new AsyncLocalStorage(), usage = [];
 const restoreClock = installCaseClock(context);
 const listener = (event) => {
-  usage.push({ ...context.getStore(), name: event.name, model: event.model, usage: event.usage, usd: event.usd });
+  usage.push({ ...context.getStore(), name: event.name, model: event.model, usage: event.usage, usd: event.usd, turns: event.turns });
+  appendFileSync(join(directory, "all-output.jsonl"), `${JSON.stringify({ ...context.getStore(), name: event.name, model: event.model, turns: event.turns, text: event.text, ...(["reply_source_check", "reply_format_repair"].includes(event.name) ? { prompt: event.prompt } : {}) })}\n`);
   // Synthetic diagnostic evidence only; never included in blind judge inputs.
   if (["private_assistant_operations", "together_turn"].includes(event.name)) appendFileSync(join(directory, "planner-output.jsonl"), `${JSON.stringify({ ...context.getStore(), name: event.name, text: event.text })}\n`);
 };
@@ -75,9 +82,12 @@ if (readonlyMediator) {
 }
 const harness = await createHarness(directory, { requestContext: context, mediator: readonlyMediator });
 let checkpointResults = []; const packets = [];
-const guard = installCallGuard({ directory, context, maxClaudeTurns: 119, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, budgetFile: options["budget-file"] ? resolve(options["budget-file"]) : undefined, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) });
+const guard = installCallGuard({ directory, context, maxClaudeTurns: Number(options["max-claude-turns"]), maxCodexCalls: Number(options["max-codex-calls"]), maxClaudeCalls: Number(options["max-claude-turns"]), disallowClaude: options["product-provider"] === "codex", maxCalls: options.round2 ? 180 - spentCalls : Infinity, budgetFile: options["budget-file"] ? resolve(options["budget-file"]) : undefined, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) });
+const productBudget = options["product-provider"] === "codex" ? (await import("./codex-client.mjs")).configureCodexProduct({ directory, context,
+  file: options["product-budget-file"] ? resolve(options["product-budget-file"]) : join(directory, "product-budget.json"), maxCalls: Number(options["max-product-calls"]), onStop: guard.stop }) : null;
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   caseHash, ...(external ? { externalSource: external.source, excludedFromScores: external.source.purpose === "examples" } : {}), selected: selected.map((item) => item.id),
+  productProvider: options["product-provider"], paidKeysAbsent: !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY,
   protocol: { priorCalls: spentCalls, batchSize: batchReview ? 8 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
   ...(baseline ? { replay: { source: baselinePath, sha256: createHash("sha256").update(baselineBytes).digest("hex"),
     clock: "逐题沿用原 visible.now；仅虚构评测进程日期偏移，计时继续推进", refreshedOpponents: options.economy ? [] : selected.filter((item) => item.check?.kind === "agreement").map((item) => item.id), agreementProtocol } } : {}),
@@ -197,10 +207,15 @@ try {
     await import("./review-batch.mjs").then(({ reviewBatches }) => reviewBatches({ packets, context, directory, seed,
       checkpoint: () => writeFile(join(directory, "partial-results.json"), JSON.stringify(results, null, 2)) }));
   }
-} finally { await harness.close(); if (readonlySite) await readonlySite.close(); usageListeners.delete(listener); restoreClock(); }
+} finally {
+  await harness.close(); if (readonlySite) await readonlySite.close();
+  await guard.drain({ debounceMs: options["product-only"] ? 21_000 : 0 });
+  usageListeners.delete(listener); restoreClock();
+}
 report.measuredResults = results;
 report.carriedCaseIds = options.economy && baseline ? baseline.results.filter((row) => !wanted.has(row.id)).map((row) => row.id) : [];
 report.results = options.economy && baseline ? cases.map((item) => results.find((row) => row.id === item.id) || { ...structuredClone(baseline.results.find((row) => row.id === item.id)), carriedFromBaseline: report.replay.sha256 }) : results;
+report.productBudget = productBudget?.state || null;
 report.modelCalls = guard?.calls || null;
 report.modelBudget = guard?.budget.state || null;
 if (options.round2) report.replay.webSource = baseline.webSource;

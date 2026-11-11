@@ -50,4 +50,8 @@ node scripts/parity-eval/review-baseline.mjs E:/absolute/path/report.json
 
 ## 2026-11-11 省额度续跑
 
+评测产品可加 `--product-provider codex --product-only --concurrency 1`：仅在此进程将模型接口替换为 ChatGPT 订阅 CLI（主模型 `gpt-5.6-sol`，后台 `gpt-5.6-luna`），不改变线上配置。图片仍通过真实图片输入，所有后台调用计入 `--max-product-calls`（默认60）及 `--product-budget-file` 独立账本。进程清除 OpenAI/Anthropic 环境变量，并强制 ChatGPT 登录方式；不读取登录文件，不降级到付费 API。调用、额度或结构化输出失败均停止，不自动重试。先根据同范围历史调用数估算，不能靠换账本绕过任务额度。
+
+Claude 轮数与 Codex 评委调用数分别由 `--max-claude-turns`（传入任务上限减预留轮次）、`--max-codex-calls` 控制，共用 `--budget-file`。`all-output.jsonl` 保存虚构数据的核对与改写原文用于自审；离线适配器检查：`node --test scripts/parity-eval/codex-client.test.mjs`。
+
 用户最新授权覆盖旧全量规则：`--economy --reuse-opponents <冻结report.json> --only <受影响题列表> --concurrency 1`。所有对手（含约定题）均复用冻结答案；仅 Codex 先评，判输或平才由 Claude 复核。没有调用的第二票不伪造；混合总表明确区分实测题与沿用题，严格完成按本轮实际票数报告，不与旧四票口径混同。`calls.jsonl` 记录所有产品、读图、搜索及评委 CLI 调用；额度错误立刻保存中间证据、终止本次评测的子进程和主进程，不重试。另有每次运行最多 120 次 Claude 调用的上限，避免异常循环消耗手机共用订阅；达到上限同样停止，不能自动再开一轮绕过它。
