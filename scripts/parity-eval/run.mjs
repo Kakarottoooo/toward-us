@@ -14,9 +14,9 @@ import { installCallGuard } from "./call-guard.mjs";
 import { comparisonReady } from "./score.mjs";
 import { corpusHash, frozenCase, frozenOpponent, installCaseClock, agreementProtocol } from "./replay.mjs";
 
-const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false } } });
+const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" } } });
 if (!/^[a-zA-Z0-9_-]+$/.test(options.label)) throw new Error("Use a simple label");
-const readonlySite = options.readonly ? await import("./readonly-site.mjs").then((module) => module.createReadonlySite()) : null;
+const readonlySite = options.readonly ? await import("./readonly-site.mjs").then((module) => module.createReadonlySite({ port: Number(options["readonly-port"]) || 0 })) : null;
 const cases = readonlySite ? (await import("./readonly-cases.mjs")).readonlyCases(readonlySite.origin) : originalCases;
 if (readonlySite) options.economy = true;
 const wanted = options.only ? new Set(options.only.split(",")) : null;

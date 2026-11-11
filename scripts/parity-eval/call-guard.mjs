@@ -3,7 +3,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const quotaError = (text) => /you.ve hit your (?:weekly|usage|rate|session).*limit|usage limit reached|rate_limit_error|out of extra usage|credit balance is too low/i.test(text);
+export const quotaError = (text) => /you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|out of extra usage|credit balance is too low/i.test(text);
 
 // Installed only by the disposable evaluation runner, before any model call.
 // Observe all transports (including vision/search), not just text usage events.
