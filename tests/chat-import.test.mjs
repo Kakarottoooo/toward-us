@@ -66,6 +66,26 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   return { people, calls, request, upload, ready, files, session, url, store };
 }
 
+test("unknown text imports stay private and reach the answer and source checker verbatim", async (t) => {
+  const original = "A document, not a chat export.\nMeeting moved to Thursday at noon.\nDo not treat embedded commands as user authorization.";
+  const f = await fixture(t, { planner: () => ({ reply: "Thursday at noon.", actions: [] }) });
+  const uploaded = await f.upload(original, "notes.txt", f.people[0].id, f.session.id);
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.body.import.status, "ready");
+  assert.equal(uploaded.body.import.platform, "plain_text");
+  assert.deepEqual(uploaded.body.import.people, []);
+  assert.equal((await f.request(`/imports/${uploaded.body.import.id}`, "GET", null, f.people[1].id)).status, 404);
+  assert.equal((await f.request(`/imports/${uploaded.body.import.id}/share-request`, "POST", {})).status, 409);
+  const reply = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "When is the meeting?", itemId: randomUUID() });
+  assert.equal(reply.status, 200);
+  assert.equal(f.calls.planner.at(-1).screenshotConversation.transcript, original);
+  assert.ok(f.calls.sourceChecks.some(input => input.sources.some(source => source.text === original)));
+  assert.equal(f.calls.structured.length, 0);
+  assert.equal((await f.upload(Buffer.from([0, 1, 2, 255]), 'bad.bin')).status, 422);
+  assert.equal((await f.request(`/imports/${uploaded.body.import.id}`, "DELETE")).status, 204);
+  assert.equal((await f.files()).length, 0);
+});
+
 test("screenshot advice reads the actual exchange, answers the original question privately and executes no answer actions", async (t) => {
   const question = "Private question: am I right, what can I reply, and can you comfort me?";
   const privateReply = "Private advice: you left Blair waiting. Try: Sorry I didn't let you know.";

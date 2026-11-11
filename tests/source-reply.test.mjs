@@ -69,7 +69,7 @@ test("each source defect is passed to one repair, with original text, never exec
     async checkReplySources(input) { checks++; assert.deepEqual(input.sources, sources); return { claims: input.previousReply ? [] : [
       { claim: "临近时", source: "19:00；19:45", supported: false, issue: "晚于约定45分钟" },
       { claim: "来不了", source: "还在上班", supported: false, issue: "没有说最终是否到场" },
-    ], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; },
+    ], deliverableChecks: [{ id: "deliverable-1", parts: [{ requirement: "发生了什么", present: true, quote: input.reply }] }], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; },
     async rewriteReply(input) { repairs++; assert.deepEqual(input.sources, sources); assert.equal(input.issues.length, 2); return "晚于约定45分钟才说还在上班。"; },
   } });
   assert.equal(result, "晚于约定45分钟才说还在上班。"); assert.equal(checks, 2); assert.equal(repairs, 1);

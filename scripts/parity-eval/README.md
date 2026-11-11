@@ -6,7 +6,7 @@
 
 JSON根对象为`{version:1,purpose:"examples"或"holdout",createdAt:"实际UTC创建时间",cases:[...]}`，完整占位示例见`examples.json`。题目沿用练习题的`id/layer/title/probe/expect/completion`；`history`追加虚构问答，`notes`追加本人笔记，`reminders`按`owner:me/partner`分别保留，`shared`按`speaker:me/partner,day,text`写入共同对话。`day`为相对天数，`paired`声明两个虚构参与者，`people`声明私人卡片名。`screenshot:{title,messages:[{speaker,time,text}]}`渲染成PNG，产品和两个对手均读同一图片，不给对手额外转写。所有资料仅在隔离本地账号中造数，不能指向dogfood或data目录。
 
-`writes:[{collection,mode:"created"或"updated",count,fields:{...}}]`在回答前后真实存储快照上检查：该集合新增/更新数和字段匹配数都必须等于count，重复写入也失败；字段用精确值，`$me/$partner`代表对应账号，`{date:N}`为题目UTC日期偏移，时间及时区须明确写出。支持reminders、memories、checkins、spaces、spaceItems、agreements。题目的expect/completion/writes只供评委或机器检查，不传给产品和对手。示例报告`excludedFromScores:true`且没有得分汇总；不得作为新题成绩。
+`writes:[{collection,mode:"created"或"updated",count,fields:{...}}]`在回答前后真实存储快照上检查：该集合新增/更新数和字段匹配数都必须等于count，重复写入也失败；字段用精确值，`$me/$partner`代表对应账号，`{date:N}`为题目时区的日历日期偏移（timezone，缺省Asia/Shanghai；写入检查优先使用fields.timezone），时间及时区须明确写出。支持reminders、memories、checkins、spaces、spaceItems、agreements。题目的expect/completion/writes只供评委或机器检查，不传给产品和对手。示例报告`excludedFromScores:true`且没有得分汇总；不得作为新题成绩。
 
 外部题与练习题共用真实HTTP、资料投影、原始答案归档和Codex先评的批量盲评；若复用对手，仍核对原始语料、可见资料和图片哈希。所有运行均启用120 Claude内部轮次/40 Codex调用守卫；同一任务各批必须传同一个budget-file。CLI超时/退出错误保留已读输出，结算num_turns；缺失则按整笔预留计入，不单独终止整轮。额度错误立即停止且不重试。
 
@@ -55,3 +55,5 @@ node scripts/parity-eval/review-baseline.mjs E:/absolute/path/report.json
 Claude 轮数与 Codex 评委调用数分别由 `--max-claude-turns`（传入任务上限减预留轮次）、`--max-codex-calls` 控制，共用 `--budget-file`。`all-output.jsonl` 保存虚构数据的核对与改写原文用于自审；离线适配器检查：`node --test scripts/parity-eval/codex-client.test.mjs`。
 
 用户最新授权覆盖旧全量规则：`--economy --reuse-opponents <冻结report.json> --only <受影响题列表> --concurrency 1`。所有对手（含约定题）均复用冻结答案；仅 Codex 先评，判输或平才由 Claude 复核。没有调用的第二票不伪造；混合总表明确区分实测题与沿用题，严格完成按本轮实际票数报告，不与旧四票口径混同。`calls.jsonl` 记录所有产品、读图、搜索及评委 CLI 调用；额度错误立刻保存中间证据、终止本次评测的子进程和主进程，不重试。另有每次运行最多 120 次 Claude 调用的上限，避免异常循环消耗手机共用订阅；达到上限同样停止，不能自动再开一轮绕过它。
+
+外部隐私题原样支持 `check: {kind: "privacy"}` 和 `probe.repeat: 3`；需配置 paired 和 partner 私有 history。前者检查伴侣读取及按日期定位私人会话返回403/404，后者连续问三次；缺少这些配置不能声称权限或连续追问验收通过。

@@ -9,7 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { register } from "node:module";
 import { cases as originalCases, layers } from "./cases.mjs";
-import { loadCasesFile, renderAsset } from "./external-cases.mjs";
+import { loadCasesFile, renderAsset, fixtureValue } from "./external-cases.mjs";
 import { invoke } from "./cli.mjs";
 import { blindPair, completionResult, decodeVerdict, judgeInstructions, judgeSchema, markdown, summarize } from "./score.mjs";
 import { installCallGuard } from "./call-guard.mjs";
@@ -100,7 +100,7 @@ async function one(original) {
   const root = join(directory, original.id); await mkdir(root, { recursive: true });
   const at = Date.now(), old = frozen.get(original.id), caseAt = old ? Date.parse(old.visible.now) : at;
   const item = { ...original, agreementFlow: original.check?.kind === "agreement",
-    question: old?.question || original.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(caseAt + Number(days) * 86400000).toISOString().slice(0, 10)), visible: visibleContext(original, caseAt) };
+    question: old?.question || fixtureValue(original.probe.text, { at: caseAt, timezone: original.timezone || "Asia/Shanghai" }), visible: visibleContext(original, caseAt) };
   const picture = await renderAsset(item, root);
   const visible = { ...item.visible, ...(item.modality === "file" ? { file: item.assetText } : {}) };
   if (old && JSON.stringify(visible) !== JSON.stringify(Object.fromEntries(Object.entries(old.visible).filter(([key]) => key !== "publicPages")))) throw new Error(`Frozen visible material differs: ${item.id}`);

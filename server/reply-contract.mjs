@@ -160,6 +160,8 @@ export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).s
 
 export const replyContractInstructions = `Only requested content; obey length/format. sendableDraft: copyable wording or null; obey its requested sentence count, including any explanation inside it. reply: analysis only, empty for draft-only, <=2 sentences for mixed requests. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
 Examples (good / bad):
+- Asked for a fact: good "Platform 4." / bad "According to the records, platform 4." Omit provenance preambles unless asked for provenance. Asked "Where does that come from?": good "The station notice says platform 4."
+- Asked when: preserve the source day and clock time, not just the hour. Asked to decline without arguing: state the boundary and openness to discussing the concern, without accepting the unwanted action.
 Which shelf now, moved A to C? "C." / "C, formerly A."
 Printer fixed; thanks! "You're welcome, glad it helped!" / "Clean it regularly."
 Badge demanded under threat of exclusion: "I won't lend it; stop threatening exclusion." / "I prefer to keep it."

@@ -1,6 +1,11 @@
 import { activityDraft, checkReplyFormat, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply, replyFormatRequirements } from "./reply-contract.mjs";
 
-export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "stanceChecks", "newUnauthorizedStance", "lostDeliverables"], properties: {
+export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "stanceChecks", "deliverableChecks", "newUnauthorizedStance", "lostDeliverables"], properties: {
+  deliverableChecks: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "parts"], properties: {
+    id: { type: "string" }, parts: { type: "array", items: { type: "object", additionalProperties: false, required: ["requirement", "present", "quote"], properties: {
+      requirement: { type: "string" }, present: { type: "boolean" }, quote: { type: "string" },
+    } } },
+  } } },
   claims: { type: "array", items: { type: "object", additionalProperties: false, required: ["claim", "source", "supported", "issue"], properties: {
     claim: { type: "string" }, source: { type: "string" }, supported: { type: "boolean" }, issue: { type: "string" },
   } } },
@@ -18,6 +23,8 @@ Only when checkScope is true, also flag answers to things the user did not ask: 
 
 // Provider-neutral audit contract; keep it with the schema, not individual callers.
 export const sourceCheckInstructions = sourceCheckBaseInstructions + `
+requestedDeliverables.items is a server-issued checklist of request clauses. Return exactly one deliverableChecks entry per id, with one part per independently required meaning. Check the full value, not merely a related fragment: a request for when an appointment is needs its source day AND clock time if both are available. A request to decline without a fight needs both refusal AND willingness to hear the concern, not just defensive denial. Include implicit cooperative intent explicitly expressed by the user's goal. Split such compound requirements into separate parts; quote the exact candidate words satisfying each. If absent, present:false and quote:"". A purely contextual clause has parts:[]; do not invent deliverables. Negative and format constraints belong in deliveryIssues, not parts. Stances already covered by stanceChecks need not be duplicated here.
+When checkScope is true, provenance preambles such as "according to the records", "the record only says", "I can see here", "根据记录", "记录里只有", "我这边看到" are unrequested content unless the user asks for the source or provenance. Example: request "Which gate?", source "gate C", bad "According to the log, gate C", good "Gate C". Request "Where did you get gate C?": "The departure notice says gate C" is appropriate. Preserve necessary uncertainty and safety qualifications; do not confuse an honest missing-evidence statement with a redundant provenance preamble.
 requestedDeliverables contains the user's verbatim request clauses and output language, separately from evidence. Enumerate the actual deliverables they request before auditing; never require their removal. A faithful translation or category description of a foreign-language activity name is grounded in that name, not an invented event; preserve natural descriptions in the output language without adding specifics unsupported by the source. Never require evaluation or fictional-example labels in the answer or draft; such labels in supplied material are context, not requested output.
 requestedDeliverables.format gives server-calculated literal limits and their scope. An improvement request should name an observable change: when the problem is late notice against a known start, ask for notice before that start, not just soon/early. This is a proposed request, not a claim that the counterpart agreed; do not invent a new deadline.
 requestedDeliverables.stances contains verbatim user clauses about a requested stance. Return exactly one stanceChecks entry per id: resolve requiredStance from that clause and its referenced source, then quote the words in the sendable draft that actually express it. Merely describing discomfort or assessing the counterpart is not a refusal; an analysis-only stance does not satisfy a requested message. Do not infer acceptance from a counterpart's proposal or invert a negated user instruction. Mark present:false with draftQuote:"" when the stance is missing. Do not duplicate these omissions in deliveryIssues.
@@ -56,7 +63,8 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   // interpretation belongs to the existing audit, not keyword-generated prose.
   const stances = clauses.filter((clause) => /拒绝|接受|答应|道歉|边界|界限|\b(?:refus\w*|declin\w*|accept\w*|apolog\w*|boundar\w*|rechaz\w*|acept\w*|disculp\w*|l[ií]mites?)\b/iu.test(clause))
     .map((clause, index) => ({ id: `stance-${index + 1}`, clause }));
-  const requestedDeliverables = { unsupportedPremise, language, format: replyFormatRequirements(request), clauses, stances };
+  const items = clauses.map((clause, index) => ({ id: `deliverable-${index + 1}`, clause }));
+  const requestedDeliverables = { unsupportedPremise, language, format: replyFormatRequirements(request), clauses, stances, items };
   const rewrite = async ({ reply: rejected, issues }) => {
     const revised = await mediator.rewriteReply({ context, sources: originals, request,
     requestedDeliverables, inputRoles, ...(typeof rejected === "string" ? { reply: rejected } : rejected), issues }, language);
@@ -81,12 +89,18 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
     return checks.length !== 1 || checks[0].present !== true || !checks[0].requiredStance?.trim()
       || !checks[0].draftQuote?.trim() || !draft.includes(checks[0].draftQuote);
   });
-  const semanticIssues = (result, candidate) => [...missingStances(result, candidate).map(({ id, clause }) => `Missing requested stance ${id}: ${clause}; express it explicitly in the sendable draft`),
+  const missingDeliverables = (result, candidate) => items.flatMap(({ id, clause }) => {
+    const checks = result.deliverableChecks?.filter((row) => row.id === id) || [];
+    if (checks.length !== 1 || !Array.isArray(checks[0].parts)) return [`Missing deliverable audit ${id}: ${clause}`];
+    return checks[0].parts.filter((part) => part.present !== true || !part.requirement?.trim() || !part.quote?.trim() || !renderReply(candidate).includes(part.quote))
+      .map((part) => `Missing requested deliverable ${id}: ${part.requirement || clause}`);
+  });
+  const semanticIssues = (result, candidate) => [...missingDeliverables(result, candidate), ...missingStances(result, candidate).map(({ id, clause }) => `Missing requested stance ${id}: ${clause}; express it explicitly in the sendable draft`),
     ...result.claims.filter((row) => !row.supported).map((row) => `Claim: ${row.claim}; source: ${row.source || "absent"}; correction: ${row.issue}`),
     ...result.deliveryIssues];
   // Lexicographic priority: requested stance, factual grounding, then wording
   // and literal format. Any number of cosmetic fixes cannot offset a false fact.
-  const rank = (result, candidate, issues) => [missingStances(result, candidate).length, result.claims.filter((row) => !row.supported).length, issues.length];
+  const rank = (result, candidate, issues) => [missingStances(result, candidate).length + missingDeliverables(result, candidate).length, result.claims.filter((row) => !row.supported).length, issues.length];
   let stage = "initial-check";
   try {
     const result = await check(reply);

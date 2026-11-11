@@ -53,12 +53,15 @@ export async function locateConversation({ store, userId, channel, conversationI
 }
 
 // Citation markers are selected by the model only from server-issued results. Unknown or repeated markers cannot forge links.
-export function citedReply(text, sources = []) {
+export function citedReply(text, sources = [], { renderExchanges = false, language = "zh" } = {}) {
   const selected = [];
   const reply = String(text || "").replace(/\[recall:([^\]\s]+)\]/g, (_marker, id) => {
     const source = sources.find((item) => item.messageId === id);
     if (source && !selected.some((item) => item.messageId === id) && selected.length < 3) selected.push(source);
     return "";
   }).trim();
-  return { reply, sources: selected };
+  const labels = language === "en" ? ["You asked", "Pinky answered"] : language === "es" ? ["Preguntaste", "Pinky respondió"] : ["你当时问", "Pinky 当时答"];
+  const exchanges = renderExchanges ? selected.filter((source) => source.exchange?.question && source.exchange?.answer) : [];
+  return { reply: exchanges.length ? exchanges.map((source) => `${source.date}\n${labels[0]}：${source.exchange.question}\n${labels[1]}${source.exchange.answerDate !== source.date ? ` (${source.exchange.answerDate})` : ""}：${source.exchange.answer}`).join("\n\n") : reply,
+    sources: selected.map(({ exchange, ...source }) => source) };
 }

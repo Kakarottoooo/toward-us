@@ -42,17 +42,18 @@ export async function renderAsset(item, root) {
   return path;
 }
 
-export function fixtureValue(value, { me, partner, at }) {
+export function fixtureValue(value, { me, partner, at, timezone = "UTC" }) {
   if (value === "$me") return me;
   if (value === "$partner") return partner;
-  return typeof value === "string" ? value.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(at + Number(days) * 86400000).toISOString().slice(0, 10)) : value;
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at));
+  return typeof value === "string" ? value.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(Date.parse(`${day}T00:00:00Z`) + Number(days) * 86400000).toISOString().slice(0, 10)) : value;
 }
 
 export function writeChecks(specs, before, after, context) {
   return specs.map((spec) => {
     const old = new Map((before[spec.collection] || []).map((row) => [row.id, row]));
     const changed = (after[spec.collection] || []).filter((row) => spec.mode === "updated" ? old.has(row.id) && JSON.stringify(old.get(row.id)) !== JSON.stringify(row) : !old.has(row.id));
-    const matches = changed.filter((row) => Object.entries(spec.fields).every(([key, value]) => JSON.stringify(row[key]) === JSON.stringify(fixtureValue(value, context))));
+    const matches = changed.filter((row) => Object.entries(spec.fields).every(([key, value]) => JSON.stringify(row[key]) === JSON.stringify(fixtureValue(value, { ...context, timezone: spec.fields.timezone || context.timezone }))));
     return { name: spec.name || `${spec.collection}: ${spec.mode || "created"}`, ok: changed.length === spec.count && matches.length === spec.count, expectedCount: spec.count, changedCount: changed.length, matchingCount: matches.length };
   });
 }

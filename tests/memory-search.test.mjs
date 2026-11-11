@@ -80,7 +80,7 @@ test("recall sources locate an old page and local day, but never another owner's
   await assert.rejects(locateConversation({ ...options, date: "2025-02-30" }), { statusCode: 400 });
   await assert.rejects(locateConversation({ ...options, date: "2025-01-01" }), { statusCode: 404 });
   assert.deepEqual((await searchMemoryResults({ store: f.store, userId: b.id, query: "紫色信封" })).sources, []);
-  assert.deepEqual(citedReply(`当时这样说 [recall:${question.id}] [recall:forged]`, found.sources).sources, found.sources);
+  assert.deepEqual(citedReply(`当时这样说 [recall:${question.id}] [recall:forged]`, found.sources).sources, found.sources.map(({ exchange, ...source }) => source));
 });
 
 test("an old detail is found in older pages and notes, with its day, scoped to a person's own conversation when asked there", async (t) => {
