@@ -40,7 +40,7 @@ function copyableDraft(text) {
   const quotes = quotedDrafts(text);
   // Prefer an explicit delivery label outside quoted source material. In particular,
   // an inline quotation INSIDE an unquoted draft is not the draft itself.
-  const labels = [...text.matchAll(/(?:^|[\n。！？.!?])\s*(?:(?:现在)?(?:你)?可以(?:这样|这么)?(?:说|回|回复)|(?:最终|可发|可复制)?(?:回复|文案)|draft|reply|respuesta)\s*[：:]\s*/giu)]
+  const labels = [...text.matchAll(/(?:^|[\n。！？.!?，,；;])\s*(?:(?:现在)?(?:你)?可以(?:这样|这么)?(?:(?:平和|温和|简短|直接)地)?(?:说|回|回复)|(?:最终|可发|可复制)?(?:回复|文案)|draft|reply|respuesta)\s*[：:]\s*/giu)]
     .filter((match) => !quotes.some((quote) => match.index >= quote.start && match.index < quote.end));
   if (labels.length) {
     const label = labels.at(-1), start = label.index + label[0].length;
