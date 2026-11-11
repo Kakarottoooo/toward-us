@@ -112,14 +112,14 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...patch });
 const action = (patch = {}) => ({ kind: "checkin", operation: "query", targetId: null, expectedVersion: null, fields: fields(), query: "妈妈", queryPeriod: "all", occurrence: null, ...patch });
 
-async function setup(t, plan, rewriteReply) {
+async function setup(t, plan, rewriteReply, checkReplySources) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "answers-"));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const store = await createFileStore(join(directory, "store.json"));
   const id = randomUUID();
   await store.createUser({ id, email: `${id}@example.invalid`, name: "Ziwei", passwordHash: "test", createdAt: new Date().toISOString() });
-  const mediator = { planAssistantTurn: async () => plan(), rewriteReply };
+  const mediator = { planAssistantTurn: async () => plan(), rewriteReply, checkReplySources };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
@@ -147,6 +147,18 @@ test("a contradictory plan is repaired once before any associated write can exec
 test("a reply cannot claim a memory write when this turn executed none", async (t) => {
   const { say } = await setup(t, () => ({ reply: "可以先说自己的感受。已记进「关于我们」。", actions: [] }));
   assert.equal((await say("我该怎么说？")).text, "可以先说自己的感受。");
+});
+
+test("an explicit voice transcript cannot skip the source check through planner classification", async (t) => {
+  let checks = 0;
+  const { say } = await setup(t, () => ({ reply: "最后说的是四点。", sourceBased: false, actions: [] }), undefined, async ({ sources }) => {
+    checks++;
+    assert.equal(sources[0].kind, "transcript");
+    assert.match(sources[0].text, /四点/);
+    return { claims: [], deliveryIssues: [] };
+  });
+  assert.equal((await say("语音转写：三点，改成四点。最后是几点？")).text, "最后说的是四点。");
+  assert.equal(checks, 1);
 });
 
 test("an explicit single-sentence answer has no unsolicited closing", async (t) => {

@@ -33,16 +33,23 @@ test("only one prose repair is allowed, with reasons and honest fallback", async
 test("captured natural draft labels work across interface languages without accepting source quotes", () => {
   const captured = "你不是太敏感，Sam 用分手和“你爱我就该给”来施压确实越界了，回复可以这样写：“密码我不会给，这和爱不爱是两回事”";
   const question = "看截图，是我太敏感了吗？帮我写一句能守住边界的回复。";
-  for (const label of ["回复可以这样写", "可以这样发", "你可以说", "你可以这样回复", "可复制的回复"]) {
+  for (const label of ["回复可以这样写", "可以这样发", "你可以说", "你可以这样回复", "可复制的回复", "可发送的回复", "可以这样跟对方说", "**回复**"]) {
     assert.equal(checkReplyFormat(captured.replace("回复可以这样写", label), question).ok, true, label);
   }
   for (const [language, request, labels, draft] of [
-    ["en", "What happened? Then draft just one sentence.", ["You can say", "You could reply", "You can write", "Reply like this"], "I will keep my password private."],
-    ["es", "¿Qué pasó? Solo una frase.", ["Puedes decir", "Podrías responder", "Puedes escribir", "Respuesta sugerida"], "Prefiero mantener mi contraseña privada."],
+    ["en", "What happened? Then draft just one sentence.", ["You can say", "You could reply", "You can write", "Reply like this", "Invitation draft", "Suggested message"], "I will keep my password private."],
+    ["es", "¿Qué pasó? Solo una frase.", ["Puedes decir", "Podrías responder", "Puedes escribir", "Respuesta sugerida", "Borrador", "Invitación sugerida"], "Prefiero mantener mi contraseña privada."],
   ]) for (const label of labels) {
     assert.equal(checkReplyFormat(`Context. ${label}: “${draft}”`, request, language).ok, true, label);
     assert.equal(checkReplyFormat(`Context says “${label}: ${draft}” is a quotation.`, request, language).ok, false);
   }
+});
+
+test("captured invitation label and blockquote do not downgrade a valid delivered draft", async () => {
+  const reply = "两个人一共 240 元（每人 120 元，材料已包含），16:00 结束；这次没有预订。\n\n邀约草稿：\n> 周六 14:00-16:00 在 6 号工作室有个陶艺手作活动，每人 120 元，材料包含，要不要一起去？";
+  const request = "这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。";
+  assert.equal(checkReplyFormat(reply, request).ok, true);
+  assert.equal(await repairReplyFormat(reply, { request, rewrite: () => { throw Error("unexpected rewrite"); } }), reply);
 });
 
 test("failed mixed-format repair retains the complete closest draft and analysis", async () => {
