@@ -232,17 +232,17 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
-    plan = normalizeAssistantTurn(plan);
+    plan = normalizeAssistantTurn(plan, language);
     // A plan with no words and no action was shown as the generic "你想创建、查找还是修改什么？" (use-case regression 11-09:
     // asked what to bring to meet her parents). The model is asked once more before that fallback can appear.
     if (validateAssistantTurn(plan) && !clean(plan.reply, 1200) && !plan.actions.length) {
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language)); }
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language), language); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     }
     // A malformed answer is asked for once more before the member sees an error (memory eval 11-09: an old question
     // after a long history came back as a 502 about one time in three).
     if (!validateAssistantTurn(plan)) {
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language)); }
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn(context, language), language); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
     }
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
@@ -264,7 +264,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
       progress("writing");
       context = { ...context, lookups };
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
+      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language), language); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     }
@@ -275,7 +275,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       progress("writing");
       try {
         plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
-          correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language));
+          correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language), language);
       } catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw unavailable();
       checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });

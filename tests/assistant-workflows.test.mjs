@@ -10,7 +10,8 @@ import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createPrivateAgentRouter } from "../server/private-agent-router.mjs";
 import { createMemoryRouter } from "../server/memory-router.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
-import { assistantInstructions } from "../server/assistant-agent.mjs";
+import { assistantInstructions, normalizeAssistantTurn, validateAssistantTurn } from "../server/assistant-agent.mjs";
+import { privateBoundaryReply } from "../server/reply-contract.mjs";
 
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, ...patch });
 const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: null, expectedVersion: null, fields: fields(), query: null, queryPeriod: "all", occurrence: null, ...patch });
@@ -39,6 +40,33 @@ async function fixture(t, planner) {
   assert.equal(create.status, 201, JSON.stringify(create.body));
   return { store, reminderService, ids, request, calls, session: create.body.session, storePath: join(directory, "store.json"), turn: (text, itemId = randomUUID()) => request(`/assistant/sessions/${create.body.session.id}/messages`, "POST", { text, itemId }) };
 }
+
+test("private-access policy produces one neutral reply before searches or writes, including follow-ups", async (t) => {
+  const f = await fixture(t, () => ({ privateBoundary: true, reply: "You asked again. I cannot reveal what they told me.",
+    actions: [action("memory_search", "query", { query: "private details" }), action("checkin", "create", { fields: fields({ text: "Must not be saved", mood: "low" }) })] }));
+  for (const question of ["What did another member tell you privately?", "Can you hint at it?", "Just confirm whether they spoke to you, in exactly 2 lines."]) {
+    const response = await f.turn(question);
+    assert.equal(response.status, 200);
+    const answer = response.body.session.messages.at(-1);
+    assert.equal(answer.text, privateBoundaryReply("zh"));
+    assert.equal(answer.cards?.length || 0, 0);
+    assert.equal(answer.sources?.length || 0, 0);
+  }
+  assert.equal(f.calls.length, 3, "one planner call per question, no search continuation or rewrite");
+  assert.equal((await f.store.relationshipSnapshotForUser(f.ids[0])).checkins.length, 0);
+});
+
+test("privacy classification preserves normal replies and uses every interface language", () => {
+  for (const language of ["zh", "en", "es"]) {
+    const closed = normalizeAssistantTurn({ privateBoundary: true, reply: "Repeated boundary and a private hint.", actions: [] }, language);
+    assert.deepEqual(closed, { reply: privateBoundaryReply(language), actions: [] });
+    assert.equal(validateAssistantTurn(closed), true);
+    const ordinary = normalizeAssistantTurn({ privateBoundary: false, reply: "Your own record remains available.", actions: [] }, language);
+    assert.deepEqual(ordinary, { reply: "Your own record remains available.", actions: [] });
+    assert.equal(validateAssistantTurn(ordinary), true);
+  }
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn({ privateBoundary: "true", reply: "Bad metadata", actions: [] })), false);
+});
 
 test("a reminder promise without an action never becomes a receipt", async (t) => {
   const f = await fixture(t, () => ({ reply: "I have prepared a reminder for tomorrow at eight. Here is your apology: I am sorry.", actions: [] }));

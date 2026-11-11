@@ -27,7 +27,7 @@ function quotedDrafts(text) {
     const char = text[i];
     if (stack.length && char === stack.at(-1)) {
       stack.pop();
-      if (!stack.length) drafts.push(text.slice(start + 1, i));
+      if (!stack.length) drafts.push({ text: text.slice(start + 1, i), start, end: i + 1 });
     } else if (pairs[char]) {
       if (!stack.length) start = i;
       stack.push(pairs[char]);
@@ -35,12 +35,30 @@ function quotedDrafts(text) {
   }
   return drafts;
 }
+
+function copyableDraft(text) {
+  const quotes = quotedDrafts(text);
+  // Prefer an explicit delivery label outside quoted source material. In particular,
+  // an inline quotation INSIDE an unquoted draft is not the draft itself.
+  const labels = [...text.matchAll(/(?:^|[\n。！？.!?])\s*(?:(?:现在)?(?:你)?可以(?:这样|这么)?(?:说|回|回复)|(?:最终|可发|可复制)?(?:回复|文案)|draft|reply|respuesta)\s*[：:]\s*/giu)]
+    .filter((match) => !quotes.some((quote) => match.index >= quote.start && match.index < quote.end));
+  if (labels.length) {
+    const label = labels.at(-1), start = label.index + label[0].length;
+    const quoted = quotes.find((quote) => quote.start === start);
+    return quoted ? quoted.text : text.slice(start).split(/\n\s*\n/)[0].trim();
+  }
+  // Without a label accept only a whole, final quoted paragraph. Never guess
+  // from the last inline quotation in an analysis sentence.
+  const last = quotes.at(-1);
+  if (last && !text.slice(last.end).trim() && !text.slice(text.lastIndexOf("\n", last.start - 1) + 1, last.start).trim()) return last.text;
+  return null;
+}
 export function checkReplyFormat(reply, request = "", language = "zh") {
   const limits = formatLimits(request), issues = [];
   let text = String(reply || "").trim();
   if (limits.sentences && draftOnlyLimit(request)) {
-    const draft = quotedDrafts(text).at(-1) || text.match(/(?:可以(?:说|回)|回复|文案|draft|reply|respuesta)\s*[：:]\s*([\s\S]+)$/iu)?.[1];
-    if (!draft) issues.push("Put the requested copyable draft in quotation marks, separate from the other requested answer.");
+    const draft = copyableDraft(text);
+    if (!draft) issues.push("Separate the requested copyable draft from analysis with an explicit reply label or a final quoted paragraph; source quotations do not count as a draft.");
     text = draft || text;
   }
   const sentenceCount = segments(text, language).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
@@ -53,6 +71,8 @@ export function checkReplyFormat(reply, request = "", language = "zh") {
 }
 
 export async function repairReplyFormat(reply, { request = "", language = "zh", rewrite } = {}) {
+  // The server's privacy response must never re-enter model prose generation.
+  if (reply === privateBoundaryReply(language)) return reply;
   const checked = checkReplyFormat(reply, request, language);
   if (checked.ok) return reply;
   const revised = rewrite ? await rewrite({ reply, issues: checked.issues }) : null;
@@ -74,4 +94,6 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   return text;
 }
 
-export const replyContractInstructions = `Final reply check: deliver only what was asked. Sentence/line/character limits override default advice and feature offers. Acknowledgments contain warmth only, no unsolicited advice. Wording only: draft only. Mixed request: at most two brief analysis sentences, then quote the draft. Never add a first-person feeling, promise or acceptance absent from the user's words. Describe an activity naturally in the reply language, not just an unexplained foreign title. Raw transcript outranks summaries: compare actual timestamps before saying before/after/near; preserve each speaker's exact claim. Updates do not inherit old details. No saved/prepared/scheduled claims: the server reports committed writes; reminders still need actions after lookup. If asked not to book, say no booking was made. Unsupported events remain unestablished; offer to sort known facts together, never interrogate. Privacy: neutrally refer only to user-provided/shared information once, never discuss whether another private chat exists; no scolding or repetition when pressed. Examples: library closing time -> "六点", not "六点，早点出门"; due Monday/delivered Tuesday -> "期限后送达", not "临近期限"; class moved to Friday -> old duration unconfirmed, not "仍是一小时".`;
+export const privateBoundaryReply = (language) => language === "en" ? "I can only help you work through information you provide or that is explicitly shared with you." : language === "es" ? "Solo puedo ayudarte con la información que tú aportes o que se haya compartido explícitamente contigo." : "我只能根据你提供或明确共享的信息帮你梳理。";
+
+export const replyContractInstructions = `Final reply check: deliver only what was asked. Sentence/line/character limits override advice and feature offers. Acknowledgments need warmth, not advice. Wording-only: draft only. Mixed request: at most two brief analysis sentences, then a reply label and quoted draft. Never add feelings, affection, promises or acceptance absent from the user's own words; a boundary needs no affectionate preamble. Describe activity types naturally. Raw transcript outranks summaries: preserve speaker, exact claim and timestamps; an ongoing state is not an outcome (still under review does not mean rejected). Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports committed writes; reminders still need actions after lookup. If asked not to book, say no booking was made. Unsupported events remain unestablished; help sort known facts, never interrogate. Privacy: one neutral boundary per reply, no access claims, private-chat hints or comments on persistence.`;

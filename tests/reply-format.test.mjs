@@ -28,3 +28,28 @@ test("only one prose repair is allowed, with reasons and honest fallback", async
   assert.match(result, /格式/);
   assert.equal(await repairReplyFormat("谢谢你。", { request: "回我一句", rewrite: () => { throw Error("unneeded"); } }), "谢谢你。");
 });
+
+test("analysis quotes cannot stand in for the requested final draft", async () => {
+  const request = "根据记录评评理，最后给我一句能回的话。";
+  const reply = "你那句“总是迟到”没有足够依据。现在可以这样回：\n\n刚才那句“总是迟到”说重了，对不起。我们重新约个时间好吗？";
+  const checked = checkReplyFormat(reply, request);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.issues.some((issue) => /found 2/.test(issue)));
+  let calls = 0;
+  const fixed = await repairReplyFormat(reply, { request, rewrite: async ({ reply: rejected, issues }) => {
+    calls++;
+    assert.equal(rejected, reply);
+    assert.ok(issues.length);
+    return "这句话超出了记录的依据。回复：“刚才说重了，我们重新约个时间好吗？”";
+  } });
+  assert.equal(calls, 1);
+  assert.equal(checkReplyFormat(fixed, request).ok, true);
+  assert.equal(checkReplyFormat("对方说“还没结束”，不能据此认定对方拒绝。", request).ok, false);
+  assert.equal(checkReplyFormat("对方说“可以这样回：我不去”，这是转述。", request).ok, false);
+  assert.equal(checkReplyFormat("双方还没确认。\n“我们再定时间好吗？”", request).ok, true);
+  assert.equal(checkReplyFormat("双方还没确认。\n“我们再定时间好吗？”\n另一个引文是“拒绝”。", request).ok, false);
+  for (const [language, question, answer] of [
+    ["en", "What happened? Then draft just one sentence.", 'They said "later". Reply: I understand. Shall we reschedule?'],
+    ["es", "¿Qué pasó? Solo una frase.", 'Dijo "más tarde". Respuesta: Entiendo. ¿Cambiamos la hora?'],
+  ]) assert.equal(checkReplyFormat(answer, question, language).ok, false);
+});
