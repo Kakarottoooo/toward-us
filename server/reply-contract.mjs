@@ -62,9 +62,9 @@ function copyableDraft(text) {
   return null;
 }
 export const replyPartsSchema = { type: "object", additionalProperties: false, required: ["reply", "sendableDraft", "activityDescription"], properties: {
-  reply: { type: "string", description: "Analysis/facts only; empty for drafting-only requests." },
-  sendableDraft: { type: ["string", "null"], description: "Copyable message, no label/outer quotes; null if not requested." },
-  activityDescription: { type: ["string", "null"], description: "Natural activity description in the output language (Chinese for zh), grounded in the source activity name; null unless drafting an activity invitation. Use {{activityDescription}} in sendableDraft where this description belongs." },
+  reply: { type: "string", description: "Analysis only; empty for draft-only." },
+  sendableDraft: { type: ["string", "null"], description: "Copyable wording or null." },
+  activityDescription: { type: ["string", "null"], description: "Source activity in output language; null unless inviting." },
 } };
 
 export function renderReply(reply) {
@@ -141,11 +141,10 @@ const privateReplies = {
 export const privateBoundaryReply = (language, index = 0) => (privateReplies[language] || privateReplies.zh)[index % 3];
 export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
 
-export const replyContractInstructions = `Only requested content; respect sentence/line/character limits. When schema includes sendableDraft: drafts go only there (no labels/quotes), null if unrequested; reply holds only analysis, empty for draft-only requests. Mixed requests: at most two brief analysis sentences. No feelings, affection, promises or acceptance absent from the user's words. Describe foreign activities naturally in Chinese. For bookable activities or "don't book", state no booking was made. Raw sources outrank summaries; preserve speakers, claims and times; states are not outcomes. Updates inherit no unconfirmed old details. No saved/prepared/scheduled claims: the server reports writes; reminders need actions after lookup. No invented events or interrogation. Privacy: one neutral boundary, no access claims, private-chat hints or comments on persistence.
-Scope examples (not facts):
-Q: Which shelf now? Moved A to C. Good: "C." Bad: "C, formerly A, then corrected." Give only the requested value.
-Q: The printer works; one warm reply. Good: "Glad it worked!" Bad: "Glad it worked; remember to clean it." No unasked advice.
-Q: Thanks for helping me fix the printer; one warm reply. Good: "You're welcome, I'm glad it helped!" Bad: "The printer works." Receive gratitude rather than merely restating an outcome.
-Q: A coworker threatens to exclude me unless I lend my badge; help me set a boundary. Good: "I won't lend my badge; please stop pressuring me with exclusion." Bad: "I prefer to keep my badge." Name and firmly reject the pressure, without inventing affection or commitments.
-Q: Notifications came after our agreed start; ask for an improvement. Good: "Please let me know before our agreed start time if plans change." Bad: "Please tell me soon." Tie the request to an observable deadline from the source.
-Activity invitations: put a natural description in activityDescription in the output language, grounded in the activity name, and use {{activityDescription}} inside sendableDraft. The server inserts it before audit and display; do not rely on the foreign name alone.`;
+export const replyContractInstructions = `Only requested content; obey length/format. sendableDraft: copyable wording or null. reply: analysis only, empty for draft-only, <=2 sentences for mixed requests. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
+Examples (good / bad):
+Which shelf now, moved A to C? "C." / "C, formerly A."
+Printer fixed; thanks! "You're welcome, glad it helped!" / "Clean it regularly."
+Badge demanded under threat of exclusion: "I won't lend it; stop threatening exclusion." / "I prefer to keep it."
+Updates arrived after agreed start: "Tell me before our agreed start if plans change." / "Tell me soon."
+Invitations: translate activityDescription (Chinese for zh); insert {{activityDescription}} in sendableDraft.`;
