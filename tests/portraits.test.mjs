@@ -33,6 +33,8 @@ test("a person with enough notes gets a standing portrait and timeline, in conte
   await refreshPortraits({ store, mediator, userId: users[0].id });
   assert.equal(inputs.length, 1, "only subjects with enough notes are drawn");
   assert.match(inputs[0].instructions, /Lin/);
+  assert.match(inputs[0].instructions, /do not carry forward an old duration/);
+  assert.match(inputs[0].instructions, /Omitted details of the replacement are unknown/);
   assert.deepEqual(inputs[0].input.history, ["2025-02-14 第一次见面，聊到店关门"]);
   assert.ok(inputs[0].input.facts.some((fact) => fact.text === "对芒果过敏" && fact.saidOn === "2025-03-01"));
 

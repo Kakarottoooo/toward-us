@@ -35,7 +35,7 @@ export async function prefetchRecall(options, text) {
 }
 
 export function recallLookup(result, query) {
-  return { query, findings: result.findings, ...(result.sources.length ? { citationRule: "Use only exchanges answering the question. If none do, say no matching record; omit unrelated exchanges. For EVERY exchange used, append its EXACT [recall:...] tag to reply. The app hides the tag and renders a source button; without it the user cannot open the original. Copy the tag from findings, never invent one." } : {}) };
+  return { query, findings: result.findings, ...(result.sources.length ? { citationRule: "Use only exchanges answering the question. If none do, say no matching record; omit unrelated exchanges. When asked what was asked and answered, show the date, then separately quote the original question and answer verbatim instead of paraphrasing; if long, quote the relevant passage without changing its words. Put later changes under their own date, separate from the original quotation. Do not append a no-change statement unless asked about changes. For EVERY exchange used, append its EXACT [recall:...] tag to reply. The app hides the tag and renders a source button; without it the user cannot open the original. Copy the tag from findings, never invent one." } : {}) };
 }
 
 // Pair before ranking, including a turn split across two storage pages. Never attach the next question to an answer.

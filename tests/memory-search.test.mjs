@@ -105,8 +105,8 @@ test("an old detail is found in older pages and notes, with its day, scoped to a
 test("Pinky searches when it needs an old detail and answers with what it found", async (t) => {
   const { store, users, thread, said } = await setup(t);
   await thread(users[0].id, { earlier: [{ messages: [said("阿明道歉说以后每年都提前一周订好餐厅", "2025-03-12T10:00:00.000Z")] }] });
-  const contexts = [];
-  const mediator = { planAssistantTurn: async (context) => { contexts.push(context); return !context.lookups
+  const contexts = [], sourceChecks = [];
+  const mediator = { checkReplySources: async (input) => { sourceChecks.push(input); return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; }, planAssistantTurn: async (context) => { contexts.push(context); return !context.lookups
     ? { reply: "我找找。", actions: [{ kind: "memory_search", operation: "query", targetId: null, expectedVersion: null, query: "道歉 订餐厅", queryPeriod: "all", occurrence: null, fields: { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null } }] }
     : { reply: "2025 年 3 月 12 日你说过：他道歉说以后每年都提前一周订好餐厅。 " + context.lookups[0].findings.match(/\[recall:[^\]]+\]/)[0], actions: [] }; } };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id: req.headers["x-user"] || users[0].id } }; next(); });
@@ -120,6 +120,12 @@ test("Pinky searches when it needs an old detail and answers with what it found"
   assert.match(contexts[1].lookups[0].findings, /2025-03-12.*提前一周订好餐厅/);
   assert.match(reply.text, /2025 年 3 月 12 日/);
   assert.equal(reply.sources.length, 1);
+  assert.equal(sourceChecks.length, 1);
+  assert.match(sourceChecks[0].sources[0].text, /提前一周订好餐厅/);
+  assert.doesNotMatch(sourceChecks[0].reply, /recall:/);
+  await post(`/assistant/sessions/${session.id}/messages`, { text: "2025-03-12 那天我说了什么？", itemId: randomUUID() });
+  assert.equal(sourceChecks.length, 2, "prefetched recalls also reach the source check");
+  assert.match(sourceChecks[1].sources[0].text, /提前一周订好餐厅/);
   assert.doesNotMatch(reply.text, /recall:/);
   const source = reply.sources[0];
   const url = `http://127.0.0.1:${server.address().port}/api/assistant/sessions/${source.conversationId}/locate?messageId=${source.messageId}`;

@@ -1,5 +1,17 @@
 # Pinky 对标评测
 
+## 第四轮外部题入口（2026-11-11）
+
+`node scripts/parity-eval/run.mjs --cases-file scripts/parity-eval/examples.json --label round4-examples --concurrency 1 --budget-file work/task18/model-budget.json`
+
+JSON根对象为`{version:1,purpose:"examples"或"holdout",createdAt:"实际UTC创建时间",cases:[...]}`，完整占位示例见`examples.json`。题目沿用练习题的`id/layer/title/probe/expect/completion`；`history`追加虚构问答，`notes`追加本人笔记，`reminders`按`owner:me/partner`分别保留，`shared`按`speaker:me/partner,day,text`写入共同对话。`day`为相对天数，`paired`声明两个虚构参与者，`people`声明私人卡片名。`screenshot:{title,messages:[{speaker,time,text}]}`渲染成PNG，产品和两个对手均读同一图片，不给对手额外转写。所有资料仅在隔离本地账号中造数，不能指向dogfood或data目录。
+
+`writes:[{collection,mode:"created"或"updated",count,fields:{...}}]`在回答前后真实存储快照上检查：该集合新增/更新数和字段匹配数都必须等于count，重复写入也失败；字段用精确值，`$me/$partner`代表对应账号，`{date:N}`为题目UTC日期偏移，时间及时区须明确写出。支持reminders、memories、checkins、spaces、spaceItems、agreements。题目的expect/completion/writes只供评委或机器检查，不传给产品和对手。示例报告`excludedFromScores:true`且没有得分汇总；不得作为新题成绩。
+
+外部题与练习题共用真实HTTP、资料投影、原始答案归档和Codex先评的批量盲评；若复用对手，仍核对原始语料、可见资料和图片哈希。所有运行均启用120 Claude内部轮次/40 Codex调用守卫；同一任务各批必须传同一个budget-file。CLI超时/退出错误保留已读输出，结算num_turns；缺失则按整笔预留计入，不单独终止整轮。额度错误立即停止且不重试。
+
+本节覆盖下方旧门槛：每层对两个对手均须8/8；有争议不计不输。练习题和代码冻结后由Claude新建的当轮留出题都须满分，单次练习满分不代表产品达标。manifest记录外部文件哈希及声明的createdAt；创建时间必须由Claude的独立文件证据核对，不能信任自填字段。冻结提交与实际UTC冻结时间记入任务报告。
+
 只评测，不改产品行为。不需要 dogfood、真实账号、密钥或付费 API。必须在独立工作区运行；需要已经登录订阅的 `claude` 与 `codex` CLI，以及现有依赖。模型、图片、文件和存储调用均使用本机临时虚构账号；不发真实消息、不登录外部真实账号。
 
 ```powershell

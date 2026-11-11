@@ -15,6 +15,8 @@ import { refreshPortraits } from "../../server/portraits.mjs";
 import { tidyMemory } from "../../server/memory-tidy.mjs";
 import { FILLER } from "../memory-eval/cases.mjs";
 import { recordChecks } from "./evidence.mjs";
+import { fixtureValue, writeChecks } from "./external-cases.mjs";
+import { appendTogetherMessage } from "../../server/together-domain.mjs";
 import { agreementFlow } from "./agreement-flow.mjs";
 
 // Store snapshots include relationship-scoped raw records; apply the same per-principal projection as the API.
@@ -107,6 +109,20 @@ async function setupCase(item, withHistory) {
     const invitation = await call("/partner/invitations", {}, me.cookie);
     await call("/partner/accept", { code: invitation.result.pairing.invitation.code }, partner.cookie);
   }
+  for (const reminder of item.reminders || []) {
+    const owner = reminder.owner === "partner" ? partner : me;
+    await store.createRelationshipRecord("reminders", createRelationshipRecord({ relationshipId: null, userId: owner.user.id, ownerUserId: owner.user.id, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", title: reminder.title, dueAt: fixtureValue(reminder.dueAt, { at: Date.now() }), timezone: reminder.timezone, frequency: reminder.frequency, localTime: reminder.localTime || "12:00", channel: "web_push", scheduleVersion: 1, target: { kind: "reminders" } }));
+  }
+  if (item.shared?.length) {
+    const { relationship } = await store.getRelationshipContext(me.user.id);
+    for (const message of item.shared) await store.transaction(`relationship:${relationship.id}`, async (tx) => {
+      const userId = (message.speaker === "partner" ? partner : me).user.id;
+      const saved = await appendTogetherMessage(tx, { relationshipId: relationship.id, actorUserId: userId, source: "app", text: message.text });
+      await tx.updateRelationshipRecordForUser("togetherConversations", saved.conversation.id, userId, (draft) => {
+        draft.messages.find((row) => row.id === saved.message.id).createdAt = new Date(Date.now() + message.day * DAY).toISOString();
+      });
+    });
+  }
   const people = {};
   for (const name of item.people || []) people[name] = await store.transaction(`user:${me.user.id}`, (tx) => personFor(tx, me.user.id, name));
   const sessions = {};
@@ -138,6 +154,7 @@ async function setupCase(item, withHistory) {
   async function ask(setup, item, image) {
     const asker = item.probe.as === "partner" ? setup.partner : setup.me;
     const sessionId = await setup.open(item.probe.thread, asker);
+    const checkAt = Date.now();
     const before = await store.relationshipSnapshotForUser(asker.user.id);
     const beforeIds = new Set(Object.values(before).flatMap((value) => Array.isArray(value) ? value.map((record) => record.id) : []));
     const peerBefore = setup.partner ? projectSnapshot(await store.relationshipSnapshotForUser(setup.partner.user.id), setup.partner.user.id) : null;
@@ -227,9 +244,11 @@ async function setupCase(item, withHistory) {
     }
     // Explicit remember requests are extracted by the real background keeper after its 20-second debounce.
     // Observe that normal path; never manually force a post-answer extraction to make a case pass.
-    if (item.check?.kind === "memory") {
+    if (item.check?.kind === "memory" || item.writes?.some((spec) => spec.collection === "memories")) {
       const limit = Date.now() + 60_000;
-      while (Date.now() < limit && !((after.memories || []).some((entry) => /香菜/.test(entry.text || "")) && (after.memories || []).some((entry) => /花粉/.test(entry.text || "")))) {
+      const saved = () => item.writes ? writeChecks(item.writes, before, after, { me: setup.me.user.id, partner: setup.partner?.user.id, at: checkAt }).every((row) => row.ok)
+        : (after.memories || []).some((entry) => /香菜/.test(entry.text || "")) && (after.memories || []).some((entry) => /花粉/.test(entry.text || ""));
+      while (Date.now() < limit && !saved()) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         after = await store.relationshipSnapshotForUser(asker.user.id);
       }
@@ -241,7 +260,8 @@ async function setupCase(item, withHistory) {
     let completed = item.unsupported ? false : null;
     const peer = setup.partner ? projectSnapshot(await store.relationshipSnapshotForUser(setup.partner.user.id), setup.partner.user.id) : null;
     const checks = approvalFlow ? approvalFlow.checks : collection ? recordChecks(item, created, { userId: asker.user.id, partnerId: setup.partner?.user.id, personId: setup.people[item.probe.thread]?.id, peer, spaceItems: after.spaceItems }) : [];
-    if (collection) completed = checks.every((check) => check.ok);
+    if (item.writes) checks.push(...writeChecks(item.writes, before, after, { me: setup.me.user.id, partner: setup.partner?.user.id, at: checkAt }));
+    if (collection || item.writes) completed = checks.every((check) => check.ok);
     if (item.check?.kind === "sources") completed = rounds.every((round) => round.sources.length > 0 && round.sourceChecks.every((source) => source.ok));
     if (item.check?.kind === "privacy") completed = privacyChecks.every((check) => check.ok);
     if (item.id === "plan-private-share-boundary") {
@@ -270,6 +290,8 @@ export function visibleContext(item, at) {
   const history = item.channel === "shared" ? [] : (item.history || []).filter((line) => partner ? line.thread === "partner" : line.thread !== "partner" && (thread === "main" || line.thread === thread));
   const notes = partner || item.channel === "shared" ? [] : (item.notes || []).filter((note) => thread === "main" || note.about === "me" || note.about === thread);
   return { user: partner ? item.paired.partner : item.paired?.me || "小安", language: "zh", timezone: "Asia/Shanghai", now: new Date(at).toISOString(),
+    ...(item.reminders ? { reminders: item.channel === "shared" ? [] : item.reminders.filter((row) => row.owner === (partner ? "partner" : "me")).map(({ owner, ...row }) => ({ ...row, dueAt: fixtureValue(row.dueAt, { at }) })) } : {}),
+    ...(item.shared ? { shared: item.shared.map((line) => ({ speaker: line.speaker === "partner" ? item.paired.partner : item.paired.me, date: date(line.day), text: line.text })) } : {}),
     history: history.map((line) => ({ date: date(line.day), thread: line.thread, question: line.text, answer: line.reply ?? "嗯，我在听。" })),
     notes: notes.map((note) => ({ about: note.about, date: date(note.day), text: note.text.replace("{date}", date(note.day)) })) };
 }

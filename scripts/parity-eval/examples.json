@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "purpose": "examples",
+  "cases": [
+    {
+      "id": "example-only-screenshot", "layer": "interaction", "title": "占位示例一：资料与截图入口，不计成绩",
+      "paired": { "me": "小安", "partner": "示例伙伴" }, "people": ["Example"],
+      "history": [{ "thread": "main", "day": -2, "text": "这是占位演示，我们用蓝色纸。", "reply": "好，蓝色纸。" }],
+      "notes": [{ "about": "me", "category": "likes", "day": -2, "text": "喜欢蓝色" }],
+      "reminders": [
+        { "owner": "me", "title": "占位资料提醒", "dueAt": "2099-01-01T04:00:00.000Z", "timezone": "Asia/Shanghai", "frequency": "once" },
+        { "owner": "partner", "title": "PRIVATE_EXAMPLE", "dueAt": "2099-01-01T04:00:00.000Z", "timezone": "Asia/Shanghai", "frequency": "once" }
+      ],
+      "shared": [{ "speaker": "partner", "day": -1, "text": "占位共享消息：周末可以一起折纸。" }],
+      "modality": "screenshot",
+      "screenshot": { "title": "Chat with Example", "messages": [{ "speaker": "Example", "time": "12:00", "text": "The paper is blue." }, { "speaker": "Me", "time": "12:01", "text": "Thank you." }] },
+      "probe": { "thread": "main", "text": "占位示例，只回答截图里的纸是什么颜色，不要做其他事情。" },
+      "expect": { "must": ["回答蓝色"], "mustNot": ["泄露伴侣私人提醒"] },
+      "completion": "真实上传PNG并回答纸是蓝色；这是入口示例，不计成绩。",
+      "writes": [{ "collection": "reminders", "count": 0, "fields": {} }]
+    },
+    {
+      "id": "example-only-reminder", "layer": "interaction", "title": "占位示例二：实际写入入口，不计成绩",
+      "probe": { "thread": "main", "text": "占位示例：明天上午九点提醒我，标题就叫占位提醒。" },
+      "expect": { "must": ["确认明天上午九点的占位提醒"], "mustNot": ["说已给别人发消息"] },
+      "completion": "真实存储新增一条本人私密提醒，标题、日期、时区和时间正确；不计成绩。",
+      "writes": [{ "collection": "reminders", "count": 1, "fields": { "title": "占位提醒", "dueAt": "{date:1}T01:00:00.000Z", "timezone": "Asia/Shanghai", "frequency": "once", "visibility": "private", "ownerUserId": "$me" } }]
+    }
+  ]
+}

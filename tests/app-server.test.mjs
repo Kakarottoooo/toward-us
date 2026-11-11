@@ -72,8 +72,8 @@ test("screenshot advice grounds the verdict in observations and unknowns in one 
     globalThis.fetch = async (_url, init) => {
       calls += 1;
       const schema = JSON.parse(init.body).text.format.schema;
-      assert.deepEqual(schema.required, ["observations", "uncertainties", "reply"]);
-      const answer = { observations: ["Blair reports an earlier promise."], uncertainties: ["The original promise is not visible."], reply: "I cannot verify that promise from this screenshot." };
+      assert.deepEqual(schema.required, ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"]);
+      const answer = { observations: ["Blair reports an earlier promise."], uncertainties: ["The original promise is not visible."], reply: "I cannot verify that promise from this screenshot.", sendableDraft: null, activityDescription: null };
       return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(answer) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
     };
     const answer = await createMediator({ apiKey: "test-key" }).answerScreenshot({ question: "Who's right?", transcript: "[partner] Blair: You promised yesterday." }, "en");

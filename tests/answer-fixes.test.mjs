@@ -38,7 +38,7 @@ test("a concrete apology request gets ordinary private wording without invented 
     assert.match(prompt, /give a copyable draft now/);
     assert.match(prompt, /without excuses, therapist language, assumed feelings or setting/);
     assert.match(prompt, /"Don't send" means private wording only, actions:\[\]/);
-    assert.match(prompt, /Put the COMPLETE apology itself inside reply/);
+    assert.match(prompt, /Put the COMPLETE apology itself inside sendableDraft/);
     assert.match(prompt, /Do not demand forgiveness or add an interview question/);
     assert.match(prompt, /private draft are not an agreed commitment/);
   }
@@ -76,7 +76,7 @@ test("love letters use personal private drafts and require an explicit schedulin
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /writing or revising means private wording, actions:\[\], even with an anniversary date/);
-    assert.match(prompt, /Put the COMPLETE letter in reply using only visible facts and the user's voice and length/);
+    assert.match(prompt, /Put the COMPLETE letter in sendableDraft using only visible facts and the user's voice and length/);
     assert.match(prompt, /Omit facts with unclear actors; invent no memories, pet names or vows/);
     assert.match(prompt, /never splice catchphrases/);
     assert.match(prompt, /No preamble, feature offer, interview or scheduling question when details suffice/);
@@ -112,14 +112,14 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
 const fields = (patch = {}) => ({ title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...patch });
 const action = (patch = {}) => ({ kind: "checkin", operation: "query", targetId: null, expectedVersion: null, fields: fields(), query: "妈妈", queryPeriod: "all", occurrence: null, ...patch });
 
-async function setup(t, plan) {
+async function setup(t, plan, rewriteReply, checkReplySources = async () => ({ claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] })) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "answers-"));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const store = await createFileStore(join(directory, "store.json"));
   const id = randomUUID();
   await store.createUser({ id, email: `${id}@example.invalid`, name: "Ziwei", passwordHash: "test", createdAt: new Date().toISOString() });
-  const mediator = { planAssistantTurn: async () => plan() };
+  const mediator = { planAssistantTurn: async () => plan(), rewriteReply, checkReplySources };
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id } }; next(); });
   app.use("/api", createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
@@ -127,7 +127,11 @@ async function setup(t, plan) {
   t.after(() => new Promise((r) => server.close(r)));
   const request = async (path, body) => (await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
   const session = (await request("/assistant/sessions", { language: "zh", timezone: "UTC" })).session;
-  return { reminders: () => createReminderService({ store }).listReminders(id), say: async (text) => (await request(`/assistant/sessions/${session.id}/messages`, { text, itemId: randomUUID() })).session.messages.at(-1) };
+  return { reminders: () => createReminderService({ store }).listReminders(id), say: async (text, route = "messages") => {
+    const response = await request(`/assistant/sessions/${session.id}/${route}`, { text, itemId: randomUUID() });
+    assert.ok(response.session, JSON.stringify(response));
+    return response.session.messages.at(-1);
+  } };
 }
 
 test("a contradictory plan is repaired once before any associated write can execute", async (t) => {
@@ -149,10 +153,42 @@ test("a reply cannot claim a memory write when this turn executed none", async (
   assert.equal((await say("我该怎么说？")).text, "可以先说自己的感受。");
 });
 
+test("an explicit voice transcript cannot skip the source check through planner classification", async (t) => {
+  let checks = 0;
+  const { say } = await setup(t, () => ({ reply: "最后说的是四点。", sourceBased: false, actions: [] }), undefined, async ({ sources }) => {
+    checks++;
+    assert.equal(sources[0].kind, "transcript");
+    assert.match(sources[0].text, /四点/);
+    return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
+  });
+  assert.equal((await say("语音转写：三点，改成四点。最后是几点？")).text, "最后说的是四点。");
+  assert.equal(checks, 1);
+});
+
 test("an explicit single-sentence answer has no unsolicited closing", async (t) => {
-  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }));
+  let repairs = 0;
+  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }), async ({ issues }) => { repairs++; assert.ok(issues.length); return "我也替你开心。"; });
   assert.equal((await say("谢谢，今天聊完好多了，只回我一句就好。")).text, "我也替你开心。");
   assert.equal((await say("谢谢，就像手机聊天那样回我一句，不要列清单。")).text, "我也替你开心。");
+  assert.equal(repairs, 2);
+});
+
+test("the transcript endpoint checks the corrected source before writing exactly one reminder", async (t) => {
+  let checks = 0;
+  const due = `${new Date(Date.now() + 86400_000).toISOString().slice(0, 10)}T16:00`;
+  const { say, reminders } = await setup(t, () => ({ reply: "生日蛋糕按最后说的下午四点。", sourceBased: false,
+    actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "买生日蛋糕", localDateTime: due, timezone: "UTC", frequency: "once" }) })],
+  }), undefined, async ({ sources, checkScope }) => {
+    checks++; assert.equal((await reminders()).length, 0, "check precedes the action");
+    assert.deepEqual(sources, [{ kind: "transcript", text: "明天下午三点，啊不对，四点提醒我买生日蛋糕。" }]);
+    assert.equal(checkScope, false);
+    return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
+  });
+  await say("明天下午三点，啊不对，四点提醒我买生日蛋糕。", "transcripts");
+  const saved = await reminders();
+  assert.equal(checks, 1); assert.equal(saved.length, 1);
+  assert.equal(saved[0].dueAt, `${due}:00.000Z`);
+  assert.equal(saved[0].visibility, "private");
 });
 
 test("a requested draft sentence does not truncate the accompanying file analysis", async (t) => {
@@ -217,21 +253,22 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   const { proseAsReply } = await import("../server/claude-cli-client.mjs");
   const { assistantTurnSchema } = await import("../server/assistant-agent.mjs");
   const prose = "两年异地真的不容易。\n\n先各自写下首选方案和底线，再坐下来对照。";
-  assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, actions: [] });
-  assert.deepEqual(proseAsReply(`${prose}\n<invoke name="x">\n</invoke>\n</function_calls>`, assistantTurnSchema), { reply: prose, actions: [] });
-  assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', actions: [] }, "nonempty quoted markup is preserved");
+  assert.deepEqual(proseAsReply(prose, assistantTurnSchema), { reply: prose, sendableDraft: null, activityDescription: null, actions: [] });
+  assert.deepEqual(proseAsReply(`${prose}\n<invoke name="x">\n</invoke>\n</function_calls>`, assistantTurnSchema), { reply: prose, sendableDraft: null, activityDescription: null, actions: [] });
+  assert.deepEqual(proseAsReply('Example: <invoke name="x">content</invoke></function_calls>', assistantTurnSchema), { reply: 'Example: <invoke name="x">content</invoke></function_calls>', sendableDraft: null, activityDescription: null, actions: [] }, "nonempty quoted markup is preserved");
   const doubled = `${prose}\n\n<invoke name="x">\n</invoke>\n</invoke>\n\n\n<invoke name="x">\n</invoke>\n</invoke>`;
-  assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, actions: [] }, "use-case test 11-08: repeated empty wrappers");
+  assert.deepEqual(proseAsReply(doubled, assistantTurnSchema), { reply: prose, sendableDraft: null, activityDescription: null, actions: [] }, "use-case test 11-08: repeated empty wrappers");
   const called = `${prose}\n<invoke name="Bash">\n<parameter name="command">echo done</parameter>\n</invoke>`;
-  assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 6: a written-out tool call with arguments");
-  assert.deepEqual(proseAsReply(`${called}\n_ctx`, assistantTurnSchema), { reply: prose, actions: [] }, "use-case round 8: stray text after the call");
+  assert.deepEqual(proseAsReply(called, assistantTurnSchema), { reply: prose, sendableDraft: null, activityDescription: null, actions: [] }, "use-case round 6: a written-out tool call with arguments");
+  assert.deepEqual(proseAsReply(`${called}\n_ctx`, assistantTurnSchema), { reply: prose, sendableDraft: null, activityDescription: null, actions: [] }, "use-case round 8: stray text after the call");
   const { answerFromText } = await import("../server/claude-cli-client.mjs");
   const scraper = '可以这样写：\nheaders = {"User-Agent": "Mozilla/5.0"}\nrequests.get(url, headers=headers)';
   assert.equal(answerFromText(scraper, assistantTurnSchema)?.["User-Agent"], undefined, "use-case round 8: a JSON object from code in the prose is not the turn");
   assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema), { reply: "好", actions: [] });
   assert.equal(answerFromText("约定起草好了。", assistantTurnSchema, { allowProseReply: false }), null, "a required structured turn cannot silently lose its actions");
   assert.equal(answerFromText('{"reply":"起草好了"}', assistantTurnSchema, { allowProseReply: false }), null, "incomplete JSON also needs the strict fallback");
-  assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema, { allowProseReply: false }), { reply: "好", actions: [] });
+  assert.equal(answerFromText('{"reply":"好","sendableDraft":null,"actions":[]}', assistantTurnSchema, { allowProseReply: false }), null, "strict output requires the activity description slot too");
+  assert.deepEqual(answerFromText('{"reply":"好","sendableDraft":null,"activityDescription":null,"actions":[]}', assistantTurnSchema, { allowProseReply: false }), { reply: "好", sendableDraft: null, activityDescription: null, actions: [] });
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");

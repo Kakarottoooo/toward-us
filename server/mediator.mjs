@@ -5,17 +5,18 @@ import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
 import { assistantInstructions, assistantTurnSchema, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
 import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
-import { replyContractInstructions } from "./reply-contract.mjs";
+import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mjs";
+import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { usesCheaperModel } from "./ai-budget.mjs";
 
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
 const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
-const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply"], properties: {
+const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"], properties: {
   observations: { type: "array", items: { type: "string" }, maxItems: 3 },
   uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
-  reply: { type: "string" },
+  ...replyPartsSchema.properties,
 } };
 
 const analysisSchema = {
@@ -122,6 +123,22 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       }, INTERACTIVE);
       return JSON.parse(response.output_text);
     },
+    async checkReplySources(context, language = "zh") {
+      const response = await cheap.responses.create({
+        model: cheapModel, store: false, max_output_tokens: 2200,
+        text: { format: { type: "json_schema", name: "reply_source_check", strict: true, schema: sourceCheckSchema } },
+        input: [{ role: "developer", content: `${sourceCheckInstructions}\nThe reply language is ${language}.` }, { role: "user", content: JSON.stringify(context) }],
+      }, { ...INTERACTIVE, allowSchemaRetry: false, allowProseReply: false });
+      return JSON.parse(response.output_text);
+    },
+    async rewriteReply(context, language = "zh") {
+      const response = await client.responses.create({
+        model, store: false, max_output_tokens: 1400,
+        text: { format: { type: "json_schema", name: "reply_format_repair", strict: true, schema: replyPartsSchema } },
+        input: [{ role: "developer", content: `Rewrite only the reply in ${language}. Fix the supplied source, scope, missing-content and format issues once, preserving every requested deliverable and the supplied evidence. Remove unrequested extras identified by the check. Original source text outranks the rejected reply and summaries. Do not add facts or perform actions. ${replyContractInstructions}` }, { role: "user", content: JSON.stringify(context) }],
+      }, { ...INTERACTIVE, allowSchemaRetry: false, allowProseReply: false });
+      return JSON.parse(response.output_text);
+    },
     async planAssistantTurn(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
       // With images, require an explicit routing decision even when the planner writes actions:[]. Real-model
@@ -132,14 +149,17 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         if (screenshot) return screenshot;
       }
       const checkedPlan = Boolean(context.constraintErrors) || requiresPlanConstraints(context);
-      const baseSchema = checkedPlan ? { ...assistantTurnSchema, required: [...assistantTurnSchema.required, "planConstraints"], properties: { ...assistantTurnSchema.properties, planConstraints: planConstraintsSchema } } : assistantTurnSchema;
+      const privateSchema = { ...assistantTurnSchema, required: [...assistantTurnSchema.required, "privateBoundary"], properties: { ...assistantTurnSchema.properties, privateBoundary: { type: "boolean" } } };
+      const hasSources = Boolean(context.screenshotConversation?.transcript || context.sourceTranscript || context.lookups?.some((row) => row.query?.startsWith("chat history")));
+      const sourceSchema = hasSources ? { ...privateSchema, required: [...privateSchema.required, "sourceBased"], properties: { ...privateSchema.properties, sourceBased: { type: "boolean", description: "True whenever the answer or action uses supplied image/file/chat/voice transcript facts, including corrections and reminder times. False only for an unrelated conversation, greeting or acknowledgment when an old import remains in context; never false just because the answer performs an action." } } } : privateSchema;
+      const baseSchema = checkedPlan ? { ...sourceSchema, required: [...sourceSchema.required, "planConstraints"], properties: { ...sourceSchema.properties, planConstraints: planConstraintsSchema } } : sourceSchema;
       const schema = withPhotos ? { ...baseSchema, required: [...baseSchema.required, "readChatScreenshots"], properties: { ...baseSchema.properties, readChatScreenshots: { type: "boolean" } } } : baseSchema;
       const instructions = assistantInstructions(language) + (requiresPlanDelivery(context) ? "\n" + planDeliveryInstructions : "") + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
       const response = await client.responses.create({
         model, store: false, max_output_tokens: checkedPlan ? 2400 : 1400,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
         input: [{ role: "developer", content: instructions }, { role: "user", content: JSON.stringify(context) }],
-      }, { ...INTERACTIVE, allowProseReply: !checkedPlan });
+      }, { ...INTERACTIVE, allowProseReply: false });
       const { readChatScreenshots, ...plan } = JSON.parse(response.output_text);
       if (withPhotos && typeof readChatScreenshots !== "boolean") throw new Error("The assistant did not decide how to read the attachments.");
       if (withPhotos && readChatScreenshots === true && Array.isArray(plan.actions) && !plan.actions.some((action) => action.kind === "chat_import")) {

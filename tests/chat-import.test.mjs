@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import express from "express";
@@ -17,7 +17,7 @@ const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: nu
 const whatsapp = ["[1/2/24, 9:00:00 PM] Alex: are you coming home soon", "[1/2/24, 9:20:00 PM] Blair: running late, sorry", "[1/2/24, 9:21:00 PM] Alex: you always say that", "[1/3/24, 8:00:00 AM] Blair: I'm sorry about last night", "[1/3/24, 8:05:00 AM] Alex: thank you, I love you"].join("\n");
 const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "each on a laptop, episode 12" }], message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, beforeStructured = async () => {} } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
   const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
@@ -27,10 +27,12 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: people[0].id, role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: people[0].id, expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, people[1].id, new Date().toISOString());
-  const calls = { planner: [], shared: [], structured: [], screenshots: [] };
+  const calls = { planner: [], shared: [], structured: [], screenshots: [], rewrites: [], sourceChecks: [] };
   const mediator = {
     planAssistantTurn: async (context) => { calls.planner.push(context); return planner(context); },
     answerScreenshot: async (context) => { calls.planner.push(context); return planner(context); },
+    checkReplySources: async (context) => { calls.sourceChecks.push(context); return sourceCheck(context); },
+    rewriteReply: async (context) => { calls.rewrites.push(context); if (!rewrite) throw new Error("Unexpected reply repair"); return rewrite(context); },
     continueTogether: async (context) => { calls.shared.push(context); return shared(context); },
     structured: async ({ name, input }) => { calls.structured.push({ name, input }); await beforeStructured(name); return name === "chat_history_part" ? { episodes: [{ date: "2024-01-02", kind: "conflict", title: "Late again", summary: "Blair was late.", speaker: "Alex", quote: "you always say that" }], themes: ["lateness"], tone: "tense" } : report; },
     readScreenshots: async (context) => { calls.screenshots.push(context); return { messages: typeof screenshots === "function" ? screenshots() : screenshots, advice: screenshotAdvice }; },
@@ -87,6 +89,8 @@ test("screenshot advice reads the actual exchange, answers the original question
   assert.ok(!JSON.stringify(session).includes("Internal grounding only"));
   assert.ok(!JSON.stringify(session).includes("Internal unknowns only"));
   assert.equal(f.calls.screenshots.length, 1);
+  assert.equal(f.calls.sourceChecks.length, 1);
+  assert.match(f.calls.sourceChecks[0].sources[0].text, /I waited forty minutes/);
   const context = f.calls.planner.find((call) => call.transcript);
   assert.equal(context.question, question);
   assert.match(context.transcript, /\[partner\] Blair: I waited forty minutes/);
@@ -198,6 +202,7 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   const f = await fixture(t, {
     screenshots: [{ mine: false, name: "Blair", text: "I waited.", time: null }, { mine: true, name: null, text: "Sorry.", time: null }],
     screenshotAdvice: { observations: [], uncertainties: [], reply: "I'm sorry I kept you waiting. I saved this on Blair's card. You can try a warmer tone." },
+    rewrite: () => "I'm sorry I kept you waiting.",
     planner: () => ({ reply: "Reading.", actions: [action("chat_import", "create")] }),
   });
   const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
@@ -213,6 +218,75 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   assert.ok(!session.messages.some((message) => /saved this|warmer tone/.test(message.text)));
   assert.ok(!session.messages.some((message) => message.text === "Reading."), "finished answer replaces its pending receipt");
   assert.equal(session.messages.filter((message) => message.role === "assistant").length, 1);
+  assert.equal(f.calls.rewrites.length, 1);
+  assert.match(f.calls.rewrites[0].issues.join(" "), /Expected 1 sentence/);
+  assert.equal(f.calls.rewrites[0].request, "Give me only one sentence to apologize.");
+  assert.equal(JSON.parse(f.calls.rewrites[0].sources[0].text)[0].text, "I waited.");
+});
+
+test("captured mixed screenshot reply reaches repair rather than passing on an analysis quotation", async (t) => {
+  const captured = JSON.parse(await readFile(new URL("./fixtures/reply-format-replay.json", import.meta.url), "utf8"));
+  const revised = "对方说明了下班时间并提出替代时间，截图不足以支持一贯如此的指责。回复：“刚才说重了，对不起，我们再商量一下吃饭时间好吗？”";
+  const f = await fixture(t, {
+    screenshots: [{ mine: false, name: "Lily", text: "I finish at 8. How about 8:30?", time: null }, { mine: true, name: null, text: "You always choose work over me.", time: null }],
+    screenshotAdvice: { observations: [], uncertainties: [], reply: captured.answer },
+    rewrite: (context) => { assert.equal(context.reply, captured.answer); return revised; },
+    planner: () => ({ reply: "Reading.", actions: [action("chat_import", "create")] }),
+  });
+  const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: captured.question, itemId: randomUUID(), photoIds: [photo.id] });
+  let session;
+  for (let index = 0; index < 100; index++) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === revised)) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(f.calls.rewrites.length, 1);
+  assert.match(f.calls.rewrites[0].issues.join(" "), /found 2/);
+  assert.equal(session.messages.filter((message) => message.role === "assistant").length, 1);
+  assert.equal(session.messages.at(-1).text, revised);
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}`, "GET", null, f.people[1].id)).status, 404);
+  await f.ready((await f.request("/imports")).body.imports[0].id);
+});
+
+test("import answers check original text, while an unrelated turn with the same stored import skips it", async (t) => {
+  const original = "Blair canceled the meeting.";
+  const revised = "Blair said they were running late, not that the meeting was canceled.";
+  const f = await fixture(t, {
+    planner: (context) => context.messages.at(-1).text === "Thanks" ? { reply: "You're welcome.", sourceBased: false, actions: [] } : { reply: original, sourceBased: true, actions: [] },
+    sourceCheck: ({ reply, sources }) => { assert.match(sources[0].text, /running late/); return { claims: reply === original ? [{ claim: "canceled", source: "running late, sorry", supported: false, issue: "Do not convert lateness into cancellation." }] : [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; },
+    rewrite: ({ sources, issues }) => { assert.match(sources[0].text, /running late/); assert.match(issues.join(" "), /cancellation/); return revised; },
+  });
+  const uploaded = await f.upload(whatsapp, "chat.txt", f.people[0].id, f.session.id);
+  const id = uploaded.body.import.id;
+  await f.request(`/imports/${id}/people`, "POST", { me: "Alex", partner: "Blair" });
+  await f.ready(id);
+  const before = f.calls.sourceChecks.length;
+  const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What happened?", itemId: randomUUID() });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.session.messages.at(-1).text, revised);
+  assert.equal(f.calls.sourceChecks.length, before + 2);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Thanks", itemId: randomUUID() });
+  assert.equal(f.calls.sourceChecks.length, before + 2);
+});
+
+test("a current chat search cannot skip checking its original through a false source flag", async (t) => {
+  let importId;
+  const f = await fixture(t, {
+    planner: context => context.lookups?.length
+      ? { reply: "Blair was running late.", sourceBased: false, actions: [] }
+      : { reply: "Let me check.", actions: [action("chat_search", "query", { targetId: importId, query: "running late" })] },
+  });
+  const uploaded = await f.upload(whatsapp, "chat.txt", f.people[0].id, f.session.id);
+  importId = uploaded.body.import.id;
+  await f.request(`/imports/${uploaded.body.import.id}/people`, "POST", { me: "Alex", partner: "Blair" });
+  await f.ready(uploaded.body.import.id);
+  const before = f.calls.sourceChecks.length;
+  const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Find the original conversation about running late.", itemId: randomUUID() });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(f.calls.sourceChecks.length, before + 1);
+  assert.ok(f.calls.sourceChecks.at(-1).sources.some(source => source.kind === "import_search" && source.text.includes("running late")));
 });
 
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
@@ -260,7 +334,7 @@ test("pasted-chat questions read complete lines before the history report, only 
   const f = await fixture(t, { beforeStructured: async () => held, planner: () => ({ reply: "Private answer.", actions: [] }) });
   t.after(() => release());
   const lastWords = "I only told you at seven; you had already waited an hour.";
-  const paste = `Alex: Dinner at six.\nBlair: I'll be there.\nAlex: ${"Work updates. ".repeat(100)}${lastWords}\nBlair: I needed you to tell me before six.`;
+  const paste = `[2026-10-01 17:00] Alex: Dinner at six.\n[2026-10-01 17:01] Blair: I'll be there.\n[2026-10-01 19:00] Alex: ${"Work updates. ".repeat(100)}${lastWords}\n[2026-10-01 19:45] Blair: I needed you to tell me before six.`;
   const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "content-type": "text/plain" }, body: paste });
   assert.equal(response.status, 201);
   const imported = (await response.json()).import;
@@ -269,10 +343,13 @@ test("pasted-chat questions read complete lines before the history report, only 
   await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: question, itemId: randomUUID() });
   const context = f.calls.planner.at(-1).screenshotConversation;
   assert.equal(context?.status, "ready");
-  assert.match(context.transcript, /\[you\] Alex: Dinner at six/);
+  assert.match(context.transcript, /\[you\] 2026-10-01 17:00:00 Alex: Dinner at six/);
   assert.ok(context.transcript.includes(lastWords), "a long individual line must not lose its decisive ending");
-  assert.match(context.transcript, /\[partner\] Blair: I needed/);
+  assert.match(context.transcript, /\[partner\] 2026-10-01 19:45:00 Blair: I needed/);
   assert.equal(context.truncated, false);
+  assert.match(context.transcript, /2026-10-01 19:45/);
+  assert.doesNotMatch(context.transcript, /T19:45.*Z/);
+  assert.ok(f.calls.sourceChecks.some((input) => input.sources.some((source) => source.text.includes("2026-10-01 19:45"))));
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /original is readable NOW/);

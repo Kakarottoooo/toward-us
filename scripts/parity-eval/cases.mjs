@@ -4,11 +4,11 @@
 import { cases as memoryCases } from "../memory-eval/cases.mjs";
 
 export const layers = {
-  orchestration: { name: "调度", threshold: 0.8 },
-  tools: { name: "工具", threshold: 0.8 },
-  environment: { name: "执行环境", threshold: 0.8 },
-  memory: { name: "记忆", threshold: 0.9 },
-  interaction: { name: "交互", threshold: 0.8 },
+  orchestration: { name: "调度", threshold: 1 },
+  tools: { name: "工具", threshold: 1 },
+  environment: { name: "执行环境", threshold: 1 },
+  memory: { name: "记忆", threshold: 1 },
+  interaction: { name: "交互", threshold: 1 },
 };
 
 const pair = { me: "小安", partner: "小闻" };

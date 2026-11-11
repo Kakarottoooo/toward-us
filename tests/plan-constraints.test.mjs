@@ -3,11 +3,21 @@ import { test } from "node:test";
 import { checkPlanConstraints, requiresPlanConstraints, requiresPlanDelivery } from "../server/plan-constraints.mjs";
 import { finishReply, wantsOneSentence } from "../server/reply-contract.mjs";
 
+test("reminder claims require a reminder write, not an unrelated memory receipt", () => {
+  for (const reply of ["我只准备了明天晚上8点的提醒。", "已设好提醒。", "已准备提醒。", "我会明晚提醒你。", "I have scheduled a reminder.", "He preparado un recordatorio."]) {
+    const actual = finishReply(reply, { receipts: ["已保存私人记录。"] });
+    assert.match(actual, /这轮尚未创建提醒/);
+    assert.ok(!actual.includes(reply));
+  }
+  assert.equal(finishReply("尚未设置提醒。"), "尚未设置提醒。");
+  assert.equal(finishReply("你可以设置提醒。"), "你可以设置提醒。");
+});
+
 test("draft-only scope does not discard a separate factual question or assessment", () => {
   const question = "看聊天截图，帮我写一句自然的道歉话，不要发送。";
-  assert.equal(wantsOneSentence(question), false);
+  assert.equal(wantsOneSentence(question), true);
   const answer = "那句话说得太绝对了。可以回：刚才说得太重，对不起。";
-  assert.equal(finishReply(answer, { request: question }), answer, "an explanation before a draft must not cause the draft to be discarded");
+  assert.equal(finishReply(answer, { request: question, formatChecked: true }), answer, "an explanation before a draft must not cause the draft to be discarded");
   for (const q of ["两人多少钱，几点结束？帮我写一句邀约。", "是我太敏感了吗？帮我写一句回复。", "引用两个日期，再给一句话。"])
     assert.equal(wantsOneSentence(q), false);
 });

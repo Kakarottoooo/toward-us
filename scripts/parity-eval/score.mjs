@@ -14,7 +14,7 @@ export function blindPair(item, pinky, rival, judge, seed) {
   // Remove provider names from prose, but preserve the actual substance. Do not send CLI usage or internal paths.
   const mask = (value) => JSON.parse(JSON.stringify(value).replace(/Pinky|Claude|ChatGPT|Codex|OpenAI|Anthropic/gi, "助手"));
   const view = (entry) => mask({ answer: entry.answer || "" });
-  return { swap, input: mask({ question: item.question, records: item.visible, must: item.expect.must, mustNot: item.expect.mustNot || [],
+  return { swap, input: mask({ question: item.question, records: item.visible, must: item.expect.must, mustNot: item.expect.mustNot || [], requestedCompletion: item.completion,
     completion: "只判断答案内容是否满足 must 并直接可用。不要要求提供数据库或图片读取证明，不要推断真实操作成败；这些由独立机器检查记录。确认了正确的提醒事项和时间即可满足内容标准，是否真正创建由机器另查。",
     A: view(swap ? rival : pinky), B: view(swap ? pinky : rival) }) };
 }
@@ -67,7 +67,7 @@ export function summarize(results, layers) {
 export function markdown(report, previous = null) {
   const percent = (value) => value == null ? "未知" : `${(value * 100).toFixed(1)}%`;
   const lines = ["# Pinky 五层对标基线", "", `运行：${report.label}；UTC：${report.startedAt}；源代码：${report.commit}；场景哈希：${report.caseHash}`, "",
-    "对手为 Claude CLI 和 Codex CLI（OpenAI 通用代理，非 ChatGPT 网页）。资料仅来自提问者可见的虚构历史；图片使用同一文件。双评委各自随机 A/B 顺序；两位都判输记为输；只有一位判输记有争议，不进入不输分子。调用或评委失败计为待定，保留在分母，不能充当不输。每层必须至少 8 题且没有待定才能宣称达到相对得分线。相对不输不等于任务完成或产品整体对标达成。", "",
+    "对手为 Claude CLI 和 Codex CLI（OpenAI 通用代理，非 ChatGPT 网页）。资料仅来自提问者可见的虚构历史；图片使用同一文件。双评委各自随机 A/B 顺序；两位都判输记为输；只有一位判输记有争议，不进入不输分子。调用或评委失败计为待定，保留在分母，不能充当不输。每层必须至少 8 题且没有待定才能宣称达到练习题得分线；仍须同轮冻结后新题也满分。相对不输不等于任务完成或产品整体对标达成。", "",
     "| 层 | 题数 | 对 Claude 不输 | 对 Codex 不输 | 双对手分歧数 | 待定比较 | 完成/未知 | 达标线 | 得分线 |", "|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ...Object.values(report.summary).map((row) => `| ${row.name} | ${row.count} | ${row.comparisons.claude.notLose}/${row.count} (${percent(row.comparisons.claude.rate)}) | ${row.comparisons.codex.notLose}/${row.count} (${percent(row.comparisons.codex.rate)}) | ${row.comparisons.claude.disagreement + row.comparisons.codex.disagreement} | ${row.comparisons.claude.pending + row.comparisons.codex.pending} | ${row.completed}/${row.completionUnknown} | ${percent(row.target)} | ${row.reached ? "达到" : "未达到/未证实"} |`), "",
     "完成数：写操作以本地临时存储及字段校验为准；回答型题要求四次判决都认可完成；隐私任一重复泄露即失败。云端电脑缺失记未完成。图片/文件导入和转写后的请求不代表真实手机 UI 或 ASR 验收。", "",
