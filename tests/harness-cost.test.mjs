@@ -18,11 +18,12 @@ test("model budget reserves concurrent internal turns and reconciles CLI num_tur
   assert.equal(dispatched, 1);
 });
 
-test("unknown metadata, quota errors and Codex exhaustion stop subsequent requests", () => {
+test("missing metadata is charged without stopping; quota and exhausted budgets stop", () => {
   const unknown = createModelCallBudget();
-  assert.throws(() => unknown.reserve("claude", 6).finish("bad output"), /num_turns missing/);
+  unknown.reserve("claude", 6).finish("bad output");
   assert.equal(unknown.state.claudeTurns, 6);
-  assert.throws(() => unknown.reserve("claude"), /num_turns missing/);
+  unknown.reserve("claude").finish('{"num_turns":1}');
+  assert.equal(unknown.state.claudeTurns, 7);
   const quota = createModelCallBudget();
   assert.throws(() => quota.reserve("claude").finish(JSON.stringify({ num_turns: 1, result: "You've hit your usage limit" })), /quota error/);
   assert.throws(() => quota.reserve("codex"), /quota error/);

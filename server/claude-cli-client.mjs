@@ -1,10 +1,10 @@
-import { spawn } from "node:child_process";
+import { runCliProcess } from "./cli-process.mjs";
 import { mkdirSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { budgetedModelCall } from "./model-call-budget.mjs";
+import { budgetedModelCall, claudeResult } from "./model-call-budget.mjs";
 
 // Local dogfooding only: answers the OpenAI `responses.create` text calls through the `claude` CLI signed in with the
 // founder's Claude subscription. It never runs tools, keeps no session, and loads no user settings, hooks or MCP
@@ -120,7 +120,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
       // Searching takes longer than a plain reply, and the person is still waiting for it.
       const stdout = await withSystemFile(cwd, system, (file) => run(command, [...base, "--tools", "WebSearch", "--allowedTools", "WebSearch", ...file], String(query).slice(0, 300), cwd, 60_000));
       let result;
-      try { result = JSON.parse(stdout); } catch { throw new Error("claude CLI lookup returned non-JSON output"); }
+      try { result = claudeResult(stdout); } catch { throw new Error("claude CLI lookup returned non-JSON output"); }
       if (result.is_error) throw new Error(`claude CLI lookup error: ${String(result.result || "unknown").slice(0, 200)}`);
       return String(result.result || "").slice(0, 3000);
     },
@@ -129,7 +129,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
       const directories = [...new Set(paths.map((path) => dirname(path)))];
       const stdout = await withSystemFile(cwd, system, (file) => run(command, [...base, "--tools", "Read", "--allowedTools", "Read", ...directories.flatMap((directory) => ["--add-dir", directory]), ...file, "--json-schema", JSON.stringify(schema)], [prompt, ...paths].join("\n"), cwd, 600_000));
       let result;
-      try { result = JSON.parse(stdout); } catch { throw new Error("claude CLI image read returned non-JSON output"); }
+      try { result = claudeResult(stdout); } catch { throw new Error("claude CLI image read returned non-JSON output"); }
       if (result.is_error) throw new Error(`claude CLI image read error: ${String(result.result || "unknown").slice(0, 200)}`);
       return result.structured_output ?? {};
     },
@@ -143,7 +143,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         const call = async (extra, systemText) => {
           const stdout = systemText ? await withSystemFile(cwd, systemText, (file) => run(command, [...args, ...file, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS)) : await run(command, [...args, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
           let result;
-          try { result = JSON.parse(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
+          try { result = claudeResult(stdout); } catch { throw new Error(`claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`); }
           for (const listener of usageListeners) { try { listener({ name: params.text?.format?.name || null, model, prompt, text: typeof result.result === "string" ? result.result : null, systemChars: String(systemText || "").length, usage: result.usage || {}, usd: Number(result.total_cost_usd) || 0 }); } catch {} }
           if (result.is_error) throw new Error(`claude CLI error: ${String(result.result || result.api_error_status || "unknown").slice(0, 300)}`);
           return result;
@@ -161,22 +161,12 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
 
 function run(command, args, input, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const turns = args.includes("--json-schema") || args.includes("Read") ? 6 : args.includes("WebSearch") ? 4 : 1;
-  return budgetedModelCall("claude", args, (bounded) => runProcess(command, bounded, input, cwd, timeoutMs), turns);
-}
-
-function runProcess(command, args, input, cwd, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
-    let stdout = "", stderr = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error("claude CLI timed out")); }, timeoutMs);
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => { clearTimeout(timer); reject(error); });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0 || stdout.trim().startsWith("{")) resolve(stdout);
-      else reject(new Error(`claude CLI exited with ${code}: ${stderr.slice(0, 300)}`));
-    });
-    child.stdin.end(input, "utf8");
+  return budgetedModelCall("claude", args, (bounded) => runProcess(command, bounded, input, cwd, timeoutMs), turns).catch((error) => {
+    // Preserve the CLI's structured provider error for the product's existing
+    // error handling; accounting has already captured its unsuccessful exit.
+    if (typeof error.code === "number" && claudeResult(error.stdout)?.is_error) return error.stdout;
+    throw error;
   });
 }
+
+const runProcess = runCliProcess;

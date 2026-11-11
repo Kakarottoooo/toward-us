@@ -1,29 +1,16 @@
-import { spawn } from "node:child_process";
+import { runCliProcess } from "../../server/cli-process.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { jsonObjects } from "../../server/claude-cli-client.mjs";
-import { budgetedModelCall } from "../../server/model-call-budget.mjs";
+import { budgetedModelCall, claudeResult } from "../../server/model-call-budget.mjs";
 
 // Authentication remains in the installed subscription CLIs. No auth/config file is read or copied.
-export function run(command, args, input, cwd, timeout = 180_000) {
-  return new Promise((resolve, reject) => {
-    const started = Date.now();
-    const child = spawn(command, args, { cwd, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "", stderr = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error(`CLI timeout after ${timeout}ms`)); }, timeout);
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error) => { clearTimeout(timer); reject(error); });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      // Do not include process diagnostics: a user's CLI configuration can contain private paths.
-      if (code !== 0) reject(new Error(`CLI exited ${code}; ${stdout.includes("rate_limit") || stderr.includes("rate limit") ? "rate limited" : "no successful result"}`));
-      else resolve({ stdout, ms: Date.now() - started });
-    });
-    child.stdin.end(input, "utf8");
-  });
+export async function run(command, args, input, cwd, timeout = 180_000) {
+  const started = performance.now();
+  const stdout = await runCliProcess(command, args, input, cwd, timeout);
+  return { stdout, ms: performance.now() - started };
 }
 
 export async function invoke(provider, { root, input, instructions, schema, image, search = false }) {
@@ -47,7 +34,7 @@ export async function invoke(provider, { root, input, instructions, schema, imag
     if (schema) prompt += `\nReturn exactly one JSON object matching: ${JSON.stringify(schema)}`;
     const { stdout, ms } = await budgetedModelCall("claude", args, (bounded) => run("claude", bounded, prompt, cwd), search || image ? 6 : 1);
     await writeFile(join(cwd, "response.json"), stdout);
-    const raw = JSON.parse(stdout);
+    const raw = claudeResult(stdout);
     if (raw.is_error) throw new Error("Claude subscription returned an error");
     const answer = String(raw.result || "");
     return { answer, value: schema ? jsonObjects(answer).at(-1) : null, ms, usage: raw.usage || null, usd: raw.total_cost_usd ?? null, model: Object.keys(raw.modelUsage || {}).join(",") || "sonnet (alias)", toolCalls: raw.num_turns ?? null };

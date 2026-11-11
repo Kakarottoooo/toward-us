@@ -4,7 +4,11 @@ export const quotaError = (text) => /you.ve hit your[^\n]{0,80}limit|(?:usage|ra
 let activeBudget = null;
 
 // One evaluation process owns this ledger. Reserve in-flight CLI turns before starting:
-// returned num_turns releases only unused reservations. Missing metadata fails closed.
+// returned num_turns releases only unused reservations. Missing metadata costs the full reservation.
+export function claudeResult(output) {
+  try { const value = JSON.parse(output); if (!Array.isArray(value)) return value; return value.findLast((row) => row.type === "result") || null; } catch {}
+  return String(output || "").split(/\r?\n/).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } }).findLast((row) => row.type === "result") || null;
+}
 export function createModelCallBudget({ maxClaudeTurns = 120, maxCodexCalls = 40, file, context, onStop } = {}) {
   const state = file && existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { claudeTurns: 0, codexCalls: 0, stopped: null, calls: [] };
   if (![maxClaudeTurns, maxCodexCalls].every((value) => Number.isSafeInteger(value) && value > 0)) throw new Error("Invalid model budget");
@@ -28,8 +32,7 @@ export function createModelCallBudget({ maxClaudeTurns = 120, maxCodexCalls = 40
         maxTurns: call.reserved,
         finish(output, error) {
           if (call.status !== "reserved") return;
-          let raw;
-          try { raw = provider === "claude" ? JSON.parse(output) : null; } catch {}
+          const raw = provider === "claude" ? claudeResult(output) : null;
           const turns = raw?.num_turns;
           const known = Number.isSafeInteger(turns) && turns >= 1;
           call.status = error ? "failed" : "finished";
@@ -39,9 +42,10 @@ export function createModelCallBudget({ maxClaudeTurns = 120, maxCodexCalls = 40
             state.claudeTurns += call.chargedTurns;
           }
           call.usd = raw?.total_cost_usd ?? null;
+          if (error) call.transport = { message: error.message, code: error.code ?? null, signal: error.signal ?? null, stdout: String(output || ""), stderr: error.stderr || "" };
+          if (provider === "claude" && !known) call.accounting = "missing num_turns; charged full reservation";
           save();
-          if (quotaError(String(output) + String(error || ""))) stop(`${provider} subscription quota error`);
-          if (provider === "claude" && !known) stop("Claude num_turns missing; charged full reservation");
+          if (quotaError(String(output) + String(error || "") + String(error?.stderr || ""))) stop(`${provider} subscription quota error`);
           if (provider === "claude" && turns > call.reserved) stop("Claude exceeded --max-turns; actual num_turns recorded");
         },
       };
@@ -57,7 +61,7 @@ export async function budgetedModelCall(provider, args, execute, maxTurns = 4) {
   const boundedArgs = ticket && provider === "claude" ? [...args, "--max-turns", String(ticket.maxTurns)] : args;
   let result;
   try { result = await execute(boundedArgs); }
-  catch (error) { ticket?.finish("", error); throw error; }
+  catch (error) { ticket?.finish(error.stdout || "", error); throw error; }
   ticket?.finish(typeof result === "string" ? result : result.stdout);
   return result;
 }
