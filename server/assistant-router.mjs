@@ -494,8 +494,8 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
     });
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
       const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
-      const unrelated = plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
-      const audited = await prepareSourceReply(plan.reply, { sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+      const unrelated = !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
+      const audited = await prepareSourceReply(plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
           ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator });

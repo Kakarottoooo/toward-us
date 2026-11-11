@@ -135,7 +135,7 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   const removed = reminderRemoved || parts.some(claimsWrite);
   // Receipts are server-authored after successful writes, never planner-provided flags.
   let text = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part)
-    && !(receipts.length && describesActionStatus(part))).join("").trim();
+    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part)))).join("").trim();
   if (receipts.length) text = [text, ...receipts].filter(Boolean).join("\n");
   if (reminderRemoved && !reminderWritten) text = [text, language === "en" ? "No reminder was created in this turn." : language === "es" ? "No se creó ningún recordatorio en este turno." : "这轮尚未创建提醒。"].filter(Boolean).join("\n");
   if (!text && removed) text = language === "en" ? "No new record was saved in this turn." : language === "es" ? "No se guardó ningún registro nuevo en este turno." : "这轮没有新增记录。";
@@ -143,6 +143,9 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   if (!formatChecked && wantsOneSentence(request) && !receipts.length) text = segments(text, language)[0]?.trim() || text;
   return text;
 }
+
+// Reminder promises also duplicate a committed receipt without saying "created".
+const confirmsReminder = text => /^(?:(?:好的|好|没问题)[，,]?\s*)?(?:我会|我将|我来|会在|将在|今天|明天|后天|下周|周[一二三四五六日天]|\d{1,4}年|\d{1,2}月).{0,80}提醒(?:你|您)|\b(?:I(?:'ll| will) remind you|te recordar[eé])\b/iu.test(text);
 
 // Positive AND negative model status claims yield to the actual operation receipts.
 const describesActionStatus = (text) => /(?:提醒|记录|草稿|计划).{0,45}(?:设|创建|保存|写入|回执|安排|完成)|(?:未|没|不|已).{0,35}(?:设置|创建|保存|写入)|\b(?:reminder|record|draft).{0,70}\b(?:set|created|saved|scheduled|ready|receipt)|\b(?:recordatorio|registro|borrador).{0,70}\b(?:programad|cread|guardad|list)/iu.test(text);
@@ -161,4 +164,5 @@ Which shelf now, moved A to C? "C." / "C, formerly A."
 Printer fixed; thanks! "You're welcome, glad it helped!" / "Clean it regularly."
 Badge demanded under threat of exclusion: "I won't lend it; stop threatening exclusion." / "I prefer to keep it."
 Updates arrived after agreed start: "Tell me before our agreed start if plans change." / "Tell me soon."
+Proposed delivery slot 10:15: "I will check whether 10:15 works." / "10:15 works." Preserve concrete options without accepting them.
 Invitations: translate activityDescription (Chinese for zh); insert {{activityDescription}} in sendableDraft.`;
