@@ -28,6 +28,12 @@ export function requiresReplyScopeCheck(request = "") {
 
 // A requested draft can be one sentence while an accompanying factual answer is not.
 const draftOnlyLimit = (request) => hasSentenceRequest(request) && /[?？]|(?:最后|再|另外|同时).{0,8}(?:给|写)|(?:then|also).{0,20}(?:draft|sentence)/iu.test(request);
+// Give repair/check callers the same literal limits the server actually measures.
+export function replyFormatRequirements(request = "") {
+  const limits = formatLimits(request);
+  return { ...limits, sentenceScope: draftOnlyLimit(request) ? "sendableDraft" : "whole reply",
+    linesAndCharsScope: "whole reply and sendableDraft together" };
+}
 function quotedDrafts(text) {
   const pairs = { "“": "”", "「": "」", '"': '"' }, stack = [], drafts = [];
   let start = 0;
@@ -141,7 +147,7 @@ const privateReplies = {
 export const privateBoundaryReply = (language, index = 0) => (privateReplies[language] || privateReplies.zh)[index % 3];
 export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
 
-export const replyContractInstructions = `Only requested content; obey length/format. sendableDraft: copyable wording or null. reply: analysis only, empty for draft-only, <=2 sentences for mixed requests. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
+export const replyContractInstructions = `Only requested content; obey length/format. sendableDraft: copyable wording or null; obey its requested sentence count, including any explanation inside it. reply: analysis only, empty for draft-only, <=2 sentences for mixed requests. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
 Examples (good / bad):
 Which shelf now, moved A to C? "C." / "C, formerly A."
 Printer fixed; thanks! "You're welcome, glad it helped!" / "Clean it regularly."
