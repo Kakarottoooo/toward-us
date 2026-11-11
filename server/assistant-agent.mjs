@@ -1,7 +1,7 @@
 import { readonlyWebInstructions } from "./readonly-web.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { replyContractInstructions, privateBoundaryReply } from "./reply-contract.mjs";
-const sourceGrounding = `For supplied images, files, voice transcripts and recalled records, every factual clause in analysis AND drafts must follow directly from the supplied material. Identify its speaker and exact source words; cite dates when requested. Never turn an ongoing state into an inferred outcome or generalize beyond all cited instances. Another speaker's demands or affection cannot become the user's feelings. Remove unsupported events, admissions, motives or chronology. Wording-only requests get only the complete draft, matching sentence/line limits, without commentary.`;
+const sourceGrounding = `For supplied images, files, voice transcripts and recalled records, every factual clause in analysis AND drafts must follow directly from the supplied material. Identify its speaker and exact source words; cite dates when requested. Never turn an ongoing state into an inferred outcome or generalize beyond all cited instances. Another speaker's demands or affection cannot become the user's feelings; remove unsupported events, admissions, motives or chronology. Wording-only requests get only the complete draft, matching the requested sentence/line count, without commentary.`;
 const nullableString = { type: ["string", "null"] };
 const handoffKeys = ["name", "area", "date", "time", "partySize", "phone", "website", "store", "budget"];
 // A booking or purchase Pinky prepares as tap-to-finish links (handoffs.mjs); null on every other action.
