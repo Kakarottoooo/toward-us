@@ -14,8 +14,10 @@ import { installCallGuard } from "./call-guard.mjs";
 import { comparisonReady } from "./score.mjs";
 import { corpusHash, frozenCase, frozenOpponent, installCaseClock, agreementProtocol } from "./replay.mjs";
 
-const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "readonly-baseline": { type: "string" } } });
+const { values: options } = parseArgs({ options: { label: { type: "string", default: "baseline" }, only: { type: "string" }, concurrency: { type: "string", default: "2" }, compare: { type: "string" }, "reuse-opponents": { type: "string" }, economy: { type: "boolean", default: false }, readonly: { type: "boolean", default: false }, "readonly-port": { type: "string" }, round2: { type: "boolean", default: false }, "readonly-baseline": { type: "string" }, "spent-calls": { type: "string", default: "0" } } });
 if (!/^[a-zA-Z0-9_-]+$/.test(options.label)) throw new Error("Use a simple label");
+const spentCalls = Number(options["spent-calls"]);
+if (!Number.isInteger(spentCalls) || spentCalls < 0 || spentCalls >= 180) throw new Error("Invalid prior call count");
 const readonlySite = options.readonly || options.round2 ? await import("./readonly-site.mjs").then((module) => module.createReadonlySite({ port: Number(options["readonly-port"]) || 0 })) : null;
 const webCases = readonlySite ? (await import("./readonly-cases.mjs")).readonlyCases(readonlySite.origin) : [];
 const cases = options.round2 ? [...originalCases.filter((item) => item.layer !== "environment"), ...webCases] : readonlySite ? webCases : originalCases;
@@ -69,10 +71,10 @@ if (readonlyMediator) {
 }
 const harness = await createHarness(directory, { requestContext: context, mediator: readonlyMediator });
 let checkpointResults = []; const packets = [];
-const guard = options.economy ? installCallGuard({ directory, context, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 : Infinity, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) }) : null;
+const guard = options.economy ? installCallGuard({ directory, context, maxClaudeCalls: options.round2 ? 180 : readonlySite ? 60 : 120, maxCalls: options.round2 ? 180 - spentCalls : Infinity, checkpoint: () => writeFileSync(join(directory, "partial-results.json"), JSON.stringify(checkpointResults, null, 2)) }) : null;
 const report = { label: options.label, startedAt, seed, commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   caseHash, selected: selected.map((item) => item.id),
-  protocol: { batchSize: options.round2 ? 4 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
+  protocol: { priorCalls: spentCalls, batchSize: options.round2 ? 8 : 1, fullFreshProductRun: options.round2, version: options.economy ? "codex-first-v3" : "agreement-flow-v2", economy: options.economy, agreementProtocol, contentGrading: "盲评比较初稿；后续双方各自批准由独立机器检查分步计分，对手无产品写权限" },
   ...(baseline ? { replay: { source: baselinePath, sha256: createHash("sha256").update(baselineBytes).digest("hex"),
     clock: "逐题沿用原 visible.now；仅虚构评测进程日期偏移，计时继续推进", refreshedOpponents: options.economy ? [] : selected.filter((item) => item.check?.kind === "agreement").map((item) => item.id), agreementProtocol } } : {}),
   cliVersions: { claude: execFileSync("claude", ["--version"], { encoding: "utf8" }).trim() }, results: [] };

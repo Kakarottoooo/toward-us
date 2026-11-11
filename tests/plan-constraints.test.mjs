@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkPlanConstraints, requiresPlanConstraints } from "../server/plan-constraints.mjs";
+import { checkPlanConstraints, requiresPlanConstraints, requiresPlanDelivery } from "../server/plan-constraints.mjs";
 import { finishReply, wantsOneSentence } from "../server/reply-contract.mjs";
 
 test("draft-only scope does not discard a separate factual question or assessment", () => {
@@ -141,4 +141,10 @@ test("empty metadata cannot bypass a budget or allergy plan", () => {
 test("a visit must respect a single explicitly requested calendar date", () => {
   const result = checkPlanConstraints({ ...empty(), visits: [visit()] }, { context: context("安排2026-11-15半日活动"), reply: "营业时间未核实。" });
   assert.ok(codes(result).includes("wrong_date"));
+});
+
+test("ordinary plans receive concrete-delivery guidance without paying for constraint metadata", () => {
+  const ctx = context("按现在的情况，排一个少走路的半日计划");
+  assert.equal(requiresPlanDelivery(ctx), true);
+  assert.equal(requiresPlanConstraints(ctx), false);
 });

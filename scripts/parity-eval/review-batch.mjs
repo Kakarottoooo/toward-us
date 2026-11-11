@@ -15,8 +15,8 @@ export async function reviewBatches({ packets, context, directory, seed, checkpo
       if (result.pinky.error || result.rivals[provider]?.error || judge === "claude" && !["tie", "loss"].includes(comparison.judges[0]?.outcome)) return [];
       return [{ id: `${item.id}/${provider}`, comparison, pair: blindPair(item, result.pinky, result.rivals[provider], judge, seed) }];
     }));
-    for (let offset = 0; offset < pairs.length; offset += 4) {
-      const batch = pairs.slice(offset, offset + 4);
+    for (let offset = 0; offset < pairs.length; offset += 8) {
+      const batch = pairs.slice(offset, offset + 8);
       try {
         const raw = await context.run({ phase: `judge-batch:${judge}`, case: batch.map((row) => row.id).join(",") }, () => invoke(judge, {
           root: join(directory, "judges"), schema,
@@ -29,7 +29,7 @@ export async function reviewBatches({ packets, context, directory, seed, checkpo
         batch.forEach((row, index) => row.comparison.judges.push({ judge, swap: row.pair.swap, ...decoded[index], batch: `${judge}:${offset}`, model: raw.model }));
       } catch (error) { for (const row of batch) row.comparison.judges.push({ judge, error: error.message }); }
       await checkpoint();
-      console.log(`Blind review ${judge}: ${Math.min(offset + 4, pairs.length)}/${pairs.length} pairs`);
+      console.log(`Blind review ${judge}: ${Math.min(offset + 8, pairs.length)}/${pairs.length} pairs`);
     }
   }
   for (const { result } of packets) {

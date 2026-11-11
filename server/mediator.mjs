@@ -4,7 +4,7 @@ import { createClaudeCliClient } from "./claude-cli-client.mjs";
 import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
 import { assistantInstructions, assistantTurnSchema, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
-import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints } from "./plan-constraints.mjs";
+import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
 import { replyContractInstructions } from "./reply-contract.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { usesCheaperModel } from "./ai-budget.mjs";
@@ -134,7 +134,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const checkedPlan = Boolean(context.constraintErrors) || requiresPlanConstraints(context);
       const baseSchema = checkedPlan ? { ...assistantTurnSchema, required: [...assistantTurnSchema.required, "planConstraints"], properties: { ...assistantTurnSchema.properties, planConstraints: planConstraintsSchema } } : assistantTurnSchema;
       const schema = withPhotos ? { ...baseSchema, required: [...baseSchema.required, "readChatScreenshots"], properties: { ...baseSchema.properties, readChatScreenshots: { type: "boolean" } } } : baseSchema;
-      const instructions = assistantInstructions(language) + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
+      const instructions = assistantInstructions(language) + (requiresPlanDelivery(context) ? "\n" + planDeliveryInstructions : "") + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
       const response = await client.responses.create({
         model, store: false, max_output_tokens: checkedPlan ? 2400 : 1400,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
