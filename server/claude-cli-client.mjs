@@ -77,17 +77,17 @@ export function proseAsReply(text, schema) {
 }
 
 /** The structured answer in a model's first text reply under `schema`, or null when a strict second call is needed. */
-export function answerFromText(text, schema) {
+export function answerFromText(text, schema, { allowProseReply = true } = {}) {
   // An object holding none of the schema's required keys is not the answer: asked to write a scraper, the model's prose
   // held `{"User-Agent": …}`, which was taken as the turn and failed as a 502 (round 8, 11-09).
   const found = jsonFromText(text);
-  const fits = found && (!schema?.required?.length || schema.required.some((key) => key in found));
+  const fits = found && (!schema?.required?.length || (allowProseReply ? schema.required.some((key) => key in found) : schema.required.every((key) => key in found)));
   if (fits) return found;
   // The planner sometimes writes its answer, then "Wait, I need to return a valid object only." and the answer again; the
   // whole text is not one object, and asking again strictly doubled that turn's cost and once came back as "这条看起来是一段
   // 命令" (cost pass 11-10: a third to a half of reminder turns). Its last complete answer is the one it meant.
   const whole = jsonObjects(text).filter((value) => (schema?.required || []).every((key) => key in value)).at(-1);
-  return whole || proseAsReply(text, schema);
+  return whole || (allowProseReply ? proseAsReply(text, schema) : null);
 }
 
 // Scenario testing found the lightweight planner invented context and UI paths in ordinary care requests, too.
@@ -149,7 +149,7 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         };
         if (!schema) return { output_text: String((await call([], system)).result ?? "") };
         const firstText = (await call([], [system, jsonInstruction(schema)].filter(Boolean).join("\n\n"))).result;
-        const parsed = answerFromText(firstText, schema);
+        const parsed = answerFromText(firstText, schema, { allowProseReply: options.allowProseReply !== false });
         if (parsed && typeof parsed.reply === "string") parsed.reply = withoutToolMarkup(parsed.reply);
         if (parsed) return { output_text: JSON.stringify(parsed) };
         return { output_text: JSON.stringify((await call(["--json-schema", JSON.stringify(schema)], system)).structured_output ?? {}) };

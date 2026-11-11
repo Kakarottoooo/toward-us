@@ -102,8 +102,8 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
     // The Claude CLI reads the system prompt from a file (no Windows command-line limit since 11-08); keep a cap so the
     // planner prompt cannot grow without anyone noticing what each turn costs.
     const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
-    // 42,000 since 11-09: room for the people someone single is getting to know.
-    assert.ok(system.length < 42_000, `planner prompt is ${system.length} characters`);
+    // 43,500 since 11-10: bounded reply grounding rules; plan metadata is added only for constrained planning.
+    assert.ok(system.length < 43_500, `planner prompt is ${system.length} characters`);
   }
 });
 
@@ -127,8 +127,54 @@ async function setup(t, plan) {
   t.after(() => new Promise((r) => server.close(r)));
   const request = async (path, body) => (await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
   const session = (await request("/assistant/sessions", { language: "zh", timezone: "UTC" })).session;
-  return { say: async (text) => (await request(`/assistant/sessions/${session.id}/messages`, { text, itemId: randomUUID() })).session.messages.at(-1) };
+  return { reminders: () => createReminderService({ store }).listReminders(id), say: async (text) => (await request(`/assistant/sessions/${session.id}/messages`, { text, itemId: randomUUID() })).session.messages.at(-1) };
 }
+
+test("a contradictory plan is repaired once before any associated write can execute", async (t) => {
+  let calls = 0;
+  const planConstraints = { budget: { limit: 100, currency: "CNY", limitQuote: "预算100元", items: [
+    { label: "门票", upper: 80, quantity: 1, priceText: "80元", mode: "cap", sourceQuote: null },
+    { label: "餐饮", upper: 40, quantity: 1, priceText: "40元", mode: "cap", sourceQuote: null },
+  ] }, location: null, visits: [], food: [] };
+  const { say, reminders } = await setup(t, () => { calls++; return { reply: "预算：门票80元、餐饮40元，总计100元。", planConstraints,
+    actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "出行", localDateTime: "2027-05-12T20:00", timezone: "UTC", frequency: "once" }) })] }; });
+  const reply = await say("帮我安排出行，预算100元，再设个提醒");
+  assert.equal(calls, 2);
+  assert.match(reply.text, /未通过|没通过/);
+  assert.equal((await reminders()).length, 0, "even the valid reminder cannot commit alongside an invalid plan");
+});
+
+test("a reply cannot claim a memory write when this turn executed none", async (t) => {
+  const { say } = await setup(t, () => ({ reply: "可以先说自己的感受。已记进「关于我们」。", actions: [] }));
+  assert.equal((await say("我该怎么说？")).text, "可以先说自己的感受。");
+});
+
+test("an explicit single-sentence answer has no unsolicited closing", async (t) => {
+  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }));
+  assert.equal((await say("谢谢，今天聊完好多了，只回我一句就好。")).text, "我也替你开心。");
+  assert.equal((await say("谢谢，就像手机聊天那样回我一句，不要列清单。")).text, "我也替你开心。");
+});
+
+test("a requested draft sentence does not truncate the accompanying file analysis", async (t) => {
+  const answer = "两次都是约定时间过后才告知。10月1日19:45还在工作，10月8日19:30才说来不了。可以说：计划有变化时，请在约定时间前告诉我。";
+  const { say } = await setup(t, () => ({ reply: answer, actions: [] }));
+  assert.equal((await say("读这个聊天记录，引用两个日期，再给我一句平和提出改进要求的话。")).text, answer);
+});
+
+test("one-sentence acknowledgement does not create an unsolicited mood card", async (t) => {
+  const { say } = await setup(t, () => ({ reply: "我也替你开心。", actions: [action({ kind: "checkin", operation: "create", query: null, fields: fields({ text: "今天好多了", mood: "good" }) })] }));
+  const reply = await say("今天好多了，就像手机聊天那样回我一句。");
+  assert.equal(reply.text, "我也替你开心。");
+  assert.deepEqual(reply.cards, []);
+  assert.equal((await say("帮我记录心情：今天好多了，只回我一句。")).cards.length, 1, "an explicitly requested check-in is preserved");
+});
+
+test("a successful reminder uses its actual receipt instead of a fabricated profile claim", async (t) => {
+  const { say } = await setup(t, () => ({ reply: "已记进 Sam 的档案。", actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "买花", localDateTime: "2027-05-12T20:00", timezone: "UTC", frequency: "once" }) })] }));
+  const reply = await say("2027年5月12日晚上8点提醒我买花");
+  assert.doesNotMatch(reply.text, /Sam|档案/);
+  assert.match(reply.text, /2027-05-12 20:00/);
+});
 
 test("a records search that finds nothing says so instead of promising results", async (t) => {
   const { say } = await setup(t, () => ({ reply: "我来找找你们之前关于她妈妈来住这件事的记录，结果会直接显示给你。", actions: [action()] }));
@@ -183,6 +229,9 @@ test("advice the model wrote as prose becomes the reply itself, instead of a sec
   const scraper = '可以这样写：\nheaders = {"User-Agent": "Mozilla/5.0"}\nrequests.get(url, headers=headers)';
   assert.equal(answerFromText(scraper, assistantTurnSchema)?.["User-Agent"], undefined, "use-case round 8: a JSON object from code in the prose is not the turn");
   assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema), { reply: "好", actions: [] });
+  assert.equal(answerFromText("约定起草好了。", assistantTurnSchema, { allowProseReply: false }), null, "a required structured turn cannot silently lose its actions");
+  assert.equal(answerFromText('{"reply":"起草好了"}', assistantTurnSchema, { allowProseReply: false }), null, "incomplete JSON also needs the strict fallback");
+  assert.deepEqual(answerFromText('{"reply":"好","actions":[]}', assistantTurnSchema, { allowProseReply: false }), { reply: "好", actions: [] });
   const together = { type: "object", required: ["reply", "draftAgreement", "actions", "waitingFor"], properties: { reply: { type: "string" }, draftAgreement: { anyOf: [{ type: "null" }, { type: "object" }] }, actions: { type: "array" }, waitingFor: { type: "array" } } };
   assert.deepEqual(proseAsReply("好的。", together), { reply: "好的。", draftAgreement: null, actions: [], waitingFor: [] });
   assert.equal(proseAsReply('{"reply": "broken', assistantTurnSchema), null, "half-written JSON is not prose");

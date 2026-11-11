@@ -194,6 +194,25 @@ test("a group chat in screenshots is answered about the one who says most", asyn
   await f.ready((await f.request("/imports")).body.imports[0].id);
 });
 
+test("a one-sentence screenshot answer drops unsupported receipts and commentary", async (t) => {
+  const f = await fixture(t, {
+    screenshots: [{ mine: false, name: "Blair", text: "I waited.", time: null }, { mine: true, name: null, text: "Sorry.", time: null }],
+    screenshotAdvice: { observations: [], uncertainties: [], reply: "I'm sorry I kept you waiting. I saved this on Blair's card. You can try a warmer tone." },
+    planner: () => ({ reply: "Reading.", actions: [action("chat_import", "create")] }),
+  });
+  const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Give me only one sentence to apologize.", itemId: randomUUID(), photoIds: [photo.id] });
+  let session;
+  for (let index = 0; index < 100; index += 1) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === "I'm sorry I kept you waiting.")) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(session.messages.some((message) => message.text === "I'm sorry I kept you waiting."));
+  assert.ok(!session.messages.some((message) => /saved this|warmer tone/.test(message.text)));
+});
+
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
   let release;
   const held = new Promise((resolve) => { release = resolve; });

@@ -13,6 +13,7 @@ import { refreshPortraits } from "../../server/portraits.mjs";
 import { tidyMemory } from "../../server/memory-tidy.mjs";
 import { FILLER } from "../memory-eval/cases.mjs";
 import { recordChecks } from "./evidence.mjs";
+import { agreementFlow } from "./agreement-flow.mjs";
 
 // Store snapshots include relationship-scoped raw records; apply the same per-principal projection as the API.
 // Keep raw snapshots for actual-write checks, but never use them as evidence of another member's visibility.
@@ -43,21 +44,22 @@ export function formatVisibleAnswer(answer, { cards = [], draft = null } = {}) {
 }
 
 // Same synthetic-account seeding protocol as eval-memory, reusing production memory helpers.
-export async function createHarness(directory, { requestContext } = {}) {
+export async function createHarness(directory, { requestContext, mediator } = {}) {
   const options = {};
-  const model = createMediator({ apiKey: "" });
+  const model = mediator || createMediator({ apiKey: "" });
   const store = await createFileStore(`${directory}/state.json`);
   const app = createApiApp({ store, mediator: model, reminderService: createReminderService({ store }) });
   // HTTP server callbacks do not inherit the client's AsyncLocalStorage. Carry only synthetic case/phase IDs.
   const server = createServer((req, res) => requestContext
-    ? requestContext.run({ case: req.headers["x-parity-case"] || null, phase: req.headers["x-parity-phase"] || null }, () => app(req, res))
+    ? requestContext.run({ case: req.headers["x-parity-case"] || null, phase: req.headers["x-parity-phase"] || null,
+      ...(req.headers["x-parity-clock"] ? { clock: JSON.parse(req.headers["x-parity-clock"]) } : {}) }, () => app(req, res))
     : app(req, res)).listen(0, "127.0.0.1");
   await new Promise((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
   const base = `http://127.0.0.1:${server.address().port}`;
   let accounts = 0;
   async function call(path, body, cookie, method = body ? "POST" : "GET", mime = "application/json") {
     const tag = requestContext?.getStore();
-    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
+    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}), ...(tag?.clock ? { "x-parity-clock": JSON.stringify(tag.clock) } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${path.split("?")[0]}: HTTP ${response.status} ${JSON.stringify(result).slice(0, 160)}`);
     return { result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
@@ -175,10 +177,16 @@ async function setupCase(item, withHistory) {
       try {
         ({ result } = await call(item.channel === "shared" ? "/together/messages" : `/assistant/sessions/${sessionId}/messages`, { text: item.question, itemId: randomUUID(), language: "zh", timezone: "Asia/Shanghai", ...(round === 0 && photoIds.length ? { photoIds } : {}) }, asker.cookie));
         if (image) {
+          // Image reading starts before an import record exists. Use the owned
+          // synthetic request's actual routing marker, not a guessed delay.
+          const thread = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, asker.user.id);
+          const reading = thread?.messages?.findLast((entry) => entry.role === "user")?.screenshots;
           const limit = Date.now() + 600_000;
-          while (Date.now() < limit) {
+          while (reading && Date.now() < limit) {
             const imports = (await call("/imports", null, asker.cookie)).result.imports;
-            if (imports.length && imports.every((entry) => !["analyzing", "reading"].includes(entry.status))) break;
+            const messages = result.session?.messages || [];
+            const afterQuestion = messages.slice(messages.findLastIndex((entry) => entry.role === "user") + 1);
+            if (imports.length && imports.every((entry) => !["analyzing", "reading"].includes(entry.status)) && afterQuestion.filter((entry) => entry.role === "assistant").length > 1) break;
             if (result.session?.messages?.some((entry) => /截图没能读|截图里没有读到/.test(entry.text || ""))) break;
             await new Promise((resolve) => setTimeout(resolve, 500));
             result = (await call(`/assistant/sessions/${sessionId}`, null, asker.cookie)).result;
@@ -208,6 +216,12 @@ async function setupCase(item, withHistory) {
       rounds.push({ answer, cards, draft, progress, sources, sourceChecks });
     }
     let after = await store.relationshipSnapshotForUser(asker.user.id);
+    let approvalFlow = null;
+    if (item.agreementFlow) {
+      approvalFlow = await agreementFlow({ call, snapshot: async (userId) => projectSnapshot(await store.relationshipSnapshotForUser(userId), userId),
+        me: asker, partner: setup.partner, draft: rounds.at(-1)?.draft, initialAgreements: after.agreements || [] });
+      after = await store.relationshipSnapshotForUser(asker.user.id);
+    }
     // Explicit remember requests are extracted by the real background keeper after its 20-second debounce.
     // Observe that normal path; never manually force a post-answer extraction to make a case pass.
     if (item.check?.kind === "memory") {
@@ -223,7 +237,7 @@ async function setupCase(item, withHistory) {
     const plain = (record) => Object.fromEntries(Object.entries(record).filter(([key]) => !["passwordHash", "token", "email"].includes(key)));
     let completed = item.unsupported ? false : null;
     const peer = setup.partner ? projectSnapshot(await store.relationshipSnapshotForUser(setup.partner.user.id), setup.partner.user.id) : null;
-    const checks = collection ? recordChecks(item, created, { userId: asker.user.id, partnerId: setup.partner?.user.id, personId: setup.people[item.probe.thread]?.id, peer, spaceItems: after.spaceItems }) : [];
+    const checks = approvalFlow ? approvalFlow.checks : collection ? recordChecks(item, created, { userId: asker.user.id, partnerId: setup.partner?.user.id, personId: setup.people[item.probe.thread]?.id, peer, spaceItems: after.spaceItems }) : [];
     if (collection) completed = checks.every((check) => check.ok);
     if (item.check?.kind === "sources") completed = rounds.every((round) => round.sources.length > 0 && round.sourceChecks.every((source) => source.ok));
     if (item.check?.kind === "privacy") completed = privacyChecks.every((check) => check.ok);
@@ -235,7 +249,7 @@ async function setupCase(item, withHistory) {
     const visibleAfter = projectSnapshot(after, asker.user.id);
     const sideEffects = Object.fromEntries(["reminders", "checkins", "memories", "agreements", "spaces", "spaceItems", "chatImports", "photos"].map((key) => [key, (visibleAfter[key] || []).filter((record) => !beforeIds.has(record.id)).map(plain)]));
     return { answer: rounds.map((round, index) => rounds.length > 1 ? `第${index + 1}次：${round.answer}` : round.answer).join("\n"), completed, evidence: {
-      rounds, persisted: created.map((record) => projectRecord(record, asker.user.id)).filter(Boolean).map(plain), sideEffects, checks, privacyChecks, storedCompletion: completed, unsupported: item.unsupported || null,
+      rounds, ...(approvalFlow ? { approvalFlow } : {}), persisted: created.map((record) => projectRecord(record, asker.user.id)).filter(Boolean).map(plain), sideEffects, checks, privacyChecks, storedCompletion: completed, unsupported: item.unsupported || null,
       // A conversational draft precedes the separately confirmed, awaiting-approvals agreement record.
       // Preserve it so an incomplete approval flow is never described as "no draft was saved".
       ...(item.check?.kind === "agreement" ? { agreementDrafts: (visibleAfter.togetherConversations || []).filter((record) => record.draftAgreement).map((record) => ({ conversationId: record.id, draft: record.draftAgreement })) } : {}),
