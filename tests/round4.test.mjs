@@ -28,9 +28,9 @@ test("CLI timeout closes transport and retains partial output", async () => {
 test("source grounding applies to both first image answers and ordinary file/transcript replies", () => {
   for (const language of ["zh", "en", "es"]) {
     for (const prompt of [assistantInstructions(language), screenshotAdviceInstructions(language)]) {
-      assert.match(prompt, /every factual clause in analysis AND drafts/);
-      assert.match(prompt, /remove unsupported events, admissions, motives or chronology/);
-      assert.match(prompt, /matching the requested sentence\/line count/);
+      assert.match(prompt, /Ground analysis AND drafts in supplied images, files, transcripts or recalled records/);
+      assert.match(prompt, /or add unsupported events, admissions, motives or chronology/);
+      assert.match(prompt, /Drafting-only requests get just the draft within requested limits/);
     }
     assert.match(assistantInstructions(language), /cross-contact from shared utensils, oil or preparation/);
     assert.match(assistantInstructions(language), /otherwise avoid it/);
