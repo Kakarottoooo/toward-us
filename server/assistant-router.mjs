@@ -1,6 +1,7 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
 import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
+import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
 import { gettingToKnow, profileContext } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
 import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
@@ -224,8 +225,10 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const language = await memberLanguage(store, userId, body?.language);
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan; const recallSources = [];
+    const webTurn = createWebTurn({ reader: mediator.readonlyWeb, failures: session.webFailures });
+
     const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
-    if (recalled) { context.lookups = [recallLookup(recalled, text)]; recallSources.push(...recalled.sources); }
+    if (recalled) { context.lookups = [...(context.lookups || []), recallLookup(recalled, text)]; recallSources.push(...recalled.sources); }
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
@@ -245,16 +248,20 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
     if (!validateAssistantTurn(plan)) { console.error("Invalid planner turn:", JSON.stringify({ keys: Object.keys(plan || {}), actions: Array.isArray(plan?.actions) ? plan.actions.map((action) => ({ keys: Object.keys(action || {}), kind: action?.kind, operation: action?.operation, fields: Object.keys(action?.fields || {}) })) : typeof plan?.actions })); throw fail(502, "The assistant could not prepare a valid action. Nothing was changed."); }
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
-    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports || action.kind === "memory_search" && !recalled).slice(0, 3);
+    const searches = webTurn.results.length ? [] : plan.actions.filter((action) => action.kind === "web_read" || action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports || action.kind === "memory_search" && !recalled).slice(0, 3);
     if (searches.length) {
-      const web = searches.find((action) => action.kind === "web_search");
+      const web = searches.find((action) => ["web_search", "web_read"].includes(action.kind));
       progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
       const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
         ? await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, `${action.query || ""} ${action.fields?.date || ""}`.trim()); }).catch(() => ({ query: action.query, findings: "The search failed. Say the search failed, not that no record exists." }))
         : action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
+        : action.kind === "web_read" ? { query: action.query, findings: action.query }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
+      const urls = lookups.filter((_, index) => ["web_search", "web_read"].includes(searches[index].kind)).flatMap((row) => pageUrls(row.findings));
+      if (urls.length) context.webPages = await webTurn.read(urls);
+      if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
       progress("writing");
       context = { ...context, lookups };
       try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
@@ -277,6 +284,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
     if (wantsOneSentence(text) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
+    if (webTurn.results.length) plan = { ...plan, actions: [] };
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
     if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
       // Its question is read with the screenshots, never again by the private profile scan (watch 11-09).
@@ -284,7 +292,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
         .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
     }
-    plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "memory_search", "chat_import"].includes(action.kind)) };
+    // Untrusted public pages can inform an answer, never grant a write. A later
+    // explicit user turn can use the ordinary confirmation/action path.
+    plan = { ...plan, actions: webTurn.results.length ? [] : plan.actions.filter((action) => !["web_read", "web_search", "chat_search", "memory_search", "chat_import"].includes(action.kind)) };
     if (plan.actions.length) progress(plan.actions.every((action) => action.operation === "query") ? "checking_records" : "acting");
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
     const updated = await store.transaction("reminder-delivery", async (tx) => {
@@ -466,8 +476,8 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(clean(plan.reply, 1200), { request: text, language, receipts: replies }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const cited = citedReply(reply, recallSources);
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       return saved;
     });

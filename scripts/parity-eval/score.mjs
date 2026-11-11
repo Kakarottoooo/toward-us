@@ -71,7 +71,8 @@ export function markdown(report, previous = null) {
     ...Object.values(report.summary).map((row) => `| ${row.name} | ${row.count} | ${row.comparisons.claude.notLose}/${row.count} (${percent(row.comparisons.claude.rate)}) | ${row.comparisons.codex.notLose}/${row.count} (${percent(row.comparisons.codex.rate)}) | ${row.comparisons.claude.disagreement + row.comparisons.codex.disagreement} | ${row.comparisons.claude.pending + row.comparisons.codex.pending} | ${row.completed}/${row.completionUnknown} | ${percent(row.target)} | ${row.reached ? "达到" : "未达到/未证实"} |`), "",
     "完成数：写操作以本地临时存储及字段校验为准；回答型题要求四次判决都认可完成；隐私任一重复泄露即失败。云端电脑缺失记未完成。图片/文件导入和转写后的请求不代表真实手机 UI 或 ASR 验收。", "",
     `费用：${JSON.stringify(report.cost)}。美元为 CLI 返回的标价折算，不是订阅实际支出；Codex 未返回美元记 null，不按零计。Pinky 用量监听复用 memory-eval；产品 CLI 的图片读取/网页搜索不发用量事件，因此记录为部分覆盖。`, ""];
-  if (report.protocol?.economy) lines.splice(3, 0, "", "本轮采用用户授权的省额度协议：仅重跑所选受影响题，全部对手答案冻结；先 Codex，判赢即接受，判输或平才请 Claude 复核。未重跑题沿用基线，故总表为混合快照，不是全量同协议新评测。严格完成按实际已调用评委全部认可及机器检查计算，不能与旧四票严格完成直接等同。", `实测：${report.selected.join(", ")}；沿用：${report.carriedCaseIds.join(", ")}。`);
+  if (report.protocol?.economy && !report.readonly) lines.splice(3, 0, "", "本轮采用用户授权的省额度协议：仅重跑所选受影响题，全部对手答案冻结；先 Codex，判赢即接受，判输或平才请 Claude 复核。未重跑题沿用基线，故总表为混合快照，不是全量同协议新评测。严格完成按实际已调用评委全部认可及机器检查计算，不能与旧四票严格完成直接等同。", `实测：${report.selected.join(", ")}；沿用：${report.carriedCaseIds.join(", ")}。`);
+  if (report.readonly) lines.splice(3, 0, "", "任务09：新增公开只读网页题，原执行环境题保留不动。只跑此层，先Codex评、平或输再由Claude复核。对手拿到同一份实际页面观察，但没有本地浏览器执行权限；这是回答质量比较，不是同工具执行对标。失败处理合格不代表原网页查询成功；严格完成按机器检查和实际取得的全部评委票计算。本批新题无法复用原登录题的对手答案，其余层未运行。");
   if (previous) {
     const comparable = previous.caseHash === report.caseHash && JSON.stringify([...previous.selected].sort()) === JSON.stringify([...report.selected].sort());
     lines.push("## 与旧基线比较", "", `旧运行 ${previous.label}；${comparable ? "场景及所选题目相同，单轮波动仍不能当因果效果" : "场景或所选题目变化：仅并列列出，不能当作同题前后比较"}。`, "");

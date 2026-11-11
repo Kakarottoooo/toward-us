@@ -1,5 +1,6 @@
 import { keepMessages } from "./thread-pages.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
+import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
 import { finishReply } from "./reply-contract.mjs";
 import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
 import { citedReply } from "./conversation-recall.mjs";
@@ -233,19 +234,25 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const zones = Object.fromEntries((await Promise.all(members.map(async (member) => [member.name, await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, member.id)).catch(() => null)]))).filter(([, value]) => value));
   const recalled = await prefetchRecall({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id }, text).catch(() => null);
   if (recalled) context.lookups = [recallLookup(recalled, text)];
+  const webTurn = createWebTurn({ reader: mediator.readonlyWeb, failures: saved.conversation.webFailures });
+
   let turn = await mediator.continueTogether({ ...context, today, ...(Object.keys(zones).length ? { timezones: zones } : {}), webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
   const recallSources = recalled?.sources || [];
-  const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId) || action.kind === "memory_search" && !recalled).slice(0, 3);
+  const searches = webTurn.results.length ? [] : (turn.actions || []).filter((action) => action.kind === "web_read" && action.text || action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId) || action.kind === "memory_search" && !recalled).slice(0, 3);
   if (searches.length) {
-    const web = searches.find((action) => action.kind === "web_search");
+    const web = searches.find((action) => ["web_search", "web_read"].includes(action.kind));
     progress(web ? "searching_web" : "searching_chats", web?.text || null);
     const sharedImport = async (id) => (await store.relationshipSnapshotForUser(actorUserId)).chatImports?.find((item) => item.id === id && item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt);
     const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
       ? await searchMemoryResults({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id, query: action.text || "", date: action.date || "" }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, action.text || action.date || ""); }).catch(() => ({ query: action.text, findings: "The search failed. Say the search failed, not that no record exists." }))
       : action.kind === "chat_search"
       ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
+      : action.kind === "web_read" ? { query: action.text, findings: action.text }
       : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));
+    const urls = lookups.filter((_, index) => ["web_search", "web_read"].includes(searches[index].kind)).flatMap((row) => pageUrls(row.findings));
+    if (urls.length) context.webPages = await webTurn.read(urls);
+    if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
     progress("writing");
     context.lookups = lookups;
     turn = await mediator.continueTogether({ ...context, today, webSearch: true, lookups }, language);
@@ -257,7 +264,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     checked = checkPlanConstraints(turn.planConstraints, { context, reply: turn.reply });
     if (!checked.ok) turn = { actions: [], draftAgreement: null, reply: language === "en" ? "This plan still needs its budget and conditions verified before it can be used." : language === "es" ? "Falta verificar el presupuesto y las condiciones antes de usar este plan." : "这份安排的预算和条件仍未通过核对，暂时不能当作可执行方案。" };
   }
-  turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search", "memory_search"].includes(action.kind)) };
+  turn = webTurn.results.length ? { ...turn, actions: [], draftAgreement: null } : { ...turn, actions: (turn.actions || []).filter((action) => !["web_read", "web_search", "chat_search", "memory_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
   if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
     progress("mediating");
@@ -279,8 +286,10 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     const awaiting = outcome.awaiting || (outcome.waitingFor || []).map((name) => members.find((member) => member.name && member.name.toLowerCase() === String(name).toLowerCase())?.id).filter(Boolean);
     // Shared write receipts remain transaction-backed. A no-action answer cannot
     // claim it saved a memory merely because related context was retrieved.
-    const cited = citedReply(made.length || outcome.draftAgreement ? outcome.reply : finishReply(outcome.reply, { request: text, language }), recallSources);
+    const ownReply = made.length || outcome.draftAgreement ? outcome.reply : finishReply(outcome.reply, { request: text, language });
+    const cited = citedReply([ownReply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
     const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: cited.reply, i18n: outcome.i18n || null, awaiting, refs: [...made, ...cited.sources.map((item) => ({ type: "conversation", id: item.messageId, ...item })), ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
+    if (webTurn.results.length) result.conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.webFailures = webTurn.failures; draft.version += 1; });
     if (!outcome.draftAgreement) return result;
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });
     return { ...result, conversation };
