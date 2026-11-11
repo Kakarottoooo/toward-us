@@ -127,6 +127,12 @@ async function one(original) {
         continue;
       }
       result.rivals[provider] = { provider, ...(await context.run({ case: item.id, phase: `opponent:${provider}` }, () => invoke(provider, { root: join(root, "opponents"), input: JSON.stringify({ records: visible, question: item.question }), instructions: opponentInstructions, image: picture, search: !readonlySite }))) };
+      if (readonlySite && item.probe.repeat === 2) {
+        const first = { ...result.rivals[provider] };
+        const second = await context.run({ case: item.id, phase: `opponent:${provider}:repeat` }, () => invoke(provider, { root: join(root, "opponents"),
+          input: JSON.stringify({ records: visible, question: item.question, previousAnswer: first.answer, repeatedRequest: true, observationState: "No new page visit: the previous failed observation is reused." }), instructions: opponentInstructions, search: false }));
+        result.rivals[provider] = { ...first, answer: `第1次：${first.answer}\n第2次：${second.answer}`, rounds: [first, second], usd: provider === "claude" ? (first.usd || 0) + (second.usd || 0) : null, ms: first.ms + second.ms };
+      }
       // No database/tool access is given to competitors; their completion must be judged from usable output.
       result.rivals[provider].evidence = { mode: "直接可用的结果；没有产品数据库写入或真实账号权限", ...(picture ? { imageAttached: true, transcriptProvided: false, imageSha256: createHash("sha256").update(await readFile(picture)).digest("hex") } : {}) };
     } catch (error) { result.rivals[provider] = { provider, error: error.message }; }
