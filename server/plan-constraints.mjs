@@ -38,7 +38,7 @@ function sourceText(context) {
   // Never inspect raw store records, other principals, assistant messages or a
   // model's earlier answer as proof of facts.
   return JSON.stringify({ messages: (context?.messages || []).filter((item) => item.role === "user" || item.role === "member").map(({ text }) => text),
-    profile: context?.profile || context?.sharedProfile || {}, memories: context?.authorizedMemories || [], lookups: context?.lookups || [] });
+    profile: context?.profile || context?.sharedProfile || {}, memories: context?.authorizedMemories || [], lookups: context?.lookups || [], webPages: context?.webPages || [] });
 }
 function quoted(quote, source) { return typeof quote === "string" && quote.trim().length > 1 && normalized(source).includes(normalized(quote)); }
 function currencyOf(value) {

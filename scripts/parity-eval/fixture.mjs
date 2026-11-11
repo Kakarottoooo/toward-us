@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import express from "express";
+import { join } from "node:path";
 import { createApiApp } from "../../server/app.mjs";
 import { createFileStore } from "../../server/store.mjs";
 import { createMediator } from "../../server/mediator.mjs";
@@ -44,11 +46,12 @@ export function formatVisibleAnswer(answer, { cards = [], draft = null } = {}) {
 }
 
 // Same synthetic-account seeding protocol as eval-memory, reusing production memory helpers.
-export async function createHarness(directory, { requestContext, mediator } = {}) {
+export async function createHarness(directory, { requestContext, mediator, clientRoot } = {}) {
   const options = {};
   const model = mediator || createMediator({ apiKey: "" });
   const store = await createFileStore(`${directory}/state.json`);
   const app = createApiApp({ store, mediator: model, reminderService: createReminderService({ store }) });
+  if (clientRoot) { app.use(express.static(clientRoot)); app.get("*path", (_req, res) => res.sendFile(join(clientRoot, "index.html"))); }
   // HTTP server callbacks do not inherit the client's AsyncLocalStorage. Carry only synthetic case/phase IDs.
   const server = createServer((req, res) => requestContext
     ? requestContext.run({ case: req.headers["x-parity-case"] || null, phase: req.headers["x-parity-phase"] || null,
@@ -256,7 +259,7 @@ async function setupCase(item, withHistory) {
       ...(image ? { imageAttached: true, transcriptProvided: false, importStatuses: (await call("/imports", null, asker.cookie)).result.imports.map((entry) => ({ status: entry.status, messageCount: entry.messageCount })) } : {}),
       modality: item.modality || "text", boundary: "本地临时账号；没有真实发送；语音仅测转写后的文本，图片走真实导入路径" } };
   }
-  return { setup: (item) => setupCase(item, true), ask, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { setup: (item) => setupCase(item, true), ask, call, store, base, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 // Deliberately exclude all private records owned by the other principal before constructing competitor/judge prompts.
