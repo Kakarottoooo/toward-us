@@ -7,7 +7,7 @@ export const quotaError = (text) => /you.ve hit your[^\n]{0,80}limit|(?:usage|ra
 
 // Installed only by the disposable evaluation runner, before any model call.
 // Observe all transports (including vision/search), not just text usage events.
-export function installCallGuard({ directory, context, maxClaudeCalls = 120, checkpoint }) {
+export function installCallGuard({ directory, context, maxClaudeCalls = 120, maxCalls = Infinity, checkpoint }) {
   const original = childProcess.spawn, children = new Set(), calls = [];
   let stopped = false;
   const log = (event) => appendFileSync(join(directory, "calls.jsonl"), `${JSON.stringify(event)}\n`);
@@ -27,6 +27,7 @@ export function installCallGuard({ directory, context, maxClaudeCalls = 120, che
   };
   childProcess.spawn = function (command, args = [], options) {
     const provider = /(?:^|[\\/])claude(?:\.exe|\.cmd)?$/i.test(command) ? "claude" : args.some((arg) => /codex[\\/]bin[\\/]codex\.js$/.test(arg)) || /(?:^|[\\/])codex$/.test(command) ? "codex" : null;
+    if (provider && calls.length >= maxCalls) stop("total model call budget reached");
     if (provider === "claude" && calls.filter((call) => call.provider === "claude").length >= maxClaudeCalls) stop("evaluation Claude call budget reached");
     const child = original(command, args, options);
     if (!provider) return child;

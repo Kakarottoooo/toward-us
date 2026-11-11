@@ -329,14 +329,15 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         } catch (error) {
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
         }
-        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
+        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
-        if (record.personNew && record.personId && !wantsOneSentence(request.text)) {
+        const quietNotes = wantsOneSentence(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text);
+        if (record.personNew && record.personId && !quietNotes) {
           await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
           await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
         }
         // After the answer: keep what this exchange shows about the two of them, privately (reply coach, founder 11-08).
-        void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages, personId: record.personId || null, quiet: wantsOneSentence(request.text) })
+        void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages, personId: record.personId || null, quiet: quietNotes })
           .catch((error) => console.error("Could not keep notes from the screenshots:", error?.message || error));
       }
     }

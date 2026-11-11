@@ -211,6 +211,8 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   }
   assert.ok(session.messages.some((message) => message.text === "I'm sorry I kept you waiting."));
   assert.ok(!session.messages.some((message) => /saved this|warmer tone/.test(message.text)));
+  assert.ok(!session.messages.some((message) => message.text === "Reading."), "finished answer replaces its pending receipt");
+  assert.equal(session.messages.filter((message) => message.role === "assistant").length, 1);
 });
 
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {

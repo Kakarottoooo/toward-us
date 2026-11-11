@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createReadonlyWeb, createWebTurn, publicAddress, WEB_LIMITS } from "../server/readonly-web.mjs";
+import { createReadonlyWeb, createWebTurn, publicAddress, webSourceText, WEB_LIMITS } from "../server/readonly-web.mjs";
+
+test("successful sources retain their own year and an independent-verification caveat", () => {
+  const pages = [{ url: "https://example.test/event", status: "ok", fetchedAt: "2026-11-11T01:00:00Z", fields: { date: "活动时间：2027-01-02 14:00" } }];
+  for (const language of ["zh", "en", "es"]) {
+    const text = webSourceText(pages, language);
+    assert.ok(text.includes("2027-01-02"));
+    assert.match(text, /未经独立核实|not been independently verified|no se ha verificado/);
+  }
+});
 
 test("public reads use fresh cookie-free contexts and never execute forms or page scripts", async () => {
   const requests = [];

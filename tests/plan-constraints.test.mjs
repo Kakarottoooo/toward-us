@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkPlanConstraints, requiresPlanConstraints } from "../server/plan-constraints.mjs";
+import { checkPlanConstraints, requiresPlanConstraints, requiresPlanDelivery } from "../server/plan-constraints.mjs";
+import { finishReply, wantsOneSentence } from "../server/reply-contract.mjs";
+
+test("draft-only scope does not discard a separate factual question or assessment", () => {
+  const question = "看聊天截图，帮我写一句自然的道歉话，不要发送。";
+  assert.equal(wantsOneSentence(question), false);
+  const answer = "那句话说得太绝对了。可以回：刚才说得太重，对不起。";
+  assert.equal(finishReply(answer, { request: question }), answer, "an explanation before a draft must not cause the draft to be discarded");
+  for (const q of ["两人多少钱，几点结束？帮我写一句邀约。", "是我太敏感了吗？帮我写一句回复。", "引用两个日期，再给一句话。"])
+    assert.equal(wantsOneSentence(q), false);
+});
 
 const context = (question, extra = {}) => ({ messages: [{ role: "user", text: question }], ...extra });
 const empty = () => ({ budget: null, location: null, visits: [], food: [] });
@@ -132,4 +142,10 @@ test("empty metadata cannot bypass a budget or allergy plan", () => {
 test("a visit must respect a single explicitly requested calendar date", () => {
   const result = checkPlanConstraints({ ...empty(), visits: [visit()] }, { context: context("安排2026-11-15半日活动"), reply: "营业时间未核实。" });
   assert.ok(codes(result).includes("wrong_date"));
+});
+
+test("ordinary plans receive concrete-delivery guidance without paying for constraint metadata", () => {
+  const ctx = context("按现在的情况，排一个少走路的半日计划");
+  assert.equal(requiresPlanDelivery(ctx), true);
+  assert.equal(requiresPlanConstraints(ctx), false);
 });
