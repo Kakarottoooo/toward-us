@@ -25,18 +25,18 @@ const base = `http://127.0.0.1:${PORT}`;
 const PEOPLE = {
   en: { a: "Mia", b: "Leo",
     private: "Leo forgot our anniversary dinner again. I'm hurt, but I don't want tonight to turn into a fight. How do I bring it up?",
-    partner: "Can we finally plan Saturday? I owe you that dinner 🙂",
-    plan: "@Pinky help us plan Saturday: dinner by the river, under $80 for both of us, we're free after 6.",
+    partner: "Sorry about last night. Can we sort out the chores thing calmly? 🙂",
+    plan: "@Pinky we keep arguing about the dishes. Can you help us agree on a fair way to split chores this week?",
     remind: "Remind me Friday at 6pm to book the table for Saturday." },
   zh: { a: "小雨", b: "阿杰",
     private: "阿杰又忘了我们的纪念日晚饭，我有点难过，但不想今晚吵起来。我该怎么跟他说？",
-    partner: "这周六我们好好安排一下吧，那顿饭我欠你的 🙂",
-    plan: "@Pinky 帮我们安排周六：江边吃晚饭，两个人 500 元以内，我们 6 点以后有空。",
+    partner: "昨晚是我语气不好。家务的事我们好好商量一下吧 🙂",
+    plan: "@Pinky 我们老为洗碗吵架，帮我们商量一个这周公平分家务的办法吧。",
     remind: "提醒我周五晚上 6 点订周六的位子。" },
   es: { a: "Lucía", b: "Mateo",
     private: "Mateo volvió a olvidar nuestra cena de aniversario. Me dolió, pero no quiero que esta noche termine en pelea. ¿Cómo se lo digo?",
-    partner: "¿Planeamos por fin el sábado? Te debo esa cena 🙂",
-    plan: "@Pinky ayúdanos a planear el sábado: cena junto al río, menos de 80 € para los dos, estamos libres desde las 6.",
+    partner: "Perdón por lo de anoche. ¿Hablamos con calma de las tareas? 🙂",
+    plan: "@Pinky siempre discutimos por los platos. ¿Nos ayudas a acordar un reparto justo de las tareas esta semana?",
     remind: "Recuérdame el viernes a las 6 de la tarde reservar la mesa del sábado." },
 };
 
@@ -54,25 +54,65 @@ async function startServer(dataFile) {
 
 async function member(browser, language, name, viewport) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: { zh: "zh-CN", en: "en-US", es: "es-ES" }[language], baseURL: base });
-  await context.addInitScript((value) => { try { localStorage.setItem("toward-us.language", value); } catch { /* private */ } }, language);
-  const email = `${name.normalize("NFD").replace(/[^a-z]/gi, "").toLowerCase() || "member"}-${language}-${Date.now()}@example.invalid`;
+  await context.addInitScript((value) => { try { localStorage.setItem("toward-us.language", value); localStorage.setItem("toward-us:onboarded", "1"); } catch { /* private */ } }, language);
+  const email = `${{ "小雨": "xiaoyu", "阿杰": "ajie" }[name] || name.normalize("NFD").replace(/[^a-z]/gi, "").toLowerCase()}.${language}@example.com`;
   const response = await context.request.post("/api/auth/register", { data: { aiConsent: true, name, email, password: "fictional-demo-password-2026" } });
   if (response.status() !== 201) throw new Error(`register ${name}: ${response.status()} ${await response.text()}`);
   return context;
 }
 
+/** Closes the first-run tour and the "Try this" cards, and folds the opening suggestions away (they fold once you start
+ * typing), the way a person would, so each screenshot shows the conversation itself. */
+async function clear(page) {
+  for (let round = 0; round < 8; round += 1) {
+    const skip = page.locator(".onboarding-skip, .discovery-later").first();
+    if (!(await skip.isVisible().catch(() => false))) break;
+    await skip.click(); await page.waitForTimeout(300);
+  }
+  // Today's question can come in the wrong language (a known bug, docs/app-store/audit.zh-CN.md): set it aside as a person
+  // would rather than show it.
+  const defer = page.getByTestId("daily-defer");
+  if (await defer.isVisible().catch(() => false)) { await defer.click(); await page.waitForTimeout(500); }
+  const input = page.getByTestId("conversation-input");
+  if (await page.getByTestId("composer-ideas").isVisible().catch(() => false) && await input.isVisible().catch(() => false)) {
+    await input.fill("."); await input.fill(""); await page.waitForTimeout(300);
+  }
+}
+const UNAVAILABLE = /Pinky is unavailable right now|Pinky 暂时不可用|Pinky no está disponible/;
+/** Says something to Pinky in Us and waits for its answer; when the local model timed out, asks once more. */
+async function askPinky(page, text) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const before = (await page.locator("body").innerText()).match(new RegExp(UNAVAILABLE, "g"))?.length || 0;
+    await say(page, text, "us"); await settle(page, 25_000);
+    for (let wait = 0; wait < 12; wait += 1) {
+      const body = await page.locator("body").innerText();
+      if ((body.match(new RegExp(UNAVAILABLE, "g"))?.length || 0) > before) break;
+      await page.waitForTimeout(5000);
+    }
+    if (((await page.locator("body").innerText()).match(new RegExp(UNAVAILABLE, "g"))?.length || 0) <= before) return;
+    console.log("Pinky timed out in Us; asking again");
+  }
+}
+async function openSettings(page) {
+  await page.goto("/"); await page.getByTestId("conversation-input").waitFor(); await clear(page);
+  await page.getByRole("button", { name: /^(打开菜单|Open menu|Abrir menú)$/ }).click();
+  await page.getByRole("button", { name: /^(设置|Settings|Ajustes)$/ }).click();
+  await page.getByTestId("settings-screen").waitFor();
+}
+
 async function say(page, text, channel) {
-  await page.goto(`/?channel=${channel}`); await page.getByTestId("conversation-input").waitFor();
+  await page.goto(`/?channel=${channel}`); await page.getByTestId("conversation-input").waitFor(); await clear(page);
   const reply = page.waitForResponse((response) => response.request().method() === "POST" && /\/api\/(assistant\/sessions\/[^/]+\/messages|together\/messages)$/.test(new URL(response.url()).pathname), { timeout: 240_000 });
   await page.getByTestId("conversation-input").fill(text);
   await page.getByTestId("conversation-send").click();
-  await reply;
+  try { await reply; } catch (error) { await page.screenshot({ path: join(tmpdir(), "pinky-store-shot-failure.png") }).catch(() => {}); throw error; }
 }
 
 /** Waits until Pinky's answer in the Us chat has arrived (it comes over the live event stream after the POST). */
 async function settle(page, ms = 4000) { await page.waitForLoadState("networkidle").catch(() => {}); await page.waitForTimeout(ms); }
 
 async function shoot(page, language, size, name) {
+  await clear(page);
   const directory = join(root, "docs", "app-store", "screenshots", language, size);
   await mkdir(directory, { recursive: true });
   await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
@@ -96,7 +136,7 @@ try {
 
     await say(pa, people.private, "me"); await settle(pa);
     const privateUrl = "/?channel=me";
-    await say(pb, people.partner, "us"); await say(pa, people.plan, "us"); await settle(pa, 20_000);
+    await say(pb, people.partner, "us"); await askPinky(pa, people.plan);
     const usUrl = "/?channel=us";
     await say(pa, people.remind, "me"); await settle(pa);
 
@@ -107,12 +147,8 @@ try {
       await shoot(pa, language, size, "01-just-me");
       await pa.goto(usUrl); await settle(pa, 2500); await shoot(pa, language, size, "02-us-plan");
       await pa.goto(privateUrl); await settle(pa, 2500); await shoot(pa, language, size, "03-reminder");
-      await pa.goto("/"); await settle(pa, 1500);
-      await pa.getByRole("button", { name: /设置|Settings|Ajustes/ }).first().click().catch(() => {});
-      await pa.getByTestId("settings-access").click(); await settle(pa, 2000); await shoot(pa, language, size, "04-what-pinky-sees");
-      await pa.goto("/"); await settle(pa, 1500);
-      await pa.getByRole("button", { name: /设置|Settings|Ajustes/ }).first().click().catch(() => {});
-      await pa.getByTestId("settings-screen").waitFor(); await shoot(pa, language, size, "05-privacy-controls");
+      await openSettings(pa); await pa.getByTestId("settings-access").click(); await settle(pa, 2000); await shoot(pa, language, size, "04-what-pinky-sees");
+      await openSettings(pa); await pa.getByTestId("settings-access").scrollIntoViewIfNeeded(); await shoot(pa, language, size, "05-privacy-controls");
     }
     await a.close(); await b.close();
   }
