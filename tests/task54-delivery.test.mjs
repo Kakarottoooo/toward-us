@@ -9,6 +9,7 @@ import { explicitSelfFacts } from '../server/profile.mjs';
 import { localJudgeRecords } from '../scripts/parity-eval/score.mjs';
 import { writeChecks } from '../scripts/parity-eval/external-cases.mjs';
 import { projectRecord, createRelationshipRecord } from '../server/relationship-domain.mjs';
+import { writeSnapshot } from '../scripts/parity-eval/fixture.mjs';
 
 test('captured mixed reminder sentences retain all three advice steps, with one execution receipt', () => {
   const raw = JSON.parse(readFileSync(new URL('./fixtures/task54-source-replay.json', import.meta.url)));
@@ -125,6 +126,10 @@ test('source summary audit gets each original and preserves ongoing states and a
 test('draft writes and visible custom spaces exclude system spaces without inventing agreements', () => {
   assert.equal(writeChecks([{ collection: 'draftAgreement', count: 1, fields: { title: '做饭' } }], {}, { togetherConversations: [{ id: 'c', draftAgreement: { title: '做饭' } }] }, {})[0].ok, true);
   assert.equal(writeChecks([{ collection: 'spaces', count: 1, fields: {} }], {}, { spaces: [{ id: 's', system: 'moments' }, { id: 'custom' }] }, {})[0].ok, true);
+  const conversation = createRelationshipRecord({ userId: 'owner', visibility: 'private', draftAgreement: { title: '做饭', summary: '做饭', terms: ['做饭'] } });
+  const state = writeSnapshot({ togetherConversations: [conversation], spaces: [createRelationshipRecord({ userId: 'other', visibility: 'private', title: 'Private' })] }, 'owner');
+  assert.equal(state.spaces.length, 0);
+  assert.equal(state.togetherConversations[0].draftAgreement.title, '做饭');
 });
 
 test('judges receive local time without changing frozen visible records', () => {
