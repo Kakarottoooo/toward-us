@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { agreementPresentation, groundedAgreementTerms, checkDelivery, checkReplyFormat, directFactReply, finishReply, mergeReceipts, privateBoundaryReply, renderReply } from '../server/reply-contract.mjs';
+import { agreementPresentation, groundedAgreementTerms, checkDelivery, checkReplyFormat, directFactReply, finishReply, mergeReceipts, privateBoundaryReply, renderReply, requiresReplyScopeCheck } from '../server/reply-contract.mjs';
 import { prepareSourceReply } from '../server/source-reply.mjs';
 import { createReadonlyWeb, webSourceText } from '../server/readonly-web.mjs';
 import { explicitSelfFacts } from '../server/profile.mjs';
@@ -41,6 +41,7 @@ test('agreement terms need member-authored source quotes, never agent defaults',
 });
 
 test('normalization removes record framing without removing facts, uncertainty or requested provenance', () => {
+  assert.equal(requiresReplyScopeCheck('给他买什么？'), true);
   assert.equal(directFactReply('记录里小杰（10 月 23 日说的）最爱芒果班戟。', '买什么甜点？'), '小杰最爱芒果班戟。');
   assert.equal(directFactReply('记 录 里：生日是5月21日！', '哪天生日？'), '生日是5月21日！');
   assert.equal(directFactReply('记录里没有日期。', '哪天？'), '记录里没有日期。');
