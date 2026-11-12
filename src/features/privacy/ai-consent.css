@@ -9,7 +9,7 @@
 .legal-links { font-size: 15px; line-height: 1.5; color: #6f655d; }
 .legal-links a { color: #b03a33; text-decoration: underline; text-underline-offset: 2px; }
 .auth-consent { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #5b524b; }
-.offline-banner { position: absolute; z-index: 60; top: calc(max(54px, env(safe-area-inset-top)) + 4px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 9px 14px; border-radius: 20px; background: #2b2622; color: #fff; font-size: 14px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); pointer-events: none; }
+.offline-banner { position: absolute; z-index: 60; top: calc(max(54px, env(safe-area-inset-top)) + 4px); left: 16px; right: 16px; width: fit-content; margin: 0 auto; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 20px; background: #2b2622; color: #fff; font-size: 14px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); pointer-events: none; }
 .report-form { display: flex; flex-direction: column; gap: 12px; }
 .report-form fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
 .report-form fieldset legend { margin-bottom: 8px; font-size: 15px; color: #5b524b; }
