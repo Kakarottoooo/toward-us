@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { meteredCall, runAiFeature } from "./ai-ledger.mjs";
 
 // The couple's own character (the founder, 11-03): a photo of their pet, a screenshot or any figure they like is cut out,
 // checked to be whole, and given a short idle motion by Seedance; it floats at the top of the conversation for both.
@@ -144,7 +145,7 @@ async function make({ store, maker, emit, id, userId, fileId, photo }) {
   await update((draft) => { previous = draft.current?.fileId || null; draft.current = { fileId, motion: false }; draft.making.state = "moving"; });
   if (previous && previous !== fileId) await rm(folderFor(previous), { recursive: true, force: true });
   let moved = false;
-  try { await maker.animate(join(folder, "still.png"), folder); moved = existsSync(join(folder, "motion.webp")); } catch (error) { console.error(`Character motion failed (${error?.name || "Error"}: ${String(error?.message || "").slice(0, 80)}).`); }
+  try { await runAiFeature({ feature: "character_motion", channel: "metered", userId }, () => maker.animate(join(folder, "still.png"), folder)); moved = existsSync(join(folder, "motion.webp")); } catch (error) { console.error(`Character motion failed (${error?.name || "Error"}: ${String(error?.message || "").slice(0, 80)}).`); }
   // Without a motion the still stays the character; only the moving picture is missing.
   await update((draft) => {
     if (moved && draft.current?.fileId === fileId) draft.current.motion = true;
@@ -159,6 +160,7 @@ const PIPELINE = join(root, "tools", "character", "pipeline.py");
 const KEY_FILE = process.env.SEEDANCE_KEY_FILE || "E:\\CodexData\\.codex\\private\\replicate.key";
 const REPLICATE = "https://api.replicate.com/v1";
 const SEEDANCE_MODEL = process.env.SEEDANCE_MODEL || "bytedance/seedance-1-lite";
+const SEEDANCE_SECONDS = 4; // seconds of 480p video per run, the unit Replicate bills
 const AGENT = "pinky-character/1.0"; // Replicate's firewall refuses some default agents (403, error 1010)
 // The creature's own natural idle, so a dog moves like a dog; never a shadow or a floor (the founder, 11-03).
 const PROMPT = "The character stays in place and idles naturally, with the small lifelike movements typical of what it is: breathing, blinking, a slight turn of the head. Static camera, plain solid green background, flat even light, no shadow and no floor: the character alone.";
@@ -187,7 +189,7 @@ async function seedance(firstFrame, clip) {
   const key = (await readFile(KEY_FILE, "utf8")).trim();
   if (!key) throw new Error("No Replicate token");
   // Only the first frame: the same picture as the last frame too is refused (E006).
-  let run = await replicate(`${REPLICATE}/models/${SEEDANCE_MODEL}/predictions`, key, { input: { prompt: PROMPT, image: `data:image/png;base64,${(await readFile(firstFrame)).toString("base64")}`, duration: 4, resolution: "480p" } });
+  let run = await replicate(`${REPLICATE}/models/${SEEDANCE_MODEL}/predictions`, key, { input: { prompt: PROMPT, image: `data:image/png;base64,${(await readFile(firstFrame)).toString("base64")}`, duration: SEEDANCE_SECONDS, resolution: "480p" } });
   const deadline = Date.now() + 15 * 60_000;
   while (Date.now() < deadline) {
     if (run.status === "succeeded") {
@@ -228,7 +230,7 @@ export function createCharacterMaker() {
     /** Writes motion.webp: a transparent loop that plays forward then back. Throws when any step fails. */
     async animate(still, folder) {
       if (await step("green", still, join(folder, "green.png"))) throw new Error("Green frame failed");
-      await seedance(join(folder, "green.png"), join(folder, "clip.mp4"));
+      await meteredCall({ provider: "replicate", model: SEEDANCE_MODEL }, () => seedance(join(folder, "green.png"), join(folder, "clip.mp4")), () => ({ units: SEEDANCE_SECONDS }));
       if (await step("loop", join(folder, "clip.mp4"), join(folder, "motion.webp"), "pingpong")) throw new Error("Loop failed");
       await Promise.all(["green.png", "clip.mp4", "look-0.png"].map((name) => rm(join(folder, name), { force: true })));
     },

@@ -22,6 +22,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>
@@ -51,7 +53,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Used only when you choose to take a photo to send in Pinky.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Used when you choose photos to send, or connect an album so Pinky can turn it into your memories.</string>
+	<string>Used when you choose photos to send, connect an album so Pinky can turn it into your memories, or ask Pinky to find photos of the two of you (faces are matched on your phone and never uploaded).</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Used only when you tap the microphone, to turn your speech into text on your phone.</string>
 	<key>CFBundleLocalizations</key>
@@ -85,20 +87,11 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
