@@ -12,6 +12,8 @@ const ERRORS: Record<string, [string, string, string]> = {
   microphone_denied: ["需要麦克风权限才能通话。可以在手机设置里给 Pinky 打开麦克风。", "Pinky needs the microphone for calls. Turn it on for Pinky in your phone's settings.", "Pinky necesita el micrófono para llamar. Actívalo para Pinky en los ajustes del teléfono."],
   voice_already_active: ["已经有一通电话在进行中。", "A call is already in progress.", "Ya hay una llamada en curso."],
   voice_daily_limit: ["今天的通话时长用完了，明天再来。", "Today's call time is used up. Try again tomorrow.", "Se acabó el tiempo de llamada de hoy. Prueba mañana."],
+  voice_monthly_limit: ["这个月的 AI 用量到上限了，下个月 1 日会恢复。", "This month's AI limit is reached. It resets on the 1st of next month.", "Se alcanzó el límite de IA de este mes. Se renueva el día 1 del próximo mes."],
+  voice_paused: ["Pinky 的 AI 正在短暂维护，请稍后再试。", "Pinky's AI is briefly paused for maintenance. Please try again soon.", "La IA de Pinky está en una breve pausa de mantenimiento. Inténtalo pronto."],
   pairing_required: ["先邀请另一半加入，才能在“我们俩”里通话。", "Invite your partner before calling in Us.", "Invita a tu pareja antes de llamar en Nosotros."],
   connection_lost: ["通话断开了。", "The call dropped.", "La llamada se cortó."],
   time_limit: ["已到本次通话时长上限。", "The call reached its time limit.", "La llamada llegó a su límite de tiempo."],

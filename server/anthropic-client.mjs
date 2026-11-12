@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
+import { meteredCall, modelFor, usageFromAnthropic } from "./ai-ledger.mjs";
 
 // Production AI: Claude through the Anthropic API, behind the same small surface the rest of the server already uses
 // (`responses.create` with a JSON schema, `lookup` for web search, `readImages` for screenshots). The model is set by
@@ -23,8 +24,10 @@ export function createAnthropicClient({ apiKey = process.env.ANTHROPIC_API_KEY, 
   // A long server-tool turn can pause; hand its content back so it continues where it stopped.
   const run = async (request, options) => {
     let messages = request.messages, message;
+    // Each request is one ledger row; past a member's soft cost limit it runs on the cheaper model (not with server tools).
+    const model = request.tools ? request.model : modelFor("anthropic", request.model);
     for (let turn = 0; turn < 3; turn += 1) {
-      message = await client.messages.create({ ...request, messages }, options);
+      message = await meteredCall({ provider: "anthropic", model, requested: request.model }, () => client.messages.create({ ...request, model, messages }, options), usageFromAnthropic);
       if (message.stop_reason !== "pause_turn") break;
       messages = [...messages, { role: "assistant", content: message.content }];
     }
