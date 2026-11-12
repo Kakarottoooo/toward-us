@@ -30,7 +30,7 @@ import { createCoupleRituals } from "./couple-rituals.mjs";
 import { deliverLetters } from "./letters.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createNativePush } from "./native-push.mjs";
-import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
+import { aiConsentAt, createPrivacyRouter, runPrivateRetention, setAiConsent } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
 import { createMatchRouter } from "./match-router.mjs";
@@ -50,6 +50,7 @@ import { createPeopleComparer } from "./people-compare.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
+import { createLegalRouter } from "./legal.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createMembershipRouter } from "./membership.mjs";
@@ -177,6 +178,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
     const created = await store.createUser(user);
     if (!created) return res.status(409).json({ error: "这个邮箱已经注册。" });
+    // The sign-up screen states what goes to the AI providers right above the button; tapping it is that consent.
+    if (req.body?.aiConsent === true) await store.transaction(`user:${created.id}`, (tx) => setAiConsent(tx, created.id, true));
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
     res.status(201).json(await appState(store, created));
@@ -514,6 +517,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createHandoffRouter());
   app.use("/api", createSuggestionsRouter({ store, mediator }));
   app.use("/api", createFeedbackRouter({ store, mediator }));
+  app.use(createLegalRouter());
   app.use("/api", createCharacterRouter({ store, emit }));
   app.use("/api", membership.router);
   app.use("/api", createBetaRouter({ store, grant: membership.grant }).router);
@@ -561,7 +565,7 @@ async function authenticateRequest(store, req) {
 
 async function appState(store, user) {
   const pairing = await store.getRelationshipContext(user.id);
-  return { user: publicUser(user), pairing: publicPairing(pairing, user.id) };
+  return { user: { ...publicUser(user), aiConsentAt: await aiConsentAt(store, user.id) }, pairing: publicPairing(pairing, user.id) };
 }
 
 function publicPairing(context, viewerId) {

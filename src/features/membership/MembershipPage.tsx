@@ -20,6 +20,11 @@ export const APPLE_IDS = { monthly: "us.toward.pinky.member.monthly", yearly: "u
 export function storePlugin(): StorePlugin | null {
   try { const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string; Plugins?: { PinkyStore?: StorePlugin } } }).Capacitor; return cap?.isNativePlatform?.() && cap.getPlatform?.() === "ios" ? cap.Plugins?.PinkyStore || null : null; } catch { return null; }
 }
+/** True inside the iPhone app. There Apple's rules (App Review 3.1.1) allow only in-app purchase: no web checkout, no
+ * links to it, and no codes that unlock membership. Without the StoreKit bridge the iPhone app simply cannot buy yet. */
+export function inIosApp(): boolean {
+  try { const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor; return Boolean(cap?.isNativePlatform?.() && cap.getPlatform?.() === "ios"); } catch { return false; }
+}
 let renewalsBound = false;
 /** Inside the iPhone app, hands every transaction StoreKit reports while the app runs (renewals, Ask to Buy approvals) to the
  * server, which verifies it; App Store Server Notifications cover the times the app is closed. A no-op in a browser. */
@@ -36,7 +41,7 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
   const [data, setData] = useState<Membership | null>(null);
   const [apple, setApple] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(""); const [notice, setNotice] = useState("");
-  const store = storePlugin();
+  const store = storePlugin(); const ios = inIosApp();
   const keyboard = useKeyboard();
   const [code, setCode] = useState(readBetaCode);
   const redeem = async () => {
@@ -56,7 +61,7 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
         const result = await store.purchase({ id: APPLE_IDS[plan], appAccountToken: userId });
         if (result.status === "purchased" && result.signedTransaction) setData(await relationshipApi<Membership>("/api/membership/apple/verify", jsonBody({ signedTransaction: result.signedTransaction })));
         else if (result.status === "pending") setNotice(t("等待批准，批准后会自动开通。", "Waiting for approval; it turns on once approved.", "Esperando aprobación; se activa al aprobarse."));
-      } else {
+      } else if (!ios) {
         const { url } = await relationshipApi<{ url: string }>("/api/membership/stripe/checkout", jsonBody({ product: plan, language }));
         location.assign(url); return;
       }
@@ -79,7 +84,7 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
   const member = data.plan === "member", mine = data.paidBy === userId;
   const until = data.until ? new Date(data.until).toLocaleDateString(language === "zh" ? "zh-CN" : language, { year: "numeric", month: "short", day: "numeric" }) : "";
   const price = (plan: "monthly" | "yearly") => apple[APPLE_IDS[plan]] || dollars(data.prices[plan].usd);
-  const canPay = Boolean(store) || data.providers.stripe;
+  const canPay = Boolean(store) || (!ios && data.providers.stripe);
   const perks = [
     t("每天和 Pinky 聊得更多、打电话更久", "More with Pinky every day, and longer calls", "Más con Pinky cada día y llamadas más largas"),
     t("导入更多聊天记录，让 Pinky 看懂你们", "Import more chat history for Pinky to understand you", "Importa más historial para que Pinky los entienda"),
@@ -101,9 +106,9 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
       <button type="button" className="membership-plan featured" disabled={!canPay || Boolean(busy)} onClick={() => void buy("yearly")} data-testid="buy-yearly"><span className="membership-badge"><Sparkle size={12} weight="fill" />{t("省一半", "Save 50%", "Ahorra 50%")}</span><strong>{t("按年", "Yearly", "Anual")}</strong><span>{price("yearly")}{t(" / 年", " / year", " / año")}</span></button>
       <button type="button" className="membership-plan" disabled={!canPay || Boolean(busy)} onClick={() => void buy("monthly")} data-testid="buy-monthly"><strong>{t("按月", "Monthly", "Mensual")}</strong><span>{price("monthly")}{t(" / 月", " / month", " / mes")}</span></button>
     </div>}
-    {!member && <form className="membership-code" onSubmit={(event) => { event.preventDefault(); if (code.trim()) void redeem(); }}><KeyboardInput value={code} maxLength={20} placeholder={t("有内测码？填在这里", "Have a beta code?", "¿Tienes un código de beta?")} onChange={(event) => setCode(event.target.value.toUpperCase())} onBlur={() => keyboard.hide()} aria-label={t("内测码", "Beta code", "Código de beta")} data-testid="beta-code" /><button type="submit" disabled={!code.trim() || Boolean(busy)}>{t("使用", "Apply", "Usar")}</button></form>}
+    {!member && !ios && <form className="membership-code" onSubmit={(event) => { event.preventDefault(); if (code.trim()) void redeem(); }}><KeyboardInput value={code} maxLength={20} placeholder={t("有内测码？填在这里", "Have a beta code?", "¿Tienes un código de beta?")} onChange={(event) => setCode(event.target.value.toUpperCase())} onBlur={() => keyboard.hide()} aria-label={t("内测码", "Beta code", "Código de beta")} data-testid="beta-code" /><button type="submit" disabled={!code.trim() || Boolean(busy)}>{t("使用", "Apply", "Usar")}</button></form>}
     {!member && !canPay && <p className="membership-note">{t("付款功能还在准备，很快就能开通。", "Payment is almost ready; it opens soon.", "El pago está casi listo; abrirá pronto.")}</p>}
-    {member && mine && data.source === "stripe" && <button type="button" className="membership-link" disabled={Boolean(busy)} onClick={() => void manage()}>{t("管理或取消订阅", "Manage or cancel", "Gestionar o cancelar")}</button>}
+    {member && mine && data.source === "stripe" && !ios && <button type="button" className="membership-link" disabled={Boolean(busy)} onClick={() => void manage()}>{t("管理或取消订阅", "Manage or cancel", "Gestionar o cancelar")}</button>}
     {member && mine && data.source === "apple" && <p className="membership-note">{t("在 iPhone 的“设置 → 你的名字 → 订阅”里可以管理或取消。", "Manage or cancel in iPhone Settings → your name → Subscriptions.", "Gestiona o cancela en Ajustes del iPhone → tu nombre → Suscripciones.")}</p>}
     {store && <button type="button" className="membership-link" disabled={Boolean(busy)} onClick={() => void restore()}>{t("恢复购买", "Restore purchases", "Restaurar compras")}</button>}
     {notice && <p className="membership-notice" role="status">{notice}</p>}

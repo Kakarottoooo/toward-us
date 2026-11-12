@@ -7,6 +7,10 @@ import { visiblePhoto } from "./photo-store.mjs";
 // of what they sent. It is the sender's own private record: never shared with the partner, never in the Agent's context.
 export const KINDS = ["bug", "friction", "design", "idea", "praise", "other"];
 export const SEVERITIES = ["high", "medium", "low"];
+// A report (App Review 1.2): something offensive or abusive the partner wrote, or a reply Pinky made. It skips the model's
+// sorting, is marked high so it tops `npm run feedback`, and keeps what it is about; the person can also leave the
+// relationship (which blocks the partner) without waiting for us.
+export const REPORT_ABOUT = ["partner", "pinky", "other"];
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const triageSchema = object({ kind: { type: "string", enum: KINDS }, severity: { type: "string", enum: SEVERITIES }, summary: { type: "string" } });
 const clean = (value, limit) => String(value ?? "").trim().slice(0, limit);
@@ -23,10 +27,12 @@ export function createFeedbackRouter({ store, mediator }) {
     if (!text && !photoIds.length) return res.status(400).json({ error: "message_required" });
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId).catch(() => null); if (!photo || photo.visibility !== "private") return res.status(400).json({ error: "message_required" }); }
     const context = { view: clean(req.body?.context?.view, 40), channel: clean(req.body?.context?.channel, 10), language: clean(req.body?.language, 5), userAgent: clean(req.get("user-agent"), 200) };
-    const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", status: "new", text, photoIds, context, kind: null, severity: null, summary: "" });
+    const report = REPORT_ABOUT.includes(req.body?.report) ? req.body.report : null;
+    if (report && !text) return res.status(400).json({ error: "message_required" });
+    const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", status: "new", text, photoIds, context: report ? { ...context, report } : context, kind: report ? "report" : null, severity: report ? "high" : null, summary: report ? clean(`Report (${report}): ${text}`, 240) : "" });
     await store.createRelationshipRecord("feedback", record);
     res.status(201).json({ feedback: view(record) });
-    void triage(store, mediator, record);
+    if (!report) void triage(store, mediator, record);
   });
   // The sender's own feedback and what became of it, newest first.
   router.get("/feedback", async (req, res) => {

@@ -9,7 +9,7 @@ for (const language of ["zh", "en", "es"] as const) test(`notification privacy e
   }[language];
   try {
     await context.addInitScript(lang => { localStorage.setItem("toward-us:onboarded", "1"); localStorage.setItem("toward-us.language", lang); }, language);
-    expect((await context.request.post("/api/auth/register", { data: { name: "Alex", email: `preview-${language}-${Date.now()}@example.invalid`, password: "synthetic-local-password" } })).status()).toBe(201);
+    expect((await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Alex", email: `preview-${language}-${Date.now()}@example.invalid`, password: "synthetic-local-password" } })).status()).toBe(201);
     const page = await context.newPage();
     await page.goto("/"); await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();
     await page.getByTestId("settings-notifications").click();
@@ -52,7 +52,7 @@ for (const language of ["zh", "en", "es"] as const) test(`notification privacy e
 
 test("an unpaired person sees their memories, schedules a reminder and reaches settings from the drawer", async ({ page, context }, testInfo) => {
   const email = `personal-${Date.now()}@example.invalid`;
-  expect((await context.request.post("/api/auth/register", { data: { name: "Solo", email, password: "synthetic-password-2026" } })).status()).toBe(201);
+  expect((await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Solo", email, password: "synthetic-password-2026" } })).status()).toBe(201);
   // New entries come from the conversation; the Moments page shows them and offers a way back to Pinky.
   expect((await context.request.post("/api/checkins", { data: { text: "今天走了一小段路，舒服些了。", kind: "checkin", mood: null, language: "zh" } })).ok()).toBe(true);
   expect((await context.request.post("/api/memories", { data: { text: "先休息十分钟，再开始谈事情。", allowPrivateAI: false, source: { type: "member" }, language: "zh" } })).ok()).toBe(true);

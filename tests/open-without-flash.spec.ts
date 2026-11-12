@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // real conversation. A signed-in member must go from a plain background straight to their conversation, even when the
 // network is slow.
 test("a signed-in member opens straight into the conversation without flashing other screens", async ({ page, context }) => {
-  await context.request.post("/api/auth/register", { data: { name: "Flash tester", email: `flash-ui-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Flash tester", email: `flash-ui-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
   const session = { id: "flash-session", language: "zh", timezone: "UTC", version: 1, messages: [
     { id: "m1", role: "user", text: "她说我不在乎她", itemId: "m1", createdAt: new Date().toISOString() },
     { id: "m2", role: "assistant", text: "先接住她的感受，再说你的安排。", createdAt: new Date().toISOString() },
