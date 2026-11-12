@@ -192,6 +192,8 @@ const reminderTimeOnly = /^(?:[今明后]天|周[一二三四五六日天]|星�
 // Beside a server receipt, a model promise about how it will use the record later ("以后给他挑礼物，我会避开…") is an
 // unrequested extra and an unverifiable commitment; the receipt alone confirms the action (task 56).
 const promisesFutureUse = part => /^(?:(?:好的|好)[，,]?\s*)?(?:以后|今后|下次|之后)[^。！？]{0,40}(?:我会|我来|帮你)|^我(?:以后|今后|下次|之后)(?:会|就)|^(?:From now on|Next time)[^.!?]{0,60}I(?:'ll| will)|^(?:A partir de ahora|La próxima vez)[^.!?]{0,60}(?:te ayudaré|evitaré|tendré)/iu.test(part.trim());
+const pairsOf = text => { const chars = [...String(text).normalize("NFKC").replace(/[\s\p{P}]/gu, "")]; return chars.slice(1).map((char, index) => chars[index] + char); };
+const receiptContainment = (part, receipt) => { const pairs = pairsOf(part), inside = new Set(pairsOf(receipt)); return pairs.length >= 2 ? pairs.filter(pair => inside.has(pair)).length / pairs.length : 0; };
 export function mergeReceipts(receipts = [], language = "zh") {
   const counts = new Map(), remembered = [];
   for (const receipt of receipts) {
@@ -210,7 +212,10 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   // A committed reminder's receipt already states its time and content: audit quotes of that time or content are not
   // separate deliverables to re-add (task 56: "明天晚上八点半" + "提醒你给他回电话" came back as a second confirmation).
   const coveredByReminder = part => receipts.length && reminderWritten && (confirmsReminder(part) || /提醒|remind|recordar/iu.test(part) || reminderTimeOnly.test(part.trim()));
-  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)).filter(part => !coveredByReminder(part)), ...parts]
+  // A receipt that already states the saved fact covers an audit quote of it, even when the quote names its subject
+  // ("阿杰不吃香菜" beside "已记住：不吃香菜；对花粉过敏。"): most of the quote's character pairs are in one receipt.
+  const coveredByReceipt = part => receipts.some(receipt => receiptContainment(part, receipt) >= 0.6);
+  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)).filter(part => !coveredByReminder(part) && !coveredByReceipt(part)), ...parts]
     .filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && (reminderWritten && confirmsReminder(part) || promisesFutureUse(part))) && !deferred(part) && !transcriptEcho(part));
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);

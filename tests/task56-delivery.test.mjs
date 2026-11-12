@@ -180,6 +180,8 @@ test("one action, one receipt: reminder and remembered facts are confirmed once,
   const remember = JSON.parse(replay.plannerOutputs["tool-remember-preference"][0]);
   const stored = finishReply(remember.reply, { request: replay.round21Answers["tool-remember-preference"].question, formatChecked: true, receipts: ["已记住：不吃香菜。", "已记住：对花粉过敏。"] });
   assert.equal(stored, "已记住：不吃香菜；对花粉过敏。");
+  // An audit quote naming the subject is covered by the receipt, not re-added as a stray first line (task 56 sample run).
+  assert.equal(finishReply("", { formatChecked: true, receipts: ["已记住：不吃香菜。", "已记住：对花粉过敏。"], deliverables: ["阿杰不吃香菜", "对花粉过敏"] }), "已记住：不吃香菜；对花粉过敏。");
   assert.deepEqual(mergeReceipts(["已记住：A。", "已记住：A。"]), ["已记住：A。"]);
   assert.equal(requiresReplyScopeCheck(replay.round21Answers["tool-remember-preference"].question), true);
 });
