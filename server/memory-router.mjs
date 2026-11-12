@@ -155,5 +155,5 @@ async function sourceFor(store, req) {
 }
 async function audit(store, record, userId, eventType) { await store.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: record.relationshipId, userId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: record.id, objectType: record.kind, eventType, sourceVersion: record.version })); }
 const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
-const message = (req, zh, en, es) => req.body?.language === "en" || req.query?.language === "en" ? en : req.body?.language === "es" || req.query?.language === "es" ? es : zh;
+const message = (req, zh, en, es) => { const language = req.body?.language || req.query?.language || req.auth?.user?.language; return language === "en" ? en : language === "es" ? es : zh; };
 function fail(req, statusCode, zh, en, es) { throw Object.assign(new Error(message(req, zh, en, es)), { statusCode }); }

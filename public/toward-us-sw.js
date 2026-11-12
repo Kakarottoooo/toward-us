@@ -1,6 +1,7 @@
 // Pinky's installed web app: notifications, plus an offline page. It never caches the app, an API response or anything
 // private: the only cached file is the static /offline.html, shown when a page navigation finds no network.
-const SHELL = "pinky-shell-v1";
+// v2: the offline page now follows the App language (11-12); a new name makes installed apps fetch it again.
+const SHELL = "pinky-shell-v2";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {

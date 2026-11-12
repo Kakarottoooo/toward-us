@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CaretDown, PawPrint, Play, User, X } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { counted, localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { categories, gameCatalog, type CategoryId, type GameEntry } from "./catalog";
@@ -48,7 +48,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     <button type="button" className="game-going-open" onClick={() => setOpen(match.id)} data-testid="game-going">
       <span>{catalog.find((game) => game.id === match.game)?.icon}</span>
       <b>{nameOf(match.game)}{vsPet(match) && <em> · {t(`和${petName}`, `with ${petName}`, `con ${petName}`)}</em>}</b>
-      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${daysIdle(match)} days`, `Parada ${daysIdle(match)} días`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
+      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${counted(daysIdle(match), "day", "days")}`, `Parada ${counted(daysIdle(match), "día", "días")}`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
     </button>
     <button type="button" className={`game-going-end ${ending === match.id ? "is-confirm" : ""}`} onClick={() => confirmEnd(match.id, [match.id])} onBlur={() => setEnding((value) => value === match.id ? null : value)} aria-label={ending === match.id ? t("确定结束这局", "End this game", "Terminar esta partida") : t(`结束这局${nameOf(match.game)}`, `End this game of ${nameOf(match.game)}`, `Terminar esta partida de ${nameOf(match.game)}`)} data-testid="game-going-end">
       {ending === match.id ? t("结束？", "End?", "¿Fin?") : <X size={16} weight="bold" />}

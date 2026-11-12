@@ -17,13 +17,14 @@ import { petIt, syncPet } from "./pet.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { createSharedTranslator } from "./shared-translate.mjs";
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null, promises = null, profile = null }) {
   const router = express.Router();
-  router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
+  router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") }));
   const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
-  const language = (req) => hint(req) || "zh";
+  const language = (req) => hint(req) || (["zh", "en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh");
   const pairing = async (req) => { const context = await store.getRelationshipContext(req.auth.user.id); if (!context) throw decisionError(409, "pairing_required"); return context; };
   const writable = (context) => context.relationship.status === "active" && context.members.length === 2;
   // Pinky's lines in Us are shown in each member's own interface language (founder 11-06); see shared-translate.mjs.

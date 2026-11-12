@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, ChatCircleDots, ChatsCircle, Copy, Desktop, FileArrowUp, Laptop, LockKey, Trash, UsersThree, Warning } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { ImportCard } from "./ImportCard";
@@ -92,7 +92,7 @@ function ImportReport({ item, user, paired, language, onBack, onAsk, onChanged }
     <PageHeader language={language} title={t("聊天记录分析", "Chat analysis", "Análisis del chat")} onBack={onBack} />
     <main className="relationship-main import-main">
       <p className="space-scope">{item.shared ? <><UsersThree size={16} />{t("你们俩都同意了，都能看到", "You both agreed; both of you can see this", "Los dos aceptaron; ambos pueden verlo")}</> : <><LockKey size={16} />{t("只有你能看到", "Only you can see this", "Solo tú puedes verlo")}</>}</p>
-      <p className="import-meta">{item.title && <>{t(`和 ${item.title}`, `With ${item.title}`, `Con ${item.title}`)} · </>}{t(`${item.messageCount} 条消息`, `${item.messageCount} messages`, `${item.messageCount} mensajes`)} · {date(item.firstAt)} – {date(item.lastAt)}{item.sampled ? t("（太长，读了最重要的部分）", " (very long; the most important parts were read)", " (muy largo; se leyeron las partes más importantes)") : ""}</p>
+      <p className="import-meta">{item.title && <>{t(`和 ${item.title}`, `With ${item.title}`, `Con ${item.title}`)} · </>}{t(`${item.messageCount} 条消息`, `${counted(item.messageCount, "message", "messages")}`, `${counted(item.messageCount, "mensaje", "mensajes")}`)} · {date(item.firstAt)} – {date(item.lastAt)}{item.sampled ? t("（太长，读了最重要的部分）", " (very long; the most important parts were read)", " (muy largo; se leyeron las partes más importantes)") : ""}</p>
       {analysis.safety.concern && <div className="import-safety" role="note"><Warning size={20} weight="fill" /><p>{analysis.safety.note}</p></div>}
       <p className="import-overview">{analysis.overview}</p>
       {analysis.conflictCycle && <section className="import-block"><h2 className="space-subhead">{t("吵架时常见的循环", "The cycle in your arguments", "El ciclo en sus discusiones")}</h2><p>{analysis.conflictCycle}</p></section>}
@@ -108,7 +108,7 @@ function ImportReport({ item, user, paired, language, onBack, onAsk, onChanged }
           <tr><th>{t("深夜消息", "Late-night messages", "Mensajes de madrugada")}</th><td>{per.me.lateNight}%</td><td>{per.partner.lateNight}%</td></tr>
         </tbody></table>
         {stats!.monthly.length > 1 && <div className="import-months" aria-label={t("每月消息数", "Messages per month", "Mensajes por mes")}>{stats!.monthly.slice(-24).map((month) => <span key={month.month} title={`${month.month}: ${month.me + month.partner}`} style={{ height: `${Math.max(3, (month.me + month.partner) / peak * 100)}%` }} />)}</div>}
-        {!!stats!.silences.length && <p className="import-note">{t("最长的安静期：", "Longest quiet stretches: ", "Silencios más largos: ")}{stats!.silences.slice(0, 3).map((gap) => t(`${date(gap.from)} 起 ${gap.days} 天`, `${gap.days} days from ${date(gap.from)}`, `${gap.days} días desde ${date(gap.from)}`)).join("，")}</p>}
+        {!!stats!.silences.length && <p className="import-note">{t("最长的安静期：", "Longest quiet stretches: ", "Silencios más largos: ")}{stats!.silences.slice(0, 3).map((gap) => t(`${date(gap.from)} 起 ${gap.days} 天`, `${counted(gap.days, "day", "days")} from ${date(gap.from)}`, `${counted(gap.days, "día", "días")} desde ${date(gap.from)}`)).join("，")}</p>}
       </section>}
       {!!analysis.moments.length && <section className="import-block"><h2 className="space-subhead">{t("值得留下的瞬间", "Moments worth keeping", "Momentos para guardar")}</h2><ul>{analysis.moments.map((moment, index) => <li key={index}><strong>{moment.title}</strong>{moment.date && <small>{date(moment.date)}</small>}<p>{moment.text}</p></li>)}</ul>
         <button className="space-ask" onClick={() => onAsk(t("把聊天记录分析里那些值得留下的瞬间放进我们的回忆", "Save the moments worth keeping from the chat analysis into our memories", "Guarda en nuestros recuerdos los momentos del análisis del chat"), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("放进回忆", "Save to memories", "Guardar en recuerdos")}</button></section>}

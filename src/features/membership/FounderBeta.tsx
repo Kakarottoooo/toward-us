@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Copy, Plus } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { counted, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 
@@ -41,7 +41,7 @@ export function FounderBeta({ language }: { language: Language }) {
       {!data.couples.length && <p className="founder-hint">{t("还没有情侣。", "No couples yet.", "Aún no hay parejas.")}</p>}
       <ul className="founder-couples">{data.couples.map((couple) => <li key={couple.label}>
         <header><b>{t(`情侣 ${couple.label}`, `Couple ${couple.label}`, `Pareja ${couple.label}`)}</b>{couple.beta && <em>{t("内测", "Beta", "Beta")}{couple.note ? ` · ${couple.note}` : ""}</em>}<span>{couple.plan === "member" ? t("会员", "Member", "Miembro") : t("免费", "Free", "Gratis")}</span></header>
-        <p>{t(`本周来了 ${couple.activeMembers}/2 人 · 做成 ${couple.done || 0} 件事 · ${couple.actions} 次操作 · AI ${couple.aiCalls} 次（${couple.aiDays} 天）· 反馈 ${couple.feedback}`, `${couple.activeMembers}/2 came this week · ${couple.done || 0} done · ${couple.actions} actions · AI ${couple.aiCalls} (${couple.aiDays} days) · feedback ${couple.feedback}`, `${couple.activeMembers}/2 esta semana · ${couple.done || 0} logrados · ${couple.actions} acciones · IA ${couple.aiCalls} (${couple.aiDays} días) · comentarios ${couple.feedback}`)}</p>
+        <p>{t(`本周来了 ${couple.activeMembers}/2 人 · 做成 ${couple.done || 0} 件事 · ${couple.actions} 次操作 · AI ${couple.aiCalls} 次（${couple.aiDays} 天）· 反馈 ${couple.feedback}`, `${couple.activeMembers}/2 came this week · ${couple.done || 0} done · ${counted(couple.actions, "action", "actions")} · AI ${couple.aiCalls} (${counted(couple.aiDays, "day", "days")}) · feedback ${couple.feedback}`, `${couple.activeMembers}/2 esta semana · ${couple.done || 0} logrados · ${couple.actions} acciones · IA ${couple.aiCalls} (${counted(couple.aiDays, "día", "días")}) · comentarios ${couple.feedback}`)}</p>
         {!!couple.pushes?.sent && <small data-testid="beta-pushes">{t(`推送 ${couple.pushes.sent} 条，点开 ${couple.pushes.opened} 次`, `${couple.pushes.sent} pushes, ${couple.pushes.opened} opened`, `${couple.pushes.sent} avisos, ${couple.pushes.opened} abiertos`)}</small>}{!!couple.topActions.length && <small>{couple.topActions.map(([name, count]) => `${name} ${count}`).join(" · ")}</small>}
       </li>)}</ul>
     </section>

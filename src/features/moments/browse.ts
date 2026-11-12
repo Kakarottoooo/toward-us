@@ -3,6 +3,7 @@
 // on each memory; nothing here calls a model.
 import type { Language } from "../../i18n";
 import { holidaysFor } from "../upcoming/holidays";
+import { counted } from "../../i18n";
 
 export type Moment = {
   key: string; date: string; title: string; text: string; photos: string[]; ids: string[]; shared: boolean; mine: boolean;
@@ -55,7 +56,7 @@ export function tripsOf(moments: Moment[], language: Language): Story[] {
   }
   return runs.filter((run) => new Set(run.map((moment) => moment.date)).size >= 2).map((run) => {
     const length = days(run[0].date, run.at(-1)!.date) + 1, place = tripName(run.map((moment) => moment.title), language);
-    return { id: `trip:${run[0].date}`, kind: "trip" as const, title: t3(language, `${place}${/[A-Za-z0-9]$/.test(place) ? " " : ""}之旅`, `${place} trip`, `Viaje a ${place}`), detail: t3(language, `${run[0].date.slice(0, 4)} · ${length} 天`, `${run[0].date.slice(0, 4)} · ${length} days`, `${run[0].date.slice(0, 4)} · ${length} días`), moments: newestFirst(run), cover: cover(run) };
+    return { id: `trip:${run[0].date}`, kind: "trip" as const, title: t3(language, `${place}${/[A-Za-z0-9]$/.test(place) ? " " : ""}之旅`, `${place} trip`, `Viaje a ${place}`), detail: t3(language, `${run[0].date.slice(0, 4)} · ${length} 天`, `${run[0].date.slice(0, 4)} · ${counted(length, "day", "days")}`, `${run[0].date.slice(0, 4)} · ${counted(length, "día", "días")}`), moments: newestFirst(run), cover: cover(run) };
   }).reverse();
 }
 
@@ -75,7 +76,7 @@ export function holidaysOf(moments: Moment[], language: Language): Story[] {
   }
   return [...groups].map(([key, group]) => {
     const years = new Set(group.moments.map((moment) => moment.date.slice(0, 4))).size;
-    return { id: `holiday:${key}`, kind: "holiday" as const, title: t3(language, `我们的${group.title}`, `Our ${group.title}`, `Nuestra ${group.title}`), detail: t3(language, `${years} 年`, years === 1 ? "1 year" : `${years} years`, years === 1 ? "1 año" : `${years} años`), moments: newestFirst(group.moments), cover: cover(group.moments) };
+    return { id: `holiday:${key}`, kind: "holiday" as const, title: t3(language, `我们的${group.title}`, `Our ${group.title}`, `Nuestra ${group.title}`), detail: t3(language, `${years} 年`, years === 1 ? "1 year" : `${counted(years, "year", "years")}`, years === 1 ? "1 año" : `${counted(years, "año", "años")}`), moments: newestFirst(group.moments), cover: cover(group.moments) };
   });
 }
 

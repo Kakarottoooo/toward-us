@@ -315,9 +315,9 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         return shared ? { shared, feedback } : null;
       } catch (error) { console.error("Together mediation unavailable:", error?.message || error); return null; }
     },
-    async transcribe(buffer, mimeType = "audio/webm") {
+    async transcribe(buffer, mimeType = "audio/webm", language = "zh") {
       if (!openai) {
-        const error = new Error("语音转录需要配置 OPENAI_API_KEY。");
+        const error = new Error(localText(language, "语音转录需要配置 OPENAI_API_KEY。", "Transcription needs OPENAI_API_KEY to be configured.", "La transcripción necesita que se configure OPENAI_API_KEY."));
         error.statusCode = 503;
         throw error;
       }
@@ -342,7 +342,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
     },
     async createRealtimeSession({ sdp, language = "zh", safetyIdentifier }) {
       if (!apiKey) {
-        const error = new Error("实时语音需要配置 OPENAI_API_KEY。");
+        const error = new Error(localText(language, "实时语音需要配置 OPENAI_API_KEY。", "Live voice needs OPENAI_API_KEY to be configured.", "La voz en vivo necesita que se configure OPENAI_API_KEY."));
         error.statusCode = 503;
         throw error;
       }
@@ -367,7 +367,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       });
       const answer = await response.text();
       if (!response.ok) {
-        const error = new Error(`实时语音连接失败（${response.status}）。`);
+        const error = new Error(localText(language, `实时语音连接失败（${response.status}）。`, `Live voice could not connect (${response.status}).`, `No se pudo conectar la voz en vivo (${response.status}).`));
         error.statusCode = response.status >= 400 && response.status < 500 ? 502 : 503;
         throw error;
       }

@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { ArrowLeft, ChatCircleDots, Warning } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { counted, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { Avatar, personColor, plainName } from "./People";
@@ -31,8 +31,8 @@ function since(language: Language, person: PersonInfo, numbers: Numbers | null |
   const t = tFor(language);
   const start = numbers?.first || person.createdAt || person.lastSeenAt;
   const known = days(start), last = days(numbers?.last || person.lastSeenAt);
-  const span = known < 14 ? t(`${known || 1} 天`, `${known || 1} days`, `${known || 1} días`) : known < 60 ? t(`${Math.round(known / 7)} 周`, `${Math.round(known / 7)} weeks`, `${Math.round(known / 7)} semanas`) : t(`${Math.round(known / 30)} 个月`, `${Math.round(known / 30)} months`, `${Math.round(known / 30)} meses`);
-  const recent = last === 0 ? t("今天", "today", "hoy") : last === 1 ? t("昨天", "yesterday", "ayer") : t(`${last} 天前`, `${last} days ago`, `hace ${last} días`);
+  const span = known < 14 ? t(`${known || 1} 天`, `${counted(known || 1, "day", "days")}`, `${counted(known || 1, "día", "días")}`) : known < 60 ? t(`${Math.round(known / 7)} 周`, `${counted(Math.round(known / 7), "week", "weeks")}`, `${counted(Math.round(known / 7), "semana", "semanas")}`) : t(`${Math.round(known / 30)} 个月`, `${counted(Math.round(known / 30), "month", "months")}`, `${counted(Math.round(known / 30), "mes", "meses")}`);
+  const recent = last === 0 ? t("今天", "today", "hoy") : last === 1 ? t("昨天", "yesterday", "ayer") : t(`${last} 天前`, `${counted(last, "day", "days")} ago`, `hace ${counted(last, "día", "días")}`);
   return t(`认识 ${span} · 最近：${recent}`, `Known ${span} · last: ${recent}`, `Desde hace ${span} · último: ${recent}`);
 }
 
@@ -157,7 +157,7 @@ function PersonPage({ language, id, kinds, backLabel, onBack, onChat }: { langua
     <main className="relationship-main people-main">
       {error && <p className="people-error" role="alert">{error}</p>}
       {!detail ? !error && <p className="people-muted">{t("正在打开…", "Opening…", "Abriendo…")}</p> : person && <>
-        <div className="person-top"><Avatar name={person.name} /><span><h1>{t(`你和${person.name}`, `You and ${person.name}`, `Tú y ${person.name}`)}</h1><small>{since(language, person, numbers)}{count ? t(` · ${count} 条聊天`, ` · ${count} messages`, ` · ${count} mensajes`) : ""}</small></span>{read && <span className={`people-kind kind-${read.kind}`}>{kinds[read.kind]}</span>}</div>
+        <div className="person-top"><Avatar name={person.name} /><span><h1>{t(`你和${person.name}`, `You and ${person.name}`, `Tú y ${person.name}`)}</h1><small>{since(language, person, numbers)}{count ? t(` · ${count} 条聊天`, ` · ${counted(count, "message", "messages")}`, ` · ${counted(count, "mensaje", "mensajes")}`) : ""}</small></span>{read && <span className={`people-kind kind-${read.kind}`}>{kinds[read.kind]}</span>}</div>
         {read?.kind === "risk" && <p className="people-risk"><b>{t("要警惕：", "Be careful: ", "Cuidado: ")}</b>{read.view}</p>}
         {!!rows.length && <section className="people-card" data-testid="person-mirror"><div className="people-card-head"><h2>{t("你们俩，像一面镜子", "The two of you, side by side", "Ustedes dos, frente a frente")}</h2><small><i className="key-me" /> {t("你", "you", "tú")}　<i className="key-them" style={{ background: color }} /> TA</small></div>{rows}
           {!numbers?.starts && <p className="people-muted small">{t("导入带时间的完整聊天记录后，还能看到谁先开口、回复速度和深夜聊天。", "Import a full chat history with times to also see who starts, reply speed and late nights.", "Importa un historial con horas para ver quién empieza y la rapidez.")}</p>}</section>}
