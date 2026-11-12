@@ -65,6 +65,6 @@ async function confirmPreview(page: Page, title: string, summary: string) {
   await preview.getByRole("button", { name: "确认并分享这段内容", exact: true }).click();
   await expect(preview).toHaveCount(0);
 }
-async function register(request: APIRequestContext, account: { name: string; email: string }) { const response = await request.post("/api/auth/register", { data: { ...account, password: "correct-horse-battery" } }); expect(response.status()).toBe(201); return response.json(); }
+async function register(request: APIRequestContext, account: { name: string; email: string }) { const response = await request.post("/api/auth/register", { data: { aiConsent: true, ...account, password: "correct-horse-battery" } }); expect(response.status()).toBe(201); return response.json(); }
 async function postJson(request: APIRequestContext, path: string, data: unknown) { const response = await request.post(path, { data }); expect(response.ok()).toBeTruthy(); return response.json(); }
 async function getJson(request: APIRequestContext, path: string) { const response = await request.get(path); expect(response.ok()).toBeTruthy(); return response.json(); }

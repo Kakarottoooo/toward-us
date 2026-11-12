@@ -9,7 +9,7 @@ import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 // Memory plan (11-09): a long conversation never fills up; its older messages wait in pages and load on request.
 test("earlier messages of a long conversation load above the newest ones", async ({ page, context }) => {
   await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
-  await context.request.post("/api/auth/register", { data: { name: "Long talker", email: `long-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Long talker", email: `long-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
   const at = new Date().toISOString();
   const session = { id: "long-session", language: "zh", timezone: "UTC", version: 1, earlierPages: 1, messages: [
     { id: "n1", role: "user", text: "最新的一句", itemId: "n1", createdAt: at },
@@ -61,7 +61,7 @@ test.describe("recall navigation", () => {
   for (const width of [390, 1280]) for (const language of ["zh", "en", "es"]) test(`${width} ${language}: source, archive highlight and date jump`, async ({ page, context }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await context.addInitScript((language) => { localStorage.setItem("toward-us:onboarded", "1"); localStorage.setItem("toward-us.language", language); }, language);
-    const registration = await context.request.post(`${base}/api/auth/register`, { data: { name: "Recall tester", email: `recall-${randomUUID()}@example.invalid`, password: "synthetic-password-2026" } });
+    const registration = await context.request.post(`${base}/api/auth/register`, { data: { aiConsent: true, name: "Recall tester", email: `recall-${randomUUID()}@example.invalid`, password: "synthetic-password-2026" } });
     expect(registration.ok()).toBeTruthy();
     const { user } = await registration.json();
     const question = { id: randomUUID(), role: "user", text: "How should I thank someone?", createdAt: "2025-03-12T10:00:00.000Z" };
