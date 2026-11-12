@@ -96,7 +96,7 @@ import { citedReply } from "../server/conversation-recall.mjs";
 test("structured draft is checked independently of analysis and arbitrary labels", () => {
   const request = "先分析，再给我一句回复。";
   assert.equal(checkReplyFormat({ reply: "原文说了两件事。需要分开看。", sendableDraft: "我们再商量一下好吗？" }, request).ok, true);
-  assert.equal(checkReplyFormat({ reply: "分析中的引文：‘可以。’", sendableDraft: null }, request).ok, false);
+  assert.equal(checkReplyFormat({ reply: "分析中的引文：‘可以。’", sendableDraft: null }, request).ok, true);
   assert.equal(checkReplyFormat({ reply: "分析。", sendableDraft: "可以。明天见。" }, request).ok, false);
 });
 

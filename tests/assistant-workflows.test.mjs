@@ -170,8 +170,8 @@ test("spoken reminder creation, continuation and cancellation update one durable
   });
   let response = await f.turn("Remind me Friday at eight every week", "speech-1"); assert.equal(response.status, 200);
   let cards = response.body.session.messages.at(-1).cards;
-  assert.equal(cards[0].localDateTime, "2026-09-11T20:00"); assert.match(response.body.session.messages.at(-1).text, /2026-09-11.*20:00.*UTC/);
-  response = await f.turn("nine every week instead"); assert.equal(response.status, 200); assert.equal(response.body.session.messages.at(-1).cards[0].localDateTime, "2026-09-11T21:00");
+  assert.equal(cards[0].localDateTime, undefined); assert.equal(cards[0].title, "View reminder"); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].dueAt, "2026-09-11T20:00:00.000Z"); assert.match(response.body.session.messages.at(-1).text, /2026-09-11.*20:00.*UTC/);
+  response = await f.turn("nine every week instead"); assert.equal(response.status, 200); assert.equal(response.body.session.messages.at(-1).cards[0].localDateTime, undefined); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].dueAt, "2026-09-11T21:00:00.000Z");
   response = await f.turn("cancel it"); assert.equal(response.status, 200); assert.equal(response.body.session.messages.at(-1).cards[0].status, "paused");
   const saved = await f.reminderService.listReminders(f.ids[0]); assert.equal(saved.length, 1); assert.equal(saved[0].status, "paused");
   const restarted = await createFileStore(f.storePath); assert.equal((await restarted.getRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0])).messages.length, 6);
@@ -253,8 +253,8 @@ test("changing only this weekly occurrence preserves the original weekday and ti
   await f.turn("Every Friday at eight"); const changed = await f.turn("Only this time, Saturday at nine");
   assert.equal(changed.status, 200); assert.match(changed.body.session.messages.at(-1).text, /only the next occurrence/i);
   assert.equal(changed.body.session.messages.at(-1).cards[0].nextOccurrenceOnly, true);
-  assert.equal(changed.body.session.messages.at(-1).cards[0].weeklyTime, "20:00");
-  const renamed = await f.turn("Rename it weekly chat"); assert.equal(renamed.status, 200); assert.equal(renamed.body.session.messages.at(-1).cards[0].title, "Weekly chat");
+  assert.equal(changed.body.session.messages.at(-1).cards[0].weeklyTime, undefined); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].localTime, "20:00");
+  const renamed = await f.turn("Rename it weekly chat"); assert.equal(renamed.status, 200); assert.equal(renamed.body.session.messages.at(-1).cards[0].title, "View reminder"); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].title, "Weekly chat");
   const delivery = createReminderService({ store: f.store, enabled: true, now: () => new Date("2026-09-12T22:00Z"), sendPush: async () => ({ statusCode: 201 }) });
   await delivery.updateSettings(f.ids[0], { enabled: true, timezone: "UTC", language: "en" });
   await delivery.subscribe(f.ids[0], { endpoint: "https://fcm.googleapis.com/fcm/send/assistant-test", keys: { p256dh: Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 1)]).toString("base64url"), auth: Buffer.alloc(16, 2).toString("base64url") } });

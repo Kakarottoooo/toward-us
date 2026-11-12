@@ -60,8 +60,9 @@ export function citedReply(text, sources = [], { renderExchanges = false, langua
     if (source && !selected.some((item) => item.messageId === id) && selected.length < 3) selected.push(source);
     return "";
   }).trim();
-  const labels = language === "en" ? ["You asked", "Pinky answered"] : language === "es" ? ["Preguntaste", "Pinky respondió"] : ["你当时问", "Pinky 当时答"];
+  const labels = language === "en" ? ["You asked", "Pinky answered", "You said"] : language === "es" ? ["Preguntaste", "Pinky respondió", "Dijiste"] : ["你当时问", "Pinky 当时答", "你当时说"];
+  const isQuestion = text => /[?？]|(?:怎么|如何|什么|哪[个位天里儿]?|多少|几[点时号]|是否|能否|[吗么嘛呢][。！\s]*$)|^(?:who|what|when|where|why|how|can|could|should|is|are|do|does|did|cu[aá]ndo|qu[eé]|c[oó]mo|d[oó]nde)\b/iu.test(text);
   const exchanges = renderExchanges ? selected.filter((source) => source.exchange?.question && source.exchange?.answer) : [];
-  return { reply: exchanges.length ? exchanges.map((source) => `${source.date}\n${labels[0]}：${source.exchange.question}\n${labels[1]}${source.exchange.answerDate !== source.date ? ` (${source.exchange.answerDate})` : ""}：${source.exchange.answer}`).join("\n\n") : reply,
+  return { reply: exchanges.length ? exchanges.map((source) => `${source.date}\n${labels[isQuestion(source.exchange.question) ? 0 : 2]}：${source.exchange.question}\n${labels[1]}${source.exchange.answerDate !== source.date ? ` (${source.exchange.answerDate})` : ""}：${source.exchange.answer}`).join("\n\n") : reply,
     sources: selected.map(({ exchange, ...source }) => source) };
 }

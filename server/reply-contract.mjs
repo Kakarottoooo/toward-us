@@ -8,7 +8,7 @@ export const claimsReminder = (text) => reminderClaim.test(text) && !/(?:没有|
 function hasSentenceRequest(request) {
   return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|(?:帮我|请)?(?:写|给|用)|回复?我?)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "");
 }
-export const wantsOneSentence = (request) => hasSentenceRequest(request) && !draftOnlyLimit(request);
+export const wantsOneSentence = (request) => hasSentenceRequest(request) && !/[?？]|(?:最后|再|另外|同时).{0,8}(?:给|写)|(?:then|also).{0,20}(?:draft|sentence)/iu.test(request);
 
 const number = (value) => /^\d+$/.test(value) ? Number(value) : value === "十" ? 10 : value.includes("十") ? (number(value.split("十")[0] || "一") * 10 + number(value.split("十")[1] || "零")) : "零一二三四五六七八九".indexOf(value.replace("两", "二"));
 const countToken = "([0-9]+|[一二两三四五六七八九十]{1,3})";
@@ -22,17 +22,18 @@ function formatLimits(request) {
 // No domain names, people or evaluation IDs participate in routing.
 export function requiresReplyScopeCheck(request = "") {
   return Object.values(formatLimits(request)).some(Boolean)
+    || /(?:先.{1,80}再|(?:查不到|没有找到|找不到).{0,12}(?:就|给|提供)|(?:别|不要)(?:猜|硬猜|照搬))|\b(?:if (?:not found|unavailable)|without guessing|si no (?:encuentras|est[aá] disponible))\b/iu.test(request)
     || /(?:一句|一条短句|[一二两三四五六七八九十\d]+行|[一二两三四五六七八九十\d]+字(?:以[内下]|之内)|短回复|简短(?:地)?回)|\b(?:(?:one|a single|1)\s+(?:short\s+)?sentence|(?:short|brief)\s+reply|\d+\s+(?:lines|characters)|(?:una(?: sola)?|1)\s+frase|respuesta\s+(?:breve|corta)|\d+\s+(?:l[ií]neas|caracteres))\b/iu.test(request)
     || /(?:哪[天日]|星期几|周几|几月|几[号点时]|多少|哪(?:一)?[个位]?人|谁|(?:在|去|到)哪(?:里|儿)?|什么(?:时候|时间|日期|地方))|\b(?:when|where|who|how (?:many|much)|what (?:time|date|day)|which (?:day|date|person|place)|cu[aá]ndo|d[oó]nde|qui[eé]n|cu[aá]nt[oa]s?|qu[eé] (?:d[ií]a|hora|fecha))\b/iu.test(request);
 }
 
 // A requested draft can be one sentence while an accompanying factual answer is not.
-const draftOnlyLimit = (request) => hasSentenceRequest(request) && /[?？]|(?:最后|再|另外|同时).{0,8}(?:给|写)|(?:then|also).{0,20}(?:draft|sentence)/iu.test(request);
+const draftOnlyLimit = (request) => hasSentenceRequest(request) && /[?？]|(?:帮我|替我|文案|草稿|邀约|可复制|可发送)|(?:最后|再|另外|同时).{0,8}(?:给|写)|(?:then|also).{0,20}(?:draft|sentence)|\b(?:draft|reply to|responder a|borrador)\b/iu.test(request);
 // Give repair/check callers the same literal limits the server actually measures.
 export function replyFormatRequirements(request = "") {
   const limits = formatLimits(request);
   return { ...limits, sentenceScope: draftOnlyLimit(request) ? "sendableDraft" : "whole reply",
-    linesAndCharsScope: "whole reply and sendableDraft together" };
+    linesAndCharsScope: draftOnlyLimit(request) ? "sendableDraft" : "whole reply" };
 }
 function quotedDrafts(text) {
   const pairs = { "“": "”", "「": "」", '"': '"' }, stack = [], drafts = [];
@@ -98,16 +99,18 @@ export function checkReplyFormat(reply, request = "", language = "zh") {
   const structured = reply && typeof reply === "object" && Object.hasOwn(reply, "sendableDraft");
   const rendered = renderReply(reply);
   let text = rendered.trim();
-  if (limits.sentences && draftOnlyLimit(request)) {
-    const draft = structured ? reply.sendableDraft?.trim() : copyableDraft(text);
-    if (!draft) issues.push("Separate the requested copyable draft from analysis with an explicit reply label or a final quoted paragraph; source quotations do not count as a draft.");
-    text = draft || text;
+  if (limits.sentences && (draftOnlyLimit(request) || structured && reply.sendableDraft?.trim())) {
+    const draft = structured ? reply.sendableDraft?.trim() : copyableDraft(text)
+      || (wantsOneSentence(request) && !/[\n：:]/u.test(text) ? text : null);
+    // No identifiable object means no format measurement, never an error shown to the user.
+    if (!draft) return { ok: true, issues: [] };
+    text = draft;
   }
   const sentenceCount = segments(text, language).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
   if (limits.sentences && sentenceCount !== limits.sentences) issues.push(`Expected ${limits.sentences} sentence; found ${sentenceCount}.`);
-  const lines = rendered.trim().split(/\r?\n/).filter((line) => line.trim()).length;
+  const lines = text.split(/\r?\n/).filter((line) => line.trim()).length;
   if (limits.lines && lines !== limits.lines) issues.push(`Expected ${limits.lines} nonempty lines; found ${lines}.`);
-  const chars = [...rendered.replace(/\s/gu, "")].length;
+  const chars = [...text.replace(/\s/gu, "")].length;
   if (limits.chars && chars > limits.chars) issues.push(`Maximum ${limits.chars} characters; found ${chars}.`);
   return { ok: !issues.length, issues };
 }
@@ -141,7 +144,17 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   if (!text && removed) text = language === "en" ? "No new record was saved in this turn." : language === "es" ? "No se guardó ningún registro nuevo en este turno." : "这轮没有新增记录。";
   // Private replies have already been checked/repaired; preserve the existing shared-chat path.
   if (!formatChecked && wantsOneSentence(request) && !receipts.length) text = segments(text, language)[0]?.trim() || text;
-  return text;
+  return directFactReply(text, request);
+}
+
+// Remove presentation metadata only. Negative/missing-evidence statements and
+// event dates are facts, so neither is rewritten by this final rendering step.
+export function directFactReply(text, request = "") {
+  if (/(?:来源|出处|记录.*(?:哪|何|时间|日期|时候)|(?:哪|何|什么时候).*记录|从哪|根据什么)|\b(?:source|provenance|recorded when|how do you know|where.*(?:get|learn)|fuente|procedencia|de d[oó]nde|c[oó]mo (?:lo )?sabes)\b/iu.test(request)) return text;
+  return text.replace(/(?:记录里|记录中)有一条([^。！？\n]+?)的信息(?:[（(]记录于[^）)]+[）)])?/gu, '$1')
+    .replace(/(^|[。！？\n：:])\s*(?:根据记录[，,:：]?|(?:记录里|记录中)(?:显示|提到|写着|只有)[，,:：]?|我这边看到(?:的是|了)?[，,:：]?)\s*/gu, '$1')
+    .replace(/(^|[.!?\n])\s*(?:(?:according to|based on) (?:the )?records?|(?:según|de acuerdo con) (?:los )?registros?)[,:，]?\s*/giu, '$1')
+    .replace(/[（(]记录于\s*\d{4}[-/]\d{1,2}[-/]\d{1,2}[）)]/gu, '');
 }
 
 // Reminder promises also duplicate a committed receipt without saying "created".
@@ -155,8 +168,15 @@ const privateReplies = {
   en: ["I can't determine what they think or plan. You could ask: ‘Would you like to tell me what's on your mind?’", "I can't speak for their thoughts or plans. You can share how you feel and ask what they're comfortable sharing.", "I can't confirm their thoughts or plans. If they aren't ready to talk, agree on a time or let them reveal it themselves."],
   es: ["No puedo saber qué piensa o planea la otra persona. Puedes preguntarle: ‘¿Te gustaría contarme qué estás pensando?’", "No puedo hablar por sus ideas o planes. Puedes expresar cómo te sientes y preguntar qué quiere compartir.", "No puedo confirmar sus ideas o planes. Si aún no quiere hablar, acuerden un momento o deja que lo cuente por su cuenta."],
 };
-export const privateBoundaryReply = (language, index = 0) => (privateReplies[language] || privateReplies.zh)[index % 3];
-export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
+export function privateBoundaryReply(language, index = 0, request = "") {
+  // A topic is copied exclusively from the current public question, never a
+  // portrait, another principal's records or model-generated private content.
+  const topic = request.match(/(?:对|关于)([^，。！？?\n‘’“”]{1,24}?)(?:有(?:什么)?(?:想法|看法|感受)|怎么(?:看|想)|的(?:想法|看法|感受))/u)?.[1];
+  if (language === 'zh' && topic) return `我没法替对方判断这些想法。你可以直接问 TA：‘关于${topic}，你愿意和我聊聊你的感受吗？’`;
+  return (privateReplies[language] || privateReplies.zh)[index % 3];
+}
+export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply))
+  || /^我没法替对方判断这些想法。你可以直接问 TA：‘关于[^，。！？?\n‘’“”]{1,24}，你愿意和我聊聊你的感受吗？’$/u.test(reply);
 
 export const replyContractInstructions = `Only requested content; obey length/format, including draft explanations. sendableDraft: copyable wording or null. reply: analysis only; empty for draft-only; <=2 sentences for mixed asks. Invent no facts, feelings, affection, acceptance or promises. Preserve speakers, sources, full day+time; states aren't outcomes. Inherit no unconfirmed details. Writes use server receipts; reminders need actions after lookup. Say no booking for bookable activities. No interrogation/private-chat hints; one neutral privacy boundary.
 Examples (good / bad):

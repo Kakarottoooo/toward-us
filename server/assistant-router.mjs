@@ -74,6 +74,10 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         if (undone) return { id: reference.id, kind: reference.kind, version: reference.version, status: "undone", title: say(session.language, `已撤销：${undone.title}`, `Undone: ${undone.title}`, `Deshecho: ${undone.title}`) };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         if (!current && reference.title) return { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, `已移走：${reference.title}`, `Removed: ${reference.title}`, `Quitado: ${reference.title}`) };
+        if (current && reference.receiptOnly && current.kind === 'reminder') {
+          const { text, localDateTime, weeklyTime, ...button } = card(current.kind, current.record, session.language);
+          return { ...button, title: say(session.language, '查看提醒', 'View reminder', 'Ver recordatorio') };
+        }
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
       }) } : {}),
     })) };
@@ -227,7 +231,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan; const recallSources = [], replySources = [];
     const boundaryIndex = session.messages.filter((message) => message.role === "assistant" && isPrivateBoundaryReply(message.text)).length;
-    const normalizePlan = (value) => normalizeAssistantTurn(value, language, boundaryIndex);
+    const normalizePlan = (value) => normalizeAssistantTurn(value, language, boundaryIndex, text);
     // These are the same owner-projected inputs the planner saw, not another member's history.
     const history = session.messages.slice(-29).map(({ role, text, createdAt, call }) => ({ role, text, createdAt, ...(call ? { call: call.rows } : {}) })), historySources = [];
     if (history.length) historySources.push({ kind: "conversation", text: JSON.stringify(history) });
@@ -487,15 +491,15 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, formatChecked: true, receipts: writeReceipts, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "reminder" ? { receiptOnly: true } : {}), ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
       return saved;
     });
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
       const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
-      const unrelated = !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
-      const audited = await prepareSourceReply(plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+      const unrelated = !plan.planConstraints && !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
+      const audited = await prepareSourceReply(plan.reply, { planConstraints: plan.planConstraints, unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
           ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator });

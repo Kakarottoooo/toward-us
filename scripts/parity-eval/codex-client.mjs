@@ -7,10 +7,10 @@ export * from "../../server/claude-cli-client.mjs?native";
 import { usageListeners } from "../../server/claude-cli-client.mjs?native";
 
 let settings;
-export function configureCodexProduct({ directory, context, file, maxCalls, onStop }) {
+export function configureCodexProduct({ directory, context, file, maxCalls, onStop, sharedBudget }) {
   if (settings) throw Error("Product adapter already configured");
-  const budget = createModelCallBudget({ file, context, maxCodexCalls: maxCalls, maxClaudeTurns: 1, onStop });
-  settings = { directory, context, budget };
+  const budget = sharedBudget || createModelCallBudget({ file, context, maxCodexCalls: maxCalls, maxClaudeTurns: 1, onStop });
+  settings = { directory, context, budget, maxCalls, productCalls: 0 };
   return budget;
 }
 
@@ -25,7 +25,9 @@ export function createClaudeCliClient({ model = "sonnet" } = {}) {
     let result;
     try { result = await invoke("codex", { root: join(directory, "product-codex"), model: selected, input, instructions, schema, images, search, timeout,
       callBudget: async (_provider, args, execute) => {
+        if (settings.productCalls >= settings.maxCalls) { budget.state.stopped = 'OpenAI product call budget reached'; budget.reserve('codex'); }
         const ticket = budget.reserve("codex");
+        settings.productCalls++;
         try { const value = await execute(args); ticket.finish(value.stdout); return value; }
         catch (error) { ticket.finish(error.stdout || "", error); throw error; }
       } }); }
