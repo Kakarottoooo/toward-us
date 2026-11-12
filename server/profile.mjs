@@ -172,14 +172,13 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId, s
     for (const line of fresh) {
       const explicit = explicitSelfFacts(line, [...people.map(person => person.name), ...findings.filter(found => found.subject === 'B').map(found => found.person)]);
       if (!explicit.length) continue;
-      // Replace a combined extraction with the separately quoted declarations;
-      // keep model categories/replacement links only when the quote matches.
+      // Complete coverage without collapsing independently extracted facts.
+      // Only a quote spanning multiple declarations needs splitting.
       const matched = findings.filter(found => found.line.id === line.id && explicit.some(value => value.subject === found.subject && value.person === found.person));
-      findings = findings.filter(found => !matched.includes(found));
-      findings.push(...explicit.map(found => {
-        const same = matched.find(value => key(value.quote) === key(found.quote) || key(found.quote) === key(`我${value.quote}`));
-        return same ? { ...same, quote: found.quote } : found;
-      }));
+      const combined = matched.filter(found => explicit.filter(value => key(found.quote).includes(key(value.fact))).length > 1);
+      findings = findings.filter(found => !combined.includes(found));
+      for (const found of explicit) if (!findings.some(value => value.line.id === line.id && value.subject === found.subject && value.person === found.person
+        && key(found.quote).includes(key(value.quote)))) findings.push(found);
     }
   }
   return store.transaction(scope.lock, async (tx) => {

@@ -83,6 +83,21 @@ test("web search results and page observations both reach the source audit", asy
   assert.equal(observed, true);
 });
 
+test("explicit coverage completion preserves independently extracted facts within one source clause", async (t) => {
+  const f = await fixture(t, () => ({ reply: '记住了。', actions: [] }));
+  f.mediator.structured = async input => {
+    const message = JSON.parse(input.input).messages.find(row => row.isNew);
+    return { facts: [
+      { messageId: message.id, quote: '喜欢咖啡', subject: 'A', person: '', category: 'food', fact: '喜欢咖啡', replaces: '' },
+      { messageId: message.id, quote: '绿茶', subject: 'A', person: '', category: 'food', fact: '喜欢绿茶', replaces: '' },
+    ] };
+  };
+  await f.turn('帮我记住：我喜欢咖啡和绿茶。');
+  const records = await f.store.listRelationshipRecordsForUser('memories', f.ids[0]);
+  assert.equal(records.length, 2);
+  assert.deepEqual(records.map(row => row.text).sort(), ['喜欢咖啡', '喜欢绿茶']);
+});
+
 test("source audit sees original history and persisted receipts before finalizing, including false denials", async (t) => {
   const f = await fixture(t, () => ({ reply: "提醒目前还没有设置。", sendableDraft: "对不起，我昨天打断了你。", actions: [action("reminder", "create", { fields: fields({ title: "沟通", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "once" }) })] }));
   await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], draft => {
