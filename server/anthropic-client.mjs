@@ -66,7 +66,7 @@ export function createAnthropicClient({ apiKey = process.env.ANTHROPIC_API_KEY, 
         const long = (params.max_output_tokens || 0) > 2000;
         const message = await run({
           model, max_tokens: Math.max(4000, Math.min(32000, (params.max_output_tokens || 2000) * 4)),
-          output_config: { effort: long ? "medium" : "low", ...(schema ? { format: { type: "json_schema", schema: apiSchema(schema) } } : {}) },
+          output_config: { effort: options.effort || (long ? "medium" : "low"), ...(schema ? { format: { type: "json_schema", schema: apiSchema(schema) } } : {}) },
           // The system part is the same for every member and every turn (only the reply language varies), so it is cached
           // once and read at a tenth of the price after (founder 11-10, cost pass: quality first, then cost).
           ...(system ? { system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] } : {}), messages: messages.length ? messages : [{ role: "user", content: "(empty)" }],

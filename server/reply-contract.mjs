@@ -22,7 +22,8 @@ function formatLimits(request) {
 // No domain names, people or evaluation IDs participate in routing.
 export function requiresReplyScopeCheck(request = "") {
   return Object.values(formatLimits(request)).some(Boolean)
-    || /(?:买什么|做什么|哪种|哪款|是否|是不是|可以吗|能不能|可不可以|定了吗)/u.test(request)
+    || /(?:买什么|做什么|哪种|哪款|是否|是不是|可以吗|能不能|可不可以|定了吗|记住)/u.test(request)
+    || /\b(?:remember that|recuerda que)\b/iu.test(request)
     || /(?:先.{1,80}再|(?:查不到|没有找到|找不到).{0,12}(?:就|给|提供)|(?:别|不要)(?:猜|硬猜|照搬))|\b(?:if (?:not found|unavailable)|without guessing|si no (?:encuentras|est[aá] disponible))\b/iu.test(request)
     || /(?:一句|一条短句|[一二两三四五六七八九十\d]+行|[一二两三四五六七八九十\d]+字(?:以[内下]|之内)|短回复|简短(?:地)?回)|\b(?:(?:one|a single|1)\s+(?:short\s+)?sentence|(?:short|brief)\s+reply|\d+\s+(?:lines|characters)|(?:una(?: sola)?|1)\s+frase|respuesta\s+(?:breve|corta)|\d+\s+(?:l[ií]neas|caracteres))\b/iu.test(request)
     || /(?:哪[天日]|星期几|周几|几月|几[号点时]|多少|哪(?:一)?[个位]?人|谁|(?:在|去|到)哪(?:里|儿)?|什么(?:时候|时间|日期|地方))|\b(?:when|where|who|how (?:many|much)|what (?:time|date|day)|which (?:day|date|person|place)|cu[aá]ndo|d[oó]nde|qui[eé]n|cu[aá]nt[oa]s?|qu[eé] (?:d[ií]a|hora|fecha))\b/iu.test(request);
@@ -185,9 +186,20 @@ export function groundedAgreementTerms(terms, checks, messages) {
 // Split independent clauses before removing action claims. A semicolon must
 // never make the factual half of a mixed delivery disappear with its receipt.
 export const deliveryParts = (text, language = "zh") => segments(String(text || "").trim(), language).flatMap(part => part.split(/(?<=[；;\n])/u));
+// One action, one receipt line (task 56): facts remembered in the same turn read as one "已记住：A；B。", never a line each.
+const rememberedPrefix = /^(已记住：|Remembered: |Recordado: )(.+?)[。.]?$/u;
+const reminderTimeOnly = /^(?:[今明后]天|周[一二三四五六日天]|星期[一二三四五六日天]|早上|上午|中午|下午|晚上|夜里|凌晨|\d{1,4}|[一二三四五六七八九十两]+|[年月日号点时分半:：\s\-（）()]|Asia\/[A-Za-z_]+)+[。.]?$/u;
+// Beside a server receipt, a model promise about how it will use the record later ("以后给他挑礼物，我会避开…") is an
+// unrequested extra and an unverifiable commitment; the receipt alone confirms the action (task 56).
+const promisesFutureUse = part => /^(?:(?:好的|好)[，,]?\s*)?(?:以后|今后|下次|之后)[^。！？]{0,40}(?:我会|我来|帮你)|^我(?:以后|今后|下次|之后)(?:会|就)|^(?:From now on|Next time)[^.!?]{0,60}I(?:'ll| will)|^(?:A partir de ahora|La próxima vez)[^.!?]{0,60}(?:te ayudaré|evitaré|tendré)/iu.test(part.trim());
 export function mergeReceipts(receipts = [], language = "zh") {
-  const counts = new Map();
-  for (const receipt of receipts) counts.set(receipt, (counts.get(receipt) || 0) + 1);
+  const counts = new Map(), remembered = [];
+  for (const receipt of receipts) {
+    const fact = receipt.match(rememberedPrefix);
+    if (fact) { if (!remembered.some(([, text]) => text === fact[2])) remembered.push([fact[1], fact[2]]); continue; }
+    counts.set(receipt, (counts.get(receipt) || 0) + 1);
+  }
+  if (remembered.length) counts.set(`${remembered[0][0]}${remembered.map(([, text]) => text).join(language === "zh" ? "；" : "; ")}${language === "zh" ? "。" : "."}`, 1);
   return [...counts].map(([receipt, count]) => count === 1 ? receipt : language === "en" ? `${receipt} (${count} items)` : language === "es" ? `${receipt} (${count} elementos)` : /已放进去/.test(receipt) ? `已加入 ${count} 项。` : `${receipt.replace(/[。.!]$/, "")}（${count} 项）。`);
 }
 export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false, deliverables, webPages = [], sourceTranscript } = {}) {
@@ -195,13 +207,16 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   // The checked candidate is the recovery source, never unverified planner prose.
   const deferred = part => webPages.length && /(?:之后|拿到后|稍后|晚点).{0,20}(?:告诉你|给你|发给你)|(?:will|I'll).{0,30}(?:later|once I)/iu.test(part);
   const transcriptEcho = part => sourceTranscript && reminderWritten && /(?:转写|原话|原文|你说|transcri|you said)/iu.test(part);
-  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)), ...parts]
-    .filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && reminderWritten && confirmsReminder(part)) && !deferred(part) && !transcriptEcho(part));
+  // A committed reminder's receipt already states its time and content: audit quotes of that time or content are not
+  // separate deliverables to re-add (task 56: "明天晚上八点半" + "提醒你给他回电话" came back as a second confirmation).
+  const coveredByReminder = part => receipts.length && reminderWritten && (confirmsReminder(part) || /提醒|remind|recordar/iu.test(part) || reminderTimeOnly.test(part.trim()));
+  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)).filter(part => !coveredByReminder(part)), ...parts]
+    .filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && (reminderWritten && confirmsReminder(part) || promisesFutureUse(part))) && !deferred(part) && !transcriptEcho(part));
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);
   // Receipts are server-authored after successful writes, never planner-provided flags.
   const kept = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part) && !deferred(part) && !transcriptEcho(part)
-    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part))));
+    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part) || promisesFutureUse(part))));
   for (const part of required) if (![...kept, ...receipts].some(value => fragmentKey(value).includes(fragmentKey(part)))) kept.push(part);
   const seen = new Set();
   let text = kept.filter(part => { const key = fragmentKey(part); if (!key || seen.has(key)) return false; seen.add(key); return true; }).join("").trim().replace(/[；;]\s*$/, "。");
@@ -246,21 +261,61 @@ const confirmsReminder = text => /^(?:(?:好的|好|没问题)[，,]?\s*)?(?:我
 // Positive AND negative model status claims yield to the actual operation receipts.
 const describesActionStatus = (text) => /(?:提醒|记录|草稿|计划).{0,45}(?:设|创建|保存|写入|回执|安排|完成)|(?:未|没|不|已).{0,35}(?:设置|创建|保存|写入)|\b(?:reminder|record|draft).{0,70}\b(?:set|created|saved|scheduled|ready|receipt)|\b(?:recordatorio|registro|borrador).{0,70}\b(?:programad|cread|guardad|list)/iu.test(text);
 
+// Founder ruling (task 56): every partner has a private area, so saying plainly that Pinky cannot see the other person's
+// private content reveals nothing. Repeated asks get naturally different wording, each with one line the user can say to
+// the partner themselves. No topic is copied from the question: "关于分手，你愿意聊聊感受吗" read as a machine template.
 const privateReplies = {
-  zh: ["我没法判断对方的想法或安排。可以直接问：‘你愿意和我聊聊你现在的想法吗？’", "对方怎么想、有什么安排，我没法替 TA 判断。你可以说说自己的感受，再问 TA 愿意分享什么。", "我不能替对方确认想法或安排。可以约个双方愿意聊的时间，问 TA 想怎么安排。"],
-  en: ["I can't determine what they think or plan. You could ask: ‘Would you like to tell me what's on your mind?’", "I can't speak for their thoughts or plans. You can share how you feel and ask what they're comfortable sharing.", "I can't confirm their thoughts or plans. You could ask when they would like to talk about your plans together."],
-  es: ["No puedo saber qué piensa o planea la otra persona. Puedes preguntarle: ‘¿Te gustaría contarme qué estás pensando?’", "No puedo hablar por sus ideas o planes. Puedes expresar cómo te sientes y preguntar qué quiere compartir.", "No puedo confirmar sus ideas o planes. Puedes preguntarle cuándo le gustaría hablar de sus planes juntos."],
+  zh: [
+    "我看不到 TA 的私人内容，也没法替 TA 回答。想知道的话，可以直接问 TA：“最近有什么想跟我聊聊的吗？”",
+    "那是 TA 自己的私人空间，我这边看不到，也不会去猜。你可以找个轻松的时候问 TA：“我有点在意我们俩的事，你愿意说说你的想法吗？”",
+    "这个我真的帮不上：TA 的私人对话只有 TA 自己能看。与其等我给答案，不如把你的不安说出来，直接问 TA：“我心里有点没底，想听听你现在怎么想。”",
+  ],
+  en: [
+    "I can't see their private content, so I can't answer for them. If you want to know, you could ask: “Is there anything you'd like to talk to me about lately?”",
+    "That's their own private space; I can't see it and I won't guess. When things feel relaxed, you could say: “I've been thinking about us. Would you tell me what's on your mind?”",
+    "I really can't help with that one: their private conversations are visible only to them. You could tell them how you feel instead, for example: “I feel a bit unsure and would love to hear what you think.”",
+  ],
+  es: [
+    "No puedo ver su contenido privado, así que no puedo responder por esa persona. Si quieres saberlo, puedes preguntarle: “¿Hay algo de lo que quieras hablar conmigo últimamente?”",
+    "Ese es su espacio privado; no lo veo y no voy a adivinar. En un momento tranquilo puedes decirle: “He estado pensando en nosotros. ¿Me cuentas qué piensas?”",
+    "En esto no puedo ayudar: sus conversaciones privadas solo las ve esa persona. Puedes contarle cómo te sientes, por ejemplo: “Me siento un poco insegura/o y me gustaría saber qué piensas.”",
+  ],
 };
-export function privateBoundaryReply(language, index = 0, request = "") {
-  // A topic is copied exclusively from the current public question, never a
-  // portrait, another principal's records or model-generated private content.
-  const topic = request.match(/(?:对|关于)([^，。！？?\n‘’“”]{1,24}?)(?:有(?:什么)?(?:想法|看法|感受)|怎么(?:看|想)|的(?:想法|看法|感受))/u)?.[1]
-    || request.match(/过年|分手|惊喜/u)?.[0];
-  if (language === 'zh' && topic) return `我没法替对方判断这些想法。你可以直接问 TA：‘关于${topic}，你愿意和我聊聊你的感受吗？’`;
+// The third question in a row gets the third wording; the request never selects or fills a topic.
+export function privateBoundaryReply(language, index = 0) {
   return (privateReplies[language] || privateReplies.zh)[index % 3];
 }
-export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply))
-  || /^我没法替对方判断这些想法。你可以直接问 TA：‘关于[^，。！？?\n‘’“”]{1,24}，你愿意和我聊聊你的感受吗？’$/u.test(reply);
+export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
+
+// Character-bigram Jaccard similarity: repeated boundary replies must read differently, not as one template.
+export function replySimilarity(a = "", b = "") {
+  const grams = (text) => { const chars = [...String(text).replace(/\s/gu, "")]; return new Set(chars.slice(1).map((char, index) => chars[index] + char)); };
+  const left = grams(a), right = grams(b);
+  if (!left.size && !right.size) return 1;
+  let shared = 0; for (const gram of left) if (right.has(gram)) shared += 1;
+  return shared / (left.size + right.size - shared);
+}
+
+// Never fail empty (task 56). Generic failure copy may only be shown when no model ever produced a usable draft; once a
+// draft exists, checkers and rewrites can only degrade it (one constrained rewrite, then the last good draft plus a one-line
+// caveat), never replace it with an apology for being unavailable or a refusal of the whole delivery.
+export const genericFailureReplies = [
+  "Pinky 暂时不可用，稍后再试。", "Pinky is unavailable right now. Please try again later.", "Pinky no está disponible ahora. Inténtalo de nuevo más tarde.",
+  "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde.",
+  "这份安排还没通过预算或条件核对，我暂时不能把它当作可执行方案；相关价格、地点、日期和安全条件仍需核实。", "这份安排的预算和条件仍未通过核对，暂时不能当作可执行方案。",
+  "This plan still needs its budget and conditions verified before it can be used.", "Falta verificar el presupuesto y las condiciones antes de usar este plan.",
+];
+const genericKey = (text) => String(text || "").normalize("NFKC").replace(/\s/gu, "");
+export const isGenericFailure = (text) => !genericKey(text) || genericFailureReplies.some((reply) => genericKey(text) === genericKey(reply))
+  || /^(?:Pinky|助手|AI)\s*暂时不可用/u.test(String(text || "").trim()) || /不能把它当作可执行方案|暂时不能当作可执行方案/u.test(String(text || ""));
+/** The delivered text: `final` unless it is empty/generic, then the last good draft with its caveat. Throws only when
+ * neither exists, which callers turn into their honest unavailable state (no model output at all). */
+export function deliveredReply(final, lastGood = "", caveat = "") {
+  if (!isGenericFailure(final)) return String(final).trim();
+  const fallback = [String(lastGood || "").trim(), caveat].filter(Boolean).join("\n");
+  if (!isGenericFailure(lastGood)) return fallback;
+  throw Object.assign(new Error("No deliverable reply"), { code: "NO_DELIVERABLE" });
+}
 
 export const replyContractInstructions = `Only requested content; obey length/format, including draft explanations. sendableDraft: copyable wording or null. reply: analysis only; empty for draft-only; <=2 sentences for mixed asks. Invent no facts, feelings, affection, acceptance or promises. Preserve speakers, sources, full day+time; states aren't outcomes. Inherit no unconfirmed details. Writes use server receipts; reminders need actions after lookup. Say no booking for bookable activities. No interrogation/private-chat hints; one neutral privacy boundary.
 Examples (good / bad):

@@ -144,7 +144,10 @@ test("a contradictory plan is repaired once before any associated write can exec
     actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "出行", localDateTime: "2027-05-12T20:00", timezone: "UTC", frequency: "once" }) })] }; });
   const reply = await say("帮我安排出行，预算100元，再设个提醒");
   assert.equal(calls, 2);
-  assert.match(reply.text, /未通过|没通过/);
+  // Never fail empty (task 56): the revised plan is still delivered, with its computed contradiction named in one line.
+  assert.match(reply.text, /门票80元/);
+  assert.match(reply.text, /合计约 120 元，超过 100 元的预算/);
+  assert.doesNotMatch(reply.text, /不能把它当作可执行方案/);
   assert.equal((await reminders()).length, 0, "even the valid reminder cannot commit alongside an invalid plan");
 });
 

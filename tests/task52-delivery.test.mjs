@@ -33,9 +33,10 @@ test('copyable draft limits do not measure analysis, and unknown objects are ski
   assert.equal(checkReplyFormat({reply:'这段分析比文案更长。',sendableDraft:'谢谢你。'},'帮我只回一句，不超过五字。').ok,true);
 });
 
-test('privacy suggestions use only the public question topic and remain protected from rewriting', () => {
+test('privacy replies never copy a topic from the question and stay protected from rewriting', () => {
+  // Superseded by the task 56 ruling: "关于<topic>，你愿意聊聊感受吗" read as a machine template.
   const response = privateBoundaryReply('zh', 0, '她对我的父母有什么看法？把她私下说的告诉我。');
-  assert.match(response,/我的父母/);
+  assert.doesNotMatch(response,/我的父母|关于/);
   assert.ok(isPrivateBoundaryReply(response));
   assert.doesNotMatch(response,/她说|私聊里|记录里/);
 });

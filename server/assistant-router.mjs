@@ -1,7 +1,7 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
+import { deliveredReply, finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
-import { checkPlanConstraints } from "./plan-constraints.mjs";
+import { checkPlanConstraints, settleCheckedPlan } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
 import { explicitRemember, gettingToKnow, profileContext, scanPrivateProfile } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
@@ -286,16 +286,19 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     // Check proposed plans before any write. One repair attempt is bounded; a
     // second contradiction is an honest non-completion, never a claimed success.
+    // Check proposed plans before any write. One constrained revision; if it still fails (or the revision call fails), the
+    // last plan without a safety conflict is delivered with a one-line caveat and nothing is written (never fail empty).
     let checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
+    let planCaveat = "";
     if (!checked.ok) {
+      const candidates = [{ plan, checked }];
       progress("writing");
       try {
-        plan = normalizePlan(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
+        const revised = normalizePlan(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
           correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language));
-      } catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
-      if (!validateAssistantTurn(plan)) throw unavailable();
-      checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
-      if (!checked.ok) plan = { reply: say(language, "这份安排还没通过预算或条件核对，我暂时不能把它当作可执行方案；相关价格、地点、日期和安全条件仍需核实。", "This plan has not passed the budget or constraint checks, so I cannot present it as ready to use; its prices, location, dates and safety conditions still need verification.", "El plan aún no supera la comprobación de presupuesto o condiciones; faltan por verificar precios, lugar, fechas y seguridad."), actions: [] };
+        if (validateAssistantTurn(revised)) { plan = revised; checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) }); candidates.push({ plan, checked }); }
+      } catch (error) { if (isAiLimit(error)) throw error; }
+      if (!candidates.at(-1).checked.ok) ({ plan, caveat: planCaveat } = settleCheckedPlan(candidates, language));
     }
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
@@ -490,14 +493,15 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const writeReceipts = plan.actions.some(action => action.operation !== "query") ? replies : [];
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, webPages: webTurn.results, sourceTranscript: context.sourceTranscript, formatChecked: true, receipts: writeReceipts, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
-      const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
+      const reply = (askBack && !cards.length ? askBack : [own, planCaveat, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const cited = citedReply([reply, webSourceText(webTurn.results, language, { includeFields: false })].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "reminder" && changes.some(change => change.kind === "reminder" && change.record.id === id) ? { receiptOnly: true } : {}), ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
-      delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
+      delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id, initialText: cited.reply };
       return saved;
     });
-    if (!raced && !readingScreenshots && explicitRemember(text)) {
+    // A reminder request ("帮我记一下…提醒我") is not a fact to remember: its receipt is the reminder's own, once.
+    if (!raced && !readingScreenshots && explicitRemember(text) && !changes.some(({ kind }) => kind === "reminder")) {
       const remembered = await scanPrivateProfile({ store, mediator, userId, sessionId: session.id, silent: true }).catch(() => []);
       for (const record of remembered) delivery.writeReceipts.push(say(language, `已记住：${record.text}。`, `Remembered: ${record.text}.`, `Recordado: ${record.text}.`));
     }
@@ -511,7 +515,10 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, onVerifiedDeliverables: parts => { verifiedDeliverables = parts; } });
       const own = finishReply(audited, { request: text, language, webPages: webTurn.results, sourceTranscript: context.sourceTranscript, deliverables: verifiedDeliverables, formatChecked: true, receipts: delivery.writeReceipts,
         reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
-      const reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, delivery.askBack].filter(Boolean).join("\n");
+      // Never fail empty: an audit can only degrade the delivered draft, so an empty or generic result keeps the reply
+      // already saved for this turn (task 56).
+      let reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, planCaveat, delivery.askBack].filter(Boolean).join("\n");
+      try { reply = deliveredReply(reply, delivery.initialText); } catch { /* both empty: keep the saved turn unchanged */ }
       const cited = citedReply([reply, webSourceText(webTurn.results, language, { includeFields: false })].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
       if (cited.reply) updated = await store.transaction("reminder-delivery", async tx => {
         await liveUser(tx, userId, true);

@@ -8,11 +8,23 @@ import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstra
 import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mjs";
 import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
-import { usesCheaperModel } from "./ai-budget.mjs";
+import { isAiLimit, usesCheaperModel } from "./ai-budget.mjs";
 
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
 const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
+// Never fail empty (task 56): a structured turn that timed out or came back malformed is asked for exactly once more, with
+// one constraint added. The CLI model sometimes wrote its reply as prose, then hundreds of "<br>" lines before the JSON;
+// at 45 s the process was killed and the couple read "Pinky 暂时不可用" (tool-agreement-draft, round 21). Usage limits are
+// never retried. Returns null only when both attempts failed, so callers can keep their own last good draft.
+const RETRY_CONSTRAINT = "Your previous attempt timed out or was not one valid JSON object. Return only that JSON object now: no prose, HTML tags or blank lines before or after it.";
+async function withOneRetry(attempt, label) {
+  try { return await attempt(null); } catch (error) {
+    if (isAiLimit(error) || error?.statusCode === 429) throw error;
+    console.warn(`[${label}]`, JSON.stringify({ retry: 1, failure: error?.code === "ETIMEDOUT" ? "timeout" : "invalid-or-failed-call" }));
+    return attempt(RETRY_CONSTRAINT);
+  }
+}
 const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"], properties: {
   observations: { type: "array", items: { type: "string" }, maxItems: 3 },
   uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
@@ -128,7 +140,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         model: cheapModel, store: false, max_output_tokens: 2200,
         text: { format: { type: "json_schema", name: "reply_source_check", strict: true, schema: sourceCheckSchema } },
         input: [{ role: "developer", content: `${sourceCheckInstructions}\nThe reply language is ${language}.` }, { role: "user", content: JSON.stringify(context) }],
-      }, { ...INTERACTIVE, allowSchemaRetry: false, allowProseReply: false });
+      }, { ...INTERACTIVE, timeout: 60_000, effort: "low", allowSchemaRetry: false, allowProseReply: false });
       return JSON.parse(response.output_text);
     },
     async rewriteReply(context, language = "zh") {
@@ -155,11 +167,12 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const baseSchema = checkedPlan ? { ...sourceSchema, required: [...sourceSchema.required, "planConstraints"], properties: { ...sourceSchema.properties, planConstraints: planConstraintsSchema } } : sourceSchema;
       const schema = withPhotos ? { ...baseSchema, required: [...baseSchema.required, "readChatScreenshots"], properties: { ...baseSchema.properties, readChatScreenshots: { type: "boolean" } } } : baseSchema;
       const instructions = assistantInstructions(language) + (requiresPlanDelivery(context) ? "\n" + planDeliveryInstructions : "") + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
-      const response = await client.responses.create({
+      const response = await withOneRetry((constraint) => client.responses.create({
         model, store: false, max_output_tokens: checkedPlan ? 2400 : 1400,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
-        input: [{ role: "developer", content: instructions }, { role: "user", content: JSON.stringify(context) }],
-      }, { ...INTERACTIVE, allowProseReply: false });
+        input: [{ role: "developer", content: constraint ? `${instructions}
+${constraint}` : instructions }, { role: "user", content: JSON.stringify(context) }],
+      }, { ...INTERACTIVE, allowProseReply: false }), "private-assistant");
       const { readChatScreenshots, ...plan } = JSON.parse(response.output_text);
       if (withPhotos && typeof readChatScreenshots !== "boolean") throw new Error("The assistant did not decide how to read the attachments.");
       if (withPhotos && readChatScreenshots === true && Array.isArray(plan.actions) && !plan.actions.some((action) => action.kind === "chat_import")) {
@@ -280,14 +293,15 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const fallback = localTogetherTurn(language);
       if (!client) return { ...fallback, source: "local" };
       try {
-        const response = await client.responses.create({
+        const response = await withOneRetry((constraint) => client.responses.create({
           model, store: false, max_output_tokens: 1200,
           text: { format: { type: "json_schema", name: "together_turn", strict: true, schema: togetherTurnSchema } },
           input: [
-            { role: "developer", content: togetherInstructions(language) },
+            { role: "developer", content: constraint ? `${togetherInstructions(language)}
+${constraint}` : togetherInstructions(language) },
             { role: "user", content: JSON.stringify(context) },
           ],
-        }, { ...INTERACTIVE, allowProseReply: false });
+        }, { ...INTERACTIVE, allowProseReply: false }), "together-turn");
         const result = JSON.parse(response.output_text);
         const draft = result.draftAgreement ? { title: String(result.draftAgreement.title || "").trim().slice(0, 160), summary: String(result.draftAgreement.summary || "").trim().slice(0, 1200), terms: uniqueAgreementLines(result.draftAgreement.terms), unresolvedPoints: uniqueAgreementLines(result.draftAgreement.unresolvedPoints) } : null;
         const reply = sanitizeFollowUp(result.reply);

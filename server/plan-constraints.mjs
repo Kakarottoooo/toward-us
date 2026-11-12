@@ -91,7 +91,7 @@ export function checkPlanConstraints(check, { context = {}, reply = "" } = {}) {
         totalUpper += item.upper * item.quantity;
         const prices = moneyValues(item.priceText);
         if (currencyOf(item.priceText) && currencyOf(item.priceText) !== budget.currency) issue("currency_mismatch", `${item.label}: convert using a verified rate or use the budget currency throughout; never add different currencies.`);
-        if (!item.priceText || !reply.includes(item.priceText) || prices.length !== 1 || prices[0].upper !== item.upper) issue("price_mismatch", `${item.label}: priceText must be an exact displayed price or range and upper must equal its high endpoint.`);
+        if (!item.priceText || !normalized(reply).includes(normalized(item.priceText)) || prices.length !== 1 || prices[0].upper !== item.upper) issue("price_mismatch", `${item.label}: priceText must be an exact displayed price or range and upper must equal its high endpoint.`);
         else covered.add(normalized(item.priceText));
         if (/人均|每人|\/人|per person|each|\/person|por persona/i.test(item.priceText) && item.quantity === 1 && /两人|二人|双人|two people|for two|dos personas/i.test(lastQuestion(context))) issue("quantity_mismatch", `${item.label}: a per-person cost for two needs quantity 2; use quantity 1 only for a group total.`);
         if (item.mode === "verified") {
@@ -146,4 +146,44 @@ export function checkPlanConstraints(check, { context = {}, reply = "" } = {}) {
     }
   }
   return { ok: !issues.length, issues, unverified, totalUpper };
+}
+
+// Never fail empty (task 56): checks only degrade a plan. After the one constrained revision, the last plan without a
+// safety violation is delivered with one line naming what is still unverified; nothing is written for it. Only a food
+// safety conflict blocks a candidate, and then the reply still says what to do instead.
+const SAFETY_CODES = new Set(["allergen_conflict", "missing_allergens"]);
+const CAVEAT_LABELS = [
+  [/budget|cost|price|currency|quantity|cap/, { zh: "预算和价格", en: "budget and prices", es: "el presupuesto y los precios" }],
+  [/hours/, { zh: "营业时间", en: "opening hours", es: "los horarios" }],
+  [/location/, { zh: "地点", en: "the location", es: "el lugar" }],
+  [/date|time|order|visit/, { zh: "日期和时间", en: "dates and times", es: "las fechas y horas" }],
+  [/food|ingredient|allergen/, { zh: "食材和配料", en: "ingredients", es: "los ingredientes" }],
+];
+export function constraintCaveat(issues = [], language = "zh", { totalUpper = null, limit = null, currency = "" } = {}) {
+  const lang = ["en", "es"].includes(language) ? language : "zh";
+  // An over-budget sum is a known contradiction, not an unverified fact: say the computed total and what to cut.
+  if (issues.some(({ code }) => code === "over_budget") && Number.isFinite(totalUpper) && Number.isFinite(limit)) {
+    return lang === "en" ? `Note: the listed prices add up to about ${totalUpper} ${currency}, over the ${limit} ${currency} budget; drop or swap one item before booking.`
+      : lang === "es" ? `Nota: los precios indicados suman unos ${totalUpper} ${currency}, por encima del presupuesto de ${limit} ${currency}; quita o cambia algo antes de reservar.`
+        : `注意：按所列价格合计约 ${totalUpper} ${currency === "CNY" ? "元" : currency}，超过 ${limit} ${currency === "CNY" ? "元" : currency}的预算，出发前需要删掉或换掉一项。`;
+  }
+  const labels = [...new Set(issues.map(({ code }) => CAVEAT_LABELS.find(([pattern]) => pattern.test(code))?.[1][lang]).filter(Boolean))];
+  const what = labels.length ? labels.join(lang === "zh" ? "、" : ", ") : { zh: "部分细节", en: "some details", es: "algunos detalles" }[lang];
+  return lang === "en" ? `Note: ${what} in this plan are not verified yet; please double-check before going.`
+    : lang === "es" ? `Nota: ${what} de este plan aún no están verificados; confírmalo antes de ir.`
+      : `注意：这份安排里的${what}还没有核实，出发前请再确认一下。`;
+}
+/** candidates: [{ plan, checked }] in the order produced. Returns { plan, caveat }: the delivered plan without actions (its
+ * caveat is appended after the reply audit, so no rewrite can drop it), or a safe alternative when every candidate is unsafe. */
+export function settleCheckedPlan(candidates, language = "zh") {
+  const safe = candidates.filter(({ plan, checked }) => plan && String(plan.reply || plan.sendableDraft || "").trim() && !checked.issues.some(({ code }) => SAFETY_CODES.has(code)));
+  if (!safe.length) {
+    const reply = language === "en" ? "One dish in that plan conflicts with a known allergy, so I won't recommend it. Pick a dish without that ingredient and check the label and cross-contact before cooking."
+      : language === "es" ? "Un plato de ese plan choca con una alergia conocida, así que no lo recomiendo. Elige uno sin ese ingrediente y revisa la etiqueta y la contaminación cruzada antes de cocinar."
+        : "这份安排里有一道菜和已知过敏冲突，我先不推荐它。换一道不含这种食材的菜，做之前再看一下配料表，注意交叉接触。";
+    return { plan: { reply, sendableDraft: null, actions: [], planConstraints: null }, caveat: "" };
+  }
+  const best = safe.reduce((winner, row) => row.checked.issues.length <= winner.checked.issues.length ? row : winner);
+  const caveat = constraintCaveat(best.checked.issues, language, { totalUpper: best.checked.totalUpper, limit: best.plan.planConstraints?.budget?.limit, currency: best.plan.planConstraints?.budget?.currency });
+  return { plan: { ...best.plan, actions: [] }, caveat };
 }
