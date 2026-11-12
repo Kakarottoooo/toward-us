@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { budgetedModelCall, claudeResult } from "./model-call-budget.mjs";
+import { meteredCall, modelFor, usageFromClaudeCli } from "./ai-ledger.mjs";
 
 // Local dogfooding only: answers the OpenAI `responses.create` text calls through the `claude` CLI signed in with the
 // founder's Claude subscription. It never runs tools, keeps no session, and loads no user settings, hooks or MCP
@@ -162,12 +163,17 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
 
 function run(command, args, input, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const turns = args.includes("--json-schema") || args.includes("Read") ? 6 : args.includes("WebSearch") ? 4 : 1;
-  return budgetedModelCall("claude", args, (bounded) => runProcess(command, bounded, input, cwd, timeoutMs), turns).catch((error) => {
+  // Every CLI call is one ledger row (ai-ledger.mjs). Past a member's soft cost limit the call runs on the cheaper model;
+  // web lookups keep theirs.
+  const at = args.indexOf("--model"), requested = at >= 0 ? args[at + 1] : null;
+  const model = requested && !args.includes("WebSearch") ? modelFor("claude-cli", requested) : requested;
+  const used = model === requested ? args : args.map((arg, index) => index === at + 1 ? model : arg);
+  return meteredCall({ provider: "claude-cli", model, requested }, () => budgetedModelCall("claude", used, (bounded) => runProcess(command, bounded, input, cwd, timeoutMs), turns).catch((error) => {
     // Preserve the CLI's structured provider error for the product's existing
     // error handling; accounting has already captured its unsuccessful exit.
     if (typeof error.code === "number" && claudeResult(error.stdout)?.is_error) return error.stdout;
     throw error;
-  });
+  }), usageFromClaudeCli);
 }
 
 const runProcess = runCliProcess;
