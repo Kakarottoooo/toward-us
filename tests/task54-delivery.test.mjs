@@ -42,6 +42,7 @@ test('receipt batches and copyable fields have one presentation owner', () => {
   assert.equal(presented.title, ''); assert.equal(presented.summary, '');
   assert.equal(record.draftAgreement.title, '轮流做饭');
   assert.equal(agreementPresentation(draft, '轮流做饭').reply, '');
+  assert.equal(finishReply('费用为3.0元。费用为30元。', { formatChecked: true }), '费用为3.0元。费用为30元。');
 });
 
 test('agreement terms need member-authored source quotes, never agent defaults', () => {

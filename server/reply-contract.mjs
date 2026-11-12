@@ -157,7 +157,7 @@ export async function repairReplyFormat(reply, { request = "", language = "zh", 
   return renderReply(candidates[0]);
 }
 
-const fragmentKey = (text) => text.normalize("NFKC").replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+const fragmentKey = (text) => text.normalize("NFKC").replace(/\s/gu, "").replace(/[。.!！？?；;，,：:]+$/gu, "").toLowerCase();
 export function agreementPresentation(draft, reply = "") {
   if (!draft) return { draft, reply };
   const seen = new Set();
