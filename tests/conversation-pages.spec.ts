@@ -86,7 +86,7 @@ async function send(page: Page, placeholder: string, text: string) {
   await page.getByTestId("conversation-send").click();
 }
 async function register(request: APIRequestContext, account: { name: string; email: string; language: string }) {
-  const response = await request.post("/api/auth/register", { data: { ...account, password: PASSWORD } });
+  const response = await request.post("/api/auth/register", { data: { aiConsent: true, ...account, password: PASSWORD } });
   expect(response.status(), await response.text()).toBe(201);
 }
 async function postJson(request: APIRequestContext, path: string, data: unknown) {

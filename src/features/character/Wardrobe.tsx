@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Crown, TShirt } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
-import { storePlugin, type Membership } from "../membership/MembershipPage";
+import { inIosApp, storePlugin, type Membership } from "../membership/MembershipPage";
 import { OUTFIT_IDS, OutfitArt, outfitName, type OutfitId } from "./Outfit";
 
 // 装扮 in the little one's room (founder 11-06, "按对会员+装扮"): members wear any of them; anyone can buy one for $1.99
@@ -28,7 +28,7 @@ export function Wardrobe({ language, userId, onWear, onMembership }: { language:
       if (store) {
         const result = await store.purchase({ id: `us.toward.pinky.outfit.${id}`, appAccountToken: userId });
         if (result.status === "purchased" && result.signedTransaction) { setData(await relationshipApi<Membership>("/api/membership/apple/verify", jsonBody({ signedTransaction: result.signedTransaction }))); await wear(id); }
-      } else if (data.providers.stripe) {
+      } else if (data.providers.stripe && !inIosApp()) {
         const { url } = await relationshipApi<{ url: string }>("/api/membership/stripe/checkout", jsonBody({ product: `outfit:${id}`, language })); location.assign(url); return;
       } else setNotice(t("付款功能还在准备，很快就能开通。", "Payment is almost ready; it opens soon.", "El pago está casi listo; abrirá pronto."));
     } catch (error) { setNotice((error as Error).message); }

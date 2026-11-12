@@ -7,7 +7,7 @@ for (const language of ["zh", "en", "es"] as const) test(`game questions can be 
     const owners = [];
     for (const [index, context] of [a, b].entries()) {
       await context.addInitScript(lang => { localStorage.setItem("toward-us:onboarded", "1"); localStorage.setItem("toward-us.language", lang); }, language);
-      const response = await context.request.post("/api/auth/register", { data: { name: index ? "Sam" : "Alex", email: `game-choice-${language}-${index}-${Date.now()}@example.invalid`, password: "synthetic-local-password" } });
+      const response = await context.request.post("/api/auth/register", { data: { aiConsent: true, name: index ? "Sam" : "Alex", email: `game-choice-${language}-${index}-${Date.now()}@example.invalid`, password: "synthetic-local-password" } });
       expect(response.status()).toBe(201); owners.push((await response.json()).user);
     }
     const invitation = await (await a.request.post("/api/partner/invitations")).json();

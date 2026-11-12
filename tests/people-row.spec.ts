@@ -18,7 +18,7 @@ const numbers = { me: { messages: 40, questions: 3, chars: 400 }, them: { messag
 async function signIn(page: Page, context: BrowserContext, sent: string[]) {
   // The welcome tour is covered by couple-onboarding.spec.ts; here it would only sit in front of what is under test.
   await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
-  await context.request.post("/api/auth/register", { data: { name: "People tester", email: `people-ui-${Date.now()}-${Math.random()}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "People tester", email: `people-ui-${Date.now()}-${Math.random()}@example.invalid`, password: "synthetic-password-2026" } });
   const session = { id: "people-session", language: "zh", timezone: "UTC", version: 1, messages: [
     { id: "m1", role: "user", text: "他约我爬山，我怎么回？", itemId: "m1", createdAt: at },
     { id: "m2", role: "assistant", text: "他很主动，想去就直接答应。", createdAt: at },
