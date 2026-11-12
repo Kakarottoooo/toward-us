@@ -47,7 +47,7 @@ const inputRoles = {
 
 // Shared by the immediate screenshot answer and later answers about imported text.
 // One initial check, at most one rewrite, and a final check only after rewriting.
-export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], planConstraints = null, unsupportedPremise = null, request = "", language = "zh", context = {}, mediator } = {}) {
+export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], planConstraints = null, unsupportedPremise = null, request = "", language = "zh", context = {}, mediator, onVerifiedDeliverables } = {}) {
   if (isPrivateBoundaryReply(reply)) return reply;
   sendableDraft = activityDraft({ sendableDraft, activityDescription });
   // Citation tokens are server-resolved metadata, never prose for a model to edit.
@@ -56,7 +56,12 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   const strip = (text) => String(text || "").replace(marker, "").trim();
   const stripParts = (value) => typeof value === "string" ? strip(value) : { reply: strip(value?.reply), sendableDraft: value?.sendableDraft == null ? null : strip(activityDraft(value)) };
   reply = sendableDraft === undefined ? strip(reply) : stripParts({ reply, sendableDraft });
-  const restore = (value) => [strip(renderReply(value)), ...citations].filter(Boolean).join("\n");
+  const restore = (value, audit) => {
+    const text = strip(renderReply(value));
+    if (audit) onVerifiedDeliverables?.((audit.deliverableChecks || []).flatMap(item => item.parts || [])
+      .filter(part => part.present === true && part.quote?.trim() && text.includes(part.quote)).map(part => part.quote));
+    return [text, ...citations].filter(Boolean).join("\n");
+  };
   const originals = sources.filter((source) => typeof source.text === "string" && source.text.trim()).map((source) => ({ ...source, text: strip(source.text) }));
   // Preserve exact user clauses instead of asking a model to summarize away a requirement.
   const clauses = [...new Intl.Segmenter(language, { granularity: "sentence" }).segment(request)].map(({ segment }) => segment.trim()).filter(Boolean);
@@ -103,11 +108,12 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   // Lexicographic priority: requested stance, factual grounding, then wording
   // and literal format. Any number of cosmetic fixes cannot offset a false fact.
   const rank = (result, candidate, issues) => [missingStances(result, candidate).length + missingDeliverables(result, candidate).length, result.claims.filter((row) => !row.supported).length, issues.length];
-  let stage = "initial-check";
+  let stage = "initial-check", initialAudit;
   try {
     const result = await check(reply);
+    initialAudit = result;
     const issues = [...semanticIssues(result, reply), ...formatIssues];
-    if (!issues.length) return restore(reply);
+    if (!issues.length) return restore(reply, result);
     stage = "rewrite";
     const revised = await rewrite({ reply, issues });
     if (!renderReply(revised).trim()) throw new Error("Empty source repair");
@@ -120,11 +126,11 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
       || planConstraints && !checkPlanConstraints(planConstraints, { context, reply: renderReply(revised) }).ok;
     console.info("[source-reply]", JSON.stringify({ selected: useOriginal ? "original" : "rewrite", originalIssues: issues.length,
       revisedIssues: revisedIssues.length, originalRank, revisedRank, newUnauthorizedStance: finalCheck.newUnauthorizedStance, lostDeliverables: finalCheck.lostDeliverables }));
-    return restore(useOriginal ? reply : revised);
+    return restore(useOriginal ? reply : revised, useOriginal ? result : finalCheck);
   } catch (error) {
     // No generated error text, partial rollback, retry or unchecked rewrite.
     // Log no user content or provider error message (which may contain a prompt).
     console.warn("[source-reply]", JSON.stringify({ selected: "original", stage, failure: error?.code === "ETIMEDOUT" ? "timeout" : "invalid-or-failed-call" }));
-    return restore(reply);
+    return restore(reply, initialAudit);
   }
 }

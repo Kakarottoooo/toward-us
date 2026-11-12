@@ -19,6 +19,18 @@ test('captured mixed reminder sentences retain all three advice steps, with one 
   }
 });
 
+test('the checked request checklist recovers a factual clause removed with an adjacent action claim', async () => {
+  let deliverables;
+  const advice = '先说感受，再谈当下';
+  const audited = await prepareSourceReply(`${advice}，我会提醒你明天沟通。`, { request: '先复述旧建议，再设提醒。',
+    onVerifiedDeliverables: parts => { deliverables = parts; }, mediator: {
+      checkReplySources: async () => ({ claims: [], deliveryIssues: [], stanceChecks: [], newUnauthorizedStance: false, lostDeliverables: false,
+        deliverableChecks: [{ id: 'deliverable-1', parts: [{ requirement: '旧建议', present: true, quote: advice }] }] }),
+    } });
+  const final = finishReply(audited, { receipts: ['已保存个人提醒：沟通，21:00。'], reminderWritten: true, deliverables });
+  assert.ok(final.includes(advice)); assert.doesNotMatch(final, /我会提醒/);
+});
+
 test('receipt batches and copyable fields have one presentation owner', () => {
   assert.deepEqual(mergeReceipts(Array(7).fill('已放进去。')), ['已加入 7 项。']);
   assert.equal(renderReply({ reply: '周六一起去吗？', sendableDraft: '周六一起去吗？' }), '周六一起去吗？');

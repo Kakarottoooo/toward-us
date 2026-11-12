@@ -195,13 +195,14 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   // The checked candidate is the recovery source, never unverified planner prose.
   const deferred = part => webPages.length && /(?:之后|拿到后|稍后|晚点).{0,20}(?:告诉你|给你|发给你)|(?:will|I'll).{0,30}(?:later|once I)/iu.test(part);
   const transcriptEcho = part => sourceTranscript && reminderWritten && /(?:转写|原话|原文|你说|transcri|you said)/iu.test(part);
-  const required = deliverables || parts.filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && reminderWritten && confirmsReminder(part)) && !deferred(part) && !transcriptEcho(part));
+  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)), ...parts]
+    .filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && reminderWritten && confirmsReminder(part)) && !deferred(part) && !transcriptEcho(part));
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);
   // Receipts are server-authored after successful writes, never planner-provided flags.
   const kept = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part) && !deferred(part) && !transcriptEcho(part)
     && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part))));
-  for (const part of required) if (!kept.some(value => fragmentKey(value) === fragmentKey(part))) kept.push(part);
+  for (const part of required) if (![...kept, ...receipts].some(value => fragmentKey(value).includes(fragmentKey(part)))) kept.push(part);
   const seen = new Set();
   let text = kept.filter(part => { const key = fragmentKey(part); if (!key || seen.has(key)) return false; seen.add(key); return true; }).join("").trim().replace(/[；;]\s*$/, "。");
   if (!text && parts.some(deferred)) text = language === "en" ? "I could not confirm the requested information in this turn." : language === "es" ? "No pude confirmar la información solicitada en este turno." : "这次未能确认你问的信息。";
