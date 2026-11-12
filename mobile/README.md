@@ -7,6 +7,8 @@
   - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
   - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
 - 加载哪个网址在**打包时**决定：环境变量 `TOWARD_US_APP_URL`，不设时默认 `https://toward-us-private-beta.onrender.com`（取自 `render.yaml` 的服务名，**实际域名还要确认**；不对就改 `scripts/config.mjs` 里的 `DEFAULT_URL`）。换网址就要重新打包、重新安装。
+- **上架用的正式包**（TestFlight / App Store）用 `npm run sync:release` 或 `npm run check:ios-release`：必须显式设 `TOWARD_US_APP_URL`，而且只能是公网 `https://` 地址；`*.ts.net`（Tailscale，只有创始人自己的设备连得上）、`localhost`、`.local`、IP 地址都会直接报错，防止把内测地址打进正式包。
+- 连不上服务器时（没网、服务器挂了）显示包里自带的离线页（`www/offline.html`，按手机语言显示中/英/西），每 10 秒和联网时自动重试，连上就回到 App；不会白屏。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
 - iOS 图标已换成 Pinky；安卓图标和两边的启动图还是 Capacitor 默认的。
 
@@ -92,12 +94,13 @@ Remove-Item Env:TOWARD_US_APP_URL   # 用完清掉，否则下一个包还指着
 
 ## iPhone
 
-iOS 工程已生成在 `ios/`，麦克风说明有中英西三语，但 **Windows 上不能编译 iOS，这一版没有编过**。等 Apple 公司开发者团队开通后，在 Mac 上：
+iOS 工程在 `ios/`：只支持 iPhone、竖屏；权限说明（麦克风、相册、相机、语音识别）都有中英西三语；包里带隐私清单 `App/PrivacyInfo.xcprivacy`，`Info.plist` 已声明 `ITSAppUsesNonExemptEncryption = false`（只用系统 HTTPS，上传时不用再答出口合规）。Windows 上不能编译 iOS，在创始人的 Mac 上编（见下）。
 
 ```sh
 cd mobile
 npm ci --ignore-scripts
 npm run check:ios   # 无签名的模拟器编译
+TOWARD_US_APP_URL=https://<正式域名> npm run check:ios-release   # 无签名的 Release 真机编译（和上架归档同一套编译）
 npm run ios         # 打开 Xcode，选自己的 Signing Team 后真机运行 / 打 TestFlight
 ```
 
