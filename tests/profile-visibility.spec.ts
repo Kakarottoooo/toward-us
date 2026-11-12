@@ -52,7 +52,7 @@ for (const language of ["zh", "en", "es"] as const) test(`profile shows who sees
       localStorage.setItem("toward-us:onboarded", "1"); localStorage.setItem("toward-us.language", lang);
     }, language);
     const register = async (context: typeof a, name: string) => {
-      const response = await context.request.post("/api/auth/register", { data: { name, email: `${name}-${language}-${Date.now()}@example.invalid`, password: "local-test-password" } });
+      const response = await context.request.post("/api/auth/register", { data: { aiConsent: true, name, email: `${name}-${language}-${Date.now()}@example.invalid`, password: "local-test-password" } });
       expect(response.status()).toBe(201); return (await response.json()).user;
     };
     const owner = await register(a, "Alex"), partner = await register(b, "Sam");

@@ -49,6 +49,11 @@ services:
       - key: FCM_SERVICE_ACCOUNT_JSON
         sync: false
       # Pinky membership and the beta board (docs/payments.zh-CN.md); the founder fills these in on Render.
+      # Public privacy / terms / support pages (server/legal.mjs): the address people write to and who runs Pinky.
+      - key: PINKY_SUPPORT_EMAIL
+        sync: false
+      - key: PINKY_OPERATOR
+        sync: false
       - key: FOUNDER_EMAILS
         sync: false
       - key: STRIPE_SECRET_KEY

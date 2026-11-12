@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { cachedPurchases, membershipFor } from "./membership.mjs";
+import { isExemptAiCall } from "./ai-call-context.mjs";
 
 // Cost guard (founder, 11-04): "普通用户不能用这么多后台模型额度，只用他需要用到的" and "不能反复调用模型，只运行必要的运行".
 // Every model call is counted per person, per couple and per feature per UTC day, in the app's own store (file or Postgres).
@@ -50,6 +51,10 @@ const METHODS = {
   continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", transcribe: () => "transcription", createRealtimeSession: () => "realtime_voice",
 };
 
+/** The feature a mediator method call is for, and the methods that make model calls (shared with ai-ledger's cost meter). */
+export const featureForCall = (method, args) => METHODS[method]?.(args[0]);
+export const MODEL_METHODS = Object.freeze(Object.keys(METHODS));
+
 export const AI_LIMIT = "ai_daily_limit";
 export const AI_UNCHANGED = "ai_unchanged_input";
 const LIMIT_TEXT = {
@@ -69,6 +74,8 @@ const limitError = (language, feature, scope, free = false) => { const text = fr
 // Who a model call is for. Set once per signed-in request (and around channel turns and import jobs), so every call made
 // while serving it, including background work it starts, is counted for that person.
 const context = new AsyncLocalStorage();
+/** The person the current request or job is for ({ userId, language }), or null. */
+export const currentAiUser = () => context.getStore() || null;
 export const asAiUser = ({ userId, language = "zh" }, work) => context.run({ userId, language }, work);
 export function aiUserMiddleware(req, _res, next) {
   if (!req.auth?.user) return next();
@@ -83,6 +90,14 @@ const inputsId = (userId) => `ai-inputs:${userId}`;
 const sum = (counts, kind) => Object.entries(counts || {}).reduce((total, [feature, count]) => total + (featureKind(feature) === kind ? count : 0), 0);
 const digest = (feature, args) => createHash("sha256").update(feature).update("\0").update(JSON.stringify(args ?? null)).digest("hex").slice(0, 32);
 const RECENT_INPUTS = 20;
+
+/** Whether this person's AI allowance is the paid one: a Pinky membership, or an id/email in AI_PAID_USERS. */
+export async function isPaidAiUser(store, userId, now = new Date()) {
+  if ((await membershipFor(store, userId, { now, purchases: await cachedPurchases(store, now) })).plan === "member") return true;
+  const paid = paidList();
+  if (!paid.size) return false;
+  return paid.has(String(userId).toLowerCase()) || paid.has(String((await store.getUserById(userId))?.email || "").toLowerCase());
+}
 
 /** Counts one call for this person, or throws the "today's limit" error if a cap is reached. */
 async function take(store, { userId, language }, feature, now, anonymous, caps) {
@@ -146,7 +161,8 @@ export function guardMediator(mediator, { store, caps = AI_CAPS, now = () => new
       const hash = who.userId && featureKind(feature) === "background" ? digest(feature, args) : null;
       if (hash && await seenInput(store, who.userId, feature, hash).catch(() => false)) throw Object.assign(new Error("Unchanged input; skipped."), { code: AI_UNCHANGED, feature });
       try { await take(store, who, feature, now(), anonymous, caps); }
-      catch (error) { if (isAiLimit(error)) throw error; console.error("ai_usage_count_failed", error?.code || error?.name || "error"); }
+      // Caps never block a safety or consent call (ai-ledger marks those); every other call stops at the cap.
+      catch (error) { if (isAiLimit(error)) { if (!isExemptAiCall()) throw error; } else console.error("ai_usage_count_failed", error?.code || error?.name || "error"); }
       const result = await mediator[method](...args);
       if (hash) await rememberInput(store, who.userId, feature, hash).catch((error) => console.error("ai_input_hash_failed", error?.code || error?.name || "error"));
       return result;

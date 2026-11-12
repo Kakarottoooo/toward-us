@@ -11,7 +11,7 @@ for (const language of ["zh", "en", "es"] as const) test(`a pending inviter can 
   try {
     for (const [index, context] of [a, b].entries()) {
       await context.addInitScript((lang) => { localStorage.setItem("toward-us:onboarded", "1"); localStorage.setItem("toward-us.language", lang); }, language);
-      expect((await context.request.post("/api/auth/register", { data: { name: index ? "Sam" : "Alex", email: `pair-${language}-${index}-${Date.now()}@example.invalid`, password: "synthetic-local-password" } })).status()).toBe(201);
+      expect((await context.request.post("/api/auth/register", { data: { aiConsent: true, name: index ? "Sam" : "Alex", email: `pair-${language}-${index}-${Date.now()}@example.invalid`, password: "synthetic-local-password" } })).status()).toBe(201);
     }
     const own = await (await a.request.post("/api/partner/invitations")).json();
     const partner = await (await b.request.post("/api/partner/invitations")).json();

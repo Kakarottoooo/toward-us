@@ -9,6 +9,7 @@ import { createReminderService } from "../server/reminder-service.mjs";
 import { createAssistantRouter } from "../server/assistant-router.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { createVoiceCallRouter, historyInput } from "../server/voice-call.mjs";
+import { flushAiLedger, installAiLedger } from "../server/ai-ledger.mjs";
 
 const SDP = "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n";
 
@@ -38,7 +39,7 @@ async function fixture(t, { configured = true, planner = () => ({ reply: "Saved 
   };
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
   const start = (body, userId) => request("/voice/start", "POST", { sdp: SDP, requestId: randomUUID().replace(/-/g, ""), language: "en", ...body }, userId);
-  return { people, provider, request, session, start };
+  return { people, provider, request, session, start, store };
 }
 
 test("a private call starts with the member's recent conversation, runs delegated requests like typed ones and keeps its captions privately", async (t) => {
@@ -97,4 +98,23 @@ test("the call starts from at most 20 recent messages within a size budget, spea
   assert.equal(input.length, 20);
   assert.deepEqual(input.at(-1), { type: "message", role: "user", content: [{ type: "input_text", text: "Blair: hi" }] });
   assert.equal(historyInput([{ role: "user", text: "x".repeat(2000) }, ...Array.from({ length: 6 }, () => ({ role: "user", text: "y".repeat(2000) }))]).length, 5);
+});
+
+test("a call's minutes go into the AI cost ledger, and the kill switch keeps a new call from opening", async (t) => {
+  const f = await fixture(t);
+  installAiLedger({ store: f.store, log: { log() {}, warn() {}, error() {} } });
+  t.after(() => installAiLedger({}));
+  const started = await f.start({ channel: "us" });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  await f.request("/voice/close", "POST", { id: started.body.id });
+  await flushAiLedger();
+  const rows = (await f.store.listRecordsForJob("aiUsage")).filter((record) => record.kind === "ai_ledger");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].feature, "voice_call"); assert.equal(rows[0].provider, "openai"); assert.equal(rows[0].ownerUserId, f.people[0].id);
+  assert.ok(Number.isFinite(rows[0].audioSeconds) && rows[0].estUsd !== null);
+  process.env.AI_KILL_SWITCH = "1";
+  t.after(() => { delete process.env.AI_KILL_SWITCH; });
+  const refused = await f.start({ channel: "me", sessionId: f.session.id }, f.people[0].id);
+  assert.equal(refused.status, 429); assert.equal(refused.body.error, "voice_paused");
+  assert.equal(f.provider.started.length, 1, "the provider was never asked to open the second call");
 });

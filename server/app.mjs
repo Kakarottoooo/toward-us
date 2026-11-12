@@ -30,7 +30,7 @@ import { createCoupleRituals } from "./couple-rituals.mjs";
 import { deliverLetters } from "./letters.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createNativePush } from "./native-push.mjs";
-import { createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
+import { aiConsentAt, createPrivacyRouter, runPrivateRetention, setAiConsent } from "./privacy-router.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
 import { createMatchRouter } from "./match-router.mjs";
@@ -50,6 +50,7 @@ import { createPeopleComparer } from "./people-compare.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
+import { createLegalRouter } from "./legal.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createMembershipRouter } from "./membership.mjs";
@@ -57,6 +58,8 @@ import { createBetaRouter } from "./beta.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
 import { sendblue } from "./sendblue.mjs";
 import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
+import { installAiLedger, meterMediator, runAiLedgerMaintenance } from "./ai-ledger.mjs";
+import { createAiCostRouter } from "./ai-cost-router.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const LANGUAGES = new Set(["zh", "en", "es"]);
@@ -70,7 +73,9 @@ const demoCreates = new Map();
 export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email }) {
   const app = express();
   // Every model call below is counted and capped per person and couple per day (server/ai-budget.mjs).
-  const mediator = guardMediator(rawMediator, { store });
+  // Every model call is also costed in the AI ledger, and admitted by the cost controls first (server/ai-ledger.mjs).
+  installAiLedger({ store });
+  const mediator = meterMediator(guardMediator(rawMediator, { store }));
   const eventClients = new Map();
   // The scheduler tick announces in the shared conversation; the realtime emitter only exists once the routers are built below.
   let emitTogether = () => {};
@@ -83,7 +88,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   // test service: those tests drive delivery themselves).
   const rituals = reminderService ? null : createCoupleRituals({ store, mediator, reachable: (userId) => reminders.reachable(userId), emit: (conversation) => emitTogether(conversation, "together.updated") });
   const runDue = reminders.runDue.bind(reminders);
-  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); await deliverLetters({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Letters will retry on the next tick.")); await sendHeadsUps({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Heads-ups will retry on the next tick.")); return result; };
+  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await runAiLedgerMaintenance(store).catch((error) => console.error("AI ledger maintenance will retry on the next tick:", error?.code || error?.name || "error")); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); await deliverLetters({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Letters will retry on the next tick.")); await sendHeadsUps({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Heads-ups will retry on the next tick.")); return result; };
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
@@ -177,6 +182,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
     const created = await store.createUser(user);
     if (!created) return res.status(409).json({ error: "这个邮箱已经注册。" });
+    // The sign-up screen states what goes to the AI providers right above the button; tapping it is that consent.
+    if (req.body?.aiConsent === true) await store.transaction(`user:${created.id}`, (tx) => setAiConsent(tx, created.id, true));
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
     res.status(201).json(await appState(store, created));
@@ -466,6 +473,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   app.use(createPhoneRouter({ store, onBound: (userId) => void imessage?.ensureCoupleGroup(userId) }));
   app.use(createUsageRouter({ store, internalSecret: () => reminders.internalSecret }));
+  app.use(createAiCostRouter({ store, internalSecret: () => reminders.internalSecret }));
   // The home-screen widget reads with its own Bearer token (no cookie), so it is mounted before any router that turns away
   // requests without a session.
   app.use("/api", createWidgetRouter({ store }));
@@ -514,6 +522,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createHandoffRouter());
   app.use("/api", createSuggestionsRouter({ store, mediator }));
   app.use("/api", createFeedbackRouter({ store, mediator }));
+  app.use(createLegalRouter());
   app.use("/api", createCharacterRouter({ store, emit }));
   app.use("/api", membership.router);
   app.use("/api", createBetaRouter({ store, grant: membership.grant }).router);
@@ -561,7 +570,7 @@ async function authenticateRequest(store, req) {
 
 async function appState(store, user) {
   const pairing = await store.getRelationshipContext(user.id);
-  return { user: publicUser(user), pairing: publicPairing(pairing, user.id) };
+  return { user: { ...publicUser(user), aiConsentAt: await aiConsentAt(store, user.id) }, pairing: publicPairing(pairing, user.id) };
 }
 
 function publicPairing(context, viewerId) {

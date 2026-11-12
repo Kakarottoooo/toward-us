@@ -9,6 +9,7 @@ import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mj
 import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
 import { ACT_FOR_YOU } from "./handoff.mjs";
 import { usesCheaperModel } from "./ai-budget.mjs";
+import { meterOpenAI } from "./ai-ledger.mjs";
 
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
@@ -73,7 +74,7 @@ const analysisSchema = {
 
 export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4" } = {}) {
   // AI_PROVIDER=claude-cli sends text calls through the founder’s local Claude subscription (dogfooding only); audio stays on OpenAI.
-  const openai = apiKey ? new OpenAI({ apiKey }) : null;
+  const openai = apiKey ? meterOpenAI(new OpenAI({ apiKey })) : null; // every request recorded in the cost ledger
   // AI_PROVIDER=anthropic (or an ANTHROPIC_API_KEY) uses Claude through the API, for hosted use; both share one surface.
   const cli = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : process.env.AI_PROVIDER === "anthropic" || (process.env.ANTHROPIC_API_KEY && process.env.AI_PROVIDER !== "openai") ? createAnthropicClient() : null;
   const client = cli || openai;

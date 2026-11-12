@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // they are together with one of them, Pinky asks once, puts the others away on 是的, and the tab becomes 我们俩 · 邀请 X.
 test("getting to know people, then settling on one, changes the home without a mode switch", async ({ page, context }) => {
   await context.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
-  await context.request.post("/api/auth/register", { data: { name: "Stages tester", email: `stages-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Stages tester", email: `stages-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
   const at = new Date().toISOString();
   const jie = { id: "p-jie", name: "阿杰", aliases: ["阿杰"], archived: false, lastSeenAt: at, facts: 1 };
   const lily = { id: "p-lily", name: "Lily", aliases: ["Lily"], archived: false, lastSeenAt: at, facts: 1 };

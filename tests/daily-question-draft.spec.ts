@@ -10,7 +10,7 @@ for (const language of ["zh", "en", "es"]) test(`daily questions are optional an
     }, language);
     const suffix = `${Date.now()}-${language}`;
     const register = async (context: typeof a, member: string) => {
-      const response = await context.request.post("/api/auth/register", { data: { name: member, email: `draft-${suffix}-${member}@example.invalid`, password: "synthetic-local-password" } });
+      const response = await context.request.post("/api/auth/register", { data: { aiConsent: true, name: member, email: `draft-${suffix}-${member}@example.invalid`, password: "synthetic-local-password" } });
       expect(response.status()).toBe(201); return response.json();
     };
     const owner = await register(a, "Alex"); await register(b, "Sam");

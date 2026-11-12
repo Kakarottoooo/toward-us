@@ -6,7 +6,7 @@ test.beforeEach(async ({ context }) => { await context.addInitScript(() => local
 // Transport fixtures exercise the UI and microphone lifecycle. Semantic execution
 // and persistence are covered separately through the real application API.
 test("the private conversation supports queued speech, interruption and text retry", async ({ page, context }) => {
-  await context.request.post("/api/auth/register", { data: { name: "Voice tester", email: `voice-ui-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Voice tester", email: `voice-ui-${Date.now()}@example.invalid`, password: "synthetic-password-2026" } });
   const messages: Array<Record<string, unknown>> = [];
   const received: string[] = [];
   let failOnce = true;
@@ -73,11 +73,11 @@ test("the private conversation supports queued speech, interruption and text ret
 
 test("every drawer page fits a phone and leads back to the conversation", async ({ page, context, browser }, testInfo) => {
   const suffix = Date.now();
-  await context.request.post("/api/auth/register", { data: { name: "Alex", email: `drawer-a-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
+  await context.request.post("/api/auth/register", { data: { aiConsent: true, name: "Alex", email: `drawer-a-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
   const partner = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
   await partner.addInitScript(() => localStorage.setItem("toward-us:onboarded", "1"));
   try {
-    await partner.request.post("/api/auth/register", { data: { name: "Sam", email: `drawer-b-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
+    await partner.request.post("/api/auth/register", { data: { aiConsent: true, name: "Sam", email: `drawer-b-${suffix}@example.invalid`, password: "synthetic-password-2026" } });
     const invitation = await (await context.request.post("/api/partner/invitations", { data: {} })).json();
     expect((await partner.request.post("/api/partner/accept", { data: { code: invitation.pairing.invitation.code } })).ok()).toBe(true);
     await page.setViewportSize({ width: 390, height: 844 });
