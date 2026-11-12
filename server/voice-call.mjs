@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import { appendTogetherMessage, buildTogetherContext, continueTogetherTurn, togetherI18n } from "./together-domain.mjs";
 import { gettingToKnow, profileContext, scanCall } from "./profile.mjs";
+import { recordAiCall, runAiFeature } from "./ai-ledger.mjs";
 
 // Live voice calls with Pinky. Audio flows directly between the phone and OpenAI over WebRTC; this server only creates and
 // ends the session (the key never leaves it), runs requests Pinky delegates through the same code as typed turns, and
@@ -95,6 +96,8 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     call.status = "closed"; clearTimeout(call.timer);
     const seconds = Math.min(MAX_SECONDS, Math.max(15, Math.round((clock() - call.startedAt) / 1000)));
     usage.set(call.usageKey, [...(usage.get(call.usageKey) || []).filter((entry) => entry.id !== call.id), { id: call.id, at: call.startedAt, seconds }]);
+    // The minutes OpenAI bills for (per second); turns delegated during the call are recorded by the mediator as usual.
+    recordAiCall({ userId: call.userId, spaceId: call.relationshipId, feature: "voice_call", provider: "openai", model: MODEL, audioSeconds: Math.max(0, (clock() - call.startedAt) / 1000), outcome: "ok" });
     call.endedReason = reason;
     await provider.hangup(call.providerId).catch(() => {});
   };
@@ -135,6 +138,10 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     }
     if ([...calls.values()].some((call) => call.usageKey === usageKey && call.status === "active")) throw fail(409, "voice_already_active");
     if (usedToday(usageKey) + 60 > DAILY_SECONDS) throw fail(429, "voice_daily_limit");
+    // The cost controls (kill switch, the member's caps) admit the call before the provider opens it.
+    // The call screen shows its own wording for these codes (CallPanel).
+    if (provider.configured) await runAiFeature({ feature: "voice_call", channel: "metered", userId: user.id, language }, async () => {})
+      .catch((error) => { throw error?.cost ? fail(429, error.scope === "monthly" ? "voice_monthly_limit" : error.scope === "kill_switch" ? "voice_paused" : "voice_daily_limit") : error; });
     const started = await provider.start({ sdp, instructions, input, voice: process.env.OPENAI_LIVE_VOICE || "" });
     const call = { id: randomUUID().replace(/-/g, ""), requestId, userId: user.id, userName: user.name, channel, mode, language, relationshipId, sessionId, usageKey, providerId: started.providerId, answer: started.sdp, startedAt: clock(), status: "active", turns: new Map(), saved: false };
     call.deadline = call.startedAt + Math.min(MAX_SECONDS, DAILY_SECONDS - usedToday(usageKey)) * 1000;

@@ -7,6 +7,9 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createMediator } from "../server/mediator.mjs";
 import { AI_CAPS, AI_LIMIT, AI_UNCHANGED, ANONYMOUS_DAILY_CAP, aiUsageReport, asAiUser, guardMediator, usesCheaperModel } from "../server/ai-budget.mjs";
+// The cost ledger and cost controls are tested with the call counting (kept in their own file, run in this one so the
+// test:app list stays unchanged and merges cleanly with other branches).
+import "./ai-ledger.test.mjs";
 
 // Cost guard (founder, 11-04): count every model call, cap it per day, keep background work cheap and never repeated.
 let directory, store, counter = 0;

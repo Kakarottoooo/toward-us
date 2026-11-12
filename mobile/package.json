@@ -6,9 +6,11 @@
   "scripts": {
     "config": "node scripts/config.mjs",
     "sync": "npm run config && cap sync",
+    "sync:release": "node scripts/config.mjs --release && cap sync",
     "android": "npm run sync && cap open android",
     "ios": "npm run sync && cap open ios",
     "check:ios": "npm run sync && node scripts/check-native.mjs ios",
+    "check:ios-release": "npm run sync:release && node scripts/check-native.mjs ios-release",
     "check:android": "npm run sync && node scripts/check-native.mjs android"
   },
   "dependencies": {
