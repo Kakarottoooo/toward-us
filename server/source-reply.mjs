@@ -1,4 +1,4 @@
-import { activityDraft, checkReplyFormat, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply, replyFormatRequirements } from "./reply-contract.mjs";
+import { activityDraft, checkDelivery, checkReplyFormat, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply, replyFormatRequirements } from "./reply-contract.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 
 export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "stanceChecks", "deliverableChecks", "newUnauthorizedStance", "lostDeliverables"], properties: {
@@ -74,7 +74,8 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
     return stripParts(revised);
   };
   const checkScope = Boolean(planConstraints) || requiresReplyScopeCheck(request);
-  const formatIssues = checkReplyFormat(reply, request, language).issues;
+  const literalIssues = candidate => [...checkReplyFormat(candidate, request, language).issues, ...checkDelivery(candidate, request, context)];
+  const formatIssues = literalIssues(reply);
   if (!planConstraints && !unsupportedPremise && !originals.length && !checkScope && !formatIssues.length && !stances.length) return restore(reply);
   const check = async (candidate, previousReply) => {
     const result = await mediator.checkReplySources({ request, requestedDeliverables, inputRoles, ...(typeof candidate === "string" ? { reply: candidate } : candidate),
@@ -112,7 +113,7 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
     if (!renderReply(revised).trim()) throw new Error("Empty source repair");
     stage = "final-check";
     const finalCheck = await check(revised, reply);
-    const revisedIssues = [...semanticIssues(finalCheck, revised), ...checkReplyFormat(revised, request, language).issues];
+    const revisedIssues = [...semanticIssues(finalCheck, revised), ...literalIssues(revised)];
     const originalRank = rank(result, reply, issues), revisedRank = rank(finalCheck, revised, revisedIssues);
     const difference = originalRank.map((value, index) => value - revisedRank[index]).find((value) => value !== 0) || 0;
     const useOriginal = finalCheck.newUnauthorizedStance || finalCheck.lostDeliverables || difference < 0

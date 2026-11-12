@@ -29,6 +29,21 @@ const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit)
 const key = (value) => squash(value).toLowerCase().replace(/[\s。.!！,，、;；:："“”'‘’「」]/g, "");
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const schema = object({ facts: { type: "array", maxItems: 10, items: object({ messageId: { type: "string" }, quote: { type: "string" }, subject: { type: "string", enum: ["A", "B", "both"] }, person: { type: "string" }, category: { type: "string", enum: CATEGORIES }, fact: { type: "string" }, replaces: { type: "string" } }) } });
+export const explicitRemember = text => /(?:记住|记一下|帮我记)|\b(?:remember|keep in mind|recuerda|apunta)\b/iu.test(text || "")
+  && !/(?:不要|别|不必|不用).{0,4}(?:记住|记一下|帮我记)|\b(?:don't|do not|no)\s+(?:remember|recuerda|apunta)/iu.test(text || "");
+// An explicit first-person list needs no medical/preference classifier. Keep
+// each verbatim declaration, including safety details, in the owner's scope.
+// Ambiguous subjects still go through the ordinary evidence-checked extractor.
+export function explicitSelfFacts(line, people = []) {
+  if (!explicitRemember(line.text)) return [];
+  const content = line.text.replace(/^.*?(?:记住|记一下|帮我记(?:住|一下)?)[：:,，\s]*/u, "");
+  const person = [...people].sort((a, b) => b.length - a.length).find(name => name && content.startsWith(name));
+  const subject = /^我(?!们)/u.test(content) ? 'A' : person ? 'B' : null;
+  if (!subject) return [];
+  return content.split(/[，；;。\n]+/u).map(text => text.trim()).filter(text => (subject === 'A' ? /^我(?!们)/u.test(text) : text.startsWith(person)) || /^(?:也|还|并且|而且)/u.test(text))
+    .map(quote => ({ line, quote, fact: (person && quote.startsWith(person) ? quote.slice(person.length) : quote).replace(/^(?:我|也(?!许)|还|并且|而且)+/u, ""), subject, person: subject === 'B' ? person : '', category: "other", replaces: "" }))
+    .filter(found => found.fact.length >= 2);
+}
 export const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
 export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
 const live = (record) => isProfileFact(record) && record.status === "active" && !record.archivedAt && !record.deletedAt;
@@ -133,7 +148,7 @@ async function keepWithPeople(tx, options, people, { create = false, partnerName
 }
 
 /** Reads one member's new private lines and keeps what they reveal, privately for that member. */
-export async function scanPrivateProfile({ store, mediator, userId, sessionId }) {
+export async function scanPrivateProfile({ store, mediator, userId, sessionId, silent = false }) {
   if (!mediator?.structured) return [];
   const scope = await memberScope(store, userId);
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
@@ -154,15 +169,29 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
     const focus = session.personId ? people.find((person) => person.id === session.personId) || null : null;
     const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: focus ? focus.name : scope.b, privateChat: true }) + PEOPLE_NOTE(people), input: JSON.stringify(input), maxOutputTokens: 900 });
     findings = verifyFacts(result?.facts, fresh, () => true).map((found) => focus && (found.subject === "B" || found.subject === "both") && !found.person ? { ...found, subject: "B", person: focus.name } : found);
+    for (const line of fresh) {
+      const explicit = explicitSelfFacts(line, [...people.map(person => person.name), ...findings.filter(found => found.subject === 'B').map(found => found.person)]);
+      if (!explicit.length) continue;
+      // Replace a combined extraction with the separately quoted declarations;
+      // keep model categories/replacement links only when the quote matches.
+      const matched = findings.filter(found => found.line.id === line.id && explicit.some(value => value.subject === found.subject && value.person === found.person));
+      findings = findings.filter(found => !matched.includes(found));
+      findings.push(...explicit.map(found => {
+        const same = matched.find(value => key(value.quote) === key(found.quote) || key(found.quote) === key(`我${value.quote}`));
+        return same ? { ...same, quote: found.quote } : found;
+      }));
+    }
   }
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
-    const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, people, { create: true, partnerName: scope.b });
+    const written = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, people, { create: true, partnerName: scope.b });
+    const changed = (await Promise.all(written.map(record => tx.getRelationshipRecordForUser("memories", record.id, userId))))
+      .filter(record => record && live(record) && visibleTo(record, userId, relationshipId));
     // No version bump: the member's next turn checks the session version and must never fail because of this.
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length && !wantsOneSentence(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
+      if (changed.length && !silent && !wantsOneSentence(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { more, sessionId });
   });

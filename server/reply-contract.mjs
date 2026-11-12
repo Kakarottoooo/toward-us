@@ -1,5 +1,5 @@
 // Model prose is not an execution receipt. Only the caller's committed results can confirm a write.
-const savedClaim = /(?:起草好了|(?:已经|已)起草|已(?:经)?(?:帮你)?(?:记入|记进|保存|存入|记下|记录)|(?:我)?记下了|(?:I(?:'ve| have)?\s+)?(?:(?:saved|stored|recorded|noted)\b|kept\s+(?:in|on|a note)\b)|(?:he\s+)?(?:guardado|registrado|anotado)\b)/iu;
+const savedClaim = /(?:起草好了|(?:已经|已)起草|已(?:经)?(?:帮你)?(?:记入|记进|保存|存入|记下|记录|记住)|(?:我)?(?:记下了|记住了)|(?:I(?:'ve| have)?\s+)?(?:(?:saved|stored|recorded|noted|remembered)\b|kept\s+(?:in|on|a note)\b)|(?:he\s+)?(?:guardado|registrado|anotado)\b)/iu;
 const segments = (text, language) => [...new Intl.Segmenter(language || "zh", { granularity: "sentence" }).segment(text)].map(({ segment }) => segment);
 const claimsWrite = (text) => savedClaim.test(text) && !/(?:没有|并未|尚未|未曾|不能|not |never |cannot |can't |no se |no he )[^。！？.!?]{0,45}(?:已|记|保存|saved|stored|recorded|noted|kept|guardado|registrado|anotado)/iu.test(text);
 const reminderClaim = /(?:已(?:经)?|我(?:已|只|已经)?|帮你|替你).{0,18}(?:设好|设置|设了|设|安排|创建|准备|保存).{0,24}提醒|(?:提醒).{0,12}(?:设好了|已设置|已准备|已创建)|(?:我会|到时会|到时候会).{0,24}提醒你|\b(?:I(?:'ve| have)?\s+(?:set|scheduled|created|prepared)|(?:reminder|alert).{0,20}(?:is set|is ready|scheduled)|I(?:'ll| will) remind you)\b|\b(?:(?:he|ya).{0,18}(?:preparado|programado|creado).{0,24}recordatorio|te recordaré)\b/iu;
@@ -85,7 +85,26 @@ export function renderReply(reply) {
     if (!whole) break;
     draft = whole.text.trim();
   }
-  return [body, draft].filter(Boolean).join("\n\n");
+  // The card owns its copyable text. Do not repeat an identical paragraph in body.
+  const analysis = draft ? body.split(/\n\s*\n/u).filter(part => fragmentKey(part) !== fragmentKey(draft)).join("\n\n") : body;
+  return [analysis, draft].filter(Boolean).join("\n\n");
+}
+
+// Literal contract failures share the existing single rewrite budget. These
+// checks inspect outputs; they never synthesize a yes/no answer or a new fact.
+export function checkDelivery(reply, request = "", { webPages = [] } = {}) {
+  const rendered = renderReply(reply), body = typeof reply === "string" ? reply : reply?.reply || "";
+  const issues = [];
+  if (/(?:是否|可以吗|能不能|能.{0,8}吗|定了吗|确定了吗)|\b(?:can|could|is|has|did|does)\b.+\?|¿(?:puedo|puede|est[aá])/iu.test(request)
+    && !/^(?:可以|不行|不能|不可以|定了|还没定|还没有|尚未|没有|不确定|无法确定|无法确认|不能确认|不合理|合理|不建议|建议|Yes\b|No\b|Not yet\b|I (?:can|can't|cannot)\b|S[ií]\b|No\b)/iu.test(body.trim())) issues.push("Answer the yes/no or settled-status question directly in the first clause, using only supported certainty; preserve necessary uncertainty.");
+  const avoided = [...request.matchAll(/(?:不提|不要提|别提|不说|不要说)[“"‘]?([^，。！？；\n”"’]{1,16})/gu)].map(match => match[1].trim());
+  if (avoided.some(word => rendered.includes(word))) issues.push("Omit the user's explicitly excluded topic from both analysis and copyable wording; do not repeat the exclusion as an explanation.");
+  if (webPages.length && /(?:之后|拿到后|稍后|晚点).{0,20}(?:告诉你|给你|发给你)|(?:will|I'll).{0,30}(?:later|once I)|te (?:dir[eé]|avisar[eé]).{0,20}despu[eé]s/iu.test(rendered)) issues.push("No deferred web promise: deliver the observed result now, or state the observed failure.");
+  if (/(?:过敏|allerg|al[eé]rgi)/iu.test(request) && /(?:无法|不能|不确定|没有|未|不足|缺少|unknown|cannot|can't|unclear|no puedo)/iu.test(rendered)
+    && !/(?:向|问|联系|与).{0,12}(?:店家|商家|餐厅|医|专业)|(?:店家|商家|餐厅).{0,12}(?:确认|核实)|(?:check|confirm|ask).{0,30}(?:restaurant|staff|doctor|seller)|(?:consult|confirm).{0,30}(?:local|m[eé]dic|restaurante)/iu.test(rendered)) issues.push("Preserve one necessary allergy-safety next step: confirm ingredients with the establishment; absence of page evidence is not safety clearance.");
+  if (/(?:用药|症状|诊断|治疗|转账|汇款|银行账户|私密|隐私)/u.test(request) && /无法|不能|不确定|未核实/u.test(rendered)
+    && !/确认|核实|医生|专业|直接问|自己开口|先问|本人|征求/u.test(rendered)) issues.push("After the direct answer preserve one necessary, relevant health, money or privacy safety next step; do not replace it with generic caveats.");
+  return issues;
 }
 
 export function activityDraft(reply) {
@@ -98,20 +117,25 @@ export function checkReplyFormat(reply, request = "", language = "zh") {
   const limits = formatLimits(request), issues = [];
   const structured = reply && typeof reply === "object" && Object.hasOwn(reply, "sendableDraft");
   const rendered = renderReply(reply);
-  let text = rendered.trim();
+  let text = rendered.trim(), objects = [text];
   if (limits.sentences && (draftOnlyLimit(request) || structured && reply.sendableDraft?.trim())) {
     const draft = structured ? reply.sendableDraft?.trim() : copyableDraft(text)
       || (wantsOneSentence(request) && !/[\n：:]/u.test(text) ? text : null);
     // No identifiable object means no format measurement, never an error shown to the user.
     if (!draft) return { ok: true, issues: [] };
-    text = draft;
+    const labelled = structured ? [] : text.split(/\n\s*\n/u).map(copyableDraft).filter(Boolean);
+    objects = labelled.length ? labelled : [draft];
   }
-  const sentenceCount = segments(text, language).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
+  for (text of objects) {
+  // Intl sentence segmentation merges some adjacent Chinese !/? sentences.
+  // Every terminator counts, including mixed scripts and unspaced punctuation.
+  const sentenceCount = text.split(/[。！？!?]+|\.(?=\s|$|[\p{L}])/u).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
   if (limits.sentences && sentenceCount !== limits.sentences) issues.push(`Expected ${limits.sentences} sentence; found ${sentenceCount}.`);
   const lines = text.split(/\r?\n/).filter((line) => line.trim()).length;
   if (limits.lines && lines !== limits.lines) issues.push(`Expected ${limits.lines} nonempty lines; found ${lines}.`);
   const chars = [...text.replace(/\s/gu, "")].length;
   if (limits.chars && chars > limits.chars) issues.push(`Maximum ${limits.chars} characters; found ${chars}.`);
+  }
   return { ok: !issues.length, issues };
 }
 
@@ -132,14 +156,55 @@ export async function repairReplyFormat(reply, { request = "", language = "zh", 
   return renderReply(candidates[0]);
 }
 
-export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false } = {}) {
-  const parts = segments(String(reply || "").trim(), language);
+const fragmentKey = (text) => text.normalize("NFKC").replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+export function agreementPresentation(draft, reply = "") {
+  if (!draft) return { draft, reply };
+  const seen = new Set();
+  const terms = (draft.terms || []).filter(term => {
+    const key = fragmentKey(term);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    if (/^(?:建议(?:默认)?|默认建议|suggested default|proposed default|valor predeterminado sugerido)\s*[:：]/iu.test(term)) return false;
+    return true;
+  });
+  const summary = terms.some(term => fragmentKey(term) === fragmentKey(draft.summary || "")) ? "" : draft.summary;
+  const title = terms.some(term => fragmentKey(term) === fragmentKey(draft.title || "")) ? "" : draft.title;
+  const body = reply.split(/\n/u).filter(line => !seen.has(fragmentKey(line))).join("\n");
+  return { draft: { ...draft, title, summary, terms, unresolvedPoints: [...new Set(draft.unresolvedPoints || [])] }, reply: body };
+}
+
+export function groundedAgreementTerms(terms, checks, messages) {
+  const originals = messages.filter(message => message.role === "member");
+  return terms.filter((term, index) => {
+    const rows = checks?.filter(row => row.index === index) || [];
+    return rows.length === 1 && rows[0].supported === true && rows[0].quote?.trim()
+      && originals.some(message => message.id === rows[0].messageId && message.text.includes(rows[0].quote));
+  });
+}
+// Split independent clauses before removing action claims. A semicolon must
+// never make the factual half of a mixed delivery disappear with its receipt.
+export const deliveryParts = (text, language = "zh") => segments(String(text || "").trim(), language).flatMap(part => part.split(/(?<=[；;\n])/u));
+export function mergeReceipts(receipts = [], language = "zh") {
+  const counts = new Map();
+  for (const receipt of receipts) counts.set(receipt, (counts.get(receipt) || 0) + 1);
+  return [...counts].map(([receipt, count]) => count === 1 ? receipt : language === "en" ? `${receipt} (${count} items)` : language === "es" ? `${receipt} (${count} elementos)` : /已放进去/.test(receipt) ? `已加入 ${count} 项。` : `${receipt.replace(/[。.!]$/, "")}（${count} 项）。`);
+}
+export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false, deliverables, webPages = [], sourceTranscript } = {}) {
+  const parts = deliveryParts(reply, language);
+  // The checked candidate is the recovery source, never unverified planner prose.
+  const deferred = part => webPages.length && /(?:之后|拿到后|稍后|晚点).{0,20}(?:告诉你|给你|发给你)|(?:will|I'll).{0,30}(?:later|once I)/iu.test(part);
+  const transcriptEcho = part => sourceTranscript && reminderWritten && /(?:转写|原话|原文|你说|transcri|you said)/iu.test(part);
+  const required = deliverables || parts.filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && reminderWritten && confirmsReminder(part)) && !deferred(part) && !transcriptEcho(part));
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);
   // Receipts are server-authored after successful writes, never planner-provided flags.
-  let text = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part)
-    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part)))).join("").trim();
-  if (receipts.length) text = [text, ...receipts].filter(Boolean).join("\n");
+  const kept = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part) && !deferred(part) && !transcriptEcho(part)
+    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part))));
+  for (const part of required) if (!kept.some(value => fragmentKey(value) === fragmentKey(part))) kept.push(part);
+  const seen = new Set();
+  let text = kept.filter(part => { const key = fragmentKey(part); if (!key || seen.has(key)) return false; seen.add(key); return true; }).join("").trim().replace(/[；;]\s*$/, "。");
+  if (!text && parts.some(deferred)) text = language === "en" ? "I could not confirm the requested information in this turn." : language === "es" ? "No pude confirmar la información solicitada en este turno." : "这次未能确认你问的信息。";
+  if (receipts.length) text = [text, ...mergeReceipts(receipts, language)].filter(Boolean).join("\n");
   if (reminderRemoved && !reminderWritten) text = [text, language === "en" ? "No reminder was created in this turn." : language === "es" ? "No se creó ningún recordatorio en este turno." : "这轮尚未创建提醒。"].filter(Boolean).join("\n");
   if (!text && removed) text = language === "en" ? "No new record was saved in this turn." : language === "es" ? "No se guardó ningún registro nuevo en este turno." : "这轮没有新增记录。";
   // Private replies have already been checked/repaired; preserve the existing shared-chat path.
@@ -151,10 +216,26 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
 // event dates are facts, so neither is rewritten by this final rendering step.
 export function directFactReply(text, request = "") {
   if (/(?:来源|出处|记录.*(?:哪|何|时间|日期|时候)|(?:哪|何|什么时候).*记录|从哪|根据什么)|\b(?:source|provenance|recorded when|how do you know|where.*(?:get|learn)|fuente|procedencia|de d[oó]nde|c[oó]mo (?:lo )?sabes)\b/iu.test(request)) return text;
+  text = stripNormalizedMetadata(text);
   return text.replace(/(?:记录里|记录中)有一条([^。！？\n]+?)的信息(?:[（(]记录于[^）)]+[）)])?/gu, '$1')
+    .replace(/(^|[。！？\n：:])\s*(?:记录(?:里|中)|根据(?:你|您)(?:在)?\s*\d{1,4}[^，。！？\n]{0,16}说的)[，,:：]?\s*(?!没有|没找到|未|不存在|不清楚)/gu, '$1')
+    .replace(/[（(]\s*(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*[日号]?\s*(?:说的|提到的|告诉我的)\s*[）)]/gu, '')
     .replace(/(^|[。！？\n：:])\s*(?:根据记录[，,:：]?|(?:记录里|记录中)(?:显示|提到|写着|只有)[，,:：]?|我这边看到(?:的是|了)?[，,:：]?)\s*/gu, '$1')
     .replace(/(^|[.!?\n])\s*(?:(?:according to|based on) (?:the )?records?|(?:según|de acuerdo con) (?:los )?registros?)[,:，]?\s*/giu, '$1')
     .replace(/[（(]记录于\s*\d{4}[-/]\d{1,2}[-/]\d{1,2}[）)]/gu, '');
+}
+
+function stripNormalizedMetadata(text) {
+  let normalized = "", offsets = [];
+  for (let index = 0; index < text.length; index++) {
+    const value = text[index].normalize("NFKC");
+    normalized += value;
+    offsets.push(...Array(value.length).fill(index));
+  }
+  const pattern = /(?:^|(?<=[。!?\n:]))\s*(?:记\s*录\s*(?:里|中)(?:\s*(?:显示|提到|写着|只有))?|根据记录|我这边看到(?:的是|了)?)[,，:：]?\s*(?!有一条|没有|没找到|未|不存在|不清楚)|\(\s*(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*[日号]?\s*(?:说的|提到的|告诉我的)\s*\)/gu;
+  const ranges = [...normalized.matchAll(pattern)].map(match => [offsets[match.index], offsets[match.index + match[0].length - 1] + 1]);
+  for (const [start, end] of ranges.reverse()) text = text.slice(0, start) + text.slice(end);
+  return text;
 }
 
 // Reminder promises also duplicate a committed receipt without saying "created".
@@ -164,14 +245,15 @@ const confirmsReminder = text => /^(?:(?:好的|好|没问题)[，,]?\s*)?(?:我
 const describesActionStatus = (text) => /(?:提醒|记录|草稿|计划).{0,45}(?:设|创建|保存|写入|回执|安排|完成)|(?:未|没|不|已).{0,35}(?:设置|创建|保存|写入)|\b(?:reminder|record|draft).{0,70}\b(?:set|created|saved|scheduled|ready|receipt)|\b(?:recordatorio|registro|borrador).{0,70}\b(?:programad|cread|guardad|list)/iu.test(text);
 
 const privateReplies = {
-  zh: ["我没法判断对方的想法或安排。可以直接问：‘你愿意和我聊聊你现在的想法吗？’", "对方怎么想、有什么安排，我没法替 TA 判断。你可以说说自己的感受，再问 TA 愿意分享什么。", "我不能替对方确认想法或安排。如果 TA 还没准备好说，可以先约个愿意聊的时间，或等 TA 自己揭晓。"],
-  en: ["I can't determine what they think or plan. You could ask: ‘Would you like to tell me what's on your mind?’", "I can't speak for their thoughts or plans. You can share how you feel and ask what they're comfortable sharing.", "I can't confirm their thoughts or plans. If they aren't ready to talk, agree on a time or let them reveal it themselves."],
-  es: ["No puedo saber qué piensa o planea la otra persona. Puedes preguntarle: ‘¿Te gustaría contarme qué estás pensando?’", "No puedo hablar por sus ideas o planes. Puedes expresar cómo te sientes y preguntar qué quiere compartir.", "No puedo confirmar sus ideas o planes. Si aún no quiere hablar, acuerden un momento o deja que lo cuente por su cuenta."],
+  zh: ["我没法判断对方的想法或安排。可以直接问：‘你愿意和我聊聊你现在的想法吗？’", "对方怎么想、有什么安排，我没法替 TA 判断。你可以说说自己的感受，再问 TA 愿意分享什么。", "我不能替对方确认想法或安排。可以约个双方愿意聊的时间，问 TA 想怎么安排。"],
+  en: ["I can't determine what they think or plan. You could ask: ‘Would you like to tell me what's on your mind?’", "I can't speak for their thoughts or plans. You can share how you feel and ask what they're comfortable sharing.", "I can't confirm their thoughts or plans. You could ask when they would like to talk about your plans together."],
+  es: ["No puedo saber qué piensa o planea la otra persona. Puedes preguntarle: ‘¿Te gustaría contarme qué estás pensando?’", "No puedo hablar por sus ideas o planes. Puedes expresar cómo te sientes y preguntar qué quiere compartir.", "No puedo confirmar sus ideas o planes. Puedes preguntarle cuándo le gustaría hablar de sus planes juntos."],
 };
 export function privateBoundaryReply(language, index = 0, request = "") {
   // A topic is copied exclusively from the current public question, never a
   // portrait, another principal's records or model-generated private content.
-  const topic = request.match(/(?:对|关于)([^，。！？?\n‘’“”]{1,24}?)(?:有(?:什么)?(?:想法|看法|感受)|怎么(?:看|想)|的(?:想法|看法|感受))/u)?.[1];
+  const topic = request.match(/(?:对|关于)([^，。！？?\n‘’“”]{1,24}?)(?:有(?:什么)?(?:想法|看法|感受)|怎么(?:看|想)|的(?:想法|看法|感受))/u)?.[1]
+    || request.match(/过年|分手|惊喜/u)?.[0];
   if (language === 'zh' && topic) return `我没法替对方判断这些想法。你可以直接问 TA：‘关于${topic}，你愿意和我聊聊你的感受吗？’`;
   return (privateReplies[language] || privateReplies.zh)[index % 3];
 }

@@ -20,7 +20,7 @@ export async function loadCasesFile(file) {
     if ((row.probe.as === "partner" || row.history?.some((line) => line.thread === "partner") || row.shared?.length || row.channel === "shared") && !row.paired) throw new Error(`Partner data requires a pair: ${row.id}`);
     for (const entry of row.shared || []) if (!["me", "partner"].includes(entry.speaker) || !entry.text || !Number.isFinite(entry.day)) throw new Error(`Invalid shared message: ${row.id}`);
     for (const entry of row.reminders || []) if (!["me", "partner"].includes(entry.owner) || !entry.title || !entry.dueAt || !entry.timezone || !["once", "weekly"].includes(entry.frequency) || entry.owner === "partner" && !row.paired) throw new Error(`Invalid reminder: ${row.id}`);
-    for (const check of row.writes || []) if (!["reminders", "memories", "checkins", "spaces", "spaceItems", "agreements"].includes(check.collection) || !Number.isSafeInteger(check.count) || check.count < 0 || !check.fields || !["created", "updated"].includes(check.mode || "created")) throw new Error(`Invalid write check: ${row.id}`);
+    for (const check of row.writes || []) if (!["reminders", "memories", "checkins", "spaces", "spaceItems", "agreements", "draftAgreement"].includes(check.collection) || !Number.isSafeInteger(check.count) || check.count < 0 || !check.fields || !["created", "updated"].includes(check.mode || "created") || check.scope !== undefined && check.scope !== "user_visible") throw new Error(`Invalid write check: ${row.id}`);
     if (row.layer === 'environment') {
       if (!row.pages || !Object.keys(row.pages).length || !row.readonly?.paths?.length || !['ok', 'blocked', 'login_required', 'unavailable', 'unsupported', 'timeout'].includes(row.readonly.status)) throw new Error(`Missing declarative pages: ${row.id}`);
       if (/https?:\/\/|javascript:|data:|file:|\/\//iu.test(JSON.stringify(row))) throw new Error(`External URLs are forbidden: ${row.id}`);
@@ -62,14 +62,18 @@ export async function renderAsset(item, root) {
 export function fixtureValue(value, { me, partner, at, timezone = "UTC" }) {
   if (value === "$me") return me;
   if (value === "$partner") return partner;
+  if (typeof value !== "string" || !/\{date:-?\d+\}/u.test(value)) return value;
   const day = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at));
   return typeof value === "string" ? value.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(Date.parse(`${day}T00:00:00Z`) + Number(days) * 86400000).toISOString().slice(0, 10)) : value;
 }
 
 export function writeChecks(specs, before, after, context) {
   return specs.map((spec) => {
-    const old = new Map((before[spec.collection] || []).map((row) => [row.id, row]));
-    const changed = (after[spec.collection] || []).filter((row) => spec.mode === "updated" ? old.has(row.id) && JSON.stringify(old.get(row.id)) !== JSON.stringify(row) : !old.has(row.id));
+    const records = snapshot => spec.collection === "draftAgreement"
+      ? (snapshot.togetherConversations || []).filter(row => row.draftAgreement).map(row => ({ id: row.id, ...row.draftAgreement }))
+      : (snapshot[spec.collection] || []).filter(row => spec.collection !== "spaces" || !row.system);
+    const old = new Map(records(before).map((row) => [row.id, row]));
+    const changed = records(after).filter((row) => spec.mode === "updated" ? old.has(row.id) && JSON.stringify(old.get(row.id)) !== JSON.stringify(row) : !old.has(row.id));
     const matches = changed.filter((row) => Object.entries(spec.fields).every(([key, value]) => JSON.stringify(row[key]) === JSON.stringify(fixtureValue(value, { ...context, timezone: spec.fields.timezone || context.timezone }))));
     return { name: spec.name || `${spec.collection}: ${spec.mode || "created"}`, ok: changed.length === spec.count && matches.length === spec.count, expectedCount: spec.count, changedCount: changed.length, matchingCount: matches.length };
   });

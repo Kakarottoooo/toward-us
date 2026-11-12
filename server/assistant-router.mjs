@@ -3,7 +3,7 @@ import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeChe
 import { prepareSourceReply } from "./source-reply.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
-import { gettingToKnow, profileContext } from "./profile.mjs";
+import { explicitRemember, gettingToKnow, profileContext, scanPrivateProfile } from "./profile.mjs";
 import { markAsked, togetherWith } from "./people-stages.mjs";
 import { asksToRecall, prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
 import { citedReply, locateConversation, readableConversation, conversationMessages } from "./conversation-recall.mjs";
@@ -274,8 +274,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
         : action.kind === "web_read" ? { query: action.query, findings: action.query }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
       const urls = lookups.filter((_, index) => ["web_search", "web_read"].includes(searches[index].kind)).flatMap((row) => pageUrls(row.findings));
-      for (let index = 0; index < searches.length; index++) if (searches[index].kind === "chat_search") replySources.push({ kind: "import_search", text: typeof lookups[index].findings === "string" ? lookups[index].findings : JSON.stringify(lookups[index].findings) });
+      for (let index = 0; index < searches.length; index++) if (["chat_search", "web_search"].includes(searches[index].kind)) replySources.push({ kind: searches[index].kind === "chat_search" ? "import_search" : "web_search", text: typeof lookups[index].findings === "string" ? lookups[index].findings : JSON.stringify(lookups[index].findings) });
       if (urls.length) context.webPages = await webTurn.read(urls);
+      if (context.webPages?.length) replySources.push({ kind: "web_pages", text: JSON.stringify(context.webPages) });
       if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
       progress("writing");
       context = { ...context, lookups };
@@ -488,14 +489,18 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const foundNothing = searched.length && searched.length === plan.actions.length && searched.every((count) => count === 0);
       const writeReceipts = plan.actions.some(action => action.operation !== "query") ? replies : [];
       const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
-        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, formatChecked: true, receipts: writeReceipts, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
+        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, webPages: webTurn.results, sourceTranscript: context.sourceTranscript, formatChecked: true, receipts: writeReceipts, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "reminder" ? { receiptOnly: true } : {}), ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const cited = citedReply([reply, webSourceText(webTurn.results, language, { includeFields: false })].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "reminder" && changes.some(change => change.kind === "reminder" && change.record.id === id) ? { receiptOnly: true } : {}), ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
       return saved;
     });
+    if (!raced && !readingScreenshots && explicitRemember(text)) {
+      const remembered = await scanPrivateProfile({ store, mediator, userId, sessionId: session.id, silent: true }).catch(() => []);
+      for (const record of remembered) delivery.writeReceipts.push(say(language, `已记住：${record.text}。`, `Remembered: ${record.text}.`, `Recordado: ${record.text}.`));
+    }
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
       const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
       const unrelated = !plan.planConstraints && !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
@@ -503,10 +508,10 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
           ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator });
-      const own = finishReply(audited, { request: text, language, formatChecked: true, receipts: delivery.writeReceipts,
+      const own = finishReply(audited, { request: text, language, webPages: webTurn.results, sourceTranscript: context.sourceTranscript, formatChecked: true, receipts: delivery.writeReceipts,
         reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
       const reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, delivery.askBack].filter(Boolean).join("\n");
-      const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
+      const cited = citedReply([reply, webSourceText(webTurn.results, language, { includeFields: false })].filter(Boolean).join("\n\n"), recallSources, { renderExchanges: asksToRecall(text) && !plan.unsupportedPremise && !plan.sendableDraft && plan.actions.every(action => action.kind === "memory_search"), language });
       if (cited.reply) updated = await store.transaction("reminder-delivery", async tx => {
         await liveUser(tx, userId, true);
         const latest = await owned(tx, session.id, userId);

@@ -41,6 +41,48 @@ async function fixture(t, planner) {
   return { store, mediator, reminderService, ids, request, calls, session: create.body.session, storePath: join(directory, "store.json"), turn: (text, itemId = randomUUID()) => request(`/assistant/sessions/${create.body.session.id}/messages`, "POST", { text, itemId }) };
 }
 
+test("reminder write cards defer details to receipts while later query cards retain title and time", async (t) => {
+  const f = await fixture(t, () => ({ reply: '', actions: [] }));
+  f.mediator.planAssistantTurn = async () => ({ reply: '', actions: [action('reminder', 'create', { fields: fields({ title: 'Call', localDateTime: '2026-09-11T20:00', timezone: 'UTC', frequency: 'once' }) })] });
+  const created = await f.turn('Create a reminder');
+  assert.equal(created.body.session.messages.at(-1).cards[0].title, 'View reminder');
+  f.mediator.planAssistantTurn = async () => ({ reply: '', actions: [action('reminder', 'query')] });
+  const queried = await f.turn('List my reminders');
+  const card = queried.body.session.messages.at(-1).cards[0];
+  assert.equal(card.title, 'Call'); assert.equal(card.localDateTime, '2026-09-11T20:00');
+});
+
+test("explicit remember replies read back both persisted declarations even when extraction omits one", async (t) => {
+  const f = await fixture(t, () => ({ reply: '记住了香菜和花粉。', actions: [] }));
+  f.mediator.structured = async input => {
+    const message = JSON.parse(input.input).messages.find(row => row.isNew);
+    return { facts: [{ messageId: message.id, quote: '我不吃香菜', subject: 'A', person: '', category: 'food', fact: '不吃香菜', replaces: '' }] };
+  };
+  const result = await f.turn('帮我记住：我不吃香菜，也对花粉过敏。');
+  assert.equal(result.status, 200);
+  const records = await f.store.listRelationshipRecordsForUser('memories', f.ids[0]);
+  assert.equal(records.length, 2);
+  assert.ok(records.every(row => row.ownerUserId === f.ids[0] && row.visibility === 'private'));
+  const answer = result.body.session.messages.at(-1).text;
+  for (const record of records) assert.ok(answer.includes(record.text));
+  assert.doesNotMatch(answer, /这轮没有新增|No new record/);
+});
+
+test("web search results and page observations both reach the source audit", async (t) => {
+  const f = await fixture(t, context => context.lookups ? { reply: '店在白桥路8号。', actions: [] }
+    : { reply: '', actions: [action('web_search', 'query', { query: '虚构书店地址' })] });
+  f.mediator.lookup = async () => '虚构书店 https://example.test/bookshop';
+  f.mediator.readonlyWeb = { read: async url => ({ url, status: 'ok', text: '地址：白桥路8号', fetchedAt: '2026-11-12T09:00:00Z', trusted: false }) };
+  let observed = false;
+  f.mediator.checkReplySources = async input => {
+    assert.ok(input.sources.some(source => source.kind === 'web_search' && source.text.includes('example.test')));
+    assert.ok(input.sources.some(source => source.kind === 'web_pages' && source.text.includes('白桥路8号')));
+    observed = true; throw Error('offline audit observation');
+  };
+  assert.equal((await f.turn('查一下虚构书店地址')).status, 200);
+  assert.equal(observed, true);
+});
+
 test("source audit sees original history and persisted receipts before finalizing, including false denials", async (t) => {
   const f = await fixture(t, () => ({ reply: "提醒目前还没有设置。", sendableDraft: "对不起，我昨天打断了你。", actions: [action("reminder", "create", { fields: fields({ title: "沟通", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "once" }) })] }));
   await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], draft => {

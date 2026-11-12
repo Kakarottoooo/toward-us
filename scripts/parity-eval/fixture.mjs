@@ -246,7 +246,7 @@ async function setupCase(item, withHistory) {
     // Observe that normal path; never manually force a post-answer extraction to make a case pass.
     if (item.check?.kind === "memory" || item.writes?.some((spec) => spec.collection === "memories")) {
       const limit = Date.now() + 60_000;
-      const saved = () => item.writes ? writeChecks(item.writes, before, after, { me: setup.me.user.id, partner: setup.partner?.user.id, at: checkAt, timezone: item.timezone || "Asia/Shanghai" }).every((row) => row.ok)
+      const saved = () => item.writes ? writeChecks(item.writes, projectSnapshot(before, asker.user.id), projectSnapshot(after, asker.user.id), { me: setup.me.user.id, partner: setup.partner?.user.id, at: checkAt, timezone: item.timezone || "Asia/Shanghai" }).every((row) => row.ok)
         : (after.memories || []).some((entry) => /香菜/.test(entry.text || "")) && (after.memories || []).some((entry) => /花粉/.test(entry.text || ""));
       while (Date.now() < limit && !saved()) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -260,7 +260,7 @@ async function setupCase(item, withHistory) {
     let completed = item.unsupported ? false : null;
     const peer = setup.partner ? projectSnapshot(await store.relationshipSnapshotForUser(setup.partner.user.id), setup.partner.user.id) : null;
     const checks = approvalFlow ? approvalFlow.checks : collection ? recordChecks(item, created, { userId: asker.user.id, partnerId: setup.partner?.user.id, personId: setup.people[item.probe.thread]?.id, peer, spaceItems: after.spaceItems }) : [];
-    if (item.writes) checks.push(...writeChecks(item.writes, before, after, { me: setup.me.user.id, partner: setup.partner?.user.id, at: checkAt, timezone: item.timezone || "Asia/Shanghai" }));
+    if (item.writes) checks.push(...writeChecks(item.writes, projectSnapshot(before, asker.user.id), projectSnapshot(after, asker.user.id), { me: setup.me.user.id, partner: setup.partner?.user.id, at: checkAt, timezone: item.timezone || "Asia/Shanghai" }));
     if (collection || item.writes) completed = checks.every((check) => check.ok);
     if (item.check?.kind === "sources") completed = rounds.every((round) => round.sources.length > 0 && round.sourceChecks.every((source) => source.ok));
     if (item.check?.kind === "privacy") completed = privacyChecks.every((check) => check.ok);
