@@ -212,7 +212,7 @@ test("a successful reminder uses its actual receipt instead of a fabricated prof
   const { say } = await setup(t, () => ({ reply: "已记进 Sam 的档案。", actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "买花", localDateTime: "2027-05-12T20:00", timezone: "UTC", frequency: "once" }) })] }));
   const reply = await say("2027年5月12日晚上8点提醒我买花");
   assert.doesNotMatch(reply.text, /Sam|档案/);
-  assert.match(reply.text, /2027-05-12 20:00/);
+  assert.match(reply.text, /2027 年 5 月 12 日晚上 8:00 提醒你买花/); // task 58: one natural sentence, no ISO date
 });
 
 test("a records search that finds nothing says so instead of promising results", async (t) => {

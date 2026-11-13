@@ -123,7 +123,7 @@ test("source audit sees original history and persisted receipts before finalizin
   assert.equal(checked, true);
   const answer = response.body.session.messages.at(-1).text;
   assert.doesNotMatch(answer, /还没有设置/);
-  assert.match(answer, /Saved personal reminder: 沟通/);
+  assert.match(answer, /remind you on Sep 11 at 8:00 PM: 沟通/); // task 58 natural receipt
   assert.match(answer, /我昨天打断了你/);
   await f.turn("按旧建议帮我道歉并设提醒", "receipt-idempotency");
   assert.equal((await f.reminderService.listReminders(f.ids[0])).length, 1);
@@ -134,7 +134,7 @@ test("a failed post-commit audit keeps the receipt and does not rerun the write"
   f.mediator.checkReplySources = async () => { throw Error("synthetic timeout"); };
   const result = await f.turn("Remind me to call");
   assert.equal(result.status, 200);
-  assert.match(result.body.session.messages.at(-1).text, /Saved personal reminder: Call/);
+  assert.match(result.body.session.messages.at(-1).text, /remind you on Sep 11 at 8:00 PM: Call/);
   assert.doesNotMatch(result.body.session.messages.at(-1).text, /还没有设置/);
   assert.equal((await f.reminderService.listReminders(f.ids[0])).length, 1);
 });
@@ -214,7 +214,7 @@ test("a committed reminder replaces a model promise with its actual persisted ti
   const f = await fixture(t, () => ({ reply: "I have prepared a reminder for tomorrow at eight.", actions: [action("reminder", "create", { fields: fields({ title: "Apologize", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "once" }) })] }));
   const response = await f.turn("Remind me to apologize on September 11 at eight");
   assert.equal(response.status, 200);
-  assert.match(response.body.session.messages.at(-1).text, /Saved personal reminder: Apologize/);
+  assert.match(response.body.session.messages.at(-1).text, /remind you on Sep 11 at 8:00 PM: Apologize/);
   assert.doesNotMatch(response.body.session.messages.at(-1).text, /No reminder was created|have prepared/);
   assert.equal((await f.store.relationshipSnapshotForUser(f.ids[0])).reminders.length, 1);
 });
@@ -227,7 +227,7 @@ test("spoken reminder creation, continuation and cancellation update one durable
   });
   let response = await f.turn("Remind me Friday at eight every week", "speech-1"); assert.equal(response.status, 200);
   let cards = response.body.session.messages.at(-1).cards;
-  assert.equal(cards[0].localDateTime, undefined); assert.equal(cards[0].title, "View reminder"); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].dueAt, "2026-09-11T20:00:00.000Z"); assert.match(response.body.session.messages.at(-1).text, /2026-09-11.*20:00.*UTC/);
+  assert.equal(cards[0].localDateTime, undefined); assert.equal(cards[0].title, "View reminder"); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].dueAt, "2026-09-11T20:00:00.000Z"); assert.match(response.body.session.messages.at(-1).text, /every Friday at 8:00 PM, starting Sep 11: Weekly reflection/); assert.doesNotMatch(response.body.session.messages.at(-1).text, /UTC|2026-09-11/);
   response = await f.turn("nine every week instead"); assert.equal(response.status, 200); assert.equal(response.body.session.messages.at(-1).cards[0].localDateTime, undefined); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].dueAt, "2026-09-11T21:00:00.000Z");
   response = await f.turn("cancel it"); assert.equal(response.status, 200); assert.equal(response.body.session.messages.at(-1).cards[0].status, "paused");
   const saved = await f.reminderService.listReminders(f.ids[0]); assert.equal(saved.length, 1); assert.equal(saved[0].status, "paused");
@@ -308,7 +308,7 @@ test("changing only this weekly occurrence preserves the original weekday and ti
     return { reply: "", actions: [context.messages.at(-1).text === "Rename it weekly chat" ? action("reminder", "update", { targetId: current.id, expectedVersion: current.version, fields: fields({ title: "Weekly chat" }) }) : current ? action("reminder", "update", { targetId: current.id, expectedVersion: current.version, occurrence: "once", fields: fields({ localDateTime: "2026-09-12T21:00" }) }) : action("reminder", "create", { fields: fields({ title: "Reflection", localDateTime: "2026-09-11T20:00", frequency: "weekly" }) })] };
   });
   await f.turn("Every Friday at eight"); const changed = await f.turn("Only this time, Saturday at nine");
-  assert.equal(changed.status, 200); assert.match(changed.body.session.messages.at(-1).text, /only the next occurrence/i);
+  assert.equal(changed.status, 200); assert.match(changed.body.session.messages.at(-1).text, /only the next one moves to/i);
   assert.equal(changed.body.session.messages.at(-1).cards[0].nextOccurrenceOnly, true);
   assert.equal(changed.body.session.messages.at(-1).cards[0].weeklyTime, undefined); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].localTime, "20:00");
   const renamed = await f.turn("Rename it weekly chat"); assert.equal(renamed.status, 200); assert.equal(renamed.body.session.messages.at(-1).cards[0].title, "View reminder"); assert.equal((await f.reminderService.listReminders(f.ids[0]))[0].title, "Weekly chat");

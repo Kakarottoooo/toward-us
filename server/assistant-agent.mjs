@@ -177,7 +177,7 @@ export function normalizeAssistantTurn(plan, language = "zh", boundaryIndex = 0,
   if (!plan || !Array.isArray(plan.actions)) return plan;
   // Semantic classification is part of the existing planner call. Render its
   // private-access refusal locally, before any lookup, rewrite or mutation.
-  if (plan.privateBoundary === true) return { reply: privateBoundaryReply(language, boundaryIndex), actions: [] };
+  if (plan.privateBoundary === true) return { reply: privateBoundaryReply(language, boundaryIndex, request), actions: [] };
   if (plan.privateBoundary === false) { const { privateBoundary, ...ordinary } = plan; plan = ordinary; }
   // The planner sometimes repeats an action's empty fields at the top of its answer (query: null, queryPeriod: "all",
   // occurrence: null) next to a good reply; the exact-key check then refused the whole turn with a 502 (use-case test,

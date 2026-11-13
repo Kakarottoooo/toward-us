@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { agreementPresentation, groundedAgreementTerms, checkDelivery, checkReplyFormat, directFactReply, finishReply, mergeReceipts, privateBoundaryReply, renderReply, requiresReplyScopeCheck } from '../server/reply-contract.mjs';
+import { agreementPresentation, contractIssues, groundedAgreementTerms, checkDelivery, checkReplyFormat, directFactReply, finishReply, mergeReceipts, privateBoundaryReply, renderReply, requiresReplyScopeCheck } from '../server/reply-contract.mjs';
 import { prepareSourceReply } from '../server/source-reply.mjs';
 import { createReadonlyWeb, webSourceText } from '../server/readonly-web.mjs';
 import { explicitSelfFacts } from '../server/profile.mjs';
@@ -39,7 +39,8 @@ test('receipt batches and copyable fields have one presentation owner', () => {
   const record = createRelationshipRecord({ userId: 'owner', visibility: 'private', draftAgreement: draft });
   const presented = projectRecord(record, 'owner').draftAgreement;
   assert.deepEqual(presented.terms, ['轮流做饭']);
-  assert.equal(presented.title, ''); assert.equal(presented.summary, '');
+  // Superseded by task 58: the title is never cleared (the round-22 draft read as untitled); the only term stays beside it.
+  assert.equal(presented.title, '轮流做饭'); assert.equal(presented.summary, '');
   assert.equal(record.draftAgreement.title, '轮流做饭');
   assert.equal(agreementPresentation(draft, '轮流做饭').reply, '');
   assert.equal(finishReply('费用为3.0元。费用为30元。', { formatChecked: true }), '费用为3.0元。费用为30元。');
@@ -65,7 +66,9 @@ test('normalization removes record framing without removing facts, uncertainty o
 test('yes/no, safety and excluded-topic checks share one bounded rewrite', async () => {
   assert.equal(checkDelivery('目前页面信息不足。', '含坚果过敏原，能吃吗？').length, 2);
   assert.equal(checkDelivery('不能确认。可以向店家确认配料。', '含坚果过敏原，能吃吗？').length, 0);
-  assert.equal(checkDelivery({ reply: '这句不提体检。', sendableDraft: '晚上聊聊吗？' }, '帮我回一句，不提体检。').length, 1);
+  // Task 58: excluded topics moved into the user format contract, still one issue in the same bounded rewrite.
+  assert.equal(checkDelivery({ reply: '这句不提体检。', sendableDraft: '晚上聊聊吗？' }, '帮我回一句，不提体检。').length, 0);
+  assert.equal(contractIssues({ reply: '这句不提体检。', sendableDraft: '晚上聊聊吗？' }, '帮我回一句，不提体检。').filter(issue => /excluded topic/.test(issue)).length, 1);
   let rewritten = 0;
   const request = '有过敏风险，可以吃吗？';
   const fixed = '不能确认。请向店家确认配料。';

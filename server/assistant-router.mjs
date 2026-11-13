@@ -1,6 +1,7 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { deliveredReply, finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
+import { deliveredReply, finishReply, formatContract, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
+import { checklistReceipt, reminderReceipt, rememberReceipt } from "./receipts.mjs";
 import { checkPlanConstraints, settleCheckedPlan } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
 import { explicitRemember, gettingToKnow, profileContext, scanPrivateProfile } from "./profile.mjs";
@@ -304,6 +305,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     // card; an explicit diary/recording request still keeps its normal action.
     if (wantsOneSentence(text) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
     if (webTurn.results.length) plan = { ...plan, actions: [] };
+    // "不要保存 / don't save" is part of the user's format contract (task 58): this turn may look things up, never write.
+    if (formatContract(text).noSave) plan = { ...plan, actions: plan.actions.filter((action) => action.operation === "query" || ["chat_import", "web_read", "web_search", "chat_search", "memory_search"].includes(action.kind)) };
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
     const readingScreenshots = Boolean(chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import"));
     if (readingScreenshots) userMessage.screenshots = true;
@@ -319,7 +322,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
       if (latest.version !== session.version) throw fail(409, say(session.language, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const currentRecords = await available(tx, userId);
-      const cards = []; const replies = []; let createdSpace = null; const handoffLines = []; let askBack = ""; const searched = [];
+      const cards = []; const replies = []; const checklists = new Map(); let createdSpace = null; const handoffLines = []; let askBack = ""; const searched = [];
       for (const action of plan.actions) {
         if (action.kind === "promise") {
           if (!context.openPromises.some((promise) => promise.id === action.targetId)) throw fail(404, "This promise is no longer open.");
@@ -430,6 +433,15 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
             record = action.operation === "archive" ? await archiveSpaceRecord(tx, { userId, collection: "spaceItems", id: item.id }) : await updateSpaceItem(tx, { userId, id: item.id, fields: { title: values.title ?? undefined, text: values.text ?? undefined, date: values.date ?? undefined, done: values.done ?? undefined } });
           }
           cards.push(card(action.kind, record, session.language)); changes.push({ kind: action.kind, record });
+          // A checklist made or filled this turn is confirmed in one natural sentence from the stored records (task 58).
+          const listId = action.kind === "space" ? record.id : record.spaceId;
+          if (action.operation === "create" && listId) {
+            let entry = checklists.get(listId);
+            if (!entry) { entry = { space: action.kind === "space" ? record.title : (await visibleSpace(tx, listId, userId)).title, created: false, items: [], index: replies.length }; checklists.set(listId, entry); replies.push(""); }
+            if (action.kind === "space") entry.created = true; else entry.items.push(record.title || record.text);
+            replies[entry.index] = checklistReceipt(entry, { language: session.language });
+            continue;
+          }
           replies.push(action.operation === "archive" ? say(session.language, "已移走。", "Removed.", "Quitado.") : action.kind === "space" ? say(session.language, `已建好“${record.title}”，只有你能看到。`, `Created "${record.title}", visible only to you.`, `Creé «${record.title}», solo visible para ti.`) : say(session.language, "已放进去。", "Added.", "Añadido."));
           continue;
         }
@@ -478,10 +490,9 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         }
         await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { status: "recorded", objectId: record.id, objectType: action.kind, eventType: `assistant.${action.kind}.${action.operation}`, sourceVersion: record.version }));
         cards.push(card(action.kind, record, session.language)); changes.push({ kind: action.kind, record });
-        if (action.kind === "reminder") {
-          const at = `${localTime(record.dueAt, record.timezone).replace("T", " ")} (${record.timezone})`;
-          replies.push(action.operation === "archive" ? say(session.language, "已暂停这条个人提醒。", "This personal reminder is paused.", "Este recordatorio personal está pausado.") : record.occurrenceOriginalDueAt ? say(session.language, `已保存个人提醒：${record.title}。仅下次为 ${at}，后续仍按原来的每周安排。`, `Saved personal reminder: ${record.title}. Only the next occurrence is ${at}; later reminders keep the original weekly schedule.`, `Recordatorio personal guardado: ${record.title}. Solo la próxima vez será ${at}; las siguientes mantienen el horario semanal original.`) : say(session.language, `已保存个人提醒：${record.title}，${at}${record.frequency === "weekly" ? "，每周重复" : ""}。`, `Saved personal reminder: ${record.title}, ${at}${record.frequency === "weekly" ? ", every week" : ""}.`, `Recordatorio personal guardado: ${record.title}, ${at}${record.frequency === "weekly" ? ", cada semana" : ""}.`));
-        } else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "已保存私人记录，未授权 AI 在其他对话中使用。", "Saved privately, without permission for AI use in other conversations.", "Se guardó en privado, sin autorizar el uso de la IA en otras conversaciones."));
+        // One natural sentence from the stored record, no ISO date or zone code (task 58).
+        if (action.kind === "reminder") replies.push(reminderReceipt(record, { language: session.language, sessionTimezone: session.timezone, operation: action.operation }));
+        else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "好，记下了：只有你能看到，也不会用在别的对话里。", "OK, noted: only you can see it, and it won't be used in other conversations.", "Listo, anotado: solo tú lo ves y no se usará en otras conversaciones."));
       }
       // Commit actions and a receipt-safe initial answer atomically. Audit only after commit,
       // outside the storage lock; retries of itemId can never execute the actions again.
@@ -500,19 +511,29 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id, initialText: cited.reply };
       return saved;
     });
-    // A reminder request ("帮我记一下…提醒我") is not a fact to remember: its receipt is the reminder's own, once.
-    if (!raced && !readingScreenshots && explicitRemember(text) && !changes.some(({ kind }) => kind === "reminder")) {
+    // A reminder request ("帮我记一下…提醒我") is not a fact to remember: its receipt is the reminder's own, once. The same
+    // holds for a diary entry or a saved note written this turn (task 58: a check-in came back with a second "已记住" line).
+    if (!raced && !readingScreenshots && explicitRemember(text) && !formatContract(text).noSave && !changes.some(({ kind }) => ["reminder", "checkin", "memory"].includes(kind))) {
       const remembered = await scanPrivateProfile({ store, mediator, userId, sessionId: session.id, silent: true }).catch(() => []);
-      for (const record of remembered) delivery.writeReceipts.push(say(language, `已记住：${record.text}。`, `Remembered: ${record.text}.`, `Recordado: ${record.text}.`));
+      // One natural sentence naming whom each fact is about, read back from the stored records (task 58: "已记住：每周三晚上
+      // 固定去打羽毛球" lost 陆川). It is also this turn's execution receipt, so the audit never asks to deny the save.
+      if (remembered.length) {
+        const pair = await Promise.resolve().then(() => store.getRelationshipContext(userId)).catch(() => null), people = await Promise.resolve().then(() => listPeople(store, userId, { archived: true })).catch(() => []);
+        const partner = pair?.members?.find((member) => member.userId !== userId);
+        const who = (subject) => subject === userId ? say(language, "你", "you", "tú") : String(subject || "").startsWith("person:") ? people.find((person) => `person:${person.id}` === subject)?.name || ""
+          : subject && subject.startsWith("partner-of:") || subject === partner?.userId ? partner?.user?.name || say(language, "TA", "your partner", "tu pareja") : say(language, "你们俩", "you both", "ustedes");
+        const receipt = rememberReceipt(remembered.map((record) => ({ who: who(record.subjectUserId), text: record.text })), { language });
+        if (receipt) { delivery.writeReceipts.push(receipt); delivery.remembered = receipt; }
+      }
     }
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
-      const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
+      const receipts = { messages: [...delivery.replies, ...(delivery.remembered ? [delivery.remembered] : [])], records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
       let verifiedDeliverables;
       const unrelated = !plan.planConstraints && !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
       const audited = await prepareSourceReply(plan.reply, { planConstraints: plan.planConstraints, unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
-          ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, onVerifiedDeliverables: parts => { verifiedDeliverables = parts; } });
+          ...(delivery.replies.length || changes.length || delivery.remembered ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, label: true, onVerifiedDeliverables: parts => { verifiedDeliverables = parts; } });
       const own = finishReply(audited, { request: text, language, webPages: webTurn.results, sourceTranscript: context.sourceTranscript, deliverables: verifiedDeliverables, formatChecked: true, receipts: delivery.writeReceipts,
         reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
       // Never fail empty: an audit can only degrade the delivered draft, so an empty or generic result keeps the reply

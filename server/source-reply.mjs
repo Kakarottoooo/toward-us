@@ -1,4 +1,4 @@
-import { activityDraft, checkDelivery, checkReplyFormat, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply, replyFormatRequirements } from "./reply-contract.mjs";
+import { activityDraft, checkDelivery, contractIssues, copyableDraft, isPrivateBoundaryReply, requiresReplyScopeCheck, renderReply, replyFormatRequirements } from "./reply-contract.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 
 export const sourceCheckSchema = { type: "object", additionalProperties: false, required: ["claims", "deliveryIssues", "stanceChecks", "deliverableChecks", "newUnauthorizedStance", "lostDeliverables"], properties: {
@@ -45,9 +45,60 @@ const inputRoles = {
   previousReply: "previous assistant candidate for comparison only, never source evidence",
 };
 
+// Stance against the source (task 58). A clock time the counterpart already proposed in the source is not "undecided": a
+// draft saying "8:30 这个时间我还没确定" after Lily wrote "Could we do 8:30?" misstates the exchange. Code finds the time in
+// both, by speaker, and reports the clause as a factual grounding defect for the one rewrite and for candidate ranking.
+const chineseNumber = (value) => /^\d+$/.test(value) ? Number(value) : value === "十" ? 10 : value.includes("十") ? (chineseNumber(value.split("十")[0] || "一") * 10 + chineseNumber(value.split("十")[1] || "零")) : "零一二三四五六七八九".indexOf(value.replace("两", "二"));
+export function clockTimes(text) {
+  const found = new Set(), add = (hour, minute) => { if (hour >= 0 && hour <= 24 && minute >= 0 && minute < 60) found.add(`${hour % 12}:${String(minute).padStart(2, "0")}`); };
+  for (const m of String(text || "").matchAll(/(\d{1,2})\s*[:：]\s*(\d{2})/gu)) add(Number(m[1]), Number(m[2]));
+  for (const m of String(text || "").matchAll(/(\d{1,2}|[零一二两三四五六七八九十]{1,3})\s*点\s*(半|(\d{1,2}|[零一二三四五六七八九十]{1,3})\s*分?)?/gu)) add(chineseNumber(m[1]), m[2] === "半" ? 30 : m[3] ? chineseNumber(m[3]) : 0);
+  for (const m of String(text || "").matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|a\.m\.|p\.m\.)/giu)) add(Number(m[1]), Number(m[2] || 0));
+  return found;
+}
+// Lines the counterpart wrote, from "role | sender | time" blocks or "[partner]"/"[other]" prefixed lines.
+function counterpartText(sources) {
+  const lines = [];
+  for (const source of sources) {
+    let speaker = null;
+    for (const row of String(source.text || "").split(/\n/u)) {
+      const header = row.match(/^\s*(me|partner|other)\s*\|/iu), prefix = row.match(/^\s*\[(you|partner|other)\]/iu);
+      if (header) { speaker = header[1].toLowerCase(); continue; }
+      const who = prefix ? prefix[1].toLowerCase() : speaker;
+      if (who === "partner" || who === "other") lines.push(row);
+    }
+  }
+  return lines.join("\n");
+}
+const undecided = /还没(?:确定|定|想好|决定)|没(?:确定|定下来)|不确定|待定|未定|还在考虑|\b(?:not sure|haven't decided|undecided|not decided)\b|\bno (?:estoy segur[oa]|he decidido)\b/iu;
+// The sendable draft only: an analysis may truthfully say the user has not decided yet; the draft speaks to the counterpart.
+const draftOf = (candidate) => typeof candidate === "string" ? copyableDraft(candidate) : candidate?.sendableDraft || null;
+const timeToken = /\d{1,2}\s*[:：]\s*\d{2}|(?:\d{1,2}|[零一二两三四五六七八九十]{1,3})\s*点\s*(?:半|(?:\d{1,2}|[零一二三四五六七八九十]{1,3})\s*分?)?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/giu;
+const contradictedClauses = (draft, proposed) => String(draft || "").split(/[，,。！？!?；;\n]/u).filter((clause) => undecided.test(clause) && [...clockTimes(clause)].some((time) => proposed.has(time)));
+export function sourceStanceIssues(candidate, sources = []) {
+  const proposed = clockTimes(counterpartText(sources));
+  if (!proposed.size) return [];
+  return contradictedClauses(draftOf(candidate), proposed).map((clause) => `Stance contradicts the source: "${clause.trim()}" calls a time undecided that the counterpart already proposed in the source. Acknowledge it as their proposal (for example "你提的这个时间") and state the user's own position without contradicting the source.`);
+}
+/** Final code acceptance of the draft's stance: an "undecided" clause about a time the counterpart proposed becomes the
+ * sanctioned stance toward a counterpart's proposal ("I'll check whether 10:15 works"), keeping the time as written. */
+export function settleSourceStance(text, sources = [], language = "zh", { whole = false } = {}) {
+  const proposed = clockTimes(counterpartText(sources)), draft = whole ? String(text || "") : copyableDraft(String(text || ""));
+  if (!proposed.size || !draft) return text;
+  const fixed = draft.replace(/[^，,。！？!?；;\n]+/gu, (clause) => {
+    if (!undecided.test(clause)) return clause;
+    const token = [...clause.matchAll(timeToken)].map((match) => match[0]).find((value) => [...clockTimes(value)].some((time) => proposed.has(time)));
+    if (!token) return clause;
+    const lead = clause.match(/^\s*/u)[0];
+    return lead + (language === "en" ? `let me check whether your ${token} works` : language === "es" ? `déjame ver si me va bien tu propuesta de las ${token}` : `我看看你提的 ${token} 行不行`);
+  });
+  const at = String(text).lastIndexOf(draft);
+  return fixed === draft || at < 0 ? text : String(text).slice(0, at) + fixed + String(text).slice(at + draft.length);
+}
+
 // Shared by the immediate screenshot answer and later answers about imported text.
 // One initial check, at most one rewrite, and a final check only after rewriting.
-export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], planConstraints = null, unsupportedPremise = null, request = "", language = "zh", context = {}, mediator, onVerifiedDeliverables } = {}) {
+export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], planConstraints = null, unsupportedPremise = null, request = "", language = "zh", context = {}, mediator, onVerifiedDeliverables, label = false } = {}) {
   if (isPrivateBoundaryReply(reply)) return reply;
   sendableDraft = activityDraft({ sendableDraft, activityDescription });
   // Citation tokens are server-resolved metadata, never prose for a model to edit.
@@ -57,7 +108,8 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   const stripParts = (value) => typeof value === "string" ? strip(value) : { reply: strip(value?.reply), sendableDraft: value?.sendableDraft == null ? null : strip(activityDraft(value)) };
   reply = sendableDraft === undefined ? strip(reply) : stripParts({ reply, sendableDraft });
   const restore = (value, audit) => {
-    const text = strip(renderReply(value));
+    const settled = value && typeof value === "object" && value.sendableDraft ? { ...value, sendableDraft: settleSourceStance(value.sendableDraft, originals, language, { whole: true }) } : value;
+    const text = settleSourceStance(strip(renderReply(settled, { label, language, request })), originals, language);
     if (audit) onVerifiedDeliverables?.((audit.deliverableChecks || []).flatMap(item => item.parts || [])
       .filter(part => part.present === true && part.quote?.trim() && text.includes(part.quote)).map(part => part.quote));
     return [text, ...citations].filter(Boolean).join("\n");
@@ -79,7 +131,10 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
     return stripParts(revised);
   };
   const checkScope = Boolean(planConstraints) || requiresReplyScopeCheck(request);
-  const literalIssues = candidate => [...checkReplyFormat(candidate, request, language).issues, ...checkDelivery(candidate, request, context)];
+  // The user format contract ranks first, then requested stance and deliverables, then factual grounding (task 58).
+  const contract = candidate => contractIssues(candidate, request, language);
+  const stanceAgainstSource = candidate => sourceStanceIssues(candidate, originals);
+  const literalIssues = candidate => [...contract(candidate), ...checkDelivery(candidate, request, context), ...stanceAgainstSource(candidate)];
   const formatIssues = literalIssues(reply);
   if (!planConstraints && !unsupportedPremise && !originals.length && !checkScope && !formatIssues.length && !stances.length) return restore(reply);
   const check = async (candidate, previousReply) => {
@@ -105,9 +160,13 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   const semanticIssues = (result, candidate) => [...missingDeliverables(result, candidate), ...missingStances(result, candidate).map(({ id, clause }) => `Missing requested stance ${id}: ${clause}; express it explicitly in the sendable draft`),
     ...result.claims.filter((row) => !row.supported).map((row) => `Claim: ${row.claim}; source: ${row.source || "absent"}; correction: ${row.issue}`),
     ...result.deliveryIssues];
-  // Lexicographic priority: requested stance, factual grounding, then wording
-  // and literal format. Any number of cosmetic fixes cannot offset a false fact.
-  const rank = (result, candidate, issues) => [missingStances(result, candidate).length + missingDeliverables(result, candidate).length, result.claims.filter((row) => !row.supported).length, issues.length];
+  // Lexicographic priority (task 58): a claim the cited source contradicts (including a stance against the source) is never
+  // revived; then the user's format contract outranks every semantic score; then requested stance and deliverables, then
+  // claims merely lacking support, then wording. Code truncation can bring a contract-breaking draft within the contract,
+  // but nothing can make a contradicted fact true.
+  const contradicted = (result) => result.claims.filter((row) => !row.supported && row.source?.trim()).length;
+  const rank = (result, candidate, issues) => [contradicted(result) + stanceAgainstSource(candidate).length, contract(candidate).length,
+    missingStances(result, candidate).length + missingDeliverables(result, candidate).length, result.claims.filter((row) => !row.supported && !row.source?.trim()).length, issues.length];
   let stage = "initial-check", initialAudit;
   try {
     const result = await check(reply);
@@ -122,6 +181,8 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
     const revisedIssues = [...semanticIssues(finalCheck, revised), ...literalIssues(revised)];
     const originalRank = rank(result, reply, issues), revisedRank = rank(finalCheck, revised, revisedIssues);
     const difference = originalRank.map((value, index) => value - revisedRank[index]).find((value) => value !== 0) || 0;
+    // A rewrite that breaks the contract more than the original is discarded by the ranking unless it removes a contradicted
+    // fact. Losing a requested part still vetoes it: code truncation can bring the original within the contract afterwards.
     const useOriginal = finalCheck.newUnauthorizedStance || finalCheck.lostDeliverables || difference < 0
       || planConstraints && !checkPlanConstraints(planConstraints, { context, reply: renderReply(revised) }).ok;
     console.info("[source-reply]", JSON.stringify({ selected: useOriginal ? "original" : "rewrite", originalIssues: issues.length,
