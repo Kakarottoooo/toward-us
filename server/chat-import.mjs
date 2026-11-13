@@ -1,12 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
-import { finishReply, wantsOneSentence } from "./reply-contract.mjs";
+import { finishReply, quietUnderContract } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import express from "express";
-import { ImportFormatError, parseChatExport, parsePastedText } from "./chat-import-parsers.mjs";
+import { ImportFormatError, parseChatExport, parsePastedText, parseTextAttachment } from "./chat-import-parsers.mjs";
 import { canViewRecord, createRelationshipRecord } from "./relationship-domain.mjs";
 import { appendTogetherMessage, memberLanguage, togetherI18n } from "./together-domain.mjs";
 import { photoFile, visiblePhoto } from "./photo-store.mjs";
@@ -71,7 +71,9 @@ export function importContext(records) {
     messageCount: record.messageCount, lastSyncAt: record.sync.lastSyncAt || null,
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
   }));
-  return [...synced, ...records.filter((record) => !record.sync && record.status === "ready" && record.analysis).slice(0, 5).map((record) => ({
+  const documents = records.filter((record) => record.platform === "plain_text" && record.status === "ready" && !record.rawDeleted).slice(0, 5)
+    .map((record) => ({ id: record.id, title: record.title, platform: "plain_text", canSearch: true }));
+  return [...documents, ...synced, ...records.filter((record) => !record.sync && record.status === "ready" && record.analysis).slice(0, 5).map((record) => ({
     id: record.id, title: record.title, platform: record.platform, period: [day(record.firstAt), day(record.lastAt)], messageCount: record.messageCount,
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
     canSearch: !record.rawDeleted, overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle,
@@ -84,7 +86,12 @@ export function importContext(records) {
 /** Searches an import's messages for the agents: literal words and/or a date prefix, with a little surrounding context. */
 export async function searchImport(record, { query = "", date = "" } = {}) {
   if (record.rawDeleted) return "The original messages were deleted; only the analysis remains.";
-  const messages = JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null"))?.conversation?.messages, hits = [];
+  const source = JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null"));
+  if (record.platform === "plain_text") {
+    const text = source?.text || "", index = query ? text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) : 0;
+    return index < 0 ? "No matching text." : text.slice(Math.max(0, index - 1000), Math.max(0, index - 1000) + 6000);
+  }
+  const messages = source?.conversation?.messages, hits = [];
   if (!messages) return "The messages are not available.";
   const words = String(query || "").toLocaleLowerCase().split(/\s+/).filter(Boolean).slice(0, 4);
   // Newest first: in a chat that keeps growing, "what did she say about dinner" means lately.
@@ -219,6 +226,17 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   async function createImport(user, parsed, { sessionId = null, language = "zh", messageId = null, screenshotAdvice = null } = {}) {
     const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).filter((record) => record.ownerUserId === user.id && !record.archivedAt);
     if (existing.length >= IMPORT_LIMIT) throw fail(409, say(language, "导入的聊天已经很多了，请先删掉一些旧的。", "You have many imports already. Delete an old one first.", "Ya tienes muchas importaciones. Borra alguna antigua primero."));
+    if (parsed.platform === "plain_text") {
+      // Same owner-only store/file lifecycle as chat imports; no inferred people,
+      // relationship analysis, automatic sharing, or fabricated conversation.
+      const record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "ready",
+        platform: "plain_text", title: parsed.title, fileId: randomUUID(), language, sessionId, people: [], conversations: [] });
+      await mkdir(mediaDirectory(), { recursive: true });
+      await writeFile(fileFor(record), JSON.stringify({ text: parsed.text }));
+      await store.transaction(`user:${user.id}`, (tx) => tx.createRelationshipRecord(COLLECTION, record));
+      await appendAssistantMessage(user.id, { sessionId, language, text: say(language, "文件已收到，可以直接问我里面的内容。原文只有你能看到。", "File received. Ask me about its contents. Only you can see the original.", "Archivo recibido. Puedes preguntarme por su contenido. Solo tú puedes ver el original."), card: { id: record.id, kind: "chat_import", version: 1, title: record.title } });
+      return record;
+    }
     const conversations = parsed.conversations.filter((conversation) => conversation.messages.length).sort((a, b) => b.messages.length - a.messages.length);
     const record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "needs_choice", platform: parsed.platform, title: conversations[0]?.title || parsed.platform, fileId: randomUUID(), language, sessionId, conversations: conversations.slice(0, 30).map((conversation) => ({ id: conversation.id, title: conversation.title, count: conversation.messages.length, participants: conversation.participants.slice(0, 8), lastAt: conversation.messages.at(-1)?.at || null })) });
     // A pointer to the owner's request, never included in views, model reports or shared copies.
@@ -329,14 +347,14 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (typeof answer?.reply !== "string" || !(answer.reply.trim() || answer.sendableDraft?.trim())) throw new Error("Empty screenshot answer");
           const reply = await prepareSourceReply(answer.reply.trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
-            sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator });
-          text = finishReply(reply, { request: request.text, language: record.language, formatChecked: true });
+            sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, label: true });
+          text = finishReply(reply, { request: request.text, language: record.language });
         } catch (error) {
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
         }
         await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
-        const quietNotes = wantsOneSentence(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text);
+        const quietNotes = quietUnderContract(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text);
         if (record.personNew && record.personId && !quietNotes) {
           await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
           await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
@@ -409,6 +427,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       .filter((item) => item.ownerUserId === userId && item.visibility === "private" && !item.archivedAt && item.sessionId === sessionId && !item.sync)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (!record) return null;
+    if (record.platform === "plain_text") {
+      const source = !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
+      const text = source?.text || "";
+      return { status: "ready", names: {}, title: record.title, transcript: text.slice(0, 40_000), truncated: text.length > 40_000 };
+    }
     const names = { me: record.people.find((person) => person.role === "me")?.name, partner: record.people.find((person) => person.role === "partner")?.name };
     // Transcription is already complete even while the separate report is running (or if that report later fails).
     const source = names.me && names.partner && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
@@ -425,7 +448,14 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const parseUpload = (req) => {
     const name = clean(String(req.query.name || ""), 200);
     try { return parseChatExport({ name, bytes: req.body }); }
-    catch (error) { if (error instanceof ImportFormatError) throw fail(422, say(languageOf(req), "认不出这个文件的格式。可以换成导出的 txt、json、csv、xml 或 zip，或者直接发截图。", "I couldn't recognize this file. Try the exported txt, json, csv, xml or zip, or send screenshots.", "No reconocí este archivo. Prueba con el txt, json, csv, xml o zip exportado, o envía capturas.")); throw error; }
+    catch (error) {
+      if (error instanceof ImportFormatError) {
+        const text = parseTextAttachment(req.body);
+        if (text !== null) return { platform: "plain_text", title: name || "Text", text };
+        throw fail(422, say(languageOf(req), "认不出这个文件的格式。可以换成导出的 txt、json、csv、xml 或 zip，或者直接发截图。", "I couldn't recognize this file. Try the exported txt, json, csv, xml or zip, or send screenshots.", "No reconocí este archivo. Prueba con el txt, json, csv, xml o zip exportado, o envía capturas."));
+      }
+      throw error;
+    }
   };
   const raw = express.raw({ type: () => true, limit: MAX_BYTES });
 
@@ -474,7 +504,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   });
   router.post("/imports/:id/people", async (req, res) => {
     const record = await owned(store, req.params.id, req.auth.user.id);
-    if (record.ownerUserId !== req.auth.user.id || !["needs_people", "failed", "ready"].includes(record.status) || record.rawDeleted) throw fail(409, "This import cannot be re-assigned now.");
+    if (record.platform === "plain_text" || record.ownerUserId !== req.auth.user.id || !["needs_people", "failed", "ready"].includes(record.status) || record.rawDeleted) throw fail(409, "This import cannot be re-assigned now.");
     res.json({ import: importView(await assignPeople(req.auth.user, record, { me: clean(req.body?.me, 200), partner: clean(req.body?.partner, 200) })) });
   });
   router.post("/imports/:id/retry", async (req, res) => {
@@ -501,7 +531,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   // B: ask the partner to look at it together. Nothing becomes visible until the partner approves this exact import.
   router.post("/imports/:id/share-request", async (req, res) => {
     const userId = req.auth.user.id, record = await owned(store, req.params.id, userId), language = languageOf(req);
-    if (record.ownerUserId !== userId || record.visibility !== "private" || record.status !== "ready") throw fail(409, "Only a finished private import can be shared.");
+    if (record.platform === "plain_text" || record.ownerUserId !== userId || record.visibility !== "private" || record.status !== "ready") throw fail(409, "Only a finished private chat analysis can be shared.");
     const context = await store.getRelationshipContext(userId);
     if (!activePair(context)) throw fail(409, say(language, "先邀请另一半加入，再一起看。", "Invite your partner first.", "Invita primero a tu pareja."));
     const period = `${day(record.firstAt) || "?"} – ${day(record.lastAt) || "?"}`;

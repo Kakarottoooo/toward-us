@@ -1,5 +1,5 @@
 import { keepMessages } from "./thread-pages.mjs";
-import { wantsOneSentence } from "./reply-contract.mjs";
+import { quietUnderContract } from "./reply-contract.mjs";
 import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
@@ -29,6 +29,24 @@ const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit)
 const key = (value) => squash(value).toLowerCase().replace(/[\s。.!！,，、;；:："“”'‘’「」]/g, "");
 const object = (properties) => ({ type: "object", additionalProperties: false, required: Object.keys(properties), properties });
 const schema = object({ facts: { type: "array", maxItems: 10, items: object({ messageId: { type: "string" }, quote: { type: "string" }, subject: { type: "string", enum: ["A", "B", "both"] }, person: { type: "string" }, category: { type: "string", enum: CATEGORIES }, fact: { type: "string" }, replaces: { type: "string" } }) } });
+export const explicitRemember = text => /(?:记住|记一下|帮我记)|\b(?:remember|keep in mind|recuerda|apunta)\b/iu.test(text || "")
+  && !/(?:不要|别|不必|不用).{0,4}(?:记住|记一下|帮我记)|\b(?:don't|do not|no)\s+(?:remember|recuerda|apunta)/iu.test(text || "");
+// An explicit first-person list needs no medical/preference classifier. Keep
+// each verbatim declaration, including safety details, in the owner's scope.
+// Ambiguous subjects still go through the ordinary evidence-checked extractor.
+export function explicitSelfFacts(line, people = []) {
+  if (!explicitRemember(line.text)) return [];
+  const content = line.text.replace(/^.*?(?:记住|记一下|帮我记(?:住|一下)?)[：:,，\s]*/u, "");
+  const person = [...people].sort((a, b) => b.length - a.length).find(name => name && content.startsWith(name));
+  const subject = /^我(?!们)/u.test(content) ? 'A' : person ? 'B' : null;
+  if (!subject) return [];
+  // A qualified or self-corrected statement ("——是干妈，不是亲妈", "啊不对") is one thing said: it is never cut into pieces (task 61).
+  const pieces = /——|啊?不对|说错了/u.test(content) ? [content.replace(/[。.!！\s]+$/u, "")] : content.split(/[，；;。\n]+/u);
+  return pieces.map(text => text.trim()).filter(text => (subject === 'A' ? /^我(?!们)/u.test(text) : text.startsWith(person)) || /^(?:也|还|并且|而且)/u.test(text))
+    .map(quote => ({ line, quote, fact: (person && quote.startsWith(person) ? quote.slice(person.length) : quote).replace(/^(?:我|也(?!许)|还|并且|而且)+/u, ""), subject, person: subject === 'B' ? person : '', category: "other", replaces: "" }))
+    // "桃桃的干妈…" is about someone else of 桃桃's, not a fact that starts after the name.
+    .filter(found => found.fact.length >= 2 && !/^[的之]/u.test(found.fact));
+}
 export const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
 export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
 const live = (record) => isProfileFact(record) && record.status === "active" && !record.archivedAt && !record.deletedAt;
@@ -53,12 +71,42 @@ function instructions({ a, b, privateChat, between = false }) {
 ${between ? "This is a chat between A and B that A brought to Pinky privately (screenshots or pasted text). A's and B's own lines both count; what B says about B is the best evidence about B. Keep lasting things and what happened between them (history), never only how they feel in this one exchange." : privateChat ? "This is A's private chat with Pinky; only A's own lines count. A may tell you things about B." : "This is the couple's shared chat; Pinky's lines never count."}
 Keep lasting facts that help to know a person or the couple later. Categories: food (food and drink they love or avoid, allergies, diet); likes (hobbies, music, films, places, styles, what makes them happy); dislikes (what annoys or hurts them, sore spots, boundaries); wishes (things they want, gift ideas, places they want to go, sizes); traits (personality, habits and routines, how they like to be cared for or comforted, how they handle conflict); people (family, friends, pets, birthdays and dates that matter to them); history (what happened between them; founder 11-08: Pinky must remember what happened before, past fights and experiences): a fight, what it was about and how it ended, an important talk or decision, a first date or any date, a trip, a first, a hard time in their lives (a family member in hospital, losing a job), something one of them did that mattered; a place or plan B said they want for next time (下次想去爬山) is also a wish about B; other (work, studies, where they live, other lasting facts). For both: how the two of them work best together, their rituals and lessons ("we talk after ten quiet minutes").
 Not kept: periods, health or medical details (kept elsewhere, privately; that someone close went into hospital is history, without medical details), today's mood, small talk and trivial events, one-off plans or picks for right now, promises, jokes or sarcasm, guesses ("maybe he likes…"), facts about other people that say nothing about A or B, and anything already in known unless it changed.
-When A explicitly asks Pinky to remember something (记住, 记一下, 帮我记, remember, keep in mind, recuerda, apunta), keep every distinct point of what they asked to remember as its own fact, each with its own quote; an explicit request outweighs being selective. A standing arrangement the two of them made about how they handle things from now on (who tells whom what and when, how they talk after a fight) is lasting: keep it under traits with subject both. It is not a one-off promise.
+When A explicitly asks Pinky to remember something (记住, 记一下, 帮我记, remember, keep in mind, recuerda, apunta), keep what they asked to remember; an explicit request outweighs being selective. One thing said is one fact: the when, where and who of one event, and a correction or qualifier of it ("啊不对，是他表姐，不是亲姐姐"), stay in that single fact, quoted by the shortest span covering it. Only separate things (a food dislike and an allergy) are separate facts. A standing arrangement the two of them made about how they handle things from now on (who tells whom what and when, how they talk after a fight) is lasting: keep it under traits with subject both. It is not a one-off promise.
 A history fact begins with the date it happened as YYYY-MM-DD, worked out from the message's date (昨天 is the day before it); when only roughly known (上周, 上个月, last week) the date is followed by 前后 (around, alrededor de), as in "2026-11-01 前后"; something from long ago at an unknown time begins with 以前 (Before, Antes) instead. Then one short line in the language of the quote that says who did what, in A's own words: in a private chat or a brought chat 我 is A and B is called the way A calls B (他, 她, a name), so "2026-11-07 他打游戏一晚上不回我消息，吵了一架，后来他道歉了"; in the shared chat use their names. Never write the letters A or B inside any fact. When a new line tells how something in known history went on (they made up, the trip happened), give the updated line with replaces set to that fact's id instead of a new fact; subject is both unless it is only about one of them.
 Look only at messages with isNew true; the others are context. For each fact give messageId, copied exactly from the id of the very message the quote is in; quote, copied exactly from that message's text, unchanged and contiguous (the shortest part that states the fact), never paraphrased or translated; subject, whom it is about (A, B or both); category; fact, a short phrase without the person's name, in the language of the quote ("不吃香菜", "loves rainy-day films", "生日是 3 月 5 日", "吵架后需要先安静一会儿"); replaces, the id of the fact in known that this one updates or contradicts (they started eating cilantro), else "".
 Life events of someone A is getting to know or of their family (a sister's new baby, a parent in hospital, a new job) are that person's history. person: in A's private chat, when the fact is about someone A is dating or getting to know and A names them ("Lily 不吃辣", "阿杰最爱火锅"), subject is B and person is that name as A writes it, or as listed below when it is one of them; "" for an unnamed TA, for the partner A is paired with, for family and friends, and in any other chat. Never put a fact about one of them under another.
 A replacement arrangement contains only attributes confirmed by its new source quote. Do not inherit an old duration, location, quantity or condition from earlier messages, known facts or Pinky's suggestions unless the new source explicitly reconfirms it. Omitted attributes are unknown, even if only the date was explicitly changed; old details belong to dated history, not the replacement fact.
 Be selective: only clear, lasting things the speaker means. Most lines hold none; then return facts: [].`;
+}
+
+// One thing said is one fact (task 58). A self-corrected request to remember ("许朔的姐姐12月27号结婚，啊不对，是他表姐，不是
+// 亲姐姐，在南湖酒店办") states a single thing, however the extractor split it: its findings about one subject merge into one
+// fact quoted by the span that covers them. Separate things said without a correction ("不吃香菜，而且对花粉过敏") stay separate.
+const correction = /啊?不对|说错了|更正|应该是|我是说|\b(?:actually|I mean|I meant|no wait)\b|\b(?:mejor dicho|quiero decir)\b/iu;
+export function oneThingOneFact(findings) {
+  const groups = new Map();
+  for (const found of findings) {
+    if (!explicitRemember(found.line.text) || !correction.test(found.line.text) || found.replaces) continue;
+    const id = `${found.line.id}\u0000${found.subject}\u0000${found.person}`;
+    groups.set(id, [...(groups.get(id) || []), found]);
+  }
+  let result = findings;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const text = squash(group[0].line.text), at = (found) => text.indexOf(found.quote);
+    const ordered = [...group].sort((a, b) => at(a) - at(b));
+    const start = Math.min(...ordered.map(at)), end = Math.max(...ordered.map((found) => at(found) + found.quote.length));
+    const facts = [];
+    for (const { fact } of ordered) {
+      if (facts.some((kept) => key(kept).includes(key(fact)))) continue;
+      // A later fact repeating the head of an earlier one ("表姐 12 月 27 日结婚" / "表姐，不是亲姐姐") keeps only what it adds.
+      const head = facts.map((kept) => { let n = 0; while (n < kept.length && n < fact.length && kept[n] === fact[n]) n += 1; return n; }).reduce((a, b) => Math.max(a, b), 0);
+      facts.push(head >= 2 ? fact.slice(head).replace(/^[\s,，、:：]+/u, "") || fact : fact);
+    }
+    const merged = { ...ordered[0], quote: start >= 0 ? text.slice(start, end) : ordered[0].quote, fact: clean(facts.join("，"), 160) };
+    result = [...result.filter((found) => !group.includes(found)), merged];
+  }
+  return result;
 }
 
 /** Keeps only findings whose quote really is in a new line that counts. */
@@ -88,6 +136,7 @@ const freshLines = (messages, cursor, eligible) => {
 /** Writes verified facts in one scope (a member's private notes, or the couple's shared ones). Returns what changed. */
 async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, memberUserIds, subjectOf, findings, channel, sessionId = null }) {
   const scoped = (await tx.listRelationshipRecordsForUser("memories", userId)).filter((item) => live(item) && item.relationshipId === relationshipId && item.visibility === visibility && (visibility === "shared" || item.ownerUserId === ownerUserId));
+  const prior = [...scoped];
   const changed = [];
   for (const found of findings) {
     const subjectUserId = subjectOf(found.subject, found);
@@ -102,6 +151,10 @@ async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, 
       continue;
     }
     if (scoped.some((item) => (item.subjectUserId || null) === subjectUserId && key(item.text) === key(found.fact))) continue;
+    // One dedupe key for the explicit "remember" scan and the background scan (task 58): a line already kept about this
+    // subject, from this very message with an overlapping quote, is the same fact however it is worded the second time.
+    if (prior.some((item) => (item.subjectUserId || null) === subjectUserId && item.evidence?.messageId === found.line.id && item.evidence?.quote
+      && (key(item.evidence.quote).includes(key(found.quote)) || key(found.quote).includes(key(item.evidence.quote))))) continue;
     const speaker = visibility === "shared" ? found.line.actorUserId : ownerUserId;
     const record = createRelationshipRecord({
       relationshipId, userId: speaker, ownerUserId: speaker, visibility, aiAccessScope: visibility === "shared" ? "joint" : "private", status: "active", provenanceSource: "agent",
@@ -133,7 +186,7 @@ async function keepWithPeople(tx, options, people, { create = false, partnerName
 }
 
 /** Reads one member's new private lines and keeps what they reveal, privately for that member. */
-export async function scanPrivateProfile({ store, mediator, userId, sessionId }) {
+export async function scanPrivateProfile({ store, mediator, userId, sessionId, silent = false }) {
   if (!mediator?.structured) return [];
   const scope = await memberScope(store, userId);
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
@@ -154,15 +207,35 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
     const focus = session.personId ? people.find((person) => person.id === session.personId) || null : null;
     const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: focus ? focus.name : scope.b, privateChat: true }) + PEOPLE_NOTE(people), input: JSON.stringify(input), maxOutputTokens: 900 });
     findings = verifyFacts(result?.facts, fresh, () => true).map((found) => focus && (found.subject === "B" || found.subject === "both") && !found.person ? { ...found, subject: "B", person: focus.name } : found);
+    for (const line of fresh) {
+      const explicit = explicitSelfFacts(line, [...people.map(person => person.name), ...findings.filter(found => found.subject === 'B').map(found => found.person)]);
+      if (!explicit.length) continue;
+      // Complete coverage without collapsing independently extracted facts.
+      // Only a quote spanning multiple declarations needs splitting.
+      const same = (value, found) => value.line.id === line.id && value.subject === found.subject && (value.person === found.person || !value.person);
+      const matched = findings.filter(found => explicit.some(value => same(found, value)));
+      const combined = matched.filter(found => explicit.filter(value => key(found.quote).includes(key(value.fact))).length > 1);
+      findings = findings.filter(found => !combined.includes(found));
+      // Task 61: the same subject on the same line is one fact, whichever scan found it. An overlapping model finding wins (its
+      // wording is whole) and takes the person the user's own words name when it left that empty.
+      for (const found of explicit) {
+        const twin = findings.find(value => same(value, found) && (key(value.quote).includes(key(found.quote)) || key(found.quote).includes(key(value.quote))));
+        if (!twin) findings.push(found);
+        else if (!twin.person && found.person) twin.person = found.person;
+      }
+    }
+    findings = oneThingOneFact(findings);
   }
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
-    const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, people, { create: true, partnerName: scope.b });
+    const written = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, people, { create: true, partnerName: scope.b });
+    const changed = (await Promise.all(written.map(record => tx.getRelationshipRecordForUser("memories", record.id, userId))))
+      .filter(record => record && live(record) && visibleTo(record, userId, relationshipId));
     // No version bump: the member's next turn checks the session version and must never fail because of this.
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length && !wantsOneSentence(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
+      if (changed.length && !silent && !quietUnderContract(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { more, sessionId });
   });

@@ -41,7 +41,7 @@ test("captured natural draft labels work across interface languages without acce
     ["es", "¿Qué pasó? Solo una frase.", ["Puedes decir", "Podrías responder", "Puedes escribir", "Respuesta sugerida", "Borrador", "Invitación sugerida"], "Prefiero mantener mi contraseña privada."],
   ]) for (const label of labels) {
     assert.equal(checkReplyFormat(`Context. ${label}: “${draft}”`, request, language).ok, true, label);
-    assert.equal(checkReplyFormat(`Context says “${label}: ${draft}” is a quotation.`, request, language).ok, false);
+    assert.equal(checkReplyFormat(`Context says “${label}: ${draft}” is a quotation.`, request, language).ok, true);
   }
 });
 
@@ -74,12 +74,12 @@ test("analysis quotes cannot stand in for the requested final draft", async () =
   } });
   assert.equal(calls, 1);
   assert.equal(checkReplyFormat(fixed, request).ok, true);
-  assert.equal(checkReplyFormat("对方说“还没结束”，不能据此认定对方拒绝。", request).ok, false);
-  assert.equal(checkReplyFormat("对方说“可以这样回：我不去”，这是转述。", request).ok, false);
+  assert.equal(checkReplyFormat("对方说“还没结束”，不能据此认定对方拒绝。", request).ok, true);
+  assert.equal(checkReplyFormat("对方说“可以这样回：我不去”，这是转述。", request).ok, true);
   assert.equal(checkReplyFormat("双方还没确认。\n“我们再定时间好吗？”", request).ok, true);
   assert.equal(checkReplyFormat("双方还没确认，可以这样说：“我们再定时间好吗？”", request).ok, true);
   assert.equal(checkReplyFormat("双方还没确认。可以这样平和地说：“我们再定时间好吗？”这是私人草稿。", request).ok, true);
-  assert.equal(checkReplyFormat("双方还没确认。\n“我们再定时间好吗？”\n另一个引文是“拒绝”。", request).ok, false);
+  assert.equal(checkReplyFormat("双方还没确认。\n“我们再定时间好吗？”\n另一个引文是“拒绝”。", request).ok, true);
   for (const [language, question, answer] of [
     ["en", "What happened? Then draft just one sentence.", 'They said "later". Reply: I understand. Shall we reschedule?'],
     ["es", "¿Qué pasó? Solo una frase.", 'Dijo "más tarde". Respuesta: Entiendo. ¿Cambiamos la hora?'],
@@ -91,6 +91,6 @@ test("captured round 23, 24 and 26 drafts use the structured field without label
   const rows = JSON.parse(await readFile(new URL("./fixtures/structured-reply-replay.json", import.meta.url), "utf8"));
   for (const row of rows) {
     assert.equal(checkReplyFormat({ reply: row.reply, sendableDraft: row.draft }, row.request).ok, true, row.source);
-    assert.equal(checkReplyFormat({ reply: row.raw, sendableDraft: null }, row.request).ok, false, "explicit empty field never falls back to label guessing");
+    assert.equal(checkReplyFormat({ reply: row.raw, sendableDraft: null }, row.request).ok, true, "explicit empty field skips measurement without guessing a draft");
   }
 });

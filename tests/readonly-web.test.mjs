@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createReadonlyWeb, createWebTurn, publicAddress, webSourceText, WEB_LIMITS } from "../server/readonly-web.mjs";
+import { createReadonlyWeb, createWebTurn, publicAddress, webEvidence, webSourceText, WEB_LIMITS } from "../server/readonly-web.mjs";
 
-test("successful sources retain their own year and an independent-verification caveat", () => {
-  const pages = [{ url: "https://example.test/event", status: "ok", fetchedAt: "2026-11-11T01:00:00Z", fields: { date: "活动时间：2027-01-02 14:00" } }];
-  for (const language of ["zh", "en", "es"]) {
-    const text = webSourceText(pages, language);
-    assert.ok(text.includes("2027-01-02"));
-    assert.match(text, /未经独立核实|not been independently verified|no se ha verificado/);
-  }
+// Superseded by task 61: the reply credits a read page in one line; fetch time and HTTP statuses are message evidence.
+test("a read-only page is credited in one line, and its fetch details stay in the evidence", () => {
+  const pages = [{ url: "https://example.test/event", status: "ok", title: "桌游夜", fetchedAt: "2026-11-11T01:00:00Z", attempts: [503, 200] }, { url: "https://example.test/login", status: "login_required", fetchedAt: "2026-11-11T01:00:00Z", attempts: [401] }];
+  assert.equal(webSourceText(pages, "zh"), "来自「桌游夜」页面\n来自 https://example.test/login 页面");
+  assert.equal(webSourceText(pages, "en").split("\n")[0], "From the “桌游夜” page");
+  for (const language of ["zh", "en", "es"]) assert.doesNotMatch(webSourceText(pages, language), /HTTP|2026-11-11|抓取|checked|consulta/);
+  assert.deepEqual(webEvidence(pages), [{ url: "https://example.test/event", status: "ok", fetchedAt: "2026-11-11T01:00:00Z", attempts: [503, 200] }, { url: "https://example.test/login", status: "login_required", fetchedAt: "2026-11-11T01:00:00Z", attempts: [401] }]);
 });
 
 test("public reads use fresh cookie-free contexts and never execute forms or page scripts", async () => {
