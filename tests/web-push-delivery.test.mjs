@@ -155,6 +155,8 @@ test("the daily question and a celebration card start at a sensible local hour; 
   await service.updateNotify(a, { messages: true, timezone: "Asia/Shanghai" });
   await service.registerNativeDevice(a, { token: "fcm-token-alex-0001", platform: "android" });
   await connectBrowser(b, 6, "B");
+  // An English-speaking couple: a question in another language would not be posted (daily-question.mjs).
+  for (const id of [a, b]) await store.updateUserLanguage(id, "en");
   // Day 100 together is 2099-12-01 in Shanghai.
   await store.createRelationshipRecord("milestones", createRelationshipRecord({ relationshipId, userId: a, visibility: "shared", aiAccessScope: "joint", type: "relationship_started", title: "Us", date: "2099-08-24", recurringRule: "yearly" }));
   const calls = [];

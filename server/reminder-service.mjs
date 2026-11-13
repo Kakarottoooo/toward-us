@@ -104,7 +104,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     const device = await db.getRelationshipRecordForUser("pushSubscriptions", job.subscriptionId, job.ownerUserId);
     if (!active(device) || device.ownerUserId !== job.ownerUserId) return null;
     try { validatePushSubscription(device.subscription); } catch { return null; }
-    return { reminder, device, language: preference.language || "zh" };
+    // Same choice as phones: the member's interface language first (the stored preference defaults to zh).
+    return { reminder, device, language: await memberLanguage(db, job.ownerUserId) };
   };
 
   // The Agent's own voice in the shared "together" conversation, driven by the same run tick. Only genuinely joint things are

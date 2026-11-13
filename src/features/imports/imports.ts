@@ -1,4 +1,4 @@
-import type { Language } from "../../i18n";
+import { currentLanguage, inInterfaceLanguage, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 
 export type ImportPerson = { name: string; count: number; role: "me" | "partner" | "other" };
@@ -23,7 +23,7 @@ export async function uploadChatFile(file: Blob, { name, language, session }: { 
   const query = new URLSearchParams({ name, language, ...(session ? { session } : {}) });
   const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/octet-stream" }, body: file });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Upload failed (${response.status})`);
+  if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || `Upload failed (${response.status})`), currentLanguage()));
   return payload.import as ChatImport;
 }
 
@@ -31,7 +31,7 @@ export async function importPastedChat(text: string, { language, session }: { la
   const query = new URLSearchParams({ pasted: "1", language, ...(session ? { session } : {}) });
   const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/plain; charset=utf-8" }, body: text });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Import failed (${response.status})`);
+  if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || `Import failed (${response.status})`), currentLanguage()));
   return payload.import as ChatImport;
 }
 

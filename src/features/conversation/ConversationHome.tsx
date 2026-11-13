@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
 import { browserSpeechAvailable, useBrowserSpeech } from "../../useBrowserSpeech";
@@ -421,7 +421,7 @@ ${text}` : text, target);
         const blob = await shrink(file);
         const response = await fetch(`/api/photos?scope=${scope}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "image/jpeg" }, body: blob });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || t("照片没传上去。", "The photo did not upload.", "La foto no se subió."));
+        if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || t("照片没传上去。", "The photo did not upload.", "La foto no se subió.")), language));
         setAttachments((items) => items.map((item) => item.key === key ? { ...item, id: payload.photo.id } : item));
       } catch (error) { setAttachments((items) => items.map((item) => item.key === key ? { ...item, failed: true } : item)); setNotice((error as Error).message); }
     }
@@ -603,7 +603,7 @@ ${text}` : text, target);
     if (message.kind === "letter_sealed") {
       const openOn = String((message.refs || []).find((ref) => ref.type === "letter")?.openOn || "");
       const days = openOn ? Math.max(0, Math.round((Date.parse(`${openOn}T12:00:00`) - Date.now()) / 86_400_000)) : 0;
-      return <article key={message.id} className="conversation-card letter-sealed" data-testid="letter-sealed"><EnvelopeSimple size={30} weight="fill" /><div><strong>{message.actorUserId === user.id ? t(`你给 ${partnerName} 写了一封信`, `You wrote ${partnerName} a letter`, `Le escribiste una carta a ${partnerName}`) : t(`${partnerName} 给你写了一封信`, `${partnerName} wrote you a letter`, `${partnerName} te escribió una carta`)}</strong><small>{openOn && t(`${longDay(openOn)} 打开 · 还有 ${days} 天`, `Opens ${longDay(openOn)} · ${days} days to go`, `Se abre el ${longDay(openOn)} · faltan ${days} días`)}</small></div></article>;
+      return <article key={message.id} className="conversation-card letter-sealed" data-testid="letter-sealed"><EnvelopeSimple size={30} weight="fill" /><div><strong>{message.actorUserId === user.id ? t(`你给 ${partnerName} 写了一封信`, `You wrote ${partnerName} a letter`, `Le escribiste una carta a ${partnerName}`) : t(`${partnerName} 给你写了一封信`, `${partnerName} wrote you a letter`, `${partnerName} te escribió una carta`)}</strong><small>{openOn && t(`${longDay(openOn)} 打开 · 还有 ${days} 天`, `Opens ${longDay(openOn)} · ${counted(days, "day", "days")} to go`, `Se abre el ${longDay(openOn)} · faltan ${counted(days, "día", "días")}`)}</small></div></article>;
     }
     if (message.kind === "letter") return <article key={message.id} className="conversation-card letter-card" data-testid="letter"><header><EnvelopeSimple size={18} weight="fill" />{message.actorUserId === user.id ? t(`你写给 ${partnerName} 的信`, `Your letter to ${partnerName}`, `Tu carta para ${partnerName}`) : t(`${partnerName} 写给你的信`, `A letter from ${partnerName}`, `Una carta de ${partnerName}`)}</header><p className="letter-text">{message.text}</p></article>;
     if (message.kind === "nudge") return <p key={message.id} className="conversation-nudge" data-testid="nudge"><Heart size={15} weight="fill" />{message.actorUserId === user.id ? t(`你想 ${partnerName} 了`, `You're thinking of ${partnerName}`, `Estás pensando en ${partnerName}`) : t(`${partnerName} 想你了`, `${partnerName} is thinking of you`, `${partnerName} está pensando en ti`)}<time>{new Date(message.createdAt).toLocaleTimeString(languageTag(language), { hour: "numeric", minute: "2-digit" })}</time></p>;
@@ -826,7 +826,7 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
   return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
     <button className="conversation-drawer-scrim" aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} onClick={onClose} />
     <nav className="conversation-drawer" aria-label={t("菜单", "Menu", "Menú")} onPointerDown={(event) => { start.current = event.clientX; }} onPointerUp={(event) => { if (start.current !== null && event.clientX - start.current < -60) onClose(); start.current = null; }}>
-      <header><div><strong>PINKY</strong><span>{user.name}</span>{together && <em className="drawer-together"><Heart size={12} weight="fill" />{t(`在一起 ${together.days} 天`, `Together ${together.days} days`, `Juntos ${together.days} días`)}</em>}</div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
+      <header><div><strong>PINKY</strong><span>{user.name}</span>{together && <em className="drawer-together"><Heart size={12} weight="fill" />{t(`在一起 ${together.days} 天`, `Together ${counted(together.days, "day", "days")}`, `Juntos ${counted(together.days, "día", "días")}`)}</em>}</div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
       <div className="drawer-group">{fixed.map(row)}</div>
       <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{(paired ? ours : mine).map(row)}{fixedSpaces.map(row)}</div>
       {paired && !!mine.length && <div className="drawer-group"><h2>{t("只有我的", "Just mine", "Solo mío")}</h2>{mine.map(row)}</div>}

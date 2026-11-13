@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Heart } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { togetherStats } from "./together";
 import type { CoupleStreak } from "../relationship/types";
@@ -33,10 +33,10 @@ export function TogetherCard({ language, since, onSave, streak = null, partnerNa
   return <section className="together-card" data-testid="together-card">
     {stats && !editing ? <>
       <small><Heart size={14} weight="fill" />{t("在一起", "Together", "Juntos")}</small>
-      <strong>{t(`第 ${stats.days} 天`, `${stats.days} days`, `${stats.days} días`)}</strong>
+      <strong>{t(`第 ${stats.days} 天`, `${counted(stats.days, "day", "days")}`, `${counted(stats.days, "día", "días")}`)}</strong>
       {span && <span className="together-span">{span}</span>}
       {stats.today ? <p className="together-today">{t(`今天是你们的${celebrate(stats.today)}！`, `Today is your ${celebrate(stats.today)}!`, `¡Hoy es su ${celebrate(stats.today)}!`)}</p>
-        : stats.next && <p>{t(`距离${celebrate(stats.next)}还有 ${stats.next.inDays} 天 · ${day(stats.next.date)}`, `${stats.next.inDays} days to ${celebrate(stats.next)} · ${day(stats.next.date)}`, `Faltan ${stats.next.inDays} días para ${celebrate(stats.next)} · ${day(stats.next.date)}`)}</p>}
+        : stats.next && <p>{t(`距离${celebrate(stats.next)}还有 ${stats.next.inDays} 天 · ${day(stats.next.date)}`, `${counted(stats.next.inDays, "day", "days")} to ${celebrate(stats.next)} · ${day(stats.next.date)}`, `Faltan ${counted(stats.next.inDays, "día", "días")} para ${celebrate(stats.next)} · ${day(stats.next.date)}`)}</p>}
       <button type="button" className="together-edit" onClick={() => setEditing(true)}>{t(`从 ${day(since!)} 开始 · 修改`, `Since ${day(since!)} · Change`, `Desde ${day(since!)} · Cambiar`)}</button>
     </> : <>
       <small><Heart size={14} weight="fill" />{t("在一起多少天", "Days together", "Días juntos")}</small>

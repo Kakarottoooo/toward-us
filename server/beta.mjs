@@ -22,14 +22,14 @@ const OUTCOMES = new Set(["agreement_approved", "plan_scheduled", "partner_messa
 
 export function createBetaRouter({ store, grant, env = process.env, now = () => new Date() }) {
   const router = express.Router();
-  const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "请先登录。" });
+  const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") });
   const isFounder = async (userId) => { const list = founders(env); if (!list.size) return false; const user = await store.getUserById(userId); return Boolean(user?.email && list.has(user.email.toLowerCase())); };
   const founderOnly = async (req, res, next) => (await isFounder(req.auth.user.id)) ? next() : res.status(404).json({ error: "Not found." });
   const attempts = new Map();
 
   // A couple redeems a code: one code, one couple (the partner of whoever redeemed it may "redeem" it again harmlessly).
   router.post("/membership/redeem", auth, async (req, res) => {
-    const userId = req.auth.user.id, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh", code = normal(req.body?.code);
+    const userId = req.auth.user.id, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : ["en", "es"].includes(req.auth.user.language) ? req.auth.user.language : "zh", code = normal(req.body?.code);
     const recent = (attempts.get(userId) || []).filter((at) => now().getTime() - at < 3_600_000);
     if (recent.length >= 10) return res.status(429).json({ error: say(language, "试太多次了，过一会儿再试。", "Too many tries; try again later.", "Demasiados intentos; prueba más tarde."), code: "too_many" });
     attempts.set(userId, [...recent, now().getTime()]);

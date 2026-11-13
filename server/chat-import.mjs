@@ -37,6 +37,7 @@ const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.chat.json`)
 export const importFile = fileFor;
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const activePair = (context) => context?.relationship.status === "active" && context.members.length === 2;
 const day = (at) => at ? at.slice(0, 10) : null;
@@ -248,8 +249,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // Every way in (file, paste, screenshots, Mac) shows up in the private conversation as a card that carries the next step.
     const count = saved.messageCount, period = saved.firstAt && saved.lastAt ? ` (${day(saved.firstAt)} – ${day(saved.lastAt)})` : "";
     const text = saved.status === "needs_choice" ? say(language, `这个文件里有 ${conversations.length} 段对话，选一下哪一段是你和 TA 的。`, `This file has ${conversations.length} conversations. Pick the one with your partner.`, `Este archivo tiene ${conversations.length} conversaciones. Elige la de tu pareja.`)
-      : saved.status === "needs_people" ? say(language, `收到了 ${count} 条消息${period}。告诉我哪个名字是你、哪个是 TA，我就开始读。`, `Got ${count} messages${period}. Tell me which name is you and which is your partner, and I'll start reading.`, `Recibí ${count} mensajes${period}. Dime qué nombre eres tú y cuál tu pareja, y empiezo a leer.`)
-      : say(language, `收到了 ${count} 条消息${period}，我开始读了。大概要几分钟，读完会在这里告诉你。原文只有你能看到。`, `Got ${count} messages${period}. I'm reading them now; it takes a few minutes and I'll tell you here when I'm done. Only you can see them.`, `Recibí ${count} mensajes${period}. Los estoy leyendo; tardaré unos minutos y te avisaré aquí. Solo tú puedes verlos.`);
+      : saved.status === "needs_people" ? say(language, `收到了 ${count} 条消息${period}。告诉我哪个名字是你、哪个是 TA，我就开始读。`, `Got ${plural(count, "message", "messages")}${period}. Tell me which name is you and which is your partner, and I'll start reading.`, `Recibí ${plural(count, "mensaje", "mensajes")}${period}. Dime qué nombre eres tú y cuál tu pareja, y empiezo a leer.`)
+      : say(language, `收到了 ${count} 条消息${period}，我开始读了。大概要几分钟，读完会在这里告诉你。原文只有你能看到。`, `Got ${plural(count, "message", "messages")}${period}. I'm reading them now; it takes a few minutes and I'll tell you here when I'm done. Only you can see them.`, `Recibí ${plural(count, "mensaje", "mensajes")}${period}. Los estoy leyendo; tardaré unos minutos y te avisaré aquí. Solo tú puedes verlos.`);
     // Screenshots sent with a question get the answer itself in seconds (it carries the same card), so a "this takes a few
     // minutes" receipt beside it only contradicts it (founder 11-08, reply coach). A step the member must take still posts.
     const answering = record.screenshotMessageId && !["needs_choice", "needs_people"].includes(saved.status);
@@ -440,7 +441,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     return { status: transcript ? "ready" : record.status, names, transcript, truncated: full.length > 40_000 };
   };
 
-  const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : "zh";
+  const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : ["en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh";
   // Behind a TLS proxy (Tailscale, Render) the app sees plain http; only a local address keeps it.
   const originOf = (req) => { const host = req.get("x-forwarded-host") || req.get("host"); return `${req.get("x-forwarded-proto") || (/^(localhost|127.|[::1])/.test(host) ? req.protocol : "https")}://${host}`; };
   const hashToken = (token) => createHash("sha256").update(String(token)).digest("hex");
@@ -535,7 +536,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!activePair(context)) throw fail(409, say(language, "先邀请另一半加入，再一起看。", "Invite your partner first.", "Invita primero a tu pareja."));
     const period = `${day(record.firstAt) || "?"} – ${day(record.lastAt) || "?"}`;
     const result = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
-      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: say(language, `我想和你一起看我们聊天记录的分析（${period}，${record.messageCount} 条）。你同意后，分析会放进“我们俩”，我们都能看、都能问 Pinky。`, `I'd like us to look at the analysis of our chat history together (${period}, ${record.messageCount} messages). If you agree, it goes into Us and we can both read it and ask Pinky about it.`, `Me gustaría que viéramos juntos el análisis de nuestro historial de chat (${period}, ${record.messageCount} mensajes). Si aceptas, pasa a Nosotros y los dos podremos leerlo y preguntarle a Pinky.`), handle: `chat_import_request:${record.id}:${record.version}`, refs: [{ type: "chat_import_request", id: record.id, ownerUserId: userId }] });
+      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: say(language, `我想和你一起看我们聊天记录的分析（${period}，${record.messageCount} 条）。你同意后，分析会放进“我们俩”，我们都能看、都能问 Pinky。`, `I'd like us to look at the analysis of our chat history together (${period}, ${plural(record.messageCount, "message", "messages")}). If you agree, it goes into Us and we can both read it and ask Pinky about it.`, `Me gustaría que viéramos juntos el análisis de nuestro historial de chat (${period}, ${plural(record.messageCount, "mensaje", "mensajes")}). Si aceptas, pasa a Nosotros y los dos podremos leerlo y preguntarle a Pinky.`), handle: `chat_import_request:${record.id}:${record.version}`, refs: [{ type: "chat_import_request", id: record.id, ownerUserId: userId }] });
       await tx.updateRelationshipRecordForUser(COLLECTION, record.id, userId, (draft) => { draft.shareRequest = { requestedAt: new Date().toISOString(), relationshipId: context.relationship.id, messageId: sent.message.id }; draft.version += 1; });
       return sent;
     });
@@ -557,7 +558,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       await tx.createRelationshipRecord(COLLECTION, copy);
       await tx.updateRelationshipRecordForUser(COLLECTION, source.id, owner.userId, (draft) => { draft.sharedCopyId = copy.id; draft.version += 1; });
       for (const memberId of [owner.userId, userId]) await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: context.relationship.id, userId: memberId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: copy.id, objectType: "chat_import", eventType: memberId === userId ? "chat_import.share_approved" : "chat_import.share_requested", sourceVersion: source.version }));
-      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId, source: "app", text: say(language, `${req.auth.user.name} 同意了。聊天记录的分析现在你们俩都能看，也可以直接问我。`, `${req.auth.user.name} agreed. You can both read the chat history analysis now, and ask me about it here.`, `${req.auth.user.name} aceptó. Ahora los dos pueden leer el análisis del historial y preguntarme aquí.`), refs: [{ type: "chat_import", id: copy.id, requestFor: source.id }] });
+      const i18n = togetherI18n((lang) => say(lang, `${req.auth.user.name} 同意了。聊天记录的分析现在你们俩都能看，也可以直接问我。`, `${req.auth.user.name} agreed. You can both read the chat history analysis now, and ask me about it here.`, `${req.auth.user.name} aceptó. Ahora los dos pueden leer el análisis del historial y preguntarme aquí.`));
+      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId, source: "app", text: i18n[language], i18n, refs: [{ type: "chat_import", id: copy.id, requestFor: source.id }] });
       return { copy, conversation: sent.conversation };
     });
     if (result.conversation) router.emitTogether?.(result.conversation, userId);
@@ -652,7 +654,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       const result = await store.transaction(`relationship:${context.relationship.id}`, (tx) => appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId: user.id, source: "app", handle: `imessage-sync:${record.id}`, i18n: togetherI18n((lang) => say(lang, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`)), text: say(language, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`) })).catch((error) => { console.error("Could not tell the partner about iMessage sync:", error?.message || error); return null; });
       if (result && !result.duplicate) router.emitTogether?.(result.conversation, null);
     }
-    res.type("text/plain").send(`${say(language, `已同步 ${fresh.length} 条新消息，一共 ${messages.length} 条。只有你能看到。`, `Synced ${fresh.length} new messages, ${messages.length} in all. Only you can see them.`, `Se sincronizaron ${fresh.length} mensajes nuevos, ${messages.length} en total. Solo tú los ves.`)}\n`);
+    res.type("text/plain").send(`${say(language, `已同步 ${fresh.length} 条新消息，一共 ${messages.length} 条。只有你能看到。`, `Synced ${plural(fresh.length, "new message", "new messages")}, ${messages.length} in all. Only you can see them.`, `${fresh.length === 1 ? "Se sincronizó 1 mensaje nuevo" : `Se sincronizaron ${fresh.length} mensajes nuevos`}, ${messages.length} en total. Solo tú los ves.`)}\n`);
   });
   router.post("/imports/upload/:token", raw, async (req, res) => {
     const entry = macTokens.get(req.params.token);
@@ -663,7 +665,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read this conversation.\n"); }
     macTokens.delete(req.params.token);
     const record = await createImport(user, parsed, { sessionId: entry.sessionId, language: entry.language });
-    res.type("text/plain").send(`${say(entry.language, `已导入 ${parsed.conversations[0]?.messages.length || 0} 条消息。回到 Pinky 看分析进度。`, `Imported ${parsed.conversations[0]?.messages.length || 0} messages. Go back to Pinky to follow the analysis.`, `Se importaron ${parsed.conversations[0]?.messages.length || 0} mensajes. Vuelve a Pinky para ver el análisis.`)}\n${record.id}\n`);
+    res.type("text/plain").send(`${say(entry.language, `已导入 ${parsed.conversations[0]?.messages.length || 0} 条消息。回到 Pinky 看分析进度。`, `Imported ${plural(parsed.conversations[0]?.messages.length || 0, "message", "messages")}. Go back to Pinky to follow the analysis.`, `${(parsed.conversations[0]?.messages.length || 0) === 1 ? "Se importó 1 mensaje" : `Se importaron ${parsed.conversations[0]?.messages.length || 0} mensajes`}. Vuelve a Pinky para ver el análisis.`)}\n${record.id}\n`);
   });
 
   router.use((error, req, res, next) => error.statusCode ? res.status(error.statusCode).json({ error: error.message }) : error.type === "entity.too.large" ? res.status(413).json({ error: say(languageOf(req), "文件太大了。导出时选“不含媒体”，或只导出文字。", "This file is too large. Export without media, or text only.", "El archivo es demasiado grande. Exporta sin archivos multimedia.") }) : next(error));

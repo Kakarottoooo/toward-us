@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CheckCircle, MagnifyingGlass, UserCircle } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { counted, localized, type Language } from "../../i18n";
 import { addChosenPhotos, askPhotoAccess, findTogether, lastFound, pickFace, saveFaces, savedFaces, thumbnail, type Face } from "./photoAlbum";
 
 type Candidate = { id: string; takenAt: string; day: string; lat?: number; lon?: number; score: number };
@@ -29,7 +29,7 @@ export function FindUs({ language, partnerName, onClose }: { language: Language;
     try {
       const result = await findTogether({ me: faces.me, partner: faces.partner }, (done, total) => setProgress({ done, total }), since);
       setFound(result.assets); setChosen(new Set()); setStep("choose");
-      if (!result.assets.length) setNote(t(`看了 ${result.scanned} 张照片，没找到两个人的合照。换两张更清楚的正脸照片再试试。`, `Looked at ${result.scanned} photos and found none of the two of you. Try clearer photos of your faces.`, `Revisé ${result.scanned} fotos y no encontré ninguna de ustedes dos. Prueba con fotos más claras.`));
+      if (!result.assets.length) setNote(t(`看了 ${result.scanned} 张照片，没找到两个人的合照。换两张更清楚的正脸照片再试试。`, `Looked at ${counted(result.scanned, "photo", "photos")} and found none of the two of you. Try clearer photos of your faces.`, `Revisé ${counted(result.scanned, "foto", "fotos")} y no encontré ninguna de ustedes dos. Prueba con fotos más claras.`));
     } catch { setStep("faces"); setNote(t("这次没找完，再试一次。", "That didn't finish; try again.", "No terminó; inténtalo de nuevo.")); }
   };
   useEffect(() => {
