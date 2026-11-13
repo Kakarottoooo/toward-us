@@ -205,3 +205,9 @@ for (const row of allLosses) test(`final acceptance replays losing answer ${row.
   else assert.equal(checkReplyFormat(settled, row.question).ok, true, settled);
   assert.ok(String(settled).trim(), "never empty");
 });
+
+test("model prose restating a remembered-fact receipt is left to the receipt (pre-freeze probe, tool-remember-preference)", () => {
+  const receipt = rememberReceipt([{ who: "阿杰", text: "不吃香菜" }, { who: "阿杰", text: "对花粉过敏" }]);
+  assert.equal(finishReply("阿杰不吃香菜，对花粉过敏。", { request: "帮我记住：阿杰不吃香菜，而且对花粉过敏。", language: "zh", formatChecked: true, receipts: [receipt] }), receipt);
+  assert.equal(finishReply("他下周三生日，可以提前准备礼物。", { request: "帮我记住：阿杰不吃香菜。", language: "zh", formatChecked: true, receipts: [rememberReceipt([{ who: "阿杰", text: "不吃香菜" }])] }), "他下周三生日，可以提前准备礼物。\n好，记住了：阿杰不吃香菜。");
+});

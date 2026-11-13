@@ -358,13 +358,16 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   // A receipt that already states the saved fact covers an audit quote of it, even when the quote names its subject
   // ("阿杰不吃香菜" beside "已记住：不吃香菜；对花粉过敏。"): most of the quote's character pairs are in one receipt.
   const coveredByReceipt = part => receipts.some(receipt => receiptContainment(part, receipt) >= 0.6);
-  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)).filter(part => !coveredByReminder(part) && !coveredByReceipt(part)), ...parts]
+  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)).filter(part => !coveredByReminder(part) && !coveredByReceipt(part)), ...parts.filter(part => !coveredByReceipt(part))]
     .filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && (reminderWritten && confirmsReminder(part) || promisesFutureUse(part))) && !deferred(part) && !transcriptEcho(part));
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);
   // Receipts are server-authored after successful writes, never planner-provided flags.
   const kept = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part) && !deferred(part) && !transcriptEcho(part)
-    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part) || promisesFutureUse(part))));
+    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part) || promisesFutureUse(part)))
+    // One action, one sentence (task 58): model prose restating what a receipt already confirms ("阿杰不吃香菜，对花粉过敏。"
+    // above "好，记住了：阿杰不吃香菜；对花粉过敏。") is left to the receipt.
+    && !coveredByReceipt(part));
   // A supplement is a later step too: one that would break the user's format contract is not added (task 58).
   const joined = (values) => values.join("").trim();
   for (const part of required) if (![...kept, ...receipts].some(value => fragmentKey(value).includes(fragmentKey(part)))
