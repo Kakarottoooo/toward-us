@@ -1,7 +1,7 @@
 // A connected iPhone album turns into the couple's memories (founder 11-05). Only inside the iPhone App: the native
 // PinkyPhotos plugin reads the album the member picked; the server decides which day-and-place memories are new and asks
 // for a few photos of each. Nothing here may throw into React.
-import type { Language } from "../../i18n";
+import { currentLanguage, inInterfaceLanguage, type Language } from "../../i18n";
 
 type Status = "authorized" | "limited" | "denied" | "unknown";
 export type PhotoAlbum = { id: string; title: string; count: number; shared: boolean };
@@ -43,14 +43,14 @@ export async function listAlbums(): Promise<PhotoAlbum[]> {
 const json = async <T,>(path: string, body: unknown) => {
   const response = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || String(response.status));
+  if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || response.status), currentLanguage()));
   return payload as T;
 };
 const upload = async (base64: string) => {
   const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
   const response = await fetch("/api/photos?scope=shared", { method: "POST", credentials: "same-origin", headers: { "content-type": "image/jpeg" }, body: bytes });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || String(response.status));
+  if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || response.status), currentLanguage()));
   return payload.photo.id as string;
 };
 

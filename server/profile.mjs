@@ -370,7 +370,7 @@ const shareDigest = (record) => createHash("sha256").update(JSON.stringify([reco
 export function createProfileRouter({ store, emit = () => {} }) {
   const router = express.Router();
   const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
-  const language = (req) => ["en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : "zh";
+  const language = (req) => ["en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : !(req.body?.language || req.query?.language) && ["en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh";
   router.use("/profile", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
   const scope = async (db, userId) => { const context = await db.getRelationshipContext(userId); return activePair(context) ? context : null; };
   const find = async (db, req) => {

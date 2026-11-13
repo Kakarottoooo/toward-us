@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, GlobeHemisphereWest, LockKey, Plus, Trash, UsersThree } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
 import { IdeasSection } from "./IdeasSection";
@@ -104,7 +104,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   };
 
   const mapLabels = { globe: t("地球", "Globe", "Globo"), flat: t("平面", "Flat", "Plano"), loading: t("正在打开地图…", "Opening the map…", "Abriendo el mapa…"), failed: t("地图没加载出来，稍后再试。", "The map didn't load. Try again later.", "El mapa no cargó. Inténtalo más tarde.") };
-  const count = (n: number) => t(`${n} 段`, `${n} memories`, `${n} recuerdos`);
+  const count = (n: number) => t(`${n} 段`, `${counted(n, "memory", "memories")}`, `${counted(n, "recuerdo", "recuerdos")}`);
   const openPlace = (place: Place) => go({ title: place.title, detail: count(place.moments.length), moments: place.moments });
   const openMoment = (moment: Moment) => go({ title: moment.title || day(moment.date, true), detail: day(moment.date, true), moments: [moment] });
   const monthTitle = (key: string) => new Date(`${key}-15T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", timeZone: "UTC" });
@@ -135,7 +135,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </Suspense> : <div className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></div>}
     <div className="moments-map-top">
       <button type="button" className="moments-map-back" onClick={() => setMapOpen(false)} aria-label={t("返回回忆", "Back to memories", "Volver a recuerdos")}><ArrowLeft size={20} weight="bold" /></button>
-      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`一起去过 ${places.length} 个地方`, `${places.length} places together`, `${places.length} lugares juntos`)}</small></div>
+      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`一起去过 ${places.length} 个地方`, `${counted(places.length, "place", "places")} together`, `${counted(places.length, "lugar", "lugares")} juntos`)}</small></div>
     </div>
   </div>;
 

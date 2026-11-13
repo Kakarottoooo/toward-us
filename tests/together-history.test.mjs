@@ -85,6 +85,21 @@ test("the daily question never repeats one the conversation has moved past", asy
   assert.deepEqual(material[0].previousQuestions, [first], "the model is told what was asked before");
 });
 
+// App Store screenshots (11-12): a Spanish couple's question came in Chinese. A model answer in the wrong script is never
+// posted; the fixed question stands in and carries all three languages, so each partner reads it in their own.
+test("the daily question and Pinky's line after it are always in the couple's language", async (t) => {
+  const f = await fixture(t);
+  const chinese = { structured: async ({ name }) => name === "daily_question" ? { question: "你们最近一次一起大笑是因为什么？" } : { reply: "你们俩都想去海边，真巧。" } };
+  assert.equal(await askDailyQuestion({ store: f.store, mediator: chinese, relationshipId: f.relationshipId, userId: f.a, language: "es", today: "2026-11-05" }), true);
+  const question = (await f.conversation()).messages.findLast((item) => item.kind === "daily_question");
+  assert.ok(!/[㐀-鿿]/.test(question.text), question.text);
+  assert.ok(question.i18n?.es && question.i18n?.en && question.i18n?.zh, "the fixed question carries every language");
+  assert.equal(question.text, question.i18n.es);
+  for (const userId of [f.a, f.b]) assert.equal((await f.request(`/together/daily/${question.id}/answer`, "POST", { text: "La playa", language: "es" }, userId)).status, 200);
+  await new Promise((done) => setTimeout(done, 50));
+  assert.ok(!(await f.conversation()).messages.some((item) => item.handle === `daily-reaction:${question.id}`), "a Chinese reaction is not posted for a Spanish couple");
+});
+
 test("shared recall and HTTP jump use the same membership boundary, including archived messages and unrevealed answers", async (t) => {
   const f = await fixture(t);
   const question = await f.say(f.a, "Pinky，蓝色风筝的约定是什么？");

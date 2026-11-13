@@ -351,7 +351,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           }).slice(0, 20);
           cards.push(...results.map(({ kind, record }) => card(kind, record, session.language)));
           searched.push(results.length);
-          replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, `Found ${results.length} records you can view.`, `Se encontraron ${results.length} registros que puedes ver.`)); continue;
+          replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, results.length === 1 ? "Found 1 record you can view." : `Found ${results.length} records you can view.`, results.length === 1 ? "Se encontró 1 registro que puedes ver." : `Se encontraron ${results.length} registros que puedes ver.`)); continue;
         }
         // Just me is where everything can start (founder 11-06): a plan or date for the two of them prepares a card, and only the
         // member's confirmation puts it on their shared calendar (space-confirm), like a shared memory.

@@ -110,3 +110,20 @@ test("each suggestion says in a few words why it was suggested", async (t) => {
   assert.deepEqual(next.body.suggestions, ["Plan our anniversary", "Note today's mood", "Gift ideas"]);
   assert.deepEqual(next.body.reasons, ["Anniversary in 5 days", "Just for you", "Her birthday is close"]);
 });
+
+// App Store screenshots (11-12): English suggestions came with Chinese reasons under them. Whatever the model writes, an
+// English or Spanish screen never shows Chinese: a reason in the wrong script is dropped, a suggestion in it is not used.
+test("suggestions and their reasons never come in another script than the interface", async (t) => {
+  const f = await fixture(t, { structured: async () => ({ suggestions: [{ text: "Plan our anniversary", why: "你们刚聊到周六的饭局" }, { text: "Note today's mood", why: "Just for you" }, { text: "Gift ideas", why: "生日快到了" }] }) });
+  await f.request("/suggestions?channel=me&language=en");
+  await new Promise((done) => setTimeout(done, 50));
+  const next = await f.request("/suggestions?channel=me&language=en");
+  assert.deepEqual(next.body.suggestions, ["Plan our anniversary", "Note today's mood", "Gift ideas"]);
+  assert.deepEqual(next.body.reasons, ["", "Just for you", ""]);
+  const g = await fixture(t, { structured: async () => ({ suggestions: [{ text: "帮我想个约会", why: "随便聊聊" }, { text: "Anota cómo me siento hoy", why: "Solo una idea" }, { text: "Ideas de regalo", why: "Cumpleaños pronto" }] }) });
+  const fixed = await g.request("/suggestions?channel=me&language=es");
+  await new Promise((done) => setTimeout(done, 50));
+  const after = await g.request("/suggestions?channel=me&language=es");
+  assert.deepEqual(after.body, fixed.body, "a set with a Chinese suggestion is not kept; the fixed Spanish set stays");
+  assert.ok(!/[㐀-鿿]/.test(JSON.stringify(after.body)));
+});

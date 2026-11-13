@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChatCircleDots, Trash } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet } from "../../mobile";
 import { relationshipApi } from "../relationship/api";
 import type { CoupleStreak, GraphRecord } from "../relationship/types";
@@ -45,7 +45,7 @@ export function UpcomingPage({ clear = false, language, userId = "", streak = nu
     {/* Save time, not kill time (founder 11-07): when nothing waits on this member, say so plainly, so they can close the app. */}
     {clear && <p className="upcoming-clear" role="status" data-testid="nothing-needs-you">{t("✓ 现在没有需要你做的事", "✓ Nothing needs you right now", "✓ Ahora no hay nada pendiente para ti")}</p>}
     {top}
-    {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${meetDays} days to go`, `Faltan ${meetDays} días`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
+    {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${counted(meetDays, "day", "days")} to go`, `Faltan ${counted(meetDays, "día", "días")}`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
     {cycle.view && <CycleCard language={language} view={cycle.view} onChanged={cycle.reload} showEmpty={new URLSearchParams(location.search).get("focus") === "cycle"} />}
     {onSince && <TogetherCard language={language} since={since} onSave={onSince} streak={streak} partnerName={partnerName} />}
     <UpcomingYear language={language} entries={entries} onAsk={onAsk} counted={meetup?.id} />

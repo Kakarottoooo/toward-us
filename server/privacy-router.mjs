@@ -9,7 +9,8 @@ import { createEmailSender } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
-const local = (req, zh, en, es) => (req.body?.language || req.query.language || "zh") === "zh" ? zh : (req.body?.language || req.query.language) === "es" ? es : en;
+// The request's language, else the signed-in member's saved interface language, else zh.
+const local = (req, zh, en, es) => { const language = req.body?.language || req.query.language || req.auth?.user?.language || "zh"; return language === "zh" ? zh : language === "es" ? es : en; };
 const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "aiUsage"]);
 
 // Consent to third-party AI (App Review 5.1.2(i), founder 11-12 App Store prep): before anything this person writes, says

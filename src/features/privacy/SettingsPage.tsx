@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Brain, CaretRight, Crown, Check, ClockCounterClockwise, DownloadSimple, Eye, FileText, Flag, Heart, Key, Lifebuoy, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
 import { PageHeader, readUsHidden, usHiddenKey } from "../conversation/ConversationHome";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
@@ -72,7 +72,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
   const open = (next: Page) => { keyboard.hide(); setNotice(""); setPage(next); };
   const prepare = (action: PendingAction) => { keyboard.hide(); setPending(action); setPassword(""); setConfirmed(false); setNotice(""); };
   const close = () => { keyboard.hide(); setPending(null); setPassword(""); setConfirmed(false); };
-  const period = (value: number | null) => value === null ? t("由我手动删除", "Until I delete them", "Hasta que los borre") : t(`${value} 天没更新就删除`, `After ${value} days without changes`, `Tras ${value} días sin cambios`);
+  const period = (value: number | null) => value === null ? t("由我手动删除", "Until I delete them", "Hasta que los borre") : t(`${value} 天没更新就删除`, `After ${counted(value, "day", "days")} without changes`, `Tras ${counted(value, "día", "días")} sin cambios`);
   const actionTitle = (action: PendingAction) => ({ retention: t("更改保留期限", "Change how long private content stays", "Cambiar cuánto se conserva"), recovery: t("生成新恢复码", "Generate a new recovery code", "Generar un nuevo código"), export: t("下载我的数据", "Download my data", "Descargar mis datos"), "delete-private": t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado"), leave: t("退出当前关系", "Leave this relationship", "Salir de esta relación"), account: t("删除账号", "Delete account", "Borrar la cuenta"), ai: t("撤回第三方 AI 同意", "Withdraw third-party AI consent", "Retirar el consentimiento de IA"), withdraw: t("停止共同 AI 使用这段摘要", "Stop joint AI use of this summary", "Detener el uso de este resumen por la IA compartida") })[action.kind];
   const actionDescription = (action: PendingAction) => {
     if (action.kind === "retention") return t(`新规则：${period(action.days ?? null)}。只影响你的私人对话、私人记忆和日常记录，清理后无法恢复。共享内容、约定、提醒和同意记录不受影响。`, `New rule: ${period(action.days ?? null)}. It applies only to your private conversations, private memories and check-ins, and deleted items cannot be restored. Shared content, agreements, reminders and consent records are not affected.`, `Nueva regla: ${period(action.days ?? null)}. Solo afecta tus conversaciones privadas, recuerdos privados y registros diarios, y lo borrado no se recupera. Lo compartido, los acuerdos, recordatorios y registros de consentimiento no cambian.`);
@@ -141,7 +141,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
       <Row icon={<Key size={18} weight="bold" />} tone="gray" label={titles.recovery} value={data ? data.recoveryEnabled ? t("已设置", "On", "Activado") : t("未设置", "Off", "Desactivado") : ""} onClick={() => open("recovery")} />
       <Row icon={<DownloadSimple size={18} weight="bold" />} tone="blue" label={t("下载我的数据", "Download my data", "Descargar mis datos")} onClick={() => prepare({ kind: "export" })} />
     </Group>
-    <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${data.privateCount} private records. Each step explains what it does and asks for your password first.`, `Tienes ${data.privateCount} registros privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
+    <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${counted(data.privateCount, "private record", "private records")}. Each step explains what it does and asks for your password first.`, `Tienes ${counted(data.privateCount, "registro", "registros")} privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
       {paired && <Row icon={<LinkBreak size={18} weight="bold" />} tone="red" danger label={t("退出当前关系", "Leave this relationship", "Salir de esta relación")} onClick={() => prepare({ kind: "leave" })} />}
       <Row icon={<Trash size={18} weight="bold" />} tone="red" danger label={t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado")} onClick={() => prepare({ kind: "delete-private" })} />
       <Row icon={<UserMinus size={18} weight="bold" />} tone="red" danger label={t("删除账号", "Delete account", "Borrar la cuenta")} onClick={() => prepare({ kind: "account" })} />

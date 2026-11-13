@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { currentLanguage, inInterfaceLanguage } from "./i18n";
 
 type PartialTurn = { itemId: string; speakerId: string; text: string };
 
@@ -6,7 +7,7 @@ export function useRealtimeTranscription<T>({
   endpoint,
   speakerId,
   onCommitted,
-  onError,
+  onError: reportError,
   onTranscript,
   onSpeechStarted,
 }: {
@@ -17,6 +18,8 @@ export function useRealtimeTranscription<T>({
   onTranscript?: (text: string, itemId: string) => Promise<T>;
   onSpeechStarted?: () => void;
 }) {
+  // The messages below (and the server's) are Chinese; English and Spanish screens get their own words.
+  const onError = (message: string) => reportError(inInterfaceLanguage(message, currentLanguage()));
   const [listening, setListening] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [partial, setPartial] = useState<PartialTurn | null>(null);
@@ -30,7 +33,7 @@ export function useRealtimeTranscription<T>({
   const callbacksRef = useRef({ onCommitted, onError, onTranscript, onSpeechStarted });
   const endpointRef = useRef(endpoint);
   const generationRef = useRef(0);
-  useEffect(() => { callbacksRef.current = { onCommitted, onError, onTranscript, onSpeechStarted }; }, [onCommitted, onError, onTranscript, onSpeechStarted]);
+  useEffect(() => { callbacksRef.current = { onCommitted, onError, onTranscript, onSpeechStarted }; }, [onCommitted, reportError, onTranscript, onSpeechStarted]);
 
   useEffect(() => { speakerRef.current = speakerId; }, [speakerId]);
 
