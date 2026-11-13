@@ -56,7 +56,8 @@ test("deterministic truncation keeps whole sentences and clauses, and never cuts
   assert.equal(settleContract("今天下雨，我们改到周日去公园散步吧。", "10字以内回我"), "今天下雨。");
   assert.equal(settleContract("你好。", "回我一句", "zh", { receipts: ["好，记住了：陆川每周三晚上固定去打羽毛球。"] }), "");
   assert.equal(settleContract("分析一句。分析两句。\n\n可以这样回：我不去。下次吧。", "帮我写一句回复"), "分析一句。分析两句。\n\n可以这样回：我不去。");
-  assert.equal(settleContract("八点结束。门票 120 元。", "只告诉我几点结束"), "八点结束。");
+  // Task 61: "只答 X" keeps X itself.
+  assert.equal(settleContract("八点结束。门票 120 元。", "只告诉我几点结束"), "八点。");
   assert.equal(settleContract("我会说清楚。他前任的事先不聊。", "帮我回他，不要提他前任。"), "我会说清楚。");
 });
 
@@ -82,7 +83,9 @@ test("screenshot-fair: a draft calling the counterpart's proposed 8:30 undecided
   const audited = await prepareSourceReply(candidate.reply, { sendableDraft: candidate.sendableDraft, request: row.question, language: "zh", sources: prompt.sources, context: {}, mediator: recorded(row), label: true });
   const delivered = finishReply(audited, { request: row.question, language: "zh", formatChecked: true });
   assert.doesNotMatch(delivered, /8:30这个时间我还没确定/);
-  assert.match(delivered, /你提的 8:30/);
+  // Superseded by task 61 (post-processing only deletes): the contradicted clause is removed, never reworded.
+  assert.match(delivered, /可以这样回：我是想和你一起吃饭，能不能再商量一下？/);
+  assert.doesNotMatch(delivered, /你提的 8:30/);
   assert.equal(checkReplyFormat(delivered, row.question).ok, true);
   assert.equal(settleSourceStance("Lily 提了 8:30，你还没确定。", prompt.sources), "Lily 提了 8:30，你还没确定。", "analysis is never rewritten");
 });

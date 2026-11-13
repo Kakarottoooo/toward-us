@@ -1,5 +1,5 @@
 import { keepMessages } from "./thread-pages.mjs";
-import { wantsOneSentence } from "./reply-contract.mjs";
+import { quietUnderContract } from "./reply-contract.mjs";
 import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
@@ -40,9 +40,12 @@ export function explicitSelfFacts(line, people = []) {
   const person = [...people].sort((a, b) => b.length - a.length).find(name => name && content.startsWith(name));
   const subject = /^我(?!们)/u.test(content) ? 'A' : person ? 'B' : null;
   if (!subject) return [];
-  return content.split(/[，；;。\n]+/u).map(text => text.trim()).filter(text => (subject === 'A' ? /^我(?!们)/u.test(text) : text.startsWith(person)) || /^(?:也|还|并且|而且)/u.test(text))
+  // A qualified or self-corrected statement ("——是干妈，不是亲妈", "啊不对") is one thing said: it is never cut into pieces (task 61).
+  const pieces = /——|啊?不对|说错了/u.test(content) ? [content.replace(/[。.!！\s]+$/u, "")] : content.split(/[，；;。\n]+/u);
+  return pieces.map(text => text.trim()).filter(text => (subject === 'A' ? /^我(?!们)/u.test(text) : text.startsWith(person)) || /^(?:也|还|并且|而且)/u.test(text))
     .map(quote => ({ line, quote, fact: (person && quote.startsWith(person) ? quote.slice(person.length) : quote).replace(/^(?:我|也(?!许)|还|并且|而且)+/u, ""), subject, person: subject === 'B' ? person : '', category: "other", replaces: "" }))
-    .filter(found => found.fact.length >= 2);
+    // "桃桃的干妈…" is about someone else of 桃桃's, not a fact that starts after the name.
+    .filter(found => found.fact.length >= 2 && !/^[的之]/u.test(found.fact));
 }
 export const activePair = (context, relationshipId = null) => context?.relationship.status === "active" && context.members.length === 2 && (!relationshipId || context.relationship.id === relationshipId);
 export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
@@ -209,11 +212,17 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId, s
       if (!explicit.length) continue;
       // Complete coverage without collapsing independently extracted facts.
       // Only a quote spanning multiple declarations needs splitting.
-      const matched = findings.filter(found => found.line.id === line.id && explicit.some(value => value.subject === found.subject && value.person === found.person));
+      const same = (value, found) => value.line.id === line.id && value.subject === found.subject && (value.person === found.person || !value.person);
+      const matched = findings.filter(found => explicit.some(value => same(found, value)));
       const combined = matched.filter(found => explicit.filter(value => key(found.quote).includes(key(value.fact))).length > 1);
       findings = findings.filter(found => !combined.includes(found));
-      for (const found of explicit) if (!findings.some(value => value.line.id === line.id && value.subject === found.subject && value.person === found.person
-        && key(found.quote).includes(key(value.quote)))) findings.push(found);
+      // Task 61: the same subject on the same line is one fact, whichever scan found it. An overlapping model finding wins (its
+      // wording is whole) and takes the person the user's own words name when it left that empty.
+      for (const found of explicit) {
+        const twin = findings.find(value => same(value, found) && (key(value.quote).includes(key(found.quote)) || key(found.quote).includes(key(value.quote))));
+        if (!twin) findings.push(found);
+        else if (!twin.person && found.person) twin.person = found.person;
+      }
     }
     findings = oneThingOneFact(findings);
   }
@@ -226,7 +235,7 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId, s
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
       draft.profileScan = { messageId: last.id, at: last.createdAt };
       // Visible afterwards (founder: "事后可见"): one quiet line in the chat says what Pinky now remembers.
-      if (changed.length && !silent && !wantsOneSentence(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
+      if (changed.length && !silent && !quietUnderContract(last.text)) keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language, changed, { userId, partnerName: scope.b, people }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { more, sessionId });
   });

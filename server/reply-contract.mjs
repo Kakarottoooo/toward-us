@@ -6,7 +6,9 @@ const reminderClaim = /(?:已(?:经)?|我(?:已|只|已经)?|帮你|替你).{0,1
 export const claimsReminder = (text) => reminderClaim.test(text) && !/(?:没有|并未|尚未|不能|不会|还没|not |never |cannot |can't |no he |no está)[^。！？.!?]{0,40}(?:提醒|remind|set|schedul|prepar|recordatorio)/iu.test(text);
 
 function hasSentenceRequest(request) {
-  return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|(?:帮我|请)?(?:写|给|用)|回复?我?)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "");
+  return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|(?:帮我|请)?(?:写|给|用)|回复?我?)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "")
+    // "一句话。" said as its own sentence after the request (task 61, R5: "帮我回他：可以，我顺路买点水果带过去。一句话。").
+    || /(?:^|[。！？!?\n])\s*(?:就|只要|只|回我)?一句话?(?:就(?:行|好|够了?|可以))?\s*(?:[。！!.]|$)/u.test(request || "");
 }
 export const wantsOneSentence = (request) => hasSentenceRequest(request) && !/[?？]|(?:最后|再|另外|同时).{0,8}(?:给|写)|(?:then|also).{0,20}(?:draft|sentence)/iu.test(request);
 
@@ -130,18 +132,33 @@ const trimJoin = (text) => text.replace(/^[\s:：,，、\-–—]+|[\s:：,，�
 export function activityDraft(reply) {
   const draft = reply?.sendableDraft?.trim(), description = reply?.activityDescription?.trim();
   if (!draft || !description) return draft;
-  const slot = "{{activityDescription}}", name = sharedName(description, draft.replaceAll(slot, ""));
-  if (draft.includes(slot)) {
-    // The draft already names the activity elsewhere: the slot gets only what the name lacks.
-    const fill = name ? trimJoin(description.replace(name, "")) : description;
-    return draft.replaceAll(slot, fill).replace(/[ \t]{2,}/gu, " ").replace(/[ \t]+([，。！？,.!?])/gu, "$1");
-  }
-  if (!name) return `${description}：${draft}`;
-  if (draft.includes(description)) return draft;
-  // The description takes the place of the bare name, unless its other words are already there too.
-  const rest = trimJoin(description.replace(name, ""));
-  return rest && !draft.includes(rest) ? draft.replace(name, description) : draft;
+  const slot = "{{activityDescription}}", bare = draft.replaceAll(slot, ""), name = sharedName(description, bare);
+  // Task 61: what the description adds is only what the draft does not already say. A time or place the draft already gives
+  // is never inserted again ("周六14:00到16:00在Studio 6有个周六14:00-16:00在Studio 6的…" in round 23).
+  const novel = unsaid(description, bare);
+  if (draft.includes(slot)) return draft.replaceAll(slot, novel).replace(/[ \t]{2,}/gu, " ").replace(/[ \t]+([，。！？,.!?])/gu, "$1");
+  if (!novel || draft.includes(description)) return draft;
+  if (!name) return `${novel}：${draft}`;
+  // The description takes the place of the bare name only when what it adds is a category word ("陶艺活动"), never a time,
+  // place or other detail; the name itself stays in it.
+  return categoryWord(novel) ? draft.replace(name, unsaid(description, bare.replace(name, " "))) : draft;
 }
+const sameClock = (text) => String(text).replace(/\s*(?:到|至|~|～|–|—|-)\s*/gu, "-");
+// The description with every stretch the draft already says removed (times compared with any range dash), joiners trimmed.
+function unsaid(description, draft) {
+  let rest = sameClock(description);
+  const said = sameClock(draft);
+  for (let guard = 0; guard < 8; guard++) {
+    const piece = sharedName(rest, said);
+    // Clock times and dates count even when shorter than a name ("16:00", "12月5日").
+    const clock = rest.match(/\d{1,2}[:：]\d{2}(?:-\d{1,2}[:：]\d{2})?|\d{1,2}月\d{1,2}[日号]?/u)?.[0];
+    const drop = piece || (clock && said.includes(clock) ? clock : "");
+    if (!drop) break;
+    rest = rest.replace(drop, " ");
+  }
+  return trimJoin(rest.replace(/^[\s的在有个是：:，,]+|[\s的在，,]+$/gu, "").replace(/\s{2,}/gu, " "));
+}
+const categoryWord = (text) => !/\d/u.test(text) && ([...text.matchAll(/\p{Script=Han}/gu)].length <= 8 && !/\p{Script=Latin}/u.test(text) || text.split(/\s+/u).length <= 3);
 
 export function checkReplyFormat(reply, request = "", language = "zh") {
   const limits = formatLimits(request), issues = [];
@@ -180,13 +197,29 @@ const onlyKinds = [["time", /时间|几点|钟点|\btime\b|\bhora\b/iu], ["date"
 const kindTokens = { time: /\d{1,2}\s*[:：]\s*\d{2}|\d{1,2}\s*[点時时]|[零一二两三四五六七八九十]{1,3}\s*点|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/iu,
   date: /\d{1,2}\s*月\s*\d{1,2}|\d{4}-\d{2}-\d{2}|周[一二三四五六日天]|星期[一二三四五六日天]|[今明后]天|\b(?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\b(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b|\d{1,2}\s+de\s+[a-z]+/iu,
   amount: /\d/u };
+// The value itself, cut out of the sentence that states it: only a time asked alone, or only a date asked alone. Anything else
+// (both asked, a place, an amount, a choice) keeps its sentence. This only deletes; it never rewords.
+const valueSpans = {
+  time: /(?:凌晨|早上|上午|中午|下午|傍晚|晚上|夜里)?\s*(?:\d{1,2}\s*[:：]\s*\d{2}|(?:\d{1,2}|[零一二两三四五六七八九十]{1,3})\s*点(?:\s*半|\s*(?:\d{1,2}|[零一二三四五六七八九十]{1,3})\s*分?)?)|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/iu,
+  date: /(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*[日号]?(?:\s*[（(]?(?:周|星期)[一二三四五六日天][）)]?)?|\d{4}-\d{2}-\d{2}|(?:周|星期)[一二三四五六日天]/u,
+};
+function onlyValue(unit, kinds = [], language = "zh") {
+  const asked = kinds.filter(kind => ["time", "date"].includes(kind));
+  if (asked.length !== 1 || kinds.length !== 1) return unit.trim();
+  const found = String(unit).match(valueSpans[asked[0]]);
+  return found ? `${found[0].trim()}${language === "zh" ? "。" : "."}` : unit.trim();
+}
 function onlyAnswer(request) {
   const clause = request.match(/只(?:需要?|要)?(?:回答|答|告诉我|说|回|给我|写)(?:一下)?([^，,。！？!?；;\n]{1,16})/u)?.[1]
     || request.match(/\b(?:just|only)\s+(?:tell me|give me|answer(?: with)?|say|reply with)\s+([^.,!?;\n]{1,30})/iu)?.[1]
     || request.match(/\bs[oó]lo\s+(?:dime|responde(?: con)?|di)\s+([^.,!?;\n]{1,30})/iu)?.[1];
-  const kinds = clause ? onlyKinds.filter(([, pattern]) => pattern.test(clause)).map(([kind]) => kind) : [];
-  // "只告诉我时间，再写一句邀约" asks for more than the value: then only the value's own sentence limit is lifted.
-  return kinds.length ? { kinds, alone: !/(?:写|起草|草稿|邀约|邀请|文案|回复|再|另外|同时)|\b(?:write|draft|reply|also|then)\b|\b(?:escribe|borrador|tambi[eé]n)\b/iu.test(request.replace(clause, "")) } : null;
+  if (!clause) return null;
+  const kinds = onlyKinds.filter(([, pattern]) => pattern.test(clause)).map(([kind]) => kind);
+  // Without a value kind only a closed set of answers ("来、不来或不确定", "yes or no") is a contract.
+  if (!kinds.length && !/[、\/]|或|还是|\bor\b|\bo\b/iu.test(clause)) return null;
+  // "只告诉我时间，再写一句邀约" asks for more than the value: then only the value's own sentence limit is lifted. "只答来、不来或
+  // 不确定" names no value kind but is still a contract (task 61: extra notes were sent beside it).
+  return { kinds, alone: !/(?:写|起草|草稿|邀约|邀请|文案|回复|再|另外|同时)|\b(?:write|draft|reply|also|then)\b|\b(?:escribe|borrador|tambi[eé]n)\b/iu.test(request.replace(clause, "")) };
 }
 const sentClaim = /(?:已(?:经)?|帮你|替你|我)(?:直接)?(?:发送|发出|发给|发过去|转发)|(?:发过去了|发出去了|已发)|\b(?:I(?:'ve| have)?\s+sent|(?:has|was) been sent)\b|\b(?:(?:ya\s+)?(?:lo\s+)?(?:envi[eé]|he enviado))\b/iu;
 /** The explicit format constraints in the user's request. */
@@ -200,6 +233,9 @@ export function formatContract(request = "") {
     noSave: /(?:不要|别|不用|无需|不必)(?:帮我)?(?:保存|存下来|存起来|存档|记录下来|记下来|记住|记录)(?![^，,。！？!?]{0,4}(?:草稿|提醒))|\b(?:don't|do not)\s+(?:save|store|remember|keep)\b|\bno\s+(?:lo\s+)?(?:guardes|recuerdes|apuntes)\b/iu.test(request) };
 }
 export const hasContract = (contract) => Boolean(contract.sentences || contract.lines || contract.chars || contract.avoid.length || contract.only || contract.noSend || contract.noSave);
+// Task 61: a note Pinky would post beside its answer ("已为 X 建档", "已记进 X 的档案：…") is part of what the user reads, so under
+// any format contract it is not sent: the record is still kept, quietly.
+export const quietUnderContract = (request = "") => wantsOneSentence(request) || hasContract(formatContract(request));
 /** Every way `reply` breaks the user's format contract, as rewrite instructions. Empty when it complies. */
 export function contractIssues(reply, request = "", language = "zh") {
   const contract = formatContract(request), text = renderReply(reply), issues = [...checkReplyFormat(reply, request, language).issues];
@@ -207,7 +243,8 @@ export function contractIssues(reply, request = "", language = "zh") {
   if (avoided.length) issues.push(`Omit the user's explicitly excluded topic (${avoided.join(", ")}) from both analysis and copyable wording; do not repeat the exclusion as an explanation.`);
   if (contract.only) {
     const units = sentenceUnits(text), kinds = contract.only.kinds.filter(kind => kindTokens[kind]);
-    if (contract.only.alone && units.length > 1) issues.push(`Answer only the requested ${contract.only.kinds.join(" and ")} in one short sentence; nothing else.`);
+    if (contract.only.alone && units.length > 1) issues.push(`Answer only the requested ${contract.only.kinds.join(" and ") || "choice"} in one short sentence; nothing else.`);
+    else if (contract.only.alone && units.length === 1 && onlyValue(units[0], contract.only.kinds, language) !== units[0].trim()) issues.push(`Answer only the requested ${contract.only.kinds.join(" and ")} itself, without other details.`);
     if (kinds.length && !kinds.some(kind => kindTokens[kind].test(text))) issues.push(`State the requested ${kinds.join(" and ")} explicitly.`);
   }
   if (contract.noSend && sentenceUnits(text).some(unit => sentClaim.test(unit) && !/(?:没有|并未|尚未|不会|还没|not |never |no )/iu.test(unit))) issues.push("The user asked not to send anything: do not say anything was sent.");
@@ -244,9 +281,10 @@ export function settleContract(text, request = "", language = "zh", { receipts =
   const keep = (units) => units.join("").trim();
   if (contract.avoid.length) { const units = sentenceUnits(body), clean = units.filter(unit => !contract.avoid.some(word => unit.includes(word))); if (clean.length) body = keep(clean); }
   if (contract.noSend) { const units = sentenceUnits(body), clean = units.filter(unit => !sentClaim.test(unit)); if (clean.length) body = keep(clean); }
-  if (contract.only?.alone && sentenceUnits(body).length > 1) {
+  if (contract.only?.alone && sentenceUnits(body).length) {
     const units = sentenceUnits(body), kinds = contract.only.kinds.filter(kind => kindTokens[kind]);
-    body = (units.find(unit => kinds.some(kind => kindTokens[kind].test(unit))) || units[0]).trim();
+    // "只答时间" keeps the time itself (task 61: "12月20日晚上7点45分落地。" for "几点落地？只答时间。").
+    body = onlyValue((units.find(unit => kinds.some(kind => kindTokens[kind].test(unit))) || units[0]).trim(), contract.only.kinds, language);
   }
   const trim = (value) => {
     let out = value;
@@ -297,23 +335,31 @@ export function nearDuplicate(a, b) {
 }
 // Task 58: a term equal to the title is the duplicate, so the TERM goes and the title stays (the round-22 projection cleared
 // the title instead, and the stored draft then read as untitled). Near-duplicate terms and a summary repeating a term go too.
-export function agreementPresentation(draft, reply = "") {
+// Task 61: a term the members listed in their own words stays even when it equals the title or another term (the ruling:
+// "第一条，吵架不过夜" under the title "吵架不过夜" is the user's own clause); only model-written repeats are removed. Applied once,
+// when the draft is written (the read-time projection no longer re-presents it).
+export function agreementPresentation(draft, reply = "", { userText = "" } = {}) {
   if (!draft) return { draft, reply };
+  const said = fragmentKey(String(userText).replace(/[\s。.!！？?；;，,、：:“”"「」]/gu, ""));
+  const listed = term => { const key = fragmentKey(term).replace(/[。.!！？?；;，,、：:“”"「」]/gu, ""); return key.length >= 2 && said.includes(key); };
   const seen = new Set(), kept = [];
   for (const term of draft.terms || []) {
     const key = fragmentKey(term);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     if (/^(?:建议(?:默认)?|默认建议|suggested default|proposed default|valor predeterminado sugerido)\s*[:：]/iu.test(term)) continue;
-    // Of two near-duplicates the fuller wording stays ("…冷静十分钟再回来聊" over "…冷静十分钟").
-    const twin = kept.findIndex(other => nearDuplicate(other, term));
+    // Of two near-duplicates the fuller wording stays ("…冷静十分钟再回来聊" over "…冷静十分钟"), unless both are the members' own.
+    const twin = kept.findIndex(other => nearDuplicate(other, term) && !(listed(other) && listed(term)));
     if (twin >= 0) { if (dutyPairs(term).length > dutyPairs(kept[twin]).length) kept[twin] = term; continue; }
     kept.push(term);
   }
   const titleKey = fragmentKey(draft.title || "");
   // The only term is never removed: then the title simply stays beside it.
-  const terms = titleKey && kept.length > 1 ? kept.filter(term => fragmentKey(term) !== titleKey) : kept;
-  const summary = draft.summary && terms.some(term => fragmentKey(term) === fragmentKey(draft.summary) || nearDuplicate(term, draft.summary)) ? "" : draft.summary;
+  const terms = titleKey && kept.length > 1 ? kept.filter(term => fragmentKey(term) !== titleKey || listed(term)) : kept;
+  // A summary that only re-words the title and terms goes: most of its duty pairs already appear in them together.
+  const covered = new Set([draft.title, ...terms].flatMap(dutyPairs)), own = dutyPairs(draft.summary);
+  const summary = draft.summary && (terms.some(term => fragmentKey(term) === fragmentKey(draft.summary) || nearDuplicate(term, draft.summary))
+    || own.length >= 2 && own.filter(pair => covered.has(pair)).length / own.length >= 0.6) ? "" : draft.summary;
   const body = reply.split(/\n/u).filter(line => !seen.has(fragmentKey(line))).join("\n");
   return { draft: { ...draft, title: draft.title, summary, terms, unresolvedPoints: [...new Set(draft.unresolvedPoints || [])] }, reply: body };
 }
@@ -331,10 +377,9 @@ export function groundedAgreementTerms(terms, checks, messages) {
 export const deliveryParts = (text, language = "zh") => segments(String(text || "").trim(), language).flatMap(part => part.split(/(?<=[；;\n])/u));
 // One action, one receipt line (task 56): facts remembered in the same turn read as one "已记住：A；B。", never a line each.
 const rememberedPrefix = /^(已记住：|Remembered: |Recordado: )(.+?)[。.]?$/u;
-const reminderTimeOnly = /^(?:[今明后]天|周[一二三四五六日天]|星期[一二三四五六日天]|早上|上午|中午|下午|晚上|夜里|凌晨|\d{1,4}|[一二三四五六七八九十两]+|[年月日号点时分半:：\s\-（）()]|Asia\/[A-Za-z_]+)+[。.]?$/u;
 // Beside a server receipt, a model promise about how it will use the record later ("以后给他挑礼物，我会避开…") is an
 // unrequested extra and an unverifiable commitment; the receipt alone confirms the action (task 56).
-const promisesFutureUse = part => /^(?:(?:好的|好)[，,]?\s*)?(?:以后|今后|下次|之后)[^。！？]{0,40}(?:我会|我来|帮你)|^我(?:以后|今后|下次|之后)(?:会|就)|^(?:From now on|Next time)[^.!?]{0,60}I(?:'ll| will)|^(?:A partir de ahora|La próxima vez)[^.!?]{0,60}(?:te ayudaré|evitaré|tendré)/iu.test(part.trim());
+const promisesFutureUse = part => /^(?:(?:好的|好)[，,]?\s*)?(?:以后|今后|下次|之后)[^。！？]{0,40}(?:我会|我来|帮你)|^我(?:以后|今后|下次|之后)(?:会|就)|^(?:From now on|Next time)[^.!?]{0,60}\bI(?:'ll| will)\b|^(?:A partir de ahora|La próxima vez)[^.!?]{0,60}(?:te ayudaré|evitaré|tendré)/iu.test(part.trim());
 const pairsOf = text => { const chars = [...String(text).normalize("NFKC").replace(/[\s\p{P}]/gu, "")]; return chars.slice(1).map((char, index) => chars[index] + char); };
 const receiptContainment = (part, receipt) => { const pairs = pairsOf(part), inside = new Set(pairsOf(receipt)); return pairs.length >= 2 ? pairs.filter(pair => inside.has(pair)).length / pairs.length : 0; };
 export function mergeReceipts(receipts = [], language = "zh") {
@@ -347,36 +392,36 @@ export function mergeReceipts(receipts = [], language = "zh") {
   if (remembered.length) counts.set(`${remembered[0][0]}${remembered.map(([, text]) => text).join(language === "zh" ? "；" : "; ")}${language === "zh" ? "。" : "."}`, 1);
   return [...counts].map(([receipt, count]) => count === 1 ? receipt : language === "en" ? `${receipt} (${count} items)` : language === "es" ? `${receipt} (${count} elementos)` : /已放进去/.test(receipt) ? `已加入 ${count} 项。` : `${receipt.replace(/[。.!]$/, "")}（${count} 项）。`);
 }
-export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, formatChecked = false, deliverables, webPages = [], sourceTranscript } = {}) {
+// Task 61: finishing only deletes. Model sentences that claim or restate an action are removed in favour of the server's
+// receipts; nothing the audit quoted is added back (round 23: the re-added quotes "我来设一个" and "其他的不会记" were stray
+// fragments). A sentence whose trailing clauses alone are the claim keeps its leading clauses when they say something
+// ("先说感受，再谈当下，我会提醒你明天沟通。" keeps "先说感受，再谈当下。"); otherwise the whole sentence goes.
+const interjection = /^(?:好的?|嗯|行|可以|没问题|收到|明白|OK|okay|sure|got it|vale|claro|de acuerdo|listo)[\s!！。.,，]*$/iu;
+export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, webPages = [], sourceTranscript } = {}) {
   const parts = deliveryParts(reply, language);
-  // The checked candidate is the recovery source, never unverified planner prose.
   const deferred = part => webPages.length && /(?:之后|拿到后|稍后|晚点).{0,20}(?:告诉你|给你|发给你)|(?:will|I'll).{0,30}(?:later|once I)/iu.test(part);
   const transcriptEcho = part => sourceTranscript && reminderWritten && /(?:转写|原话|原文|你说|transcri|you said)/iu.test(part);
-  // A committed reminder's receipt already states its time and content: audit quotes of that time or content are not
-  // separate deliverables to re-add (task 56: "明天晚上八点半" + "提醒你给他回电话" came back as a second confirmation).
-  const coveredByReminder = part => receipts.length && reminderWritten && (confirmsReminder(part) || /提醒|remind|recordar/iu.test(part) || reminderTimeOnly.test(part.trim()));
-  // A receipt that already states the saved fact covers an audit quote of it, even when the quote names its subject
-  // ("阿杰不吃香菜" beside "已记住：不吃香菜；对花粉过敏。"): most of the quote's character pairs are in one receipt.
+  // A receipt that already states the saved fact covers model prose restating it, even when the prose names its subject
+  // ("阿杰不吃香菜，对花粉过敏。" above "好，记住了：阿杰不吃香菜；对花粉过敏。"): most of its character pairs are in one receipt.
   const coveredByReceipt = part => receipts.some(receipt => receiptContainment(part, receipt) >= 0.6);
-  const required = [...(deliverables || []).flatMap(part => deliveryParts(part, language)).filter(part => !coveredByReminder(part) && !coveredByReceipt(part)), ...parts.filter(part => !coveredByReceipt(part))]
-    .filter(part => !claimsWrite(part) && !claimsReminder(part) && !describesActionStatus(part) && !(receipts.length && (reminderWritten && confirmsReminder(part) || promisesFutureUse(part))) && !deferred(part) && !transcriptEcho(part));
+  // Receipts are server-authored after successful writes, never planner-provided flags.
+  const drop = part => claimsWrite(part) || claimsReminder(part) || deferred(part) || transcriptEcho(part)
+    || Boolean(receipts.length) && (describesActionStatus(part) || reminderWritten && confirmsReminder(part) || promisesFutureUse(part))
+    || coveredByReceipt(part);
+  const trimmed = part => {
+    if (!drop(part)) return part;
+    const clauses = part.split(/(?<=[，,])/u), first = clauses.findIndex(drop);
+    const head = clauses.slice(0, Math.max(0, first)).join("").trim();
+    if (first <= 0 || !clauses.slice(first).every(clause => drop(clause) || interjection.test(clause.trim())) || interjection.test(head) || !/[\p{L}\p{N}]/u.test(head)) return "";
+    return head.replace(/[，,\s]+$/u, "") + (language === "zh" ? "。" : ".");
+  };
   const reminderRemoved = parts.some(claimsReminder);
   const removed = reminderRemoved || parts.some(claimsWrite);
-  // Receipts are server-authored after successful writes, never planner-provided flags.
-  const kept = parts.filter((part) => !claimsWrite(part) && !claimsReminder(part) && !deferred(part) && !transcriptEcho(part)
-    && !(receipts.length && (describesActionStatus(part) || reminderWritten && confirmsReminder(part) || promisesFutureUse(part)))
-    // One action, one sentence (task 58): model prose restating what a receipt already confirms ("阿杰不吃香菜，对花粉过敏。"
-    // above "好，记住了：阿杰不吃香菜；对花粉过敏。") is left to the receipt.
-    && !coveredByReceipt(part));
-  // A supplement is a later step too: one that would break the user's format contract is not added (task 58).
-  const joined = (values) => values.join("").trim();
-  for (const part of required) if (![...kept, ...receipts].some(value => fragmentKey(value).includes(fragmentKey(part)))
-    && contractIssues(joined([...kept, part]), request, language).length <= contractIssues(joined(kept), request, language).length) kept.push(part);
   const seen = new Set();
-  let text = kept.filter(part => { const key = fragmentKey(part); if (!key || seen.has(key)) return false; seen.add(key); return true; }).join("").trim().replace(/[；;]\s*$/, "。");
+  let text = parts.map(trimmed).filter(part => { const key = fragmentKey(part); if (!key || seen.has(key)) return false; seen.add(key); return true; }).join("").trim().replace(/[；;]\s*$/, "。");
   if (!text && parts.some(deferred)) text = language === "en" ? "I could not confirm the requested information in this turn." : language === "es" ? "No pude confirmar la información solicitada en este turno." : "这次未能确认你问的信息。";
   const merged = mergeReceipts(receipts, language);
-  // Final code acceptance of the user format contract for every channel (checked or not): receipts are never cut.
+  // Final code acceptance of the user format contract for every channel: receipts are never cut.
   text = settleContract(text, request, language, { receipts: merged });
   if (merged.length) text = [text, ...merged].filter(Boolean).join("\n");
   if (reminderRemoved && !reminderWritten) text = [text, language === "en" ? "No reminder was created in this turn." : language === "es" ? "No se creó ningún recordatorio en este turno." : "这轮尚未创建提醒。"].filter(Boolean).join("\n");
@@ -423,17 +468,17 @@ const privateReplies = {
   zh: [
     "我看不到 TA 的私人内容，也没法替 TA 回答。想知道的话，可以直接问 TA：“最近有什么想跟我聊聊的吗？”",
     "那是 TA 自己的私人空间，我这边看不到，也不会去猜。你可以找个轻松的时候问 TA：“我有点在意我们俩的事，你愿意说说你的想法吗？”",
-    "这个我真的帮不上：TA 的私人对话只有 TA 自己能看。与其等我给答案，不如把你的不安说出来，直接问 TA：“我心里有点没底，想听听你现在怎么想。”",
+    "这个我真的帮不上：TA 没主动分享的内容，我这边看不到。与其等我给答案，不如把你的不安说出来，直接问 TA：“我心里有点没底，想听听你现在怎么想。”",
   ],
   en: [
     "I can't see their private content, so I can't answer for them. If you want to know, you could ask: “Is there anything you'd like to talk to me about lately?”",
     "That's their own private space; I can't see it and I won't guess. When things feel relaxed, you could say: “I've been thinking about us. Would you tell me what's on your mind?”",
-    "I really can't help with that one: their private conversations are visible only to them. You could tell them how you feel instead, for example: “I feel a bit unsure and would love to hear what you think.”",
+    "I really can't help with that one: I can't see anything they haven't chosen to share. You could tell them how you feel instead, for example: “I feel a bit unsure and would love to hear what you think.”",
   ],
   es: [
     "No puedo ver su contenido privado, así que no puedo responder por esa persona. Si quieres saberlo, puedes preguntarle: “¿Hay algo de lo que quieras hablar conmigo últimamente?”",
     "Ese es su espacio privado; no lo veo y no voy a adivinar. En un momento tranquilo puedes decirle: “He estado pensando en nosotros. ¿Me cuentas qué piensas?”",
-    "En esto no puedo ayudar: sus conversaciones privadas solo las ve esa persona. Puedes contarle cómo te sientes, por ejemplo: “Me siento un poco insegura/o y me gustaría saber qué piensas.”",
+    "En esto no puedo ayudar: no veo lo que esa persona no ha decidido compartir. Puedes contarle cómo te sientes, por ejemplo: “Me siento un poco insegura/o y me gustaría saber qué piensas.”",
   ],
 };
 // Ruling (task 58, memory-partner-secret-gift): the suggestion may fit the KIND of question (a secret, a thought, an
@@ -443,24 +488,24 @@ const typedPrivateReplies = {
   secret: {
     zh: ["我看不到 TA 的私人内容，也不会替 TA 透露什么。要是 TA 真有打算，就等 TA 自己揭晓吧。",
       "TA 的私人空间我这边看不到，有没有我也不会去猜。真有的话，留给 TA 亲手拿出来会更好。",
-      "这个我帮不上：TA 的私人对话我看不到，有没有、是什么我都不知道。先别急着打听，让 TA 按自己的节奏告诉你。"],
+      "这个我帮不上：我这边看不到 TA 没主动分享的内容，是什么我都不知道。先别急着打听，让 TA 按自己的节奏告诉你。"],
     en: ["I can't see their private content, and I won't give anything away for them. If they do have something in mind, let them reveal it themselves.",
       "Their private space is closed to me, and I won't guess whether there's anything there. If there is, it's nicer coming from them.",
-      "I can't help with this one: only they can see their private conversations, so I don't know if there's anything or what. Let them share it in their own time."],
+      "I can't help with this one: I can't see anything they haven't chosen to share, so I don't know what it might be. Let them share it in their own time."],
     es: ["No puedo ver su contenido privado y no voy a desvelar nada por esa persona. Si tiene algo pensado, deja que lo revele ella misma.",
       "Su espacio privado no lo veo, y no voy a adivinar si hay algo. Si lo hay, será mejor que venga de su parte.",
-      "En esto no puedo ayudar: solo esa persona ve sus conversaciones privadas, así que no sé si hay algo ni qué es. Deja que te lo cuente a su ritmo."],
+      "En esto no puedo ayudar: no veo lo que esa persona no ha decidido compartir, así que no sé qué podría ser. Deja que te lo cuente a su ritmo."],
   },
   thought: {
     zh: ["TA 心里怎么想，我看不到 TA 的私人内容，没法替 TA 回答。你可以直接问 TA：“最近你心里有什么想跟我说的吗？”",
       "这种事只有 TA 自己说得清，我这边看不到，也不会去猜。找个安静的时候问问：“你最近对我们之间感觉怎么样？我想听你说。”",
-      "这个我帮不上：TA 的私人对话只有 TA 自己能看。不如先把你的在意说出来，再问 TA：“我有点没底，你愿意跟我聊聊吗？”"],
+      "这个我帮不上：我这边看不到 TA 没主动分享的内容。不如先把你的在意说出来，再问 TA：“我有点没底，你愿意跟我聊聊吗？”"],
     en: ["I can't see their private content, so I can't say what's on their mind. You could ask them directly: “Is there anything on your mind you'd like to tell me?”",
       "Only they can speak to that; I can't see it and I won't guess. In a quiet moment you could ask: “How are you feeling about us lately? I'd like to hear it from you.”",
-      "I can't help with this one: their private conversations are visible only to them. Share what's worrying you, then ask: “I feel a bit unsure. Would you talk with me?”"],
+      "I can't help with this one: I can't see anything they haven't chosen to share. Share what's worrying you, then ask: “I feel a bit unsure. Would you talk with me?”"],
     es: ["No puedo ver su contenido privado, así que no puedo decir qué piensa. Puedes preguntarle directamente: “¿Hay algo que tengas en mente y quieras contarme?”",
       "Eso solo puede explicarlo esa persona; no lo veo y no voy a adivinar. En un momento tranquilo puedes preguntar: “¿Cómo te sientes con lo nuestro últimamente? Quiero oírlo de ti.”",
-      "En esto no puedo ayudar: sus conversaciones privadas solo las ve esa persona. Cuéntale lo que te inquieta y pregúntale: “Me siento algo insegura/o, ¿hablamos?”"],
+      "En esto no puedo ayudar: no veo lo que esa persona no ha decidido compartir. Cuéntale lo que te inquieta y pregúntale: “Me siento algo insegura/o, ¿hablamos?”"],
   },
   arrangement: {
     zh: ["TA 的私人安排我看不到，也没法替 TA 回答。想知道的话可以直接问：“你最近有什么打算吗？我想一起排排时间。”",

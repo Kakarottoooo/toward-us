@@ -276,10 +276,12 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     if (turn.source !== "local") lastGoodReply = turn.reply;
   }
   turn = webTurn.results.length ? { ...turn, actions: [], draftAgreement: null } : { ...turn, actions: (turn.actions || []).filter((action) => !["web_read", "web_search", "chat_search", "memory_search"].includes(action.kind)) };
+  // Presented once, when written (task 61): repeats the model wrote are removed, terms the members listed themselves stay.
+  if (turn.draftAgreement) { const presented = agreementPresentation(turn.draftAgreement, turn.reply, { userText: text }); turn = { ...turn, reply: presented.reply, draftAgreement: presented.draft }; }
   if (turn.draftAgreement && mediator.structured) {
     // The term audit only removes individual terms it found no member words for. When it fails, or finds no support for
     // any term, the draft stays whole with one caveat; both partners still approve the same version before it applies.
-    const draft = agreementPresentation(turn.draftAgreement).draft;
+    const draft = turn.draftAgreement;
     const originals = messages.filter(message => message.role === "member").map(({ id, text, actorUserId: author }) => ({ id, from: name(author), text }));
     const result = await mediator.structured({ name: "agreement_term_sources", maxOutputTokens: 1000,
       schema: { type: "object", additionalProperties: false, required: ["terms"], properties: { terms: { type: "array", items: {
@@ -305,10 +307,6 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const games = turn.actions.filter((action) => action.kind === "game");
   turn = { ...turn, actions: turn.actions.filter((action) => !["mediate", "recap", "game"].includes(action.kind)) };
   const reply = (outcome) => transaction(async (tx) => {
-    if (outcome.draftAgreement) {
-      const presentation = agreementPresentation(outcome.draftAgreement, outcome.reply);
-      outcome = { ...outcome, reply: presentation.reply, draftAgreement: { ...outcome.draftAgreement, terms: presentation.draft.terms } };
-    }
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
@@ -317,7 +315,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     // Shared write receipts remain transaction-backed. A no-action answer cannot
     // claim it saved a memory merely because related context was retrieved.
     const ownReply = made.length || outcome.draftAgreement ? outcome.reply : finishReply(outcome.reply, { request: text, language });
-    const cited = citedReply([ownReply, webSourceText(webTurn.results, language, { includeFields: false })].filter(Boolean).join("\n\n"), recallSources);
+    const cited = citedReply([ownReply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
     // Code assertion (task 56): once any model draft exists, the posted text is non-empty and never generic failure copy.
     // Only a turn where the model produced nothing at all keeps its plain, every-language unavailable note.
     let i18n = outcome.i18n || null;

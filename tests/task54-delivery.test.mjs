@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { agreementPresentation, contractIssues, groundedAgreementTerms, checkDelivery, checkReplyFormat, directFactReply, finishReply, mergeReceipts, privateBoundaryReply, renderReply, requiresReplyScopeCheck } from '../server/reply-contract.mjs';
 import { prepareSourceReply } from '../server/source-reply.mjs';
-import { createReadonlyWeb, webSourceText } from '../server/readonly-web.mjs';
+import { createReadonlyWeb, webEvidence, webSourceText } from '../server/readonly-web.mjs';
 import { explicitSelfFacts } from '../server/profile.mjs';
 import { localJudgeRecords } from '../scripts/parity-eval/score.mjs';
 import { writeChecks } from '../scripts/parity-eval/external-cases.mjs';
@@ -37,7 +37,9 @@ test('receipt batches and copyable fields have one presentation owner', () => {
   assert.equal(renderReply({ reply: '周六一起去吗？', sendableDraft: '周六一起去吗？' }), '周六一起去吗？');
   const draft = { title: '轮流做饭', summary: '轮流做饭', terms: ['轮流做饭', '轮流做饭', '建议默认：周一开始'], unresolvedPoints: [] };
   const record = createRelationshipRecord({ userId: 'owner', visibility: 'private', draftAgreement: draft });
-  const presented = projectRecord(record, 'owner').draftAgreement;
+  // Task 61: presented once when written; the read projection returns the stored draft unchanged.
+  assert.deepEqual(projectRecord(record, 'owner').draftAgreement, draft);
+  const presented = agreementPresentation(draft).draft;
   assert.deepEqual(presented.terms, ['轮流做饭']);
   // Superseded by task 58: the title is never cleared (the round-22 draft read as untitled); the only term stays beside it.
   assert.equal(presented.title, '轮流做饭'); assert.equal(presented.summary, '');
@@ -158,7 +160,7 @@ test('read-only transport retries 5xx once with two real GET statuses and no aut
   try {
     const recovered = await reader.read(`${origin}/retry`);
     assert.equal(recovered.status, 'ok'); assert.deepEqual(recovered.attempts, [503, 200]);
-    assert.match(recovered.text, /白桥馆/); assert.match(webSourceText([recovered]), /503 → 200/);
+    assert.match(recovered.text, /白桥馆/); assert.deepEqual(webEvidence([recovered])[0].attempts, [503, 200]); assert.doesNotMatch(webSourceText([recovered]), /503|HTTP/); // task 61: evidence, not reply text
     assert.deepEqual((await reader.read(`${origin}/down`)).attempts, [502, 502]);
     assert.deepEqual((await reader.read(`${origin}/blocked`)).attempts, [403]);
     assert.equal(log.length, 5); assert.ok(log.every(row => row.method === 'GET' && !row.cookie));

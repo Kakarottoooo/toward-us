@@ -73,32 +73,27 @@ function counterpartText(sources) {
 const undecided = /还没(?:确定|定|想好|决定)|没(?:确定|定下来)|不确定|待定|未定|还在考虑|\b(?:not sure|haven't decided|undecided|not decided)\b|\bno (?:estoy segur[oa]|he decidido)\b/iu;
 // The sendable draft only: an analysis may truthfully say the user has not decided yet; the draft speaks to the counterpart.
 const draftOf = (candidate) => typeof candidate === "string" ? copyableDraft(candidate) : candidate?.sendableDraft || null;
-const timeToken = /\d{1,2}\s*[:：]\s*\d{2}|(?:\d{1,2}|[零一二两三四五六七八九十]{1,3})\s*点\s*(?:半|(?:\d{1,2}|[零一二三四五六七八九十]{1,3})\s*分?)?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/giu;
 const contradictedClauses = (draft, proposed) => String(draft || "").split(/[，,。！？!?；;\n]/u).filter((clause) => undecided.test(clause) && [...clockTimes(clause)].some((time) => proposed.has(time)));
 export function sourceStanceIssues(candidate, sources = []) {
   const proposed = clockTimes(counterpartText(sources));
   if (!proposed.size) return [];
   return contradictedClauses(draftOf(candidate), proposed).map((clause) => `Stance contradicts the source: "${clause.trim()}" calls a time undecided that the counterpart already proposed in the source. Acknowledge it as their proposal (for example "你提的这个时间") and state the user's own position without contradicting the source.`);
 }
-/** Final code acceptance of the draft's stance: an "undecided" clause about a time the counterpart proposed becomes the
- * sanctioned stance toward a counterpart's proposal ("I'll check whether 10:15 works"), keeping the time as written. */
+/** Final code acceptance of the draft's stance (task 61: delete only): a draft clause calling a time the counterpart already
+ * proposed "undecided" is removed, never reworded; when nothing else would remain the draft is left as it is. */
 export function settleSourceStance(text, sources = [], language = "zh", { whole = false } = {}) {
   const proposed = clockTimes(counterpartText(sources)), draft = whole ? String(text || "") : copyableDraft(String(text || ""));
   if (!proposed.size || !draft) return text;
-  const fixed = draft.replace(/[^，,。！？!?；;\n]+/gu, (clause) => {
-    if (!undecided.test(clause)) return clause;
-    const token = [...clause.matchAll(timeToken)].map((match) => match[0]).find((value) => [...clockTimes(value)].some((time) => proposed.has(time)));
-    if (!token) return clause;
-    const lead = clause.match(/^\s*/u)[0];
-    return lead + (language === "en" ? `let me check whether your ${token} works` : language === "es" ? `déjame ver si me va bien tu propuesta de las ${token}` : `我看看你提的 ${token} 行不行`);
-  });
+  const fixed = draft.replace(/[^，,。！？!?；;\n]+[，,；;]?/gu, (clause) => contradictedClauses(clause, proposed).length ? "" : clause)
+    .replace(/[，,；;]\s*$/u, language === "zh" ? "。" : ".").replace(/[，,；;]([。！？!?])/gu, "$1");
+  if (!/[\p{L}\p{N}]/u.test(fixed)) return text;
   const at = String(text).lastIndexOf(draft);
   return fixed === draft || at < 0 ? text : String(text).slice(0, at) + fixed + String(text).slice(at + draft.length);
 }
 
 // Shared by the immediate screenshot answer and later answers about imported text.
 // One initial check, at most one rewrite, and a final check only after rewriting.
-export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], planConstraints = null, unsupportedPremise = null, request = "", language = "zh", context = {}, mediator, onVerifiedDeliverables, label = false } = {}) {
+export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], planConstraints = null, unsupportedPremise = null, request = "", language = "zh", context = {}, mediator, label = false } = {}) {
   if (isPrivateBoundaryReply(reply)) return reply;
   sendableDraft = activityDraft({ sendableDraft, activityDescription });
   // Citation tokens are server-resolved metadata, never prose for a model to edit.
@@ -107,11 +102,9 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
   const strip = (text) => String(text || "").replace(marker, "").trim();
   const stripParts = (value) => typeof value === "string" ? strip(value) : { reply: strip(value?.reply), sendableDraft: value?.sendableDraft == null ? null : strip(activityDraft(value)) };
   reply = sendableDraft === undefined ? strip(reply) : stripParts({ reply, sendableDraft });
-  const restore = (value, audit) => {
+  const restore = (value) => {
     const settled = value && typeof value === "object" && value.sendableDraft ? { ...value, sendableDraft: settleSourceStance(value.sendableDraft, originals, language, { whole: true }) } : value;
     const text = settleSourceStance(strip(renderReply(settled, { label, language, request })), originals, language);
-    if (audit) onVerifiedDeliverables?.((audit.deliverableChecks || []).flatMap(item => item.parts || [])
-      .filter(part => part.present === true && part.quote?.trim() && text.includes(part.quote)).map(part => part.quote));
     return [text, ...citations].filter(Boolean).join("\n");
   };
   const originals = sources.filter((source) => typeof source.text === "string" && source.text.trim()).map((source) => ({ ...source, text: strip(source.text) }));

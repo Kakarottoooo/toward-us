@@ -71,7 +71,9 @@ export function writeChecks(specs, before, after, context) {
   return specs.map((spec) => {
     const records = snapshot => spec.collection === "draftAgreement"
       ? (snapshot.togetherConversations || []).filter(row => row.draftAgreement).map(row => ({ id: row.id, ...row.draftAgreement }))
-      : (snapshot[spec.collection] || []).filter(row => spec.collection !== "spaces" || !row.system);
+      // Ruling (task 61): a memories write count is facts only; a person card (kind "person") made for a newly named third
+      // party is not a remembered fact.
+      : (snapshot[spec.collection] || []).filter(row => (spec.collection !== "spaces" || !row.system) && (spec.collection !== "memories" || row.kind !== "person"));
     const old = new Map(records(before).map((row) => [row.id, row]));
     const changed = records(after).filter((row) => spec.mode === "updated" ? old.has(row.id) && JSON.stringify(old.get(row.id)) !== JSON.stringify(row) : !old.has(row.id));
     const matches = changed.filter((row) => Object.entries(spec.fields).every(([key, value]) => JSON.stringify(row[key]) === JSON.stringify(fixtureValue(value, { ...context, timezone: spec.fields.timezone || context.timezone }))));

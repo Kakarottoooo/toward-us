@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { buildMemoryContext } from "./memory-domain.mjs";
-import { agreementPresentation } from "./reply-contract.mjs";
 
 export const GRAPH_COLLECTIONS = Object.freeze([
   "privateAgentThreads",
@@ -47,7 +46,6 @@ export function canViewRecord(record, userId) {
 export function projectRecord(record, userId) {
   if (!canViewRecord(record, userId)) return null;
   const projected = structuredClone(record);
-  if (projected.draftAgreement) projected.draftAgreement = agreementPresentation(projected.draftAgreement).draft;
   if (projected.ownerUserId !== userId) {
     delete projected.privateNotes;
     delete projected.estimatedCostRange;

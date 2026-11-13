@@ -187,11 +187,18 @@ export function normalizeAssistantTurn(plan, language = "zh", boundaryIndex = 0,
   if (Object.values(extra).every((value) => value === null || value === "all")) plan = { reply, actions, ...(Object.hasOwn(plan, "sendableDraft") ? { sendableDraft } : {}), ...(Object.hasOwn(plan, "activityDescription") ? { activityDescription } : {}), ...(Object.hasOwn(plan, "planConstraints") ? { planConstraints } : {}), ...(Object.hasOwn(plan, "sourceBased") ? { sourceBased } : {}), ...(Object.hasOwn(plan, "unsupportedPremise") ? { unsupportedPremise } : {}) };
   return { ...plan, actions: plan.actions.map((action) => {
     if (!action?.fields || typeof action.fields !== "object") return action;
-    const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...action.fields };
+    // Task 61 (R5, two 502s): an unknown key whose value is empty ("query_unused": null, "privateBoundary": false copied into an
+    // action) and a misspelled empty field ("swpaceId": null) carry nothing and are dropped. An unknown key WITH content still
+    // fails validation, so nothing the model meant is ever ignored.
+    const known = Object.fromEntries(Object.entries(action.fields).filter(([key, value]) => FIELD_KEYS.includes(key) || !empty(value)));
+    const fields = { title: null, text: null, localDateTime: null, timezone: null, frequency: null, date: null, mood: null, layout: null, spaceId: null, done: null, photoId: null, handoff: null, ...known };
     // A field written next to fields instead of inside it (use-case round 6: photoId beside a moment's fields) moves in.
     const moved = Object.fromEntries(Object.entries(action).filter(([key]) => !ACTION_KEYS.includes(key) && Object.hasOwn(fields, key)));
     for (const [key, value] of Object.entries(moved)) if (fields[key] === null) fields[key] = value;
-    return { ...Object.fromEntries(Object.entries(action).filter(([key]) => !Object.hasOwn(moved, key))), fields };
+    return { ...Object.fromEntries(Object.entries(action).filter(([key, value]) => !Object.hasOwn(moved, key) && (ACTION_KEYS.includes(key) || !empty(value)))), fields };
   }) };
 }
 const ACTION_KEYS = ["operation", "kind", "targetId", "expectedVersion", "fields", "query", "queryPeriod", "occurrence"];
+const FIELD_KEYS = ["title", "text", "localDateTime", "timezone", "frequency", "date", "mood", "layout", "spaceId", "done", "photoId", "handoff"];
+const empty = (value) => value === null || value === undefined || value === "" || value === false
+  || Array.isArray(value) && !value.length || typeof value === "object" && value && !Array.isArray(value) && !Object.keys(value).length;
