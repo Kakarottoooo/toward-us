@@ -113,10 +113,15 @@ for (const language of ["en", "es"] as const) test(`no Chinese on the main scree
 
     const page = await a.newPage();
     const check = async (label: string) => {
-      await page.waitForTimeout(700);
+      await page.waitForTimeout(400);
       const list = await leaks(page);
-      if (list.length) found.set(label, list);
-      await page.screenshot({ path: testInfo.outputPath(`${language}-${label.replace(/[^a-z0-9]+/gi, "-")}.png`) });
+      if (list.length) { found.set(label, list); await page.screenshot({ path: testInfo.outputPath(`${language}-${label.replace(/[^a-z0-9]+/gi, "-")}.png`) }); }
+    };
+    // Back to the conversation inside the App (a full reload of the dev bundle is slow); a page without the back button reloads.
+    const home = async () => {
+      const back = page.getByTestId("back-to-conversation");
+      if (await back.isVisible().catch(() => false)) { await back.click(); if (await page.getByTestId("open-drawer").isVisible().catch(() => false)) return; }
+      await page.goto("/");
     };
     // Just me: the composer suggestions (fetched twice so the model's set with its reasons is the one shown).
     await page.goto("/"); await expect(page.getByTestId("composer-ideas")).toBeVisible(); await check("just-me");
@@ -127,18 +132,21 @@ for (const language of ["en", "es"] as const) test(`no Chinese on the main scree
     await page.goto("/"); await page.getByTestId("open-drawer").click(); await check("drawer");
     const drawer = await page.locator("[data-testid^=drawer-]").evaluateAll((items) => items.map((item) => item.getAttribute("data-testid")!).filter((id) => !["drawer-share", "drawer-invite"].includes(id)));
     expect(drawer.length).toBeGreaterThan(4);
+    await page.goto("/");
     for (const id of drawer) {
-      await page.goto("/"); await page.getByTestId("open-drawer").click(); await page.getByTestId(id).click(); await check(id);
+      await page.getByTestId("open-drawer").click(); await page.getByTestId(id).click(); await check(id); await home();
     }
     // Settings and its pages.
+    await page.goto("/"); await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();
     for (const id of ["settings-access", "settings-profile", "settings-notifications", "settings-memory", "settings-processors", "settings-character", "settings-membership", "settings-report"]) {
-      await page.goto("/"); await page.getByTestId("open-drawer").click(); await page.getByTestId("drawer-settings").click();
       const row = page.getByTestId(id);
       if (!(await row.count())) continue;
       await row.click(); await check(id);
+      // Each settings page's back button returns to the settings list.
+      await page.getByTestId("back-to-conversation").click(); await expect(page.getByTestId("settings-access")).toBeVisible();
     }
-    // Pages reached by link.
-    for (const view of ["capabilities", "people", "import", "membership", "space", "moments", "upcoming", "reminders", "plans", "decide"]) { await page.goto(`/?view=${view}`); await check(`view-${view}`); }
+    // Pages reached only by link (the others are covered through the menu).
+    for (const view of ["import", "space", "reminders", "plans", "decide"]) { await page.goto(`/?view=${view}`); await check(`view-${view}`); }
     // The partner sees the same Us.
     const other = await b.newPage(); await other.goto("/?channel=us"); await expect(other.getByText(words.us)).toBeVisible(); await other.waitForTimeout(700);
     const partnerLeaks = await leaks(other); if (partnerLeaks.length) found.set("us-partner", partnerLeaks);
