@@ -143,6 +143,9 @@ test("fix 8: a read-only page is credited in one line; fetch time and HTTP statu
     assert.equal(webSourceText([page], "zh"), "来自「虚构页面」页面");
     assert.deepEqual(webEvidence([page]), [{ url, status: "ok", fetchedAt: page.fetchedAt, attempts: [200] }]);
   }
+  // Post-freeze (R6 portrait-package-compare): two pages with the same title are credited once, not twice.
+  const twins = [{ url: "http://x.test/a", status: "ok", title: "虚构只读页面" }, { url: "http://x.test/b", status: "ok", title: "虚构只读页面" }];
+  assert.equal(webSourceText(twins, "zh"), "来自「虚构只读页面」页面");
 });
 
 test("fix 9 and ruling: user-listed terms stay even when equal to the title; a summary re-wording the terms goes", () => {

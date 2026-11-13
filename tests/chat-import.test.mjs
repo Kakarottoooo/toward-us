@@ -668,6 +668,17 @@ test("under the user's format contract a new card is made quietly: no note is po
   assert.match(messages.at(-1).text, /可以，我顺路买点水果带过去。/);
 });
 
+test("a Together draft whose summary only re-worded its terms can still be sent for approval (task 61 practice regression)", async (t) => {
+  // Round 24 (frozen 599c24f): the draft was presented once when written, its re-worded summary cleared, and sending it for
+  // approval then failed with "请填写标题、说明和至少一条具体条款" (tool-agreement-draft, tool-agreement-no-proxy).
+  const f = await fixture(t, { shared: () => ({ reply: "草稿在下面。", draftAgreement: { title: "周末轮流做饭", summary: "周末轮流做饭。", terms: ["周末轮流做饭"], unresolvedPoints: [] }, actions: [] }) });
+  assert.equal((await f.request("/together/messages", "POST", { text: "Pinky，帮我们起草约定：周末轮流做饭。", itemId: randomUUID(), language: "zh" })).status, 201);
+  const sent = await f.request("/together/agreements/draft", "POST", { language: "zh" });
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  const agreement = (await f.store.listRelationshipRecordsForUser("agreements", f.people[0].id))[0];
+  assert.equal(agreement.title, "周末轮流做饭"); assert.equal(agreement.summary, "周末轮流做饭"); assert.deepEqual(agreement.terms, ["周末轮流做饭"]);
+});
+
 test("a screenshot sent in a person's own conversation goes on that person, whatever name the chat shows", async (t) => {
   // Founder 11-09: one conversation per person; what is sent there is about them.
   const { listPeople, personFor } = await import("../server/people.mjs");

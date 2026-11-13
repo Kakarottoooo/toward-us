@@ -157,6 +157,6 @@ export function webSourceText(results, language = "zh") {
   return results.map((row) => {
     const title = row.status === "ok" && String(row.title || "").trim();
     return language === "en" ? `From the ${title ? `“${title}”` : row.url} page` : language === "es" ? `De la página ${title ? `«${title}»` : row.url}` : `来自${title ? `「${title}」` : ` ${row.url} `}页面`;
-  }).join("\n");
+  }).filter((line, index, lines) => lines.indexOf(line) === index).join("\n");
 }
 export const webEvidence = (results) => results.map(({ url, status, fetchedAt, attempts, cached }) => ({ url, status, fetchedAt, ...(attempts?.length ? { attempts } : {}), ...(cached ? { cached: true } : {}) }));

@@ -513,7 +513,9 @@ export async function draftAgreementFromTogether(tx, { relationshipId, userId, v
   if (agreements.some((item) => item.status === "awaiting_approvals")) throw decisionError(409, "one_pending_agreement");
   const own = agreements.filter((item) => item.sourceTogetherId === conversation.id);
   if (!values && !conversation.draftAgreement) throw decisionError(409, "together_draft_required");
-  const fields = agreementValues(values || conversation.draftAgreement);
+  // A draft presented without a summary (it only re-worded the title and terms, task 61) is still a complete agreement: its
+  // title is its description. Round 24 sent such drafts for approval and the agreement was refused as missing a summary.
+  const fields = agreementValues(values || { ...conversation.draftAgreement, summary: conversation.draftAgreement.summary || conversation.draftAgreement.title });
   // A change request moves the agreement back to "draft"; revising it keeps one history and bumps the version both must approve.
   const revisable = own.filter((item) => item.status === "draft").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   let agreement;
