@@ -69,8 +69,9 @@ databases:
   - name: toward-us-private-beta-db
     databaseName: toward_us_private_beta
     user: toward_us_app
-    # Free for now; it expires 30 days after creation and is deleted 14 days later, with no backups. basic-256mb before launch.
-    plan: free
+    # The live database is on Basic-256mb; saying free here made every Blueprint sync fail
+    # ("cannot downgrade database from Basic-256mb to Free"), so build command changes never reached Render.
+    plan: basic-256mb
     region: oregon
     postgresMajorVersion: "18"
     ipAllowList: []
