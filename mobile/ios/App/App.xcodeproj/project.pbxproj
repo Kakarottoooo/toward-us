@@ -18,7 +18,47 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		7B0610000000000000000B01 /* PinkyStorePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A01 /* PinkyStorePlugin.swift */; };
+		7B0610000000000000000B02 /* PinkyWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A02 /* PinkyWidgetPlugin.swift */; };
+		7B0610000000000000000B03 /* PinkyWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A04 /* PinkyWidget.swift */; };
+		7B0610000000000000000B04 /* PinkyWidgetCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A05 /* PinkyWidgetCore.swift */; };
+		7B0610000000000000000B05 /* PinkyWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A09 /* PinkyWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7B0610000000000000000B06 /* PinkyStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A0A /* PinkyStoreTests.swift */; };
+		7B0610000000000000000B07 /* PinkyWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A0B /* PinkyWidgetTests.swift */; };
+		7B0610000000000000000B08 /* PinkyWidgetCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A05 /* PinkyWidgetCore.swift */; };
+		7B0610000000000000000B09 /* Pinky.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A08 /* Pinky.storekit */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7B0610000000000000000E03 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B0610000000000000000D01;
+			remoteInfo = PinkyWidgetExtension;
+		};
+		7B0610000000000000000E05 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7B0610000000000000000E01 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7B0610000000000000000B05 /* PinkyWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		7A0510000000000000000010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -36,6 +76,18 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		7B0610000000000000000A01 /* PinkyStorePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyStorePlugin.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A02 /* PinkyWidgetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyWidgetPlugin.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A03 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		7B0610000000000000000A04 /* PinkyWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyWidget.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A05 /* PinkyWidgetCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyWidgetCore.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A06 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7B0610000000000000000A07 /* PinkyWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PinkyWidget.entitlements; sourceTree = "<group>"; };
+		7B0610000000000000000A08 /* Pinky.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Pinky.storekit; sourceTree = "<group>"; };
+		7B0610000000000000000A09 /* PinkyWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PinkyWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B0610000000000000000A0A /* PinkyStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyStoreTests.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A0B /* PinkyWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyWidgetTests.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A0C /* AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +99,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B0610000000000000000D04 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0610000000000000000D14 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -54,7 +120,10 @@
 			isa = PBXGroup;
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
+				7B0610000000000000000A08 /* Pinky.storekit */,
 				504EC3061FED79650016851F /* App */,
+				7B0610000000000000000C01 /* PinkyWidget */,
+				7B0610000000000000000C02 /* AppTests */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -63,6 +132,8 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				7B0610000000000000000A09 /* PinkyWidgetExtension.appex */,
+				7B0610000000000000000A0C /* AppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -71,6 +142,9 @@
 			isa = PBXGroup;
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				7B0610000000000000000A01 /* PinkyStorePlugin.swift */,
+				7B0610000000000000000A02 /* PinkyWidgetPlugin.swift */,
+				7B0610000000000000000A03 /* App.entitlements */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -85,6 +159,26 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		7B0610000000000000000C01 /* PinkyWidget */ = {
+			isa = PBXGroup;
+			children = (
+				7B0610000000000000000A04 /* PinkyWidget.swift */,
+				7B0610000000000000000A05 /* PinkyWidgetCore.swift */,
+				7B0610000000000000000A06 /* Info.plist */,
+				7B0610000000000000000A07 /* PinkyWidget.entitlements */,
+			);
+			path = PinkyWidget;
+			sourceTree = "<group>";
+		};
+		7B0610000000000000000C02 /* AppTests */ = {
+			isa = PBXGroup;
+			children = (
+				7B0610000000000000000A0A /* PinkyStoreTests.swift */,
+				7B0610000000000000000A0B /* PinkyWidgetTests.swift */,
+			);
+			path = AppTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -95,10 +189,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				7B0610000000000000000E01 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7B0610000000000000000E02 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -107,6 +203,41 @@
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		7B0610000000000000000D01 /* PinkyWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7B0610000000000000000D02 /* Build configuration list for PBXNativeTarget "PinkyWidgetExtension" */;
+			buildPhases = (
+				7B0610000000000000000D03 /* Sources */,
+				7B0610000000000000000D04 /* Frameworks */,
+				7B0610000000000000000D05 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PinkyWidgetExtension;
+			productName = PinkyWidgetExtension;
+			productReference = 7B0610000000000000000A09 /* PinkyWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		7B0610000000000000000D11 /* AppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7B0610000000000000000D12 /* Build configuration list for PBXNativeTarget "AppTests" */;
+			buildPhases = (
+				7B0610000000000000000D13 /* Sources */,
+				7B0610000000000000000D14 /* Frameworks */,
+				7B0610000000000000000D15 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7B0610000000000000000E04 /* PBXTargetDependency */,
+			);
+			name = AppTests;
+			productName = AppTests;
+			productReference = 7B0610000000000000000A0C /* AppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -121,6 +252,26 @@
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+							com.apple.InAppPurchase = {
+								enabled = 1;
+							};
+						};
+					};
+					7B0610000000000000000D01 = {
+						CreatedOnToolsVersion = 26.0;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+						};
+					};
+					7B0610000000000000000D11 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 504EC3031FED79650016851F;
 					};
 				};
 			};
@@ -143,6 +294,8 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				7B0610000000000000000D01 /* PinkyWidgetExtension */,
+				7B0610000000000000000D11 /* AppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -163,6 +316,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B0610000000000000000D05 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0610000000000000000D15 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B0610000000000000000B09 /* Pinky.storekit in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -172,10 +340,44 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				7B0610000000000000000B01 /* PinkyStorePlugin.swift in Sources */,
+				7B0610000000000000000B02 /* PinkyWidgetPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0610000000000000000D03 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B0610000000000000000B03 /* PinkyWidget.swift in Sources */,
+				7B0610000000000000000B04 /* PinkyWidgetCore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0610000000000000000D13 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B0610000000000000000B06 /* PinkyStoreTests.swift in Sources */,
+				7B0610000000000000000B07 /* PinkyWidgetTests.swift in Sources */,
+				7B0610000000000000000B08 /* PinkyWidgetCore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7B0610000000000000000E02 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B0610000000000000000D01 /* PinkyWidgetExtension */;
+			targetProxy = 7B0610000000000000000E03 /* PBXContainerItemProxy */;
+		};
+		7B0610000000000000000E04 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = 7B0610000000000000000E05 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -321,6 +523,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -343,6 +546,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -357,6 +561,90 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		7B0610000000000000000D06 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PinkyWidget/PinkyWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = PinkyWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = us.toward.app.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7B0610000000000000000D07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PinkyWidget/PinkyWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = PinkyWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = us.toward.app.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7B0610000000000000000D16 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = us.toward.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Debug;
+		};
+		7B0610000000000000000D17 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = us.toward.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
 			};
 			name = Release;
 		};
@@ -377,6 +665,24 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7B0610000000000000000D02 /* Build configuration list for PBXNativeTarget "PinkyWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7B0610000000000000000D06 /* Debug */,
+				7B0610000000000000000D07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7B0610000000000000000D12 /* Build configuration list for PBXNativeTarget "AppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7B0610000000000000000D16 /* Debug */,
+				7B0610000000000000000D17 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

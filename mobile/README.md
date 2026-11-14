@@ -125,3 +125,44 @@ TOWARD_US_APP_URL=https://node.tail3f720f.ts.net npm run ios   # 生成配置、
 4. iPhone 第一次要：设置 → 隐私与安全性 → 开发者模式 打开（会重启）；设置 → 通用 → VPN 与设备管理 → 信任自己的开发者证书。
 
 免费签名的包 7 天后失效，到期重新点一次运行即可；不能收原生推送。图标已是 Pinky（`AppIcon-512@2x.png`，1024×1024）。
+
+## iPhone 桌面小组件和 App 内购买（2026-11-06）
+
+两样东西都已经写进 iOS 工程，模拟器里编过、测过；**装到真机需要正式的 Apple 开发者账号（每年 99 美元）**，现在用的免费 Personal Team 不支持 App Groups 和 App 内购买。
+
+### 桌面小组件（PinkyWidget）
+
+- 尺寸：桌面小号、中号；锁屏长条、圆形。显示在一起的天数（大数字）、🔥 连续天数和今天谁打过卡（你 ✓ / TA ○）、下一个日子（“生日 · 还有 25 天”）、TA 的名字。语言跟服务器返回的 `language`（中 / 英 / 西）。点一下打开 Pinky。
+- 怎么拿数据：网页登录后（在 App 里）调用 `Capacitor.Plugins.PinkyWidget.setWidgetData({ baseUrl, token })`，`token` 是服务器 `POST /api/widget/token` 发的小组件专用令牌（不是登录 Cookie）。原生插件把它存进 App Group `group.us.toward.app`（键 `pinky.widget.baseUrl` / `pinky.widget.token`），刷新小组件。小组件自己每 30 分钟左右请求一次 `GET {baseUrl}/api/widget`（`Authorization: Bearer`）。退出登录时网页调用 `PinkyWidget.clear()`，令牌和缓存一起删掉。
+- 出错时：没令牌或服务器回 401 → 显示“打开 Pinky 登录”；404（服务器还没上这个接口）、断网、5xx → 显示上次的数字，没有就显示“打开 Pinky 看看今天”。
+- 代码：`ios/App/PinkyWidget/`（入口 `PinkyWidget.swift`，界面和请求 `PinkyWidgetCore.swift`），插件 `ios/App/App/PinkyWidgetPlugin.swift`。小组件 Bundle ID 是 App 的加 `.widget`（`us.toward.app.widget`）。
+
+### App 内购买（PinkyStore，StoreKit 2）
+
+- 网页调用 `Capacitor.Plugins.PinkyStore`：`products({ ids })`、`purchase({ id, appAccountToken })`（`appAccountToken` 是登录用户的 id，必须是 UUID）、`restore({ sync })`，以及事件 `transaction`（续费、家长批准、在别的设备买的）。买到后把 `signedTransaction` 交给服务器 `POST /api/membership/apple/verify` 验证；会员按情侣算，一个人付，两个人都是会员。
+- 商品：会员订阅（同一订阅组“Pinky 会员”）`us.toward.pinky.member.monthly` $9.99 / 月、`us.toward.pinky.member.yearly` $59.99 / 年；装扮（买断）`us.toward.pinky.outfit.<bow|crown|scarf|glasses|flower|santa>` 各 $1.99。
+- 本地测试：`ios/App/Pinky.storekit` 里是这些商品，已挂在共享 Scheme `App` 的 Run 上（Xcode 里 Product → Scheme → Edit Scheme → Run → Options → StoreKit Configuration 应显示 `Pinky.storekit`），模拟器里点运行就能假装购买，不花钱、不连 App Store。
+- 代码：`ios/App/App/PinkyStorePlugin.swift`，两个插件都在 `SceneDelegate.swift` 的 `PinkyBridgeViewController` 里注册。
+
+### 自动测试（模拟器，不需要签名）
+
+`AppTests` 跑在真的 App 里：页面上的 JavaScript 通过 Capacitor 调插件，StoreKit 用 `Pinky.storekit` 应答（列商品、带 `appAccountToken` 购买、恢复、`transaction` 事件、小组件数据存取）；小组件的请求在假服务器上测 200 / 404 / 503 / 401，并把每个尺寸、每种状态画成 PNG。
+
+```sh
+cd mobile
+npm ci --ignore-scripts
+TOWARD_US_APP_URL=https://example.com npm run sync   # 测试只需要一个能打开的网页让 Capacitor 注入桥
+cd ios/App
+xcodebuild -project App.xcodeproj -scheme App -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' \
+  TEST_RUNNER_PINKY_SNAPSHOT_DIR=$PWD/widget-snapshots test
+```
+
+2026-11-06 在创始人的 Mac（Xcode 26.4）上 9 个测试全过，用的是 iOS 18.3 模拟器。iOS 26.4 模拟器上经 SSH 跑时，`SKTestSession` 报 `SKInternalErrorDomain Code=3`，3 个 StoreKit 测试拿不到商品，其余都过；在 Xcode 图形界面里跑是否正常还没试过。
+
+### 创始人要做的事
+
+1. 加入 Apple Developer Program（正式账号）。免费 Personal Team 签不了 App Groups 和 App 内购买，所以**在那之前，Xcode 里用免费账号给自己装包会签名失败**：临时办法是在 Xcode 里两个 target（App、PinkyWidgetExtension）的 Signing & Capabilities 删掉 App Groups（不要提交），小组件会一直显示“打开 Pinky 登录”。改了 App 的 Bundle ID（比如 `us.toward.pinky.ziwei`）时，小组件的也要改成 `<同一个>.widget`。
+2. 开发者后台：给 `us.toward.app` 和 `us.toward.app.widget` 打开 App Groups，建 `group.us.toward.app`；App 打开 In-App Purchase。
+3. App Store Connect：建 App，按上面的商品 id 和价格建订阅组“Pinky 会员”和 6 个装扮，签付费 App 协议、填银行和税务信息；沙盒测试账号。
+4. 服务器配好 Apple 的验证（另一个 PR 负责），之后在真机上用沙盒账号走一遍：买会员 → 两个人都变成会员；恢复购买；小组件登录后显示数字、退出后显示“打开 Pinky 登录”。
