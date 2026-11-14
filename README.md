@@ -95,32 +95,20 @@ npm run verify:deploy
 
 GitHub Actions 会在每次推送和 Pull Request 上运行后端测试、生产构建和 Sites 路由测试。生产部署仍需在 Render 中导入 `render.yaml` 并在密钥存储中配置 `OPENAI_API_KEY`。
 
-## 云端部署（Fly.io）
+## 云端部署（Render）
 
-服务器不依赖任何一台电脑或终端窗口：`Dockerfile` 把它打成一个容器，`fly.toml` 把它跑在 Fly.io 的 `pinky-app`（圣何塞 `sjc`，一台常开的机器，`/api/health` 健康检查）。手机 App 默认连 `https://pinky-app.fly.dev`（`mobile/scripts/config.mjs` 的 `CLOUD_URL`）。
+服务器跑在 Render 的 `toward-us-private-beta`（`render.yaml`），推送到 `main` 后自动构建上线；数据在 Render 的 PostgreSQL。手机 App 默认连 `https://toward-us-private-beta.onrender.com`（`mobile/scripts/config.mjs` 的 `CLOUD_URL`）。
 
-- 存储：设了 `DATABASE_URL` 密钥就用 PostgreSQL；不设就用挂在 `/data` 的卷上的 JSON 文件（`TOWARD_US_DATA_FILE=/data/pinky.json`），照片在 `/data/media`。卷只属于一台机器，所以只跑一台（`--ha=false`）。
-- 提醒、每日一问和伴侣推送由服务器自己的定时器发出，机器不自动停（`auto_stop_machines = "off"`）。
-- 第一次创建（只需一次）。`REMINDER_RUN_SECRET` 是内部报表用的密钥，至少 32 个字符：
-
-```bash
-fly apps create pinky-app
-fly volumes create pinky_data --app pinky-app --region sjc --size 3
-fly secrets set --app pinky-app OPENAI_API_KEY=... ANTHROPIC_API_KEY=... REMINDER_RUN_SECRET=...   # 其余密钥名见下
-fly deploy --app pinky-app --ha=false --build-arg BUILD_COMMIT=$(git rev-parse HEAD)
-TOWARD_US_BASE_URL=https://pinky-app.fly.dev EXPECTED_STORAGE=file npm run verify:deploy   # 设了 DATABASE_URL 就去掉 EXPECTED_STORAGE
-```
-
-可选密钥（按需要设，只设名字对应的值，不要写进仓库）：`DATABASE_URL`、`RESEND_API_KEY`、`EMAIL_FROM`、`PINKY_SUPPORT_EMAIL`、`PINKY_OPERATOR`、`FOUNDER_EMAILS`、`VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`、`FCM_SERVICE_ACCOUNT_JSON`、`SENDBLUE_API_KEY`、`SENDBLUE_API_SECRET`、`SENDBLUE_FROM_NUMBER`、`SENDBLUE_WEBHOOK_SECRET`、`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`STRIPE_PRICE_MONTHLY`、`STRIPE_PRICE_YEARLY`、`APPLE_BUNDLE_IDS`。
-
-之后每次上线只跑最后的 `fly deploy` 那一行。
+- 构建会先装 Chromium（网页只读查询和它的测试要用），装在项目目录里（`PLAYWRIGHT_BROWSERS_PATH=0`），运行时也能找到。
+- 提醒、每日一问和伴侣推送由 GitHub Actions 的 `Deliver reminders` 定时调用服务器触发（`.github/workflows/reminders.yml`）。
+- 上线后核对：`curl https://toward-us-private-beta.onrender.com/api/health` 里的 `commit` 应是最新的 `main`。
 
 ## 伴侣加入数据
 
 邀请创建、链接第一次被打开、伴侣加入三个时间点都记在邀请上（只有时间，没有名字和内容）。看漏斗：
 
 ```bash
-REMINDER_RUN_SECRET=... node scripts/partner-join-report.mjs --url https://pinky-app.fly.dev --days 30
+REMINDER_RUN_SECRET=... node scripts/partner-join-report.mjs --url https://toward-us-private-beta.onrender.com --days 30
 ```
 
 输出邀请数、被打开数、加入数，以及 48 小时内加入的比例（只算已满 48 小时的邀请）。

@@ -7,13 +7,17 @@ services:
     #   disk: { name: pinky-media, mountPath: /var/data, sizeGB: 1 }  plus env TOWARD_US_MEDIA_DIR=/var/data/media
     plan: free
     region: oregon
-    buildCommand: npm ci --include=dev && npm run build && npm run test:app
+    # Chromium for the read-only web lookups (server/readonly-web.mjs) and their tests, kept inside the project
+    # (PLAYWRIGHT_BROWSERS_PATH=0) so the running service finds it too. Without it every build since #181 failed.
+    buildCommand: npm ci --include=dev && npx playwright install chromium && npm run build && npm run test:app
     startCommand: npm start
     autoDeploy: true
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
       - key: DATABASE_URL
         fromDatabase:
           name: toward-us-private-beta-db

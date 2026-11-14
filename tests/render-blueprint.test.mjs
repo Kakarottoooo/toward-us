@@ -7,7 +7,7 @@ test("Render installs build-time dependencies under NODE_ENV=production", async 
 
   assert.match(
     blueprint,
-    /buildCommand:\s+npm ci --include=dev && npm run build && npm run test:app/,
+    /buildCommand:\s+npm ci --include=dev && npx playwright install chromium && npm run build && npm run test:app/,
   );
   assert.match(blueprint, /key:\s+NODE_ENV\s+value:\s+production/);
 });

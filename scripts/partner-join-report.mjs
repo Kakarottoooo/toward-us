@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Partner join report: node scripts/partner-join-report.mjs [--days 30] [--url https://pinky-app.fly.dev] [--json]
+// Partner join report: node scripts/partner-join-report.mjs [--days 30] [--url https://toward-us-private-beta.onrender.com] [--json]
 // It reads GET /api/internal/partner-joins with the internal secret from REMINDER_RUN_SECRET (never printed). Counts and
 // timestamps only: no names, emails or invite codes leave the server.
 import { pathToFileURL } from "node:url";
