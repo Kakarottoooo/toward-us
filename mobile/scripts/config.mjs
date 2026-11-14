@@ -3,9 +3,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The shell loads the hosted web app so the existing HttpOnly session cookie keeps working unchanged.
-// TOWARD_US_APP_URL is read at sync time. A dogfood build may fall back to DEFAULT_URL; a release build (--release, used
-// for TestFlight and the App Store) must name its production URL explicitly and may not point at a private address.
-const DEFAULT_URL = 'https://toward-us-private-beta.onrender.com';
+// CLOUD_URL is Pinky's server in the cloud (fly.toml, Fly.io app "pinky-app"): the one place the App's server is set.
+// TOWARD_US_APP_URL overrides it at sync time for dogfooding (a PC on the same Wi-Fi, a Tailscale name). A release build
+// (--release, used for TestFlight and the App Store) may not point at a private or cleartext address.
+export const CLOUD_URL = 'https://pinky-app.fly.dev';
 
 /** Why `url` cannot be the server of a build that goes to TestFlight or the App Store, or '' when it can. */
 export function releaseProblem(url) {
@@ -20,9 +21,8 @@ export function releaseProblem(url) {
 
 /** The Capacitor config and the two bundled pages for a build that loads `raw`. Throws with a readable reason. */
 export function shellFiles(raw, { release = false } = {}) {
-  if (release && !raw) throw new Error('A release build needs TOWARD_US_APP_URL set to the production https:// URL (no default).');
   let url;
-  try { url = new URL(raw || DEFAULT_URL); } catch { throw new Error('TOWARD_US_APP_URL is not a valid URL: ' + raw); }
+  try { url = new URL(raw || CLOUD_URL); } catch { throw new Error('TOWARD_US_APP_URL is not a valid URL: ' + raw); }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('TOWARD_US_APP_URL must be http(s): ' + raw);
   const problem = release ? releaseProblem(url) : '';
   if (problem) throw new Error(problem + ': ' + url.origin);

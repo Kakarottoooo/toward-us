@@ -7,7 +7,9 @@ assert(health.status === 200, `health returned ${health.status}`);
 const healthBody = await health.json();
 if (process.env.EXPECTED_COMMIT) assert(healthBody.commit === process.env.EXPECTED_COMMIT, "deployed commit does not match the reviewed build");
 assert(healthBody.ok === true, "health body is not ready");
-assert(healthBody.storage === "postgres", `expected postgres, received ${healthBody.storage}`);
+// Render runs on PostgreSQL; the Fly service may run on its volume's JSON file instead (EXPECTED_STORAGE=file).
+const expectedStorage = process.env.EXPECTED_STORAGE || "postgres";
+assert(healthBody.storage === expectedStorage, `expected ${expectedStorage}, received ${healthBody.storage}`);
 assert(Boolean(health.headers.get("strict-transport-security")), "HSTS header is missing");
 
 const anonymous = await fetch(`${baseUrl}/api/auth/me`);

@@ -7,12 +7,12 @@ import { offlinePage, releaseProblem, shellFiles } from "../mobile/scripts/confi
 // real page when that server can't be reached, and carry the privacy manifest, export answer and purpose strings.
 const ios = (path) => readFileSync(new URL(`../mobile/ios/App/${path}`, import.meta.url), "utf8");
 
-test("a release build refuses the dogfood, local and cleartext addresses and needs an explicit URL", () => {
+test("a release build refuses the dogfood, local and cleartext addresses and defaults to the cloud server", () => {
   for (const url of ["https://node.tail3f720f.ts.net", "http://pinky.example.com", "https://localhost:5173", "https://127.0.0.1", "https://192.168.1.23:5173", "https://mac.local"]) {
     assert.notEqual(releaseProblem(new URL(url)), "", url);
     assert.throws(() => shellFiles(url, { release: true }), undefined, url);
   }
-  assert.throws(() => shellFiles("", { release: true }), /production https:\/\/ URL/);
+  assert.equal(shellFiles("", { release: true }).config.server.url, "https://pinky-app.fly.dev");
   assert.equal(releaseProblem(new URL("https://pinky.example.com")), "");
   assert.equal(shellFiles("https://pinky.example.com/path", { release: true }).config.server.url, "https://pinky.example.com");
   // Dogfood builds keep working as before, the Tailscale address included.
