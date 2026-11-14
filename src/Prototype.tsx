@@ -19,15 +19,16 @@ import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativ
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
-import { brandLabel, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
+import { brandLabel, inInterfaceLanguage, initialLanguage, isLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
 
-type Screen = "booting" | "home" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
+type Screen = "booting" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
-type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; expiresAt: string } | null };
+type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null } | null };
+type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" };
 
 const copy = {
   zh: {
@@ -67,7 +68,8 @@ export default function Prototype() {
 }
 
 function AccountPrototype() {
-  const [language, setLanguage] = useState<Language>(initialLanguage);
+  // A partner opening an invite link on a new device sees it in their phone's language, not the default Chinese.
+  const [language, setLanguage] = useState<Language>(() => { try { if (!isLanguage(localStorage.getItem("toward-us.language")) && inviteCode()) { const tag = navigator.language.toLowerCase(); return tag.startsWith("zh") ? "zh" : tag.startsWith("es") ? "es" : "en"; } } catch { /* private mode */ } return initialLanguage(); });
   // Until the server says who this is, show only the plain paper background (founder 11-08: opening Pinky flashed the
   // signed-out landing page, then an empty chat, before the real conversation).
   const [screen, setScreen] = useState<Screen>("booting");
@@ -80,6 +82,8 @@ function AccountPrototype() {
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  // From the invite landing page, "I already have an account" opens sign-in instead of sign-up.
+  const [authMode, setAuthMode] = useState<"login" | "register" | undefined>();
   const keyboard = useKeyboard();
   const t = copy[language];
 
@@ -87,7 +91,8 @@ function AccountPrototype() {
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
-      setScreen(state.user ? landing(state.pairing) : "home");
+      // Signed out with a partner's invite link: the page that says who invited them comes first, not the generic home.
+      setScreen(state.user ? landing(state.pairing) : inviteCode() ? "invite" : "home");
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen("home"));
     listenNativePushTaps();
@@ -125,10 +130,21 @@ function AccountPrototype() {
   }, [user?.id]);
 
   const selectLanguage = (value: Language) => setLanguage(value);
-  const acceptAuth = (state: { user: User; pairing: Pairing | null }) => {
+  const acceptAuth = async (state: { user: User; pairing: Pairing | null }) => {
     const next = new URLSearchParams(location.search).get("next");
     if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
-    setUser(state.user); setPairing(state.pairing); setNotice(""); setScreen(landing(state.pairing));
+    setUser(state.user); setPairing(state.pairing); setNotice("");
+    // Arriving from a partner's invite link, signing up or in is the "join" tap: they land in the shared space without typing
+    // the code. If joining fails (expired, already paired), the code screen shows why, with the code filled in.
+    const code = inviteCode();
+    if (code && state.pairing?.status !== "active" && state.pairing?.invitation?.code !== code) {
+      try {
+        await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) });
+        history.replaceState({}, "", `${location.pathname}?channel=us`);
+        const joined = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
+        setUser(joined.user); setPairing(joined.pairing); setScreen("conversation");
+      } catch (error) { setNotice(accountError((error as Error).message, language)); setScreen("pairing"); }
+    } else setScreen(landing(state.pairing));
     // Signing in is the user action that may ask, once, for App notification permission (a no-op in a browser).
     void enableNativePush();
     // Inside the iPhone App, the home-screen widget gets its own read-only token (a no-op in a browser).
@@ -142,13 +158,15 @@ function AccountPrototype() {
 
   const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
+  // The screen a page link opens on.
+  const screenFor = (url: string): Screen => url.includes("game=") ? "conversation" : url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen;
   const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
   const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
   // No AI work for anyone who hasn't agreed to third-party AI yet: they see the consent screen first (accounts made before
   // sign-up asked for it). Declining signs them out; Settings can withdraw it later, which brings this screen back.
   if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => void logout()} />;
-  if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
+  if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
   if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
   if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
   if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
@@ -156,11 +174,12 @@ function AccountPrototype() {
   if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
   if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
-  if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(url.includes("game=") ? "conversation" : fullScreen); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
+  if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
   if (screen === "feedback" && user) return <FeedbackPage language={language} from={feedbackFrom} onBack={backToConversation} />;
   if (screen === "privacy" && user) return <SettingsPage initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
+  if (screen === "invite") return <InviteLanding code={inviteCode()} language={language} onLanguage={selectLanguage} onJoin={() => { setAuthMode("register"); setScreen("auth"); }} onSignIn={() => { setAuthMode("login"); setScreen("auth"); }} />;
   if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
-  if (screen === "auth") return <AuthScreen language={language} onLanguage={selectLanguage} onBack={() => setScreen("home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+  if (screen === "auth") return <AuthScreen key={authMode} initialMode={authMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(inviteCode() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "pairing" && user) return <PairingScreen pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
   if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
   return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
@@ -183,29 +202,29 @@ function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; 
         <p className="desktop-kicker">{localized(language, "拉钩，说好就算数", "A PINKY PROMISE FOR TWO", "UNA PROMESA DE MEÑIQUE PARA DOS")}</p>
         <h1>{t.homeLine}</h1>
         <PauseMark />
-        <p className="desktop-home-support">{localized(language, "属于两个人的共同关系 Agent。帮助你们一起沟通、决定、计划、记住，并把说过的话真正做到。", "A shared relationship agent for two people. It helps you communicate, decide, plan, remember, and follow through together.", "Un agente de relación compartido para dos personas. Les ayuda a comunicarse, decidir, planear, recordar y cumplir juntos.")}</p>
+        <p className="desktop-home-support">{localized(language, "把 TA 的话或聊天截图发给 Pinky，它帮你看懂 TA 的意思，写一句你可以直接发的回复。一个人就能用；想两个人一起用时，再邀请 TA。", "Send Pinky what they said, or a screenshot of the chat. It helps you read what they mean and writes a reply you can send as is. It works on your own; invite your partner when you want to use it together.", "Envía a Pinky lo que te dijo, o una captura del chat. Te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Funciona a solas; invita a tu pareja cuando quieran usarlo juntos.")}</p>
         <div className="desktop-home-actions">
-          <button className="desktop-primary-cta" onClick={() => location.assign("/demo")}>{localized(language, "开始一次对话", "Start a conversation", "Iniciar una conversación")}<ArrowRight size={24} /></button>
-          <button className="desktop-secondary-cta" onClick={onStart}>{localized(language, "登录共同空间", "Enter your shared space", "Entrar al espacio compartido")}</button>
+          <button className="desktop-primary-cta" onClick={onStart}>{localized(language, "开始", "Get started", "Comenzar")}<ArrowRight size={24} /></button>
+          <button className="desktop-secondary-cta" onClick={() => location.assign("/demo")}>{localized(language, "两个人当面试一次（不用注册）", "Try it together in person (no sign-up)", "Pruébenlo juntos en persona (sin registro)")}</button>
         </div>
       </main>
-      <footer className="desktop-home-footer" id="how-it-works"><span>{localized(language, "一起沟通", "Communicate", "Comunicarse")}</span><i /><span>{localized(language, "一起决定与计划", "Decide & plan", "Decidir y planear")}</span><i /><span>{localized(language, "共同履行与复盘", "Follow through & review", "Cumplir y revisar")}</span></footer>
+      <footer className="desktop-home-footer" id="how-it-works"><span>{localized(language, "看懂 TA 的话", "Read what they mean", "Entender lo que quiere decir")}</span><i /><span>{localized(language, "写一句能发的回复", "Get a reply you can send", "Una respuesta lista para enviar")}</span><i /><span>{localized(language, "两个人说好就算数", "It counts once you both agree", "Cuenta cuando los dos aceptan")}</span></footer>
     </div>
   </div>;
 }
 
-function AuthScreen({ language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
-  language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => void;
+function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
+  initialMode?: "login" | "register"; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   // Someone arriving from an invite link is almost always new: they start on sign-up, with sign-in one tap away.
-  const [mode, setMode] = useState<"login" | "register">(() => new URLSearchParams(location.search).has("invite") ? "register" : "login");
+  const [mode, setMode] = useState<"login" | "register">(() => initialMode || (new URLSearchParams(location.search).has("invite") ? "register" : "login"));
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const keyboard = useKeyboard();
   const submit = async () => {
     keyboard.hide(); setBusy(true); setNotice("");
     // Creating an account right under the AI disclosure is the explicit consent to third-party AI (recorded by the server).
-    try { onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, aiConsent: true }) })); }
+    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, aiConsent: true }) })); }
     catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); }
   };
   return <MobileScroll className="paper-screen auth-screen" data-testid="auth-screen">
@@ -230,12 +249,15 @@ function PairingScreen({ pairing, language, onLanguage, onRefresh, onBack, notic
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get("invite")?.toUpperCase() || "");
+  // Opened from a partner's link: name who sent it.
+  const [inviter, setInviter] = useState("");
+  useEffect(() => { const linked = inviteCode(); if (linked) api<{ invitation: InvitePreview }>(`/api/partner/invitations/${linked}`).then((result) => setInviter(result.invitation.inviterName)).catch(() => {}); }, []);
   const keyboard = useKeyboard();
   // Joining stays available after making an invite; the server reconciles the two pending spaces.
   const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", `${location.pathname}?channel=us`); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
   return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{t.joinPartner}</h1><PauseMark /></div>
-      <p className="pairing-lead">{t.joinHint}</p>
+      <p className="pairing-lead">{inviter ? localized(language, `${inviter} 邀请你一起用 Pinky。接受后，你们俩共同的对话“我们俩”就会打开。`, `${inviter} invited you to Pinky. Accept to open Us, the conversation the two of you share.`, `${inviter} te invitó a Pinky. Acepta para abrir Nosotros, la conversación que comparten.`) : t.joinHint}</p>
       <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => { setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)); setNotice(""); }} maxLength={8} autoComplete="off" data-testid="invite-code" /></label>
       <div className="pairing-actions"><button className="primary-action" onClick={accept} disabled={busy || code.length !== 8 || code === pairing?.invitation?.code}>{t.acceptInvite}</button>
         <button className="secondary-action" disabled={busy} onClick={() => { keyboard.hide(); onBack(); }}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button></div>
@@ -243,13 +265,42 @@ function PairingScreen({ pairing, language, onLanguage, onRefresh, onBack, notic
     </main></MobileScroll>;
 }
 
-function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: (language: Language) => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark language={language} /><nav aria-label={localized(language, "主导航", "Main navigation", "Navegación principal")}><button onClick={() => location.assign("/demo")}>{localized(language, "快速体验", "Quick demo", "Demostración rápida")}</button><a href="#how-it-works">{localized(language, "如何工作", "How it works", "Cómo funciona")}</a><button onClick={onLogin}>{localized(language, "我们的复盘", "Our reviews", "Nuestras revisiones")}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{localized(language, "登录", "Sign in", "Iniciar sesión")}<ArrowRight size={17} /></button></div></header>; }
+/** Where a partner's invite link lands when signed out: who invited them, what Pinky is for the two of them in three lines,
+ * then sign-up (or sign-in) that joins the shared space in the same flow, without typing the code. A link that no longer
+ * works says so; signing up still works, and the code screen afterwards lets them try another code or go on alone. */
+function InviteLanding({ code, language, onLanguage, onJoin, onSignIn }: { code: string; language: Language; onLanguage: (language: Language) => void; onJoin: () => void; onSignIn: () => void }) {
+  const [preview, setPreview] = useState<InvitePreview | "missing" | null>(null);
+  useEffect(() => { api<{ invitation: InvitePreview }>(`/api/partner/invitations/${code}`).then((result) => setPreview(result.invitation)).catch(() => setPreview("missing")); }, [code]);
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const found = preview && preview !== "missing" ? preview : null;
+  const name = found?.inviterName || "";
+  const usable = found?.status === "open";
+  const problem = preview === "missing" ? t("找不到这个邀请。请让对方在 Pinky 里再发一次。", "This invite could not be found. Ask them to send it again from Pinky.", "No se encontró esta invitación. Pide que te la envíen de nuevo desde Pinky.")
+    : found?.status === "expired" ? t(`这个邀请已经过期了。请让${name || "对方"}在 Pinky 里再发一次。`, `This invite has expired. Ask ${name || "them"} to send it again from Pinky.`, `Esta invitación caducó. Pide a ${name || "tu pareja"} que la envíe de nuevo desde Pinky.`)
+    : found?.status === "used" ? t("这个邀请已经用过了。已经加入的话，直接登录就好。", "This invite has already been used. If you joined, just sign in.", "Esta invitación ya se usó. Si ya te uniste, solo inicia sesión.") : "";
+  return <MobileScroll className="paper-screen pairing-screen invite-landing" data-testid="invite-landing"><header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
+    <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content">
+      <div className="vertical-title"><h1 data-testid="invite-landing-title">{name ? t(`${name} 邀请你一起用 Pinky`, `${name} invited you to Pinky`, `${name} te invitó a Pinky`) : t("有人邀请你一起用 Pinky", "You're invited to Pinky", "Te invitaron a Pinky")}</h1><PauseMark /></div>
+      <ul className="invite-landing-points">
+        <li>{t("Pinky 帮你们两个人好好说话：不知道怎么回对方的时候，先问问它。", "Pinky helps the two of you talk well: when you're not sure how to reply, ask it first.", "Pinky les ayuda a hablar bien: cuando no sepas qué responder, pregúntale primero.")}</li>
+        <li>{t(`你有自己的私人对话，只有你能看到，${name || "对方"}也看不到。`, `You get your own private chat that only you can see, not even ${name || "them"}.`, `Tienes tu propio chat privado que solo tú ves, ni siquiera ${name || "tu pareja"}.`)}</li>
+        <li>{t("“我们俩”是你们和 Pinky 的共同对话；两个人都同意的事才算数。", "Us is the chat you two share with Pinky; something counts only once you both agree.", "Nosotros es el chat que comparten con Pinky; algo cuenta solo cuando los dos están de acuerdo.")}</li>
+      </ul>
+      {problem && <p className="form-notice" role="alert">{problem}</p>}
+      <div className="pairing-actions"><button className="primary-action" disabled={preview === null} onClick={onJoin} data-testid="invite-join">{usable ? t("创建账号并加入", "Create an account and join", "Crear una cuenta y unirme") : t("创建账号", "Create an account", "Crear una cuenta")}</button>
+        <button className="secondary-action" disabled={preview === null} onClick={onSignIn} data-testid="invite-sign-in">{usable ? t("我已有账号，登录并加入", "I have an account: sign in and join", "Ya tengo cuenta: entrar y unirme") : t("我已有账号，登录", "I have an account: sign in", "Ya tengo cuenta: iniciar sesión")}</button></div>
+    </main></MobileScroll>;
+}
+
+function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: (language: Language) => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark language={language} /><nav aria-label={localized(language, "主导航", "Main navigation", "Navegación principal")}><a href="#how-it-works">{localized(language, "如何工作", "How it works", "Cómo funciona")}</a><button onClick={() => location.assign("/demo")}>{localized(language, "两人快速体验", "Try it together", "Probar juntos")}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{localized(language, "登录", "Sign in", "Iniciar sesión")}<ArrowRight size={17} /></button></div></header>; }
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: (language: Language) => void; compact?: boolean }) { return <div className={`language-switch ${compact ? "compact" : ""}`} role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div>; }
 function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>P I N K Y</strong>{language === "zh" && <span>拉钩，说好就算数</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
 function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return params.has("invite") && pairing?.status !== "active" ? "pairing" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "people" ? "people" : params.get("view") === "capabilities" ? "capabilities" : params.get("view") === "membership" ? "privacy" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+// The partner invite code in the address (`?invite=ABCD2345`), or "" without one.
+function inviteCode() { const code = (new URLSearchParams(location.search).get("invite") || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return code.length === 8 ? code : ""; }
 // The server words account errors in Chinese; English and Spanish screens show their own words instead.
 const ACCOUNT_ERRORS: Record<string, [en: string, es: string]> = {
   "请输入有效邮箱。": ["Enter a valid email address.", "Introduce un correo electrónico válido."],

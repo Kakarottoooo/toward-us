@@ -450,8 +450,16 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   app.post("/api/partner/invitations", requireAuth, async (req, res) => {
     const existing = await store.getRelationshipContext(req.auth.user.id);
-    if (existing) return res.json({ pairing: publicPairing(existing, req.auth.user.id) });
     const now = new Date();
+    // Sending the invite again after it expired makes a fresh link for the same waiting space; an open one is reused.
+    if (existing?.relationship.status === "pending" && existing.members.length === 1 && !(existing.invitation?.expiresAt > now.toISOString())) {
+      const renewed = await store.renewInvitation({
+        code: await createUniqueCode(store, 8, "invitation"), relationshipId: existing.relationship.id, createdByUserId: req.auth.user.id,
+        createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(), acceptedAt: null, acceptedByUserId: null,
+      });
+      return res.status(renewed ? 201 : 200).json({ pairing: publicPairing(renewed || existing, req.auth.user.id) });
+    }
+    if (existing) return res.json({ pairing: publicPairing(existing, req.auth.user.id) });
     const relationship = { id: randomUUID(), status: "pending", createdAt: now.toISOString(), updatedAt: now.toISOString() };
     const membership = { relationshipId: relationship.id, userId: req.auth.user.id, role: "A", joinedAt: now.toISOString() };
     const invitation = {
@@ -461,6 +469,18 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const context = await store.createInvitation({ relationship, membership, invitation });
     if (!context) return res.status(409).json({ error: localText(languageOf(req), "当前账号已经属于一个共同空间。", "This account already belongs to a shared space.", "Esta cuenta ya pertenece a un espacio compartido.") });
     res.status(201).json({ pairing: publicPairing(context, req.auth.user.id) });
+  });
+
+  // What an invite link opens to, signed in or not: who sent it and whether it still works. Nothing else about the inviter.
+  // The first open by anyone but the inviter is recorded, for the inviter's waiting card and the partner-join report.
+  app.get("/api/partner/invitations/:code", async (req, res) => {
+    const invitation = await store.getInvitation(normalizeLongCode(req.params.code));
+    if (!invitation) return res.status(404).json({ error: localText(languageOf(req), "找不到这个邀请。", "This invite could not be found.", "No se encontró esta invitación.") });
+    const now = new Date().toISOString();
+    const status = invitation.acceptedAt ? "used" : invitation.expiresAt <= now ? "expired" : "open";
+    if (status === "open" && req.auth?.user?.id !== invitation.createdByUserId) await store.markInvitationOpened(invitation.code, now);
+    const inviter = await store.getUserById(invitation.createdByUserId);
+    res.json({ invitation: { inviterName: inviter && inviter.passwordHash !== "deleted" ? inviter.name : "", status, expiresAt: invitation.expiresAt } });
   });
 
   app.post("/api/partner/accept", requireAuth, async (req, res) => {
@@ -581,7 +601,7 @@ function publicPairing(context, viewerId) {
     status: context.relationship.status,
     role: context.membership.role,
     members: context.members.map((member) => ({ id: member.user.id, name: member.user.name, role: member.role, joinedAt: member.joinedAt })),
-    invitation: context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, expiresAt: context.invitation.expiresAt } : null,
+    invitation: context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null } : null,
   };
 }
 

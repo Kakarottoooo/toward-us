@@ -1,4 +1,4 @@
-# Toward Us 重启（App + iMessage）实施计划
+# Pinky 重启（App + iMessage）实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -11,7 +11,7 @@
 
 **Tech Stack：** Node 22、Express 5、PostgreSQL 或本地 JSON（两个 Store Adapter）、OpenAI（`gpt-5.4`，`store:false`）、React 19 + Vite、Capacitor 8（照 Onegent `mobile/` 的版本）、Sendblue REST API、Firebase Cloud Messaging HTTP v1。
 
-**Spec：** `docs/superpowers/specs/2026-11-01-toward-us-relaunch-design.md`；创始人原话见 `docs/founder-voice.md`。两份都要读。
+**Spec：** `docs/superpowers/specs/2026-11-01-pinky-relaunch-design.md`；创始人原话见 `docs/founder-voice.md`。两份都要读。
 
 ## Global Constraints
 
@@ -19,11 +19,11 @@
 - **受保护文件不动**：`src/App.tsx`、`src/main.tsx`、`src/styles.css`、`src/mobile/`、`public/assets/iphone|android|status/`、`vite.config.ts`、`worker/index.js`、`scripts/prepare-sites-build.mjs`。App 界面只改 `src/Prototype.tsx`、`src/features/**`、`src/*.css`。
 - **隐私**：私人内容只有本人能看。只有本人看过最终文本并确认的那一版才能进"我们俩"。约定必须双方批准同一个 `version`。共同 Agent 的上下文只由服务端拼装，任何私人 thread 或 assistant session 都不能进去。
 - **Agent 在群里开口的条件**：只在下面三种情况由代码判定后开口，不交给模型决定：
-  - 被叫到：消息里出现 `彼此`、`Toward`、`@agent`，或者直接回复 Agent 的上一条；
+  - 被叫到：消息里出现 `Pinky`、`@agent`，或者直接回复 Agent 的上一条；
   - 有正事：贴出待批准的约定、到点提醒、复盘到期；
   - 转达某一方已经确认分享的话。
   两人聊天或吵架时，Agent 不插话、不评论。
-- **语言**：所有新文案都要有 zh / en / es 三种，中文和英文做验收。非中文界面不出现"彼此"。
+- **语言**：所有新文案都要有 zh / en / es 三种，中文和英文做验收。非中文界面不出现中文。
 - **iMessage**：只认 iMessage 来的消息；SMS 来的消息每天最多回一条固定提示，不接到 Agent（照 Onegent 的做法）。同一时间每对情侣最多一个待批准约定。
 - **部署**：Render 维持免费层，不升级。所有新密钥只放在 Render 密钥库或 GitHub secret，不进仓库。
 - **开销**：任何付费开通之前，都先把价格报给创始人。
@@ -82,7 +82,7 @@
 - Produces：
   - 记录：每个 relationship 一条 `togetherConversations`，字段为 `visibility:"shared"`、`aiAccessScope:"joint"`、`messages:[{ id, role:"member"|"agent", actorUserId|null, source:"app"|"imessage"|"relay", kind:"text"|"relay"|"agreement_card"|"reminder"|"review", text, refs, handle|null, replyTo|null, createdAt }]`。`replyTo` 只在入口提供时填写，比如 App 里点了"回复"；Sendblue 不提供就填 null。
   - `buildTogetherContext(snapshot, relationshipId) -> { messages, activeAgreements, openCommitments, pendingAgreement|null }`。只读 `togetherConversations`、`agreements`、`commitments` 和双方授权的 memories，**不读** `privateAgentThreads`、`perspectives`、`evaluations` 或私人 reminders。
-  - `shouldAgentSpeak(message, { agentLastMessageId }) -> boolean`。判定被叫到：匹配 `/彼此|toward|@agent/i`，或者 `replyTo === agentLastMessageId`。
+  - `shouldAgentSpeak(message, { agentLastMessageId }) -> boolean`。判定被叫到：匹配 `/pinky|@agent/i`，或者 `replyTo === agentLastMessageId`。
   - `appendTogetherMessage(tx, { relationshipId, actorUserId|null, source, kind, text, handle|null, refs }) -> { conversation, message }`。按 `handle` 幂等。
   - `draftAgreementFromTogether(tx, { relationshipId, userId }) -> agreement`。新建 `status:"awaiting_approvals"`、`approvalPolicy:"both"`、`sourceTogetherId`、`proposalId:null`。不要求双方摘要，这就是轻量路径（决定 #11）。如果已有待批准约定，抛 409 `one_pending_agreement`。
   - HTTP 接口：
@@ -209,7 +209,7 @@
 
 **Files：** 不新增文件。这是对 Task 7 和 Task 9 的验收任务。
 
-- [ ] **Step 1（Review Focus 4）**：真机验收：A 在 iMessage 私聊里提到"PINEAPPLE-42"，然后在三人群里 @彼此 问"你知道我们最近怎么了吗"。预期：群里的回复不包含这个词，也不暗示 A 私下说过什么。
+- [ ] **Step 1（Review Focus 4）**：真机验收：A 在 iMessage 私聊里提到"PINEAPPLE-42"，然后在三人群里 @Pinky 问"你知道我们最近怎么了吗"。预期：群里的回复不包含这个词，也不暗示 A 私下说过什么。
 - [ ] **Step 2**：把结果记进 PR 描述。不通过就回到 Task 2，修 `buildTogetherContext`。
 
 ### Task 9：三人群和"我们俩"双向同步
@@ -240,7 +240,7 @@
   - 群里贴出约定 v1 → A 在 App 里请求修改，约定变成 v2 → B 在群里回"同意"。预期：收到"最新是 v2"的回复，约定没有生效；
   - 两人都回"同意" v2 → 约定生效，群里贴出"已生效"。
 - [ ] **Step 3**：真机验收同步：A 在 App 的"我们俩"里发一句话 → 群里出现"A：…"；B 在群里回一句 → A 的 App 里出现这句话。
-- [ ] **Step 4（Review Focus 5）**：A 在 App 里退出关系后，B 在群里 @彼此，预期没有回应。
+- [ ] **Step 4（Review Focus 5）**：A 在 App 里退出关系后，B 在群里 @Pinky，预期没有回应。
 - [ ] **Step 5**：跑回归，提交 `feat: couple iMessage group mirrors the together conversation`。
 
 ### Task 10：提醒走 iMessage
@@ -287,7 +287,7 @@
 **Files：** Create `mobile/`，结构照 Onegent `mobile/`：`package.json`（Capacitor 版本和 Onegent 一致）、`capacitor.config.json`、`scripts/check-native.mjs`、`ios/`、`android/`、`assets/`。
 
 **决定：**
-- `appId: "us.toward.app"`（Bundle ID 动手前在开发者账号里确认可用），`appName: "Toward Us"`。
+- `appId: "us.toward.app"`（Bundle ID 动手前在开发者账号里确认可用），`appName: "Pinky"`。
 - 内测版用 `server.url` 指向线上 HTTPS 域名，这样现有的 `HttpOnly` Cookie 会话不用改（这是我的判断）。公开上架前再评估要不要像 Onegent 那样把前端打包进安装包。
 - 麦克风权限说明写三语。iOS 用 Info.plist `NSMicrophoneUsageDescription`，Android 用 `RECORD_AUDIO`。
 
@@ -323,7 +323,7 @@
 - [ ] **Step 3**：创始人自己和伴侣完整走一次闭环：
   1. 私聊说难开口的话；
   2. 确认后发到"我们俩"；
-  3. 群里 @彼此 起草约定；
+  3. 群里 @Pinky 起草约定；
   4. 双方回"同意"；
   5. 承诺到点收到提醒；
   6. 两人各自复盘。

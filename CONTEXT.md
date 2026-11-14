@@ -1,6 +1,6 @@
-# Toward Us domain context
+# Pinky domain context
 
-Toward Us is a **Multi-principal Relationship Agent** for exactly two authenticated principals in one relationship. It helps both people communicate, decide, plan, remember, and follow through without allowing either person to control the shared agent alone.
+Pinky is a **Multi-principal Relationship Agent** for exactly two authenticated principals in one relationship. It helps both people communicate, decide, plan, remember, and follow through without allowing either person to control the shared agent alone.
 
 ## Domain language
 

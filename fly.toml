@@ -1,0 +1,49 @@
+# Pinky on Fly.io: one always-on machine in San Jose. Create the app, volume and secrets once (README, "云端部署"), then
+# `fly deploy --ha=false --build-arg BUILD_COMMIT=$(git rev-parse HEAD)`.
+app = "pinky-app"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  # Links in emails and messages (password reset, phone linking) point here.
+  TOWARD_US_BASE_URL = "https://pinky-app.fly.dev"
+  # Without a DATABASE_URL secret, everything is kept in this file on the volume; uploaded photos sit next to it.
+  TOWARD_US_DATA_FILE = "/data/pinky.json"
+  TOWARD_US_MEDIA_DIR = "/data/media"
+
+# The volume keeps the data file and photos across deploys and restarts. A volume belongs to one machine: run exactly one.
+[mounts]
+  source = "pinky_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Reminders, the evening daily question and partner pushes are sent by the server's own timer: it must keep running.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # The server redirects plain-http requests to https in production; the check says it came through the TLS edge.
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/api/health"
+    [http_service.checks.headers]
+      X-Forwarded-Proto = "https"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

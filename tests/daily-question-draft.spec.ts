@@ -99,7 +99,8 @@ for (const language of ["zh", "en", "es"]) test(`new-user controls look tappable
   await page.addInitScript((lang) => localStorage.setItem("toward-us.language", lang), language);
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/?invite=ABCD1234");
-  await page.getByTestId("start-button").click();
+  // An invite link opens the page that says who invited them; this code does not exist, so it says so and sign-up still works.
+  await page.getByTestId("invite-join").click();
   const auth = page.locator(".auth-screen"); await expect(auth).toBeVisible();
   const switchButton = auth.locator(".auth-switch").first();
   expect(await switchButton.evaluate((element) => getComputedStyle(element).borderTopStyle)).toBe("solid");

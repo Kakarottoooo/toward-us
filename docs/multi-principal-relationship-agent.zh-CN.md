@@ -1,8 +1,8 @@
-# Toward Us：Multi-principal Relationship Agent
+# Pinky：Multi-principal Relationship Agent
 
 更新日期：2026-09-07
 
-这份文档是 Toward Us 新产品方向、P0 实现、Consent Kernel、Relationship Graph、API、状态机、migration、安全边界与路线图的事实入口。运行时代码与自动化测试优先于文档；代码变化后应同步维护本文。
+这份文档是 Pinky 新产品方向、P0 实现、Consent Kernel、Relationship Graph、API、状态机、migration、安全边界与路线图的事实入口。运行时代码与自动化测试优先于文档；代码变化后应同步维护本文。
 
 ## 1. 产品方向与文案
 

@@ -1,4 +1,4 @@
-# Toward Us / 彼此 重启设计摘要（定稿，待创始人最终确认）
+# Pinky 重启设计摘要（定稿，待创始人最终确认）
 
 日期：2026-11-01 · 底子：`Kakarottoooo/toward-us` main（`cf5c042`）· 创始人原话记录：`docs/founder-voice.md`（PR #7）
 
@@ -25,7 +25,7 @@
 | 9 | 第一版 App 和 iMessage 一起上 |
 | 10 | 成功以留存为主 |
 | 11 | 约定走新的轻量路径：在"我们俩"里谈 → Agent 起草约定 → 双方批准同一版本。旧版完整共同决定流程（各自摘要、方案、私下评价）留在完整界面，作为"认真商量大事"的选项 |
-| 12 | Toward Us 单开一个 Sendblue 号码，用付费线路，消息通过 webhook 实时收，不和 Onegent 共用。群聊 beta 开不通也照样上：iMessage 先只做私聊，"我们俩"先只在 App 里，群聊开通后再接 |
+| 12 | Pinky 单开一个 Sendblue 号码，用付费线路，消息通过 webhook 实时收，不和 Onegent 共用。群聊 beta 开不通也照样上：iMessage 先只做私聊，"我们俩"先只在 App 里，群聊开通后再接 |
 | 13 | Agent 在群里只在三种情况下开口：被叫到；有正事（贴出待批准的约定、到点提醒、请两人复盘）；转达某一方已经确认分享的话。两人聊天、吵架时不主动插话、不评论 |
 | 14 | Render 暂时不升级，继续用免费层。Sendblue 群聊套餐、Apple 和 Google 开发者账号作为一笔开销批准，动手前先查价格报给创始人 |
 
@@ -48,7 +48,7 @@
 
 - **Sendblue 群聊**：接口仍在 beta，只在部分付费套餐开放；群里所有人都要开着 iMessage；不能把人移出群；用 `group_id` 对应到哪一对情侣。
   来源：https://docs.sendblue.com/getting-started/groups/
-- **Onegent 现成的 Sendblue 私聊**：Python 写的（`social_agent/sendblue.py`，约 450 行）。免费线路靠轮询收消息，会丢弃所有群消息；SMS 不认身份，只有 iMessage 能接到 Agent。Toward Us 是 Node，需要照着移植，再新做群聊。
+- **Onegent 现成的 Sendblue 私聊**：Python 写的（`social_agent/sendblue.py`，约 450 行）。免费线路靠轮询收消息，会丢弃所有群消息；SMS 不认身份，只有 iMessage 能接到 Agent。Pinky 是 Node，需要照着移植，再新做群聊。
 - **安卓伴侣**：进不了 iMessage 群，在 App 的"我们俩"频道参与；这个频道和 iMessage 群双向同步。
 - **数据经手方**：私聊内容会经过 Apple、Sendblue 和模型提供方，隐私政策和内测告知里要写清楚。
 - **旧版现状**：Node/Express，PostgreSQL 或本地 JSON，OpenAI，部署在 Render 免费层（会休眠，提醒可能延迟）；手机推送只有网页推送，没有原生推送。
@@ -68,7 +68,7 @@
 
 ## 开销和账号（方向已批准，动手前查价格报给创始人）
 
-- 新开 Toward Us 专用的 Sendblue 号码，套餐要支持群聊和 webhook；
+- 新开 Pinky 专用的 Sendblue 号码，套餐要支持群聊和 webhook；
 - Apple 开发者账号和 TestFlight、Google Play 内测（能和 Onegent 共用开发者账号的就共用）；
 - Render 暂不升级（创始人 11-01）。我的判断：用旧版现有的每 5 分钟 GitHub 定时任务顺带给服务保活，尽量减少休眠带来的回复和提醒延迟；这只是尽力而为，不保证。内测中如果延迟明显影响使用，再提出升级。
 
