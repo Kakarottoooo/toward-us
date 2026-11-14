@@ -301,3 +301,10 @@
 .together-ask-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .together-ask-actions button { min-height: 44px; padding: 0 20px; border: 1px solid var(--jian-line); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-weight: 700; cursor: pointer; }
 .together-ask-actions .card-primary { border-color: var(--jian-blue); background: var(--jian-blue); color: #fff; }
+/* Waiting for the partner: a quiet line under the top row of Just me, with "send again" and a way to put it away. */
+.invite-wait { font-size: 14px; line-height: 1.4; }
+.invite-wait span { flex: 1; min-width: 0; }
+.invite-wait .invite-wait-close { min-width: 32px; padding: 0; display: grid; place-items: center; background: transparent; }
+.invite-wait button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.invite-wait button:disabled { opacity: .5; cursor: not-allowed; }
+.conversation-invite .invite-status { margin-top: 8px; color: #5d574f; font-size: 15px; line-height: 1.5; }
