@@ -613,7 +613,7 @@ function buildFallbackAnalysis(room, notice, model) {
     notice,
     shared: {
       title: localText(room.language, "先把立场放到同一张桌面上", "Put both perspectives on the same table", "Pongan ambas perspectivas sobre la misma mesa"),
-      overview: localText(room.language, "目前更像是双方都在保护自己的需要，但表达方式让彼此先听见了压力，而不是需要。这个结论可以保留分歧，不要求立刻达成一致。", "Both people seem to be protecting important needs, but the way they are being expressed makes pressure easier to hear than the needs themselves. You can keep the disagreement without forcing immediate agreement.", "Ambas personas parecen estar protegiendo necesidades importantes, pero la forma de expresarlas hace que se perciba antes la presión que la necesidad. Pueden conservar el desacuerdo sin forzar un acuerdo inmediato."),
+      overview: localText(room.language, "目前更像是双方都在保护自己的需要，但表达方式让对方先听见了压力，而不是需要。这个结论可以保留分歧，不要求立刻达成一致。", "Both people seem to be protecting important needs, but the way they are being expressed makes pressure easier to hear than the needs themselves. You can keep the disagreement without forcing immediate agreement.", "Ambas personas parecen estar protegiendo necesidades importantes, pero la forma de expresarlas hace que se perciba antes la presión que la necesidad. Pueden conservar el desacuerdo sin forzar un acuerdo inmediato."),
       category,
       perspectives: [
         { participantId: a.id, name: a.name, view: localText(room.language, `你目前强调的是：“${truncate(latestA)}”`, `What you are emphasizing is: “${truncate(latestA)}”`, `Lo que estás destacando es: «${truncate(latestA)}»`) },

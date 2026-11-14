@@ -38,7 +38,7 @@ passed
 
 ## Earlier QA archive
 
-# Toward Us / 彼此 Design QA
+# Pinky Design QA
 
 ## Evidence
 
@@ -61,7 +61,7 @@ passed
 - Spacing and layout rhythm: the central statement, red/blue column proportions, wordmark, CTA width, CTA height, and footer rhythm align with the normalized source. The protected live status bar and home indicator add platform chrome that the poster source did not include.
 - Colors and visual tokens: warm ivory, vermilion, ultramarine, ink, and muted-text tokens match the selected direction. No CSS gradients replace source art.
 - Image quality and asset fidelity: the textured columns and split CTA are real raster assets derived through ImageGen from the approved reference. No handmade SVG, CSS drawing, emoji, or placeholder substitutes visible source art. Phosphor supplies standard interface icons.
-- Copy and content: the approved Chinese statement, Toward Us / 彼此 wordmark, language control, start label, and footer line are preserved. English is a functional alternate language, not baked into the image.
+- Copy and content: the approved Chinese statement, PINKY wordmark, language control, start label, and footer line are preserved. English is a functional alternate language, not baked into the image.
 
 ## Comparison history
 
@@ -165,8 +165,8 @@ Fidelity ledger:
 
 Above-the-fold copy diff:
 
-- The approved statement “在争执之外，我们选择彼此。” is unchanged.
-- Desktop adds the supporting line “不是争输赢，而是把彼此听清楚。” and separates the quick-demo action from formal-space sign-in.
+- The approved statement “在争执之外，我们仍然选择对方。” is unchanged.
+- Desktop adds a supporting line and separates the quick-demo action from formal-space sign-in.
 - Mobile keeps its approved statement, start action, language control, wordmark, and “暂停 · 倾听 · 修复” footer.
 
 Intentional differences from the generated concepts:
@@ -191,7 +191,7 @@ Fidelity comparison:
 
 1. Palette: the accepted ivory, vermilion, ultramarine, ink, and muted gray tokens are unchanged.
 2. Composition: opposing granular rails frame one calm editorial center; the QR is the single dominant object on the invite state.
-3. Typography: Song-style Chinese display text, wide-tracked Toward Us wordmark, and compact sans UI copy preserve the hierarchy.
+3. Typography: Song-style Chinese display text, wide-tracked PINKY wordmark, and compact sans UI copy preserve the hierarchy.
 4. Motifs: the three-part pause mark, paired color roles, clipped rails, and diagonal split action treatment continue the approved visual language.
 5. Container model: controls sit on the open paper field with fine rules; no glass panels, gradients, rounded card grid, or generic SaaS dashboard was introduced.
 6. Native viewport: entry, invite, consent, conversation, analysis, and conversion states were exercised at the protected iPhone 393 × 852 screen size; the latest QR state has no clipping or simulated-keyboard obstruction.

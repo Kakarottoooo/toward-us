@@ -37,7 +37,7 @@ type Health = { ok: boolean; aiReady: boolean; model: string };
 
 const words = {
   zh: {
-    back: "返回", send: "发送", quick: "快速体验", entryTitle: "在争执之外，我们选择彼此。", choose: "选择进入方式",
+    back: "返回", send: "发送", quick: "快速体验", entryTitle: "在争执之外，我们仍然选择对方。", choose: "选择进入方式",
     shared: "共用一台手机", sharedHint: "一起使用，简单快捷", remote: "各用一台手机", remoteHint: "扫码加入，更私密",
     privacy: "原始录音不保存。临时转录与分析将在一小时后自动删除。", yourName: "你的称呼", partnerName: "对方的称呼", yourNamePlaceholder: "输入你的称呼", partnerNamePlaceholder: "输入对方称呼",
     create: "创建临时房间", joinTitle: "加入这次体验", joinHint: "输入称呼后，你将作为第二位参与者加入。", join: "加入房间",

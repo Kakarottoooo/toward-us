@@ -12,7 +12,7 @@ $env:REMINDER_RUN_SECRET                                  # 打印出来记下�
 npm run dev:full
 ```
 
-- 看到 `Toward Us is running on http://127.0.0.1:5173` 即可。端口默认 `5173`，用 `PORT` 改。
+- 看到 `Pinky is running on http://127.0.0.1:5173` 即可。端口默认 `5173`，用 `PORT` 改。
 - 启动日志里 `AI mediation: ready` 表示 key 生效；写 `local fallback` 说明没拿到 `OPENAI_API_KEY`，AI 只有占位回复。
 - **先用 Claude 订阅（不花 API 钱）**：再加 `$env:AI_PROVIDER = "claude-cli"`，文字类 AI（私人 Agent、我们俩、调解分析、共同决定、语音助手规划）改走本机已登录的 `claude` 命令，日志显示 `ready (claude-cli:haiku)`（默认 Haiku，比较快）。想要更细致的回复可设 `$env:CLAUDE_CLI_MODEL = "sonnet"`，会慢一些。语音转文字仍走 OpenAI。只限自己内测；给别的用户用之前换回 API。
 - **必须是开发模式**（`npm run dev:full`），不要用 `npm start` 或设 `NODE_ENV=production`，否则 Cookie 带 `Secure`，`http://` 下登录不了。
@@ -32,7 +32,7 @@ npm run dev:full
 
 1. A 在 **只有我** 里说一句难开口的话（也可以点麦克风说）。Agent 整理出一个 TA 听得进去的版本。
 2. A 看过、确认，点 **发送给 TA**，这句话（只有确认过的原文）才进入 **我们俩**；B 在"我们俩"里能看到。
-3. 在 **我们俩** 里任何一方写 `@彼此`（或点 `@Agent` 按钮；`彼此`、`Toward Us`、`@toward`、`@agent` 任何一个都会叫醒它），让 Agent 起草约定，例如"帮我们定下来：每周日晚上一起做饭"。
+3. 在 **我们俩** 里任何一方写 `Pinky`（或点 `@Agent` 按钮；`Pinky`、`@agent` 任何一个都会叫醒它），让 Agent 起草约定，例如"帮我们定下来：每周日晚上一起做饭"。
 4. 出现"Agent 起草的约定"卡片：A、B **各自**批准同一个版本，约定才生效。
 5. 约定生效后，在决策页里 **安排具体承诺**：写做什么、谁负责、到期时间、复盘时间，勾选确认。要快点看到提醒，就把到期时间设成现在后的 2–3 分钟（复盘时间不能早于到期时间）。负责这条承诺的人都确认过，它才算生效；负责人是对方的话，要让对方在自己那边也确认一次。
 6. **到点提醒**：本机没有定时器，需要手动戳一下：
@@ -119,7 +119,7 @@ npm run dev:full
    curl.exe -s -X POST http://localhost:5173/api/channels/sendblue/webhook -H "Content-Type: application/json" -H "sb-signing-secret: $secret" --data-binary "@$HOME\msg.json"
    ```
 
-   这句话会出现在两人的"我们俩"里。在 App 里发的话、Agent 的回复和约定卡片会作为 `"kind":"group"` 行写进文件（模拟发到群里）。群里写 `@彼此` 会叫醒 Agent，它贴出约定后，任何一方回复 `同意`（每次换 `message_handle`）就是批准。
+   这句话会出现在两人的"我们俩"里。在 App 里发的话、Agent 的回复和约定卡片会作为 `"kind":"group"` 行写进文件（模拟发到群里）。群里写 `Pinky` 会叫醒 Agent，它贴出约定后，任何一方回复 `同意`（每次换 `message_handle`）就是批准。
 
 以后真接 Sendblue 时需要（都是环境变量，缺任何一个就保持上面的"只写文件"模式）：
 
