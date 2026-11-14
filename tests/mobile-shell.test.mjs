@@ -12,7 +12,7 @@ test("a release build refuses the dogfood, local and cleartext addresses and def
     assert.notEqual(releaseProblem(new URL(url)), "", url);
     assert.throws(() => shellFiles(url, { release: true }), undefined, url);
   }
-  assert.equal(shellFiles("", { release: true }).config.server.url, "https://pinky-app.fly.dev");
+  assert.equal(shellFiles("", { release: true }).config.server.url, "https://toward-us-private-beta.onrender.com");
   assert.equal(releaseProblem(new URL("https://pinky.example.com")), "");
   assert.equal(shellFiles("https://pinky.example.com/path", { release: true }).config.server.url, "https://pinky.example.com");
   // Dogfood builds keep working as before, the Tailscale address included.

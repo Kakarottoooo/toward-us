@@ -6,7 +6,7 @@
 - 权限：麦克风和通知（`@capacitor/push-notifications`，经 Firebase Cloud Messaging）。通知权限只在登录后、或在「我的提醒」点「开启此手机通知」时问，而且只有服务器配了 `FCM_SERVICE_ACCOUNT_JSON` 才会问。安卓打包前把 Firebase 的 `google-services.json` 放进 `android/app/`（不进仓库；没有它也能编译，只是推送不可用）。iPhone 还缺 Firebase Messaging SDK（AppDelegate 里把 APNs token 换成 FCM token），要等 Apple 团队和 Mac。
   - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
   - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
-- 加载哪个网址在**打包时**决定：默认是云端服务器 `https://pinky-app.fly.dev`（`scripts/config.mjs` 里的 `CLOUD_URL`，唯一一处；服务器怎么上云见根目录 README 的“云端部署”）。本地试用时用环境变量 `TOWARD_US_APP_URL` 临时改指别的地址。换网址就要重新打包、重新安装。
+- 加载哪个网址在**打包时**决定：默认是云端服务器 `https://toward-us-private-beta.onrender.com`（`scripts/config.mjs` 里的 `CLOUD_URL`，唯一一处；服务器在 Render 上，见根目录 README 的“云端部署”）。本地试用时用环境变量 `TOWARD_US_APP_URL` 临时改指别的地址。换网址就要重新打包、重新安装。
 - **上架用的正式包**（TestFlight / App Store）用 `npm run sync:release` 或 `npm run check:ios-release`：不设 `TOWARD_US_APP_URL` 就用云端地址；设了的话只能是公网 `https://` 地址；`*.ts.net`（Tailscale，只有创始人自己的设备连得上）、`localhost`、`.local`、IP 地址都会直接报错，防止把内测地址打进正式包。
 - 连不上服务器时（没网、服务器挂了）显示包里自带的离线页（`www/offline.html`，按手机语言显示中/英/西），每 10 秒和联网时自动重试，连上就回到 App；不会白屏。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
