@@ -353,13 +353,36 @@ function parseHeaderBlocks(text) {
   return messages;
 }
 
+// A day on its own line ("2026-10-20 周一", "2026年10月20日"), then "19:42 林晓：下班了吗" or "[19:42] Alex: hi" under it:
+// the shape people get when they tidy a chat by hand. Before 11-15 it was refused ("认不出这个文件的格式"), while ChatGPT
+// and Claude read it as is (founder, 11-15: compare Pinky with them on one long chat). A few title lines may lead.
+const TIMED = /^\[?((?:上午|下午)?\s?\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?)\]?\s+([^\s:：][^:：\n]{0,29}?)(?:：|:(?=\s))\s*(.*)$/;
+function parseDatedLines(text) {
+  const messages = [];
+  let cur = null, day = null, dates = 0, lead = 0;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) { if (cur) cur.text += "\n"; continue; }
+    const date = LINE_DATES.map(([re, pick]) => { const m = re.exec(line); return m && pick(m); }).find(Boolean);
+    if (date) { day = date; dates++; continue; }
+    const m = TIMED.exec(line);
+    if (m && day && plausibleName(m[2])) {
+      if (cur) messages.push(cur);
+      cur = { at: parseWall(`${day.join("/")} ${m[1].replace(/\s/g, "")}`), sender: m[2].trim(), fromMe: null, text: m[3] };
+    } else if (cur) cur.text += `\n${line}`;
+    else if (++lead > 3) return null; // a title or two, not prose
+  }
+  if (cur) messages.push(cur);
+  return dates && messages.length >= 2 ? messages : null;
+}
+
 /** Specific line formats first, then the loose generic ones. `generic` marks results that must not outrank a real export in a zip. */
 function parseTextFormats(rawText, ctx = {}) {
   const text = normText(rawText);
   const specific = parseWhatsApp(text, ctx) || parseIMessageExporter(text) || parseLine(text);
   if (specific) return specific;
-  const named = parseNamedLines(text) || [], blocks = parseHeaderBlocks(text) || [];
-  const messages = blocks.length > named.length ? blocks : named;
+  const named = parseNamedLines(text) || [], blocks = parseHeaderBlocks(text) || [], dated = parseDatedLines(text) || [];
+  const messages = [dated, blocks, named].reduce((best, found) => found.length > best.length ? found : best, []);
   if (!messages.length) return null;
   return { platform: "text", generic: true, conversations: [{ id: "0", title: "", messages }] };
 }

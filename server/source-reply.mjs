@@ -39,7 +39,11 @@ const inputRoles = {
 
 // Shared by the immediate screenshot answer and later answers about imported text.
 // One initial check, at most one rewrite, and a final check only after rewriting.
-export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], unsupportedPremise = null, request = "", language = "zh", context = {}, mediator } = {}) {
+// check:false delivers the answer as written, like ChatGPT and Claude do. The founder's 11-15 comparison (one long
+// fictional chat, three questions, blind judges): this audit added 45-90 s per answer (1-3 extra model calls, one after
+// another) and the audited answers still lost to both; "如果 Claude 和 ChatGPT 能直接用最简单的方法回答……为什么我们不学他们？"
+// The private chat and screenshot answers now pass check:false; the audit stays for the shareable import report.
+export async function prepareSourceReply(reply, { sendableDraft, activityDescription, sources = [], unsupportedPremise = null, request = "", language = "zh", context = {}, mediator, check: audit = true } = {}) {
   if (isPrivateBoundaryReply(reply)) return reply;
   sendableDraft = activityDraft({ sendableDraft, activityDescription });
   // Citation tokens are server-resolved metadata, never prose for a model to edit.
@@ -64,6 +68,7 @@ export async function prepareSourceReply(reply, { sendableDraft, activityDescrip
       || !(revised.sendableDraft === null || typeof revised.sendableDraft === "string"))) throw new Error("Invalid source repair");
     return stripParts(revised);
   };
+  if (!audit) return restore(reply);
   const checkScope = requiresReplyScopeCheck(request);
   const formatIssues = checkReplyFormat(reply, request, language).issues;
   if (!unsupportedPremise && !originals.length && !checkScope && !formatIssues.length && !stances.length) return restore(reply);

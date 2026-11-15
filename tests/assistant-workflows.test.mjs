@@ -41,29 +41,24 @@ async function fixture(t, planner) {
   return { store, mediator, reminderService, ids, request, calls, session: create.body.session, storePath: join(directory, "store.json"), turn: (text, itemId = randomUUID()) => request(`/assistant/sessions/${create.body.session.id}/messages`, "POST", { text, itemId }) };
 }
 
-test("source audit sees original history and persisted receipts before finalizing, including false denials", async (t) => {
+test("a reply with a write is delivered without a second model check: the planner sees history, persisted receipts replace a false denial", async (t) => {
   const f = await fixture(t, () => ({ reply: "提醒目前还没有设置。", sendableDraft: "对不起，我昨天打断了你。", actions: [action("reminder", "create", { fields: fields({ title: "沟通", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "once" }) })] }));
   await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], draft => {
     draft.messages.push({ id: randomUUID(), role: "user", text: "我昨天打断了对方。", createdAt: "2026-09-01T08:00:00Z" },
       { id: randomUUID(), role: "assistant", text: "先为打断道歉。", createdAt: "2026-09-01T08:01:00Z" });
   });
-  let checked = false;
-  f.mediator.checkReplySources = async input => {
-    checked = true;
-    assert.match(JSON.stringify(input.sources), /我昨天打断了对方/);
-    assert.match(JSON.stringify(input.sources), /先为打断道歉/);
-    const receipt = input.sources.find(source => source.kind === "execution_receipt");
-    assert.ok(receipt);
-    const saved = await f.reminderService.listReminders(f.ids[0]);
-    assert.equal(saved.length, 1);
-    const reopened = await createFileStore(f.storePath);
-    assert.equal((await reopened.relationshipSnapshotForUser(f.ids[0])).reminders.length, 1, "the write is on disk before model audit, not held inside its transaction");
-    assert.match(receipt.text, new RegExp(saved[0].id));
-    return { claims: [], deliveryIssues: [], newUnauthorizedStance: false, lostDeliverables: false };
-  };
+  let checks = 0, rewrites = 0;
+  f.mediator.checkReplySources = async () => { checks++; return { claims: [], deliveryIssues: [], newUnauthorizedStance: false, lostDeliverables: false }; };
+  f.mediator.rewriteReply = async () => { rewrites++; return { reply: "改写", sendableDraft: null }; };
   const response = await f.turn("按旧建议帮我道歉并设提醒", "receipt-idempotency");
   assert.equal(response.status, 200);
-  assert.equal(checked, true);
+  assert.equal(checks, 0); assert.equal(rewrites, 0);
+  assert.match(JSON.stringify(f.calls[0][0]), /我昨天打断了对方/, "the planner reads the original history");
+  assert.match(JSON.stringify(f.calls[0][0]), /先为打断道歉/);
+  const saved = await f.reminderService.listReminders(f.ids[0]);
+  assert.equal(saved.length, 1);
+  const reopened = await createFileStore(f.storePath);
+  assert.equal((await reopened.relationshipSnapshotForUser(f.ids[0])).reminders.length, 1, "the write is on disk");
   const answer = response.body.session.messages.at(-1).text;
   assert.doesNotMatch(answer, /还没有设置/);
   assert.match(answer, /Saved personal reminder: 沟通/);
@@ -72,7 +67,7 @@ test("source audit sees original history and persisted receipts before finalizin
   assert.equal((await f.reminderService.listReminders(f.ids[0])).length, 1);
 });
 
-test("a failed post-commit audit keeps the receipt and does not rerun the write", async (t) => {
+test("a reply after a write keeps the receipt and a retry does not rerun the write", async (t) => {
   const f = await fixture(t, () => ({ reply: "提醒还没有设置。", actions: [action("reminder", "create", { fields: fields({ title: "Call", localDateTime: "2026-09-11T20:00", timezone: "UTC" }) })] }));
   f.mediator.checkReplySources = async () => { throw Error("synthetic timeout"); };
   const result = await f.turn("Remind me to call");
@@ -82,36 +77,40 @@ test("a failed post-commit audit keeps the receipt and does not rerun the write"
   assert.equal((await f.reminderService.listReminders(f.ids[0])).length, 1);
 });
 
-test("a concurrent turn is not overwritten by a stale post-commit audit", async (t) => {
+test("a concurrent turn is not overwritten by the post-commit delivery of an earlier answer", async (t) => {
   const f = await fixture(t, () => ({ reply: "Initial answer", actions: [] }));
   await f.turn("Seed history");
-  f.mediator.checkReplySources = async () => {
-    await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], draft => {
+  const transaction = f.store.transaction;
+  let deliveries = 0, newer = null;
+  // The first transaction commits the turn; the second delivers the finished answer. Another turn lands in between.
+  f.store.transaction = async (name, work) => {
+    if (name === "reminder-delivery" && ++deliveries === 2) newer = await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], draft => {
       draft.messages.push({ id: randomUUID(), role: "assistant", text: "Newer turn", createdAt: new Date().toISOString() });
       draft.version += 1;
     });
-    return { claims: [], deliveryIssues: [], newUnauthorizedStance: false, lostDeliverables: false };
+    return transaction.call(f.store, name, work);
   };
   const result = await f.turn("Continue");
+  f.store.transaction = transaction;
   assert.equal(result.status, 200);
   assert.equal(result.body.session.messages.at(-1).text, "Newer turn");
+  assert.ok(newer, "the concurrent turn landed between commit and delivery");
+  assert.equal((await f.store.getRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0])).version, newer.version, "the delivery left the newer thread untouched");
+  assert.equal(result.body.session.messages.filter(message => message.text === "Initial answer").length, 2, "each turn's answer appears once");
 });
 
-test("false-premise audit receives visible history even when no recall search was triggered", async (t) => {
-  const f = await fixture(t, () => ({ reply: "没有聊天记录可查。", actions: [] }));
+test("a reply about visible history is the planner's own answer, and the planner receives that history without a recall search", async (t) => {
+  const f = await fixture(t, () => ({ reply: "记录只说对方这周很忙，不能据此推断其他原因。", actions: [] }));
   await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], draft => {
     draft.messages.push({ id: randomUUID(), role: "user", text: "对方这周很忙。", createdAt: "2026-09-01T08:00:00Z" });
   });
-  let checked = false;
-  f.mediator.checkReplySources = async input => {
-    checked = true;
-    assert.match(JSON.stringify(input.sources), /对方这周很忙/);
-    return { claims: [], deliveryIssues: input.previousReply ? [] : ["Visible history exists."], newUnauthorizedStance: false, lostDeliverables: false };
-  };
-  f.mediator.rewriteReply = async () => ({ reply: "记录只说对方这周很忙，不能据此推断其他原因。", sendableDraft: null });
+  let checks = 0, rewrites = 0;
+  f.mediator.checkReplySources = async () => { checks++; return { claims: [], deliveryIssues: ["Visible history exists."], newUnauthorizedStance: false, lostDeliverables: false }; };
+  f.mediator.rewriteReply = async () => { rewrites++; return { reply: "改写", sendableDraft: null }; };
   const response = await f.turn("解释一下那个原因");
-  assert.equal(checked, true);
-  assert.match(response.body.session.messages.at(-1).text, /记录只说/);
+  assert.equal(checks, 0); assert.equal(rewrites, 0);
+  assert.match(JSON.stringify(f.calls.at(-1)[0]), /对方这周很忙/);
+  assert.equal(response.body.session.messages.at(-1).text, "记录只说对方这周很忙，不能据此推断其他原因。");
 });
 
 test("private-access policy produces one neutral reply before searches or writes, including follow-ups", async (t) => {
