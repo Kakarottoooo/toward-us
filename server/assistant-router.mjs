@@ -1,5 +1,5 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
+import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
@@ -495,7 +495,9 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
       const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
       const unrelated = !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
-      const audited = await prepareSourceReply(plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+      // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
+      const draftOnly = wantsDraftOnly(text) && typeof plan.sendableDraft === "string" && plan.sendableDraft.trim();
+      const audited = await prepareSourceReply(draftOnly ? "" : plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
           ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, check: false });

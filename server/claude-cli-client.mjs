@@ -162,7 +162,8 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
 }
 
 function run(command, args, input, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const turns = args.includes("--json-schema") || args.includes("Read") ? 6 : args.includes("WebSearch") ? 4 : 1;
+  // Reading several screenshots and then writing a complete answer (question-playbooks.mjs) took 7 turns (11-15).
+  const turns = args.includes("Read") ? 10 : args.includes("--json-schema") ? 6 : args.includes("WebSearch") ? 4 : 1;
   // Every CLI call is one ledger row (ai-ledger.mjs). Past a member's soft cost limit the call runs on the cheaper model;
   // web lookups keep theirs.
   const at = args.indexOf("--model"), requested = at >= 0 ? args[at + 1] : null;

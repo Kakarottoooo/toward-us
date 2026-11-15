@@ -9,6 +9,9 @@ function hasSentenceRequest(request) {
   return /(?:只(?:要|回|用|写|给|需)|就(?:回|写)|(?:帮我|请)?(?:写|给|用)|回复?我?)[^。！？\n]{0,12}(?:一句|一条短句)|(?:only|just|exactly)\s+(?:one|a|1)\s+(?:short\s+)?sentence|(?:solo|sólo|una sola)\s+(?:una\s+)?frase/iu.test(request || "");
 }
 export const wantsOneSentence = (request) => hasSentenceRequest(request) && !draftOnlyLimit(request);
+// "就一句能直接发的" / "just the line": the user wants only the sendable draft, so the reply around it stays empty (11-15:
+// an analysis paragraph before the line lost to both plain ChatGPT and Claude on exactly this request).
+export const wantsDraftOnly = (request) => /(?:一句|一条)[^。！？\n]{0,6}(?:能|可以)?直接发|能直接发的|直接能发的|只要(?:回复|那句|一句)|(?:just|only)\s+(?:the\s+)?(?:line|message|text)\b|(?:solo|sólo)\s+(?:el\s+)?mensaje/iu.test(request || "");
 
 const number = (value) => /^\d+$/.test(value) ? Number(value) : value === "十" ? 10 : value.includes("十") ? (number(value.split("十")[0] || "一") * 10 + number(value.split("十")[1] || "零")) : "零一二三四五六七八九".indexOf(value.replace("两", "二"));
 const countToken = "([0-9]+|[一二两三四五六七八九十]{1,3})";
@@ -158,7 +161,7 @@ const privateReplies = {
 export const privateBoundaryReply = (language, index = 0) => (privateReplies[language] || privateReplies.zh)[index % 3];
 export const isPrivateBoundaryReply = (reply) => Object.values(privateReplies).some((variants) => variants.includes(reply));
 
-export const replyContractInstructions = `Only requested content; obey length/format. sendableDraft: copyable wording or null; obey its requested sentence count, including any explanation inside it. reply: analysis only, empty for draft-only, <=2 sentences for mixed requests. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
+export const replyContractInstructions = `Only requested content; obey any length/format the user states. For a question about a chat, a person or a relationship, what they need (How to answer) counts as requested, at the depth it gives, unless they set a limit. sendableDraft: copyable wording or null; obey its requested sentence count, including any explanation inside it. reply: analysis only, empty for draft-only, <=2 sentences when they mainly want a draft. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
 Examples (good / bad):
 Which shelf now, moved A to C? "C." / "C, formerly A."
 Printer fixed; thanks! "You're welcome, glad it helped!" / "Clean it regularly."
