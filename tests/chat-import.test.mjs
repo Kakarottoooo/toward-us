@@ -89,8 +89,8 @@ test("screenshot advice reads the actual exchange, answers the original question
   assert.ok(!JSON.stringify(session).includes("Internal grounding only"));
   assert.ok(!JSON.stringify(session).includes("Internal unknowns only"));
   assert.equal(f.calls.screenshots.length, 1);
-  assert.equal(f.calls.sourceChecks.length, 1);
-  assert.match(f.calls.sourceChecks[0].sources[0].text, /I waited forty minutes/);
+  assert.equal(f.calls.sourceChecks.length, 0, "the answer is delivered as written, without a second model check");
+  assert.equal(f.calls.rewrites.length, 0);
   const context = f.calls.planner.find((call) => call.transcript);
   assert.equal(context.question, question);
   assert.match(context.transcript, /\[partner\] Blair: I waited forty minutes/);
@@ -198,11 +198,10 @@ test("a group chat in screenshots is answered about the one who says most", asyn
   await f.ready((await f.request("/imports")).body.imports[0].id);
 });
 
-test("a one-sentence screenshot answer drops unsupported receipts and commentary", async (t) => {
+test("a one-sentence screenshot answer drops unsupported receipts and commentary by a deterministic trim, without a rewrite call", async (t) => {
   const f = await fixture(t, {
     screenshots: [{ mine: false, name: "Blair", text: "I waited.", time: null }, { mine: true, name: null, text: "Sorry.", time: null }],
     screenshotAdvice: { observations: [], uncertainties: [], reply: "I'm sorry I kept you waiting. I saved this on Blair's card. You can try a warmer tone." },
-    rewrite: () => "I'm sorry I kept you waiting.",
     planner: () => ({ reply: "Reading.", actions: [action("chat_import", "create")] }),
   });
   const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
@@ -218,19 +217,16 @@ test("a one-sentence screenshot answer drops unsupported receipts and commentary
   assert.ok(!session.messages.some((message) => /saved this|warmer tone/.test(message.text)));
   assert.ok(!session.messages.some((message) => message.text === "Reading."), "finished answer replaces its pending receipt");
   assert.equal(session.messages.filter((message) => message.role === "assistant").length, 1);
-  assert.equal(f.calls.rewrites.length, 1);
-  assert.match(f.calls.rewrites[0].issues.join(" "), /Expected 1 sentence/);
-  assert.equal(f.calls.rewrites[0].request, "Give me only one sentence to apologize.");
-  assert.match(f.calls.rewrites[0].sources[0].text, /partner \|[^\n]+\nI waited\./);
+  assert.equal(f.calls.rewrites.length, 0);
+  assert.equal(f.calls.sourceChecks.length, 0);
+  assert.equal(f.calls.screenshots[0].adviceFor.question, "Give me only one sentence to apologize.", "the vision answer saw the original question");
 });
 
-test("captured mixed screenshot reply reaches repair rather than passing on an analysis quotation", async (t) => {
+test("a captured mixed screenshot reply is delivered once, as written, without a repair call", async (t) => {
   const captured = JSON.parse(await readFile(new URL("./fixtures/reply-format-replay.json", import.meta.url), "utf8"));
-  const revised = "对方说明了下班时间并提出替代时间，截图不足以支持一贯如此的指责。回复：“刚才说重了，对不起，我们再商量一下吃饭时间好吗？”";
   const f = await fixture(t, {
     screenshots: [{ mine: false, name: "Lily", text: "I finish at 8. How about 8:30?", time: null }, { mine: true, name: null, text: "You always choose work over me.", time: null }],
     screenshotAdvice: { observations: [], uncertainties: [], reply: captured.answer },
-    rewrite: (context) => { assert.equal(context.reply, captured.answer); return revised; },
     planner: () => ({ reply: "Reading.", actions: [action("chat_import", "create")] }),
   });
   const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
@@ -239,24 +235,21 @@ test("captured mixed screenshot reply reaches repair rather than passing on an a
   let session;
   for (let index = 0; index < 100; index++) {
     session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
-    if (session.messages.some((message) => message.text === revised)) break;
+    if (session.messages.some((message) => message.text === captured.answer)) break;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  assert.equal(f.calls.rewrites.length, 1);
-  assert.match(f.calls.rewrites[0].issues.join(" "), /found 2/);
+  assert.equal(f.calls.rewrites.length, 0);
+  assert.equal(f.calls.sourceChecks.length, 0);
   assert.equal(session.messages.filter((message) => message.role === "assistant").length, 1);
-  assert.equal(session.messages.at(-1).text, revised);
+  assert.equal(session.messages.at(-1).text, captured.answer);
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}`, "GET", null, f.people[1].id)).status, 404);
   await f.ready((await f.request("/imports")).body.imports[0].id);
 });
 
-test("import answers check original text, while an unrelated turn with the same stored import skips it", async (t) => {
-  const original = "Blair canceled the meeting.";
-  const revised = "Blair said they were running late, not that the meeting was canceled.";
+test("import answers are delivered as the planner wrote them, with the original text in its context, and no turn runs a source check", async (t) => {
+  const answer = "Blair said they were running late.";
   const f = await fixture(t, {
-    planner: (context) => context.messages.at(-1).text === "Thanks" ? { reply: "You're welcome.", sourceBased: false, actions: [] } : { reply: original, sourceBased: true, actions: [] },
-    sourceCheck: ({ reply, sources }) => { assert.match(sources[0].text, /running late/); return { claims: reply === original ? [{ claim: "canceled", source: "running late, sorry", supported: false, issue: "Do not convert lateness into cancellation." }] : [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; },
-    rewrite: ({ sources, issues }) => { assert.match(sources[0].text, /running late/); assert.match(issues.join(" "), /cancellation/); return revised; },
+    planner: (context) => context.messages.at(-1).text === "Thanks" ? { reply: "You're welcome.", sourceBased: false, actions: [] } : { reply: answer, sourceBased: true, actions: [] },
   });
   const uploaded = await f.upload(whatsapp, "chat.txt", f.people[0].id, f.session.id);
   const id = uploaded.body.import.id;
@@ -265,13 +258,16 @@ test("import answers check original text, while an unrelated turn with the same 
   const before = f.calls.sourceChecks.length;
   const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "What happened?", itemId: randomUUID() });
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.equal(response.body.session.messages.at(-1).text, revised);
-  assert.equal(f.calls.sourceChecks.length, before + 2);
-  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Thanks", itemId: randomUUID() });
-  assert.equal(f.calls.sourceChecks.length, before + 2);
+  assert.match(f.calls.planner.at(-1).screenshotConversation.transcript, /running late/, "the planner reads the original lines");
+  assert.equal(response.body.session.messages.at(-1).text, answer);
+  assert.equal(f.calls.sourceChecks.length, before);
+  assert.equal(f.calls.rewrites.length, 0);
+  const thanks = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Thanks", itemId: randomUUID() });
+  assert.equal(thanks.body.session.messages.at(-1).text, "You're welcome.");
+  assert.equal(f.calls.sourceChecks.length, before);
 });
 
-test("a current chat search cannot skip checking its original through a false source flag", async (t) => {
+test("a current chat search hands its original lines to the planner, and the answer is delivered without a source check", async (t) => {
   let importId;
   const f = await fixture(t, {
     planner: context => context.lookups?.length
@@ -285,8 +281,10 @@ test("a current chat search cannot skip checking its original through a false so
   const before = f.calls.sourceChecks.length;
   const response = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Find the original conversation about running late.", itemId: randomUUID() });
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.equal(f.calls.sourceChecks.length, before + 1);
-  assert.ok(f.calls.sourceChecks.at(-1).sources.some(source => source.kind === "import_search" && source.text.includes("running late")));
+  assert.equal(f.calls.sourceChecks.length, before);
+  assert.equal(f.calls.rewrites.length, 0);
+  assert.match(JSON.stringify(f.calls.planner.at(-1).lookups), /running late/, "the search findings reach the planner");
+  assert.equal(response.body.session.messages.at(-1).text, "Blair was running late.");
 });
 
 test("screenshot advice and follow-ups do not wait for the separate history report", async (t) => {
@@ -349,7 +347,8 @@ test("pasted-chat questions read complete lines before the history report, only 
   assert.equal(context.truncated, false);
   assert.match(context.transcript, /2026-10-01 19:45/);
   assert.doesNotMatch(context.transcript, /T19:45.*Z/);
-  assert.ok(f.calls.sourceChecks.some((input) => input.sources.some((source) => source.text.includes("2026-10-01 19:45"))));
+  assert.equal(f.calls.sourceChecks.length, 0, "the private answer is delivered without a second model check");
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.at(-1).text, "Private answer.");
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /original is readable NOW/);
