@@ -16,7 +16,7 @@ export const canonical = value => JSON.stringify(value).replace(/http:\/\/127\.0
 export function gateUnavailable(error) {
   if (error?.code === "ETIMEDOUT") return false;
   const detail = [error?.message || error, error?.stdout, error?.stderr].filter(Boolean).join("\n");
-  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authenticat(?:ion|e)|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|insufficient_quota|credit balance|97%|额度|认证失败)/iu.test(detail);
+  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authenticat(?:ion|e)|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|insufficient_quota|credit balance|97%|额度(?:已达|错误|不足|耗尽)|订阅.*额度|认证失败|提供方拒绝)/iu.test(detail);
 }
 export const gateFailureCode = error => error?.unavailable || gateUnavailable(error) ? 2 : 1;
 
@@ -193,7 +193,9 @@ async function main() {
       const outputPath = join(directory, "results.json");
       if (existsSync(outputPath)) report.results = readJson(outputPath);
       if (child.status !== 0 || report.results.length !== selected.length) {
-        code = child.status === 2 ? 2 : 1;
+        const abortedPath = join(directory, "aborted.json");
+        const reason = existsSync(abortedPath) ? readJson(abortedPath).reason : child.stderr;
+        code = gateFailureCode(Error(reason || "评测进程未完成"));
         throw Error("评测未完成；已保存部分结果，不重试、不改用付费接口。详见 worker.log / aborted.json。");
       }
       report.summary = gateSummary(report.results, { quick: Boolean(values.quick) || Boolean(values["record-baseline"]) });

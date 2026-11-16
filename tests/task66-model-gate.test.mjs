@@ -164,6 +164,8 @@ test("provider rejection is UNAVAILABLE/2; product timeouts, errors and malforme
   assert.equal(gateFailureCode(Object.assign(Error("CLI timed out after 90000ms"), { code: "ETIMEDOUT", stdout: "login required" })), 1);
   assert.equal(gateFailureCode(Error("Codex primary 额度已达 97%")), 2);
   assert.equal(gateFailureCode(Error("subscription quota error")), 2);
+  assert.equal(gateFailureCode(Error("没有 Codex primary 额度读数，停止调用")), 1);
+  assert.equal(gateFailureCode(Error("evaluation Claude call budget reached")), 1);
 });
 
 test("reports preserve UTF-8 Chinese in new and archived answer columns", () => {

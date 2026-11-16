@@ -28,6 +28,8 @@ npm run gate:model -- --model sonnet --record-baseline
 
 输出目录为 `work/model-gate/<UTC>/`，包括 JSON 结果、历史回放日志、逐题答案/检查、调用和用量账本。最后一行为 `GATE: PASS` / `GATE: FAIL`，无法评测为 `GATE: UNAVAILABLE`，退出码分别 0/1/2。`--fake-empty --quick --model empty` 是显式坏模型验收入口，不调用模型、不能录制基线，也不允许用它取得 PASS。
 
+额度读数缺失或任务内部调用预算用完仍立即停止，但属于证据不完整（FAIL/1），不能伪称已达到提供方额度。父进程读取实际中止原因，不能仅因子进程退出 2 就判 UNAVAILABLE；原始调用账本保持不变。
+
 ## 第四轮外部题入口（2026-11-11）
 
 `node scripts/parity-eval/run.mjs --cases-file scripts/parity-eval/examples.json --label round4-examples --concurrency 1 --budget-file work/task18/model-budget.json`
