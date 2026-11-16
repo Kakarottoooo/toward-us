@@ -170,7 +170,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
     founder: <FounderBeta language={language} />,
     access: <AiAccess language={language} onOpen={open} />,
     membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} />,
-    profile: <ProfilePage language={language} />,
+    profile: <ProfilePage language={language} relationshipId={relationshipId} />,
     notifications: <NotificationSettings language={language} />,
     character: <>
       <CharacterMaker language={language} paired={Boolean(relationshipId)} character={character} onChange={setCharacter} />

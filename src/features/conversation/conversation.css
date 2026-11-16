@@ -273,6 +273,8 @@
 .game-result small { margin-left: auto; color: #7a736a; font-size: 13px; font-weight: 600; }
 /* 异地: the partner's own time and the countdown to meeting, quietly under the top of Us. */
 .distance-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 10px; margin: 4px auto 0; color: #5f5952; font-size: 13px; }
+.distance-bar .distance-interact { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: #8c352c; font: inherit; font-weight: 650; }
+.distance-bar .distance-interact:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: -2px; }
 .distance-clock, .distance-meet { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: rgba(37,37,37,.05); white-space: nowrap; }
 .distance-clock small { color: #8a837a; font-size: 12px; }
 .distance-clock svg { color: #b08a3e; }

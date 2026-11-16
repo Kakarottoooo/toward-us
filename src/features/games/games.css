@@ -135,3 +135,9 @@
 .match-invite { display: flex; align-items: center; gap: 12px; }
 .match-invite p { flex: 1; }
 @media (prefers-reduced-motion: reduce) { .game-hall { animation: none; } }
+.game-questions { display: grid; margin-bottom: 16px; border: 1px solid #ded6c8; border-radius: 16px; background: #fffdf8; }
+.game-questions > button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 64px; padding: 11px 14px; border: 0; border-radius: 15px; background: transparent; color: var(--jian-ink); text-align: left; font: inherit; }
+.game-questions > button + button { border-top: 1px solid #e8dfd2; border-top-left-radius: 0; border-top-right-radius: 0; }
+.game-questions > button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: -3px; }
+.game-questions strong, .game-questions small { display: block; }
+.game-questions small { margin-top: 3px; color: #5f5952; font-size: .83rem; }
