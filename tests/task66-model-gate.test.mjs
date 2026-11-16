@@ -148,6 +148,9 @@ test("an archived pass becoming a failed or missing check fails; improvements an
   assert.equal(gateSummary([{ layer: "tools", checks, comparison: missing }], { quick: true }).pass, true);
   const duplicate = compareMachine([{ name: "引用", ok: true }], [{ name: "引用", ok: true }, { name: "引用", ok: true }]);
   assert.equal(duplicate.regressions.length, 1);
+  const newOnly = compareMachine([{ name: "新出现的检查", ok: false }], []);
+  assert.equal(newOnly.knownGaps.length, 0);
+  assert.equal(newOnly.unbaselined.length, 1);
 });
 
 test("provider rejection is UNAVAILABLE/2; product timeouts, errors and malformed writes are FAIL/1", () => {

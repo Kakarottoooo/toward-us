@@ -53,14 +53,15 @@ export function compareMachine(checks, baselineChecks = null) {
   if (baselineChecks === null) return { baselineAvailable: false, regressions: [], knownGaps: [], improvements: [],
     unbaselined: checks.filter(check => !check.ok) };
   const before = indexed(baselineChecks), after = indexed(checks);
-  const compared = [...new Set([...before.keys(), ...after.keys()])].map(key => {
+  const compared = [...before.keys()].map(key => {
     const old = before.get(key), current = after.get(key);
     return { key, name: (current || old).name, baselineOk: old?.ok === true, newOk: current?.ok === true };
   });
   return { baselineAvailable: true,
     regressions: compared.filter(check => check.baselineOk && !check.newOk),
     knownGaps: compared.filter(check => !check.baselineOk && !check.newOk),
-    improvements: compared.filter(check => !check.baselineOk && check.newOk), unbaselined: [] };
+    improvements: compared.filter(check => !check.baselineOk && check.newOk),
+    unbaselined: [...after.entries()].filter(([key, check]) => !before.has(key) && !check.ok).map(([, check]) => check) };
 }
 
 // Reuse the product's literal-format contract and the harness's real-write/page checks.
