@@ -12,6 +12,13 @@ export const readJson = path => JSON.parse(readFileSync(path, "utf8"));
 export const saveJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
 export const canonical = value => JSON.stringify(value).replace(/http:\/\/127\.0\.0\.1:\d+/g, "{{origin}}");
 
+export function assertGateTransport(provider, output) {
+  let rows;
+  try { rows = [JSON.parse(output)].flat(); }
+  catch { rows = String(output).split(/\r?\n/).flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } }); }
+  if (rows.some(row => row?.is_error || ["turn.failed", "error"].includes(row?.type))) throw Error(`${provider} 提供方无法完成评测，停止且不重试`);
+}
+
 // Reuse the product's literal-format contract and the harness's real-write/page checks.
 // A null content-only completion requires a judge in full mode, not an invented machine pass.
 export function machineChecks(item, result) {

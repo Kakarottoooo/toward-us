@@ -6,8 +6,10 @@ import { usageListeners } from "../../server/claude-cli-client.mjs?gate-native";
 const text = content => typeof content === "string" ? content : (content || []).map(part => part.text || "").join("\n");
 export function createClaudeCliClient() {
   async function call({ input, instructions, schema, images, search, name, timeout }) {
-    const result = await invoke("codex", { root: join(process.env.MODEL_GATE_DIRECTORY, "openai"), model: process.env.MODEL_GATE_MODEL,
-      input, instructions, schema, images, search, timeout });
+    let result;
+    try { result = await invoke("codex", { root: join(process.env.MODEL_GATE_DIRECTORY, "openai"), model: process.env.MODEL_GATE_MODEL,
+      input, instructions, schema, images, search, timeout }); }
+    catch (error) { globalThis.modelGateStopped = true; throw error; }
     for (const listener of usageListeners) listener({ name, model: process.env.MODEL_GATE_MODEL, text: result.answer, usage: result.usage, turns: null });
     return result;
   }

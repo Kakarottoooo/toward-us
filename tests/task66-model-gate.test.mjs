@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, cpSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { gateSummary, loadGate, gateRoot, machineChecks, writeRepresentativeBaseline, canonical } from "../scripts/parity-eval/model-gate.mjs";
+import { gateSummary, loadGate, gateRoot, machineChecks, writeRepresentativeBaseline, canonical, assertGateTransport } from "../scripts/parity-eval/model-gate.mjs";
 import { primaryQuota } from "../scripts/parity-eval/model-gate-quota.mjs";
 import { prepareSourceReply } from "../server/source-reply.mjs";
 import { renderReply } from "../server/reply-contract.mjs";
@@ -104,4 +104,11 @@ test("all historical rollback sequences select a whole original or rewritten ans
     assert.ok([renderReply(input), renderReply(candidate)].includes(answer), check.case);
     assert.ok(answer.trim());
   }
+});
+
+test("provider errors inside successful CLI output stop evaluation before a fallback can retry", () => {
+  assert.throws(() => assertGateTransport("claude", '{"type":"result","is_error":true,"result":"model unavailable"}'), /停止且不重试/);
+  assert.throws(() => assertGateTransport("codex", '{"type":"thread.started"}\n{"type":"turn.failed","error":{"message":"unsupported model"}}'), /停止且不重试/);
+  assert.doesNotThrow(() => assertGateTransport("claude", '{"type":"result","is_error":false,"result":"ok"}'));
+  assert.doesNotThrow(() => assertGateTransport("codex", '{"type":"turn.completed","usage":{}}'));
 });
