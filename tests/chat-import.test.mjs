@@ -407,7 +407,7 @@ test("ambiguous screenshot advice separates reported promises and unknown chrono
     assert.match(prompt, /timing of learning about a conflict/);
     assert.match(prompt, /A quote reported INSIDE someone else's bubble is their claim/);
     assert.match(prompt, /unless you can name a supported harmful behavior by each/);
-    assert.match(prompt, /at most 5 short sentences/);
+    assert.match(prompt, /at the depth How to answer gives for that kind of question/); // 11-15: depth follows the kind of question, not a 5-sentence cap
   }
 });
 
