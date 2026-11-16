@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Heart, Image as ImageIcon, NotePencil, PaintBrush, PaperPlaneTilt } from "@phosphor-icons/react";
+import { Heart, Image as ImageIcon, NotePencil, PaintBrush, PaperPlaneTilt, X } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, useKeyboard } from "../../mobile";
 import { shrinkForCharacter } from "../character/character";
@@ -30,14 +30,15 @@ function feedback() {
   else if (typeof navigator.vibrate === "function") navigator.vibrate(105);
 }
 
-export function PlayDistance({ language, userId, revision, readOnly = false, conversationId }: {
-  language: Language; userId: string; revision: number; readOnly?: boolean; conversationId?: string;
+export function PlayDistance({ language, userId, revision, readOnly = false, conversationId, incomingCard = false, onClose }: {
+  language: Language; userId: string; revision: number; readOnly?: boolean; conversationId?: string; incomingCard?: boolean; onClose: () => void;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const storage = conversationId ? "pinky:distance:v1:" + userId + ":" + conversationId : "";
   const [draft, setDraft] = useState<Draft>(() => restoreDraft(storage));
   const [kind, setKind] = useState<Kind>("note");
+  const [view, setView] = useState<"touch" | "cards">(incomingCard ? "cards" : "touch");
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [board, setBoard] = useState<Board | null>(null);
@@ -47,6 +48,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
   const [receipt, setReceipt] = useState(false);
   const [sending, setSending] = useState(false);
   const [touchBusy, setTouchBusy] = useState(false);
+  const [expired, setExpired] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const [skew, setSkew] = useState(0);
   const latest = useRef<Board | null>(null);
@@ -124,6 +126,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
       const now = Date.now();
       setClock(now);
       if (now + skew >= expiresAt) {
+        if (join.current && !board.touch?.matched) setExpired(true);
         join.current = "";
         window.clearInterval(timer);
       }
@@ -154,7 +157,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
     if (!id) return;
     if (action === "join") join.current = id;
     if (action === "leave") join.current = "";
-    setWriteFailed(""); setTouchBusy(true); touchLock.current = true;
+    setExpired(false); setWriteFailed(""); setTouchBusy(true); touchLock.current = true;
     try {
       const next = await relationshipApi<Board>(PATH + "/touch", jsonBody({ id, action, language }));
       if ((!live.current || document.visibilityState !== "visible") && action === "join" && next.touch?.id === id) {
@@ -198,23 +201,31 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
     } finally { writeLock.current = false; if (live.current) setSending(false); }
   }
 
-  return <section className="distance-panel" aria-label={t("异地也能一起", "Together from afar", "Juntos a la distancia")} data-testid="play-distance">
+  return <section className="distance-panel" data-testid="play-distance">
+    <div className="distance-controls">
+      <div className="distance-tabs" role="group" aria-label={t("互动方式", "Ways to connect", "Formas de conectar")}>
+        <button type="button" aria-pressed={view === "touch"} disabled={sending} onClick={() => { keyboard.hide(); setWriteFailed(""); setView("touch"); }}>{t("碰一下", "Touch", "Toque")}</button>
+        <button type="button" aria-pressed={view === "cards"} disabled={Boolean(holding) || touchBusy} onClick={() => { setWriteFailed(""); setView("cards"); }}>{t("小卡", "Little cards", "Tarjetitas")}</button>
+      </div>
+      <button className="distance-close" type="button" onClick={onClose} aria-label={t("关闭互动", "Close", "Cerrar")}><X size={20} aria-hidden="true" /></button>
+    </div>
     {offline && <p className="distance-status" role="status">{t("现在离线，草稿还在。", "You’re offline. Your draft is still here.", "No hay conexión. Tu borrador sigue aquí.")}</p>}
     {readFailed && <div className="distance-status" role="status">{t("暂时没连上。", "Couldn’t connect.", "No se pudo conectar.")} <button type="button" className="distance-text" disabled={offline} onClick={() => void load()}>{t("重试", "Retry", "Reintentar")}</button></div>}
     {!board && !readFailed && !offline && <p className="distance-status" role="status">{t("正在打开你们的小角落…", "Opening your space…", "Abriendo su espacio…")}</p>}
     {writeFailed && <p className="distance-status is-error" role="alert">{writeFailed}</p>}
-    <article className={"distance-touch" + (touch?.matched ? " is-matched" : "")}>
-      <div className="distance-heart" aria-hidden="true"><Heart size={36} weight="fill" /></div>
-      <h2>{t("一起碰一下", "Touch together", "Un toque juntos")}</h2>
+    {view === "touch" ? <div className={"distance-touch" + (touch?.matched ? " is-matched" : "")} data-testid="interaction-touch">
+      <div className="distance-heart" aria-hidden="true"><Heart size={26} weight={touch?.matched ? "fill" : "regular"} /></div>
       <p role="status">{touch?.matched ? t("你们碰到了。", "Your touches met.", "Sus toques se encontraron.") :
         holding ? t("等 TA 也点一下。", "Waiting for your partner to tap.", "Esperando el toque de tu pareja.") :
-          partnerWaiting ? t("TA 已经伸手了。", "Your partner is reaching out.", "Tu pareja ya tendió la mano.") :
-            t("同时在线时，10 秒内各点一下。", "When you’re both online, tap within 10 seconds of each other.", "Si están en línea, toquen con menos de 10 segundos de diferencia.")}</p>
+          partnerWaiting ? t("TA 已经在等你了。", "Your partner is waiting for you.", "Tu pareja te está esperando.") :
+            expired ? t("这次错过了，可以再碰一下。", "You missed each other. You can try again.", "Esta vez no coincidieron. Pueden reintentar.") :
+              t("你和 TA 在 10 秒内各点一次，就能碰到彼此。", "Tap within 10 seconds of each other to connect.", "Tóquense con menos de 10 segundos de diferencia.")}</p>
       {touch && !touch.matched && <small aria-hidden="true">{seconds}s</small>}
-      {!touch?.matched && <button type="button" className="distance-action" disabled={locked || touchBusy} onClick={() => void changeTouch(holding ? "leave" : "join")}>
-        {holding ? t("取消等待", "Cancel waiting", "Dejar de esperar") : t("碰一下", "Tap", "Tocar")}
-      </button>}
-    </article>
+      {touch?.matched ? <button type="button" className="distance-action" onClick={onClose}>{t("完成", "Done", "Listo")}</button>
+        : <button type="button" className="distance-action" disabled={locked || touchBusy} onClick={() => void changeTouch(holding ? "leave" : "join")}>
+          {holding ? t("取消等待", "Cancel waiting", "Dejar de esperar") : t("碰一下", "Tap", "Tocar")}
+        </button>}
+    </div> : <>
     <article className="distance-composer">
       <h2>{t("给 TA 留张小卡", "Leave a little card", "Deja una tarjetita")}</h2>
       <div className="distance-modes" role="group" aria-label={t("小卡类型", "Card type", "Tipo de tarjeta")}>
@@ -241,7 +252,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
       <button className="distance-action" type="button" disabled={locked || sending || !canSend} onClick={() => void sendCard()}><PaperPlaneTilt size={19} />
         {sending ? t("发送中…", "Sending…", "Enviando…") : t("送给 TA", "Send to your partner", "Enviar a tu pareja")}
       </button>
-      {receipt && <p className="distance-receipt" role="status">{t("小卡已放进你们的异地空间。", "Your card is in your shared space.", "Tu tarjeta está en su espacio compartido.")}</p>}
+      {receipt && <p className="distance-receipt" role="status">{t("小卡已送出。", "Your card was sent.", "Se envió tu tarjeta.")}</p>}
     </article>
     {board && <section className="distance-recent" aria-label={t("最近的小卡", "Recent cards", "Tarjetas recientes")}>
       <h2>{t("最近的小卡", "Recent cards", "Tarjetas recientes")}</h2>
@@ -251,6 +262,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
           card.photoId && <RecentPhoto id={card.photoId} label={modeName("photo")} missing={t("这张照片暂时不能显示。", "This photo is unavailable.", "Esta foto no está disponible.")} />}
       </li>)}</ul> : <p>{t("你们送出的小卡会留在这里。", "The cards you send appear here.", "Las tarjetas que envíen aparecerán aquí.")}</p>}
     </section>}
+    </>}
   </section>;
 }
 
