@@ -10,11 +10,11 @@ import { parseChatExport, ImportFormatError } from "../../server/chat-import-par
 export const gateRoot = fileURLToPath(new URL("./", import.meta.url));
 export const digest = value => createHash("sha256").update(value).digest("hex");
 export const readJson = path => JSON.parse(readFileSync(path, "utf8"));
-export const saveJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
+export const saveJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + "\n", "utf8");
 export const canonical = value => JSON.stringify(value).replace(/http:\/\/127\.0\.0\.1:\d+/g, "{{origin}}");
 
 export function gateUnavailable(error) {
-  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authentication|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|credit balance|97%|额度|认证失败)/iu.test(String(error?.message || error));
+  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authenticat(?:ion|e)|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|insufficient_quota|credit balance|97%|额度|认证失败)/iu.test(String(error?.message || error));
 }
 export const gateFailureCode = error => error?.unavailable || gateUnavailable(error) ? 2 : 1;
 
@@ -66,6 +66,9 @@ export function compareMachine(checks, baselineChecks = null) {
 export function machineChecks(item, result) {
   const checks = [{ name: "非空回答且无调用错误", ok: !result?.error && Boolean(result?.answer?.trim()) }];
   const evidence = result?.evidence || {};
+  // Archived top-level completion includes judge scoring. Only the harness's
+  // stored completion is machine evidence; content-only null stays null.
+  const completed = result?.error ? false : Object.hasOwn(evidence, "storedCompletion") ? evidence.storedCompletion : result?.completed;
   const rounds = evidence.rounds?.length ? evidence.rounds : [{ answer: result?.answer || "" }];
   for (const [index, round] of rounds.entries()) {
     const format = checkReplyFormat(round.answer, item.probe.text);
@@ -75,8 +78,8 @@ export function machineChecks(item, result) {
     checks.push(...(round.sourceChecks || []).map(check => ({ name: "原问答引用定位", ...check })));
   }
   checks.push(...(evidence.checks || []), ...(evidence.privacyChecks || []));
-  if (typeof result?.completed === "boolean") checks.push({ name: "真实执行 state_ok", ok: result.completed });
-  if (item.check || item.writes) checks.push({ name: "机器状态检查存在且通过", ok: result?.completed === true });
+  if (typeof completed === "boolean") checks.push({ name: "真实执行 state_ok", ok: completed });
+  if (item.check || item.writes) checks.push({ name: "机器状态检查存在且通过", ok: completed === true });
   if (item.readonly) checks.push({ name: "只读页面状态与请求边界", ok: evidence.readonly?.machine === true });
   const effects = evidence.sideEffects || {};
   if (/不(?:要)?(?:外发|发送|发给)|别(?:发|记)|不保存|不分享|不付款/u.test(item.probe.text)) {

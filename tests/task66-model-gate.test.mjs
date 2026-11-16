@@ -124,6 +124,16 @@ test("identical archived answers pass even when both have known machine gaps", (
   assert.ok(rows.every(row => row.comparison.regressions.length === 0));
 });
 
+test("archived judge completion cannot turn content-only null into a machine success or failure", () => {
+  const item = { probe: { text: "给我一个建议。" } };
+  const raw = { answer: "可以先问问对方。", completed: null, evidence: { storedCompletion: null } };
+  const checks = machineChecks(item, raw);
+  for (const completed of [true, false]) assert.deepEqual(machineChecks(item, { ...raw, completed }), checks);
+  assert.equal(checks.some(check => check.name === "真实执行 state_ok"), false);
+  const write = { probe: { text: "设提醒。" }, check: { kind: "reminder" } };
+  assert.equal(machineChecks(write, { ...raw, completed: true, evidence: { storedCompletion: false } }).every(check => check.ok), false);
+});
+
 test("an archived pass becoming a failed or missing check fails; improvements and unbaselined cases are separate", () => {
   const before = [{ name: "真实写入", ok: true }, { name: "回复契约", ok: false }];
   const checks = [{ name: "真实写入", ok: false }, { name: "回复契约", ok: true }];
@@ -145,6 +155,7 @@ test("provider rejection is UNAVAILABLE/2; product timeouts, errors and malforme
     { type: "result", is_error: true, result: "model unavailable" },
     { type: "turn.failed", error: { message: "unsupported model" } },
     { type: "error", error: { message: "authentication failed" } },
+    { type: "error", error: { message: "Failed to authenticate. API Error: 401" } },
   ]) {
     try { assertGateTransport("test", JSON.stringify(payload)); assert.fail("must reject"); }
     catch (error) { assert.equal(gateFailureCode(error), 2); }
