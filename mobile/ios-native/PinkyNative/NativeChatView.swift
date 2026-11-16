@@ -29,12 +29,11 @@ private enum ChatChannel: Hashable {
 }
 
 private struct ChatMessage: Decodable, Identifiable {
-    struct Translation: Decodable { let text: String }
+    struct Translation: Decodable { let text: String? }
 
     let id: String
     let role: String
-    let text: String
-    let kind: String?
+    let text: String?
     let actorUserId: String?
     let i18n: [String: String]?
     let translations: [String: Translation]?
@@ -42,7 +41,7 @@ private struct ChatMessage: Decodable, Identifiable {
     let photoIds: [String]?
 
     func content(in language: PinkyLanguage) -> String {
-        i18n?[language.rawValue] ?? translations?[language.rawValue]?.text ?? text
+        i18n?[language.rawValue] ?? translations?[language.rawValue]?.text ?? text ?? ""
     }
 }
 
@@ -50,8 +49,8 @@ private struct ChatCard: Decodable, Identifiable {
     let id: String
     let title: String?
     let text: String?
-    let kind: String
-    let status: String
+    let kind: String?
+    let status: String?
     let digest: String?
     let openOn: String?
 
@@ -152,7 +151,7 @@ private struct ChatLane {
     func load(_ channel: ChatChannel, api: PinkyAPI, language: PinkyLanguage,
               hasShared: Bool, quiet: Bool = false) async {
         var state = self[channel]
-        guard !state.sending, !state.loading, !state.paging else { return }
+        guard !state.sending, !state.paging, !(quiet && state.loading) else { return }
         if channel == .together && !hasShared {
             // A change of pairing can revoke access while this screen remains open.
             self[channel] = ChatLane(epoch: state.epoch + 1)
@@ -417,7 +416,7 @@ private struct ChatLane {
             let selected = channel
             await model.load(selected, api: api, language: language, hasShared: hasShared)
             // Refresh a visible shared room only. The server's shared timeline is the source of truth.
-            if selected == .together && hasShared {
+            if selected == .together && paired {
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(7)) } catch { return }
                     await model.load(selected, api: api, language: language, hasShared: hasShared, quiet: true)
