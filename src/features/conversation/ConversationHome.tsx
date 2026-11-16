@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, Copy, GearSix, HandHeart, ImageSquare, Images, LinkSimple, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
@@ -41,7 +41,7 @@ type Ref = Partial<ConversationSource> & { type: string; id: string; version?: n
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
-type Pairing = { status: "pending" | "active"; invitation: { code: string } | null } | null;
+type Pairing = { status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|stop voice|pause|deja de escuchar|pausa)[。.!！]?$/i;
@@ -502,15 +502,41 @@ ${text}` : text, target);
     try { await relationshipApi("/api/together/agreements/draft", jsonBody({ language })); await loadTogether(); }
     catch (error) { setNotice(errorText(error as ApiError)); } finally { setBusy(false); }
   };
+  // An invite that still works; an expired one is replaced by a fresh link the next time it is sent.
+  const liveInvite = pairing?.invitation && !(pairing.invitation.expiresAt && pairing.invitation.expiresAt <= new Date().toISOString()) ? pairing.invitation : null;
   const createInvite = async () => {
     setBusy(true); setNotice("");
-    try { await relationshipApi("/api/partner/invitations", jsonBody({})); await onRefreshPairing(); } catch (error) { setNotice(errorText(error as ApiError)); } finally { setBusy(false); }
+    try { const result = await relationshipApi<{ pairing: Pairing }>("/api/partner/invitations", jsonBody({})); await onRefreshPairing(); return result.pairing?.invitation?.code || ""; }
+    catch (error) { setNotice(errorText(error as ApiError)); return ""; } finally { setBusy(false); }
   };
-  const inviteUrl = pairing?.invitation ? `${location.origin}${location.pathname}?invite=${pairing.invitation.code}` : "";
-  // The partner who has not joined is the one to win over (founder 11-08, user research): the copied invite says in two lines
+  // The partner who has not joined is the one to win over (founder 11-08, user research): the invite says in two lines
   // what is in it for them and that their own chat stays private, then the link.
-  const inviteText = () => `${t("我在用 Pinky 帮我们记日子、出主意、把说好的事落实。你也有自己的私人对话，只有你能看到，我也看不到；我们俩的事要两个人都同意才算数。点这里加入：", "I'm using Pinky to keep our dates, ideas and agreements in one place. You get your own private chat that only you can see (I can't); anything about us only counts once we both agree. Join here: ", "Uso Pinky para nuestras fechas, ideas y acuerdos. Tú tienes tu propio chat privado que solo tú ves (yo no); lo nuestro solo cuenta si ambos estamos de acuerdo. Únete aquí: ")}${inviteUrl}`;
-  const copyInvite = async () => { try { await navigator.clipboard.writeText(inviteText()); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setNotice(inviteText()); } };
+  const inviteMessage = () => t("我在用 Pinky 帮我们记日子、出主意、把说好的事落实。你也有自己的私人对话，只有你能看到，我也看不到；我们俩的事要两个人都同意才算数。点这里加入：", "I'm using Pinky to keep our dates, ideas and agreements in one place. You get your own private chat that only you can see (I can't); anything about us only counts once we both agree. Join here: ", "Uso Pinky para nuestras fechas, ideas y acuerdos. Tú tienes tu propio chat privado que solo tú ves (yo no); lo nuestro solo cuenta si ambos estamos de acuerdo. Únete aquí: ");
+  // One tap: make the link if there is none (or it expired), then the phone's share sheet with the message and link; without
+  // a share sheet both are copied. The link opens a page that says who invited them and joins in the same sign-up.
+  const shareInvite = async () => {
+    keyboard.hide();
+    const code = liveInvite?.code || await createInvite();
+    if (!code) return;
+    const url = `${location.origin}${location.pathname}?invite=${code}`, text = inviteMessage();
+    try { if (navigator.share) { await navigator.share({ title: "Pinky", text, url }); return; } }
+    catch (error) {
+      if ((error as Error).name === "AbortError") return;
+      // Making the link took long enough that the phone no longer counts this as a tap: the card now has the link, one more tap sends it.
+      if ((error as Error).name === "NotAllowedError") { setNotice(t("邀请已准备好，再点一次就能发给 TA。", "Your invite is ready. Tap once more to send it.", "Tu invitación está lista. Toca otra vez para enviarla.")); return; }
+    }
+    try { await navigator.clipboard.writeText(`${text}${url}`); setCopied(true); setTimeout(() => setCopied(false), 1500); setNotice(t("邀请和链接已复制，发给 TA 吧。", "Invite and link copied. Send them to your partner.", "Invitación y enlace copiados. Envíaselos a tu pareja.")); }
+    catch { setNotice(`${text}${url}`); }
+  };
+  const shortTime = (iso: string) => new Date(iso).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  // While the partner has not joined: whether the link has been opened yet (the server keeps only the first time), or that it expired.
+  const inviteStatus = pairing?.status !== "pending" ? "" : !liveInvite ? t("邀请已过期，再发一次就是新的链接。", "Your invite expired. Sending it again makes a new link.", "Tu invitación caducó. Al enviarla de nuevo se crea un enlace nuevo.")
+    : liveInvite.openedAt ? t(`TA 在 ${shortTime(liveInvite.openedAt)} 打开了邀请，还没加入。`, `Your partner opened the invite ${shortTime(liveInvite.openedAt)} but hasn't joined yet.`, `Tu pareja abrió la invitación el ${shortTime(liveInvite.openedAt)}, pero aún no se ha unido.`)
+    : t("等 TA 加入。邀请还没被打开。", "Waiting for your partner. The invite hasn't been opened yet.", "Esperando a tu pareja. La invitación aún no se ha abierto.");
+  // The waiting line above Just me can be put away for this invite; a new invite brings it back.
+  const waitKey = `pinky-invite-wait-hidden:${user.id}`;
+  const [waitHidden, setWaitHidden] = useState(() => { try { return localStorage.getItem(waitKey) || ""; } catch { return ""; } });
+  const hideWait = () => { const code = liveInvite?.code || "expired"; setWaitHidden(code); try { localStorage.setItem(waitKey, code); } catch { /* private mode */ } };
 
   // A letter's opening day, written out ("2027年3月5日", "March 5, 2027").
   const longDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
@@ -653,11 +679,12 @@ ${text}` : text, target);
   };
   const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions" data-testid="composer-ideas">{items.map((text, index) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}{reasons[target][index] && <small className="suggestion-why" data-testid="suggestion-why">{reasons[target][index]}</small>}</button>)}<button type="button" className="conversation-suggestions-all" onClick={() => open("/?view=capabilities")} data-testid="see-capabilities">{t("Pinky 还能做什么 →", "More Pinky can do →", "Más cosas de Pinky →")}</button></div>;
   // Pinky's core (founder 11-08): "I don't know how to reply to her" — a reply coach that works alone, before any pairing.
-  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t("不知道怎么回 TA？", "Not sure how to reply?", "¿No sabes qué responder?")}</h1><p>{t("把 TA 的话粘贴过来，或者发聊天截图。Pinky 帮你看懂 TA 的意思，写一句你可以直接发的回复。只有你能看到。", "Paste what your partner said, or send a screenshot of the chat. Pinky helps you read what they mean and writes a reply you can send as is. Only you can see this.", "Pega lo que dijo tu pareja o envía una captura del chat. Pinky te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Solo tú puedes ver esto.")}</p><div className="card-actions"><button type="button" className="card-primary" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button></div></section>;
+  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t("不知道怎么回 TA？", "Not sure how to reply?", "¿No sabes qué responder?")}</h1><p>{t("把 TA 的话粘贴过来，或者发聊天截图。Pinky 帮你看懂 TA 的意思，写一句你可以直接发的回复。只有你能看到。", "Paste what your partner said, or send a screenshot of the chat. Pinky helps you read what they mean and writes a reply you can send as is. Only you can see this.", "Pega lo que dijo tu pareja o envía una captura del chat. Pinky te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Solo tú puedes ver esto.")}</p><div className="card-actions"><button type="button" className="card-primary" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button>{!paired && pairing?.status !== "pending" && <button type="button" disabled={busy} onClick={() => void shareInvite()} data-testid="empty-invite"><UserPlus size={18} />{t("邀请 TA 一起用", "Invite your partner", "Invita a tu pareja")}</button>}</div></section>;
   const usEmpty = <section className="conversation-empty"><h1>{t("你们俩和 Pinky", "The two of you, plus Pinky", "Ustedes dos y Pinky")}</h1><p>{t("你们两人都能看到这里。Pinky 平时不插话；叫一声“Pinky”或点 @，它就来帮忙。", "You both see everything here. Pinky stays quiet until you say “Pinky” or tap @.", "Los dos ven todo aquí. Pinky no interviene hasta que digan «Pinky» o toquen @.")}</p></section>;
   const invite = <section className="conversation-empty conversation-invite" data-testid="conversation-invite"><h1>{t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja")}</h1><p>{t("“我们俩”是你们两个人和 Pinky 的共同对话。TA 用自己的账号加入后，这里就会打开。", "Us is the shared conversation for the two of you and Pinky. It opens once your partner joins with their own account.", "Nosotros es la conversación compartida entre ustedes dos y Pinky. Se abre cuando tu pareja se une con su propia cuenta.")}</p>
-    {pairing?.invitation ? <><div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{pairing.invitation.code}</strong></div><div className="card-actions"><button className="card-primary" onClick={() => void copyInvite()}><Copy size={18} />{copied ? t("已复制", "Copied", "Copiado") : t("复制邀请链接", "Copy invite link", "Copiar enlace")}</button><button onClick={() => { keyboard.hide(); onPair(); }} data-testid="enter-partner-code">{t("输入 TA 的邀请码", "Enter partner’s code", "Introducir código de tu pareja")}</button></div></> :
-      <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void createInvite()}><LinkSimple size={18} />{t("生成邀请链接", "Create invite link", "Crear enlace de invitación")}</button><button onClick={() => { keyboard.hide(); onPair(); }} data-testid="enter-partner-code">{t("输入 TA 的邀请码", "Enter partner’s code", "Introducir código de tu pareja")}</button></div>}
+    {liveInvite && <div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{liveInvite.code}</strong></div>}
+    {inviteStatus && <p className="invite-status" data-testid="invite-status">{inviteStatus}</p>}
+    <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void shareInvite()} data-testid="share-invite"><ShareNetwork size={18} />{copied ? t("已复制", "Copied", "Copiado") : liveInvite ? t("再发给 TA", "Send it again", "Enviar de nuevo") : t("发邀请给 TA", "Send your partner an invite", "Enviar invitación a tu pareja")}</button><button onClick={() => { keyboard.hide(); onPair(); }} data-testid="enter-partner-code">{t("输入 TA 的邀请码", "Enter partner’s code", "Introducir código de tu pareja")}</button></div>
   </section>;
 
   // A long conversation keeps its older messages in pages (memory plan, 11-09); they load on request, newest page first.
@@ -717,6 +744,7 @@ ${text}` : text, target);
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
+      {channel === "me" && !thread && pairing?.status === "pending" && waitHidden !== (liveInvite?.code || "expired") && <div className="thread-bar invite-wait" data-testid="invite-waiting"><span>{inviteStatus}</span><button type="button" disabled={busy} onClick={() => void shareInvite()}>{t("再发一次", "Send again", "Enviar otra vez")}</button><button type="button" className="invite-wait-close" onClick={hideWait} aria-label={t("收起", "Hide", "Ocultar")}><X size={14} /></button></div>}
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} /> : null; })()}
       {recall.controls}
@@ -830,7 +858,7 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
       <div className="drawer-group">{fixed.map(row)}</div>
       <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{(paired ? ours : mine).map(row)}{fixedSpaces.map(row)}</div>
       {paired && !!mine.length && <div className="drawer-group"><h2>{t("只有我的", "Just mine", "Solo mío")}</h2>{mine.map(row)}</div>}
-      <footer className="drawer-group">{row({ key: "capabilities", icon: <Lightbulb size={22} />, label: t("Pinky 能做什么", "What Pinky can do", "Qué puede hacer Pinky"), onClick: () => onOpen("/?view=capabilities") })}{row({ key: "share", icon: <ShareNetwork size={22} />, label: t("推荐给朋友", "Recommend to friends", "Recomendar a amigos"), onClick: onShare })}{row({ key: "feedback", icon: <ChatCircleText size={22} />, label: t("反馈", "Feedback", "Comentarios"), onClick: onFeedback })}{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}</footer>
+      <footer className="drawer-group"><h2>{t("更多", "More", "Más")}</h2>{row({ key: "capabilities", icon: <Lightbulb size={22} />, label: t("Pinky 能做什么", "What Pinky can do", "Qué puede hacer Pinky"), onClick: () => onOpen("/?view=capabilities") })}{row({ key: "share", icon: <ShareNetwork size={22} />, label: t("推荐给朋友", "Recommend to friends", "Recomendar a amigos"), onClick: onShare })}{row({ key: "feedback", icon: <ChatCircleText size={22} />, label: t("反馈", "Feedback", "Comentarios"), onClick: onFeedback })}{row({ key: "settings", icon: <GearSix size={22} />, label: t("设置", "Settings", "Ajustes"), onClick: onPrivacy })}</footer>
     </nav>
   </div>;
 }

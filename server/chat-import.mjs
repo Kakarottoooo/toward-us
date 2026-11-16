@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
-import { finishReply, quietUnderContract } from "./reply-contract.mjs";
+import { finishReply, quietUnderContract, wantsDraftOnly } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
@@ -346,15 +346,19 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         try {
           const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (typeof answer?.reply !== "string" || !(answer.reply.trim() || answer.sendableDraft?.trim())) throw new Error("Empty screenshot answer");
-          const reply = await prepareSourceReply(answer.reply.trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
-            sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, label: true });
-          text = finishReply(reply, { request: request.text, language: record.language });
+          // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
+          const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : answer.reply.trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+            sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, label: true, check: false });
+          text = finishReply(reply, { request: request.text, language: record.language, formatChecked: true });
         } catch (error) {
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
         }
         await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
-        const quietNotes = quietUnderContract(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text);
+        // No filing notes ("已为…建档", "已记进…档案") under an answer to someone who is upset (11-15: under a comfort answer
+        // they read as paperwork). The person's file is still kept and shows in their people list.
+        const quietNotes = quietUnderContract(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text)
+          || /难受|难过|伤心|委屈|想哭|心痛|安慰|崩溃|upset|it hurts|so sad|comfort me|triste|me duele/i.test(request.text);
         if (record.personNew && record.personId && !quietNotes) {
           await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
           await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
@@ -411,7 +415,14 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
     const photos = [];
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
-    const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
+    // Reading and answering in one call failed about one time in ten in the 11-15 practice runs (the user then got
+    // "截图没能读出来"). Then read only; the import answers the question in its own call (answerScreenshot).
+    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
+    const result = await read().catch((error) => {
+      if (!question || isAiLimit(error) || error?.statusCode === 503) throw error;
+      console.warn("[screenshots] read-and-answer failed; reading only:", String(error?.message || error).slice(0, 120));
+      return mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
+    });
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
     // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
     if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));

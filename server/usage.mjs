@@ -51,6 +51,23 @@ export async function weeklyUsage(store, { weeks = 4, now = new Date() } = {}) {
     .map(({ relationshipId, week, members, actions }) => ({ relationshipId, week, activeMembers: Math.min(members.size, 2), actions }));
 }
 
+const JOIN_WINDOW_MS = 48 * 60 * 60 * 1000;
+/** The two-sided cold start in numbers: partner invites created, opened and joined, and how many joined within 48 hours.
+ * Only invites at least 48 hours old count towards the 48-hour share, so a fresh invite does not pull it down. A partner who
+ * joined by typing the code counts as opened too, so the funnel never narrows the wrong way. Timestamps only. */
+export function partnerJoinReport(invitations, { days = 30, now = new Date() } = {}) {
+  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+  const rows = invitations.filter((invitation) => invitation.createdAt >= since);
+  const joinedWithin = (invitation) => invitation.acceptedAt && Date.parse(invitation.acceptedAt) - Date.parse(invitation.createdAt) <= JOIN_WINDOW_MS;
+  const settled = rows.filter((invitation) => now.getTime() - Date.parse(invitation.createdAt) >= JOIN_WINDOW_MS);
+  const within = settled.filter(joinedWithin).length;
+  return {
+    days, since, until: now.toISOString(),
+    created: rows.length, opened: rows.filter((invitation) => invitation.openedAt || invitation.acceptedAt).length, joined: rows.filter((invitation) => invitation.acceptedAt).length,
+    joinedWithin48h: rows.filter(joinedWithin).length, settled: settled.length, settledJoinedWithin48h: within, shareJoinedWithin48h: settled.length ? within / settled.length : null,
+  };
+}
+
 export function createUsageRouter({ store, internalSecret = () => "" }) {
   const router = express.Router();
   // The App opened from a push (its link carries from=push): counted, never with what the push said.
@@ -67,6 +84,16 @@ export function createUsageRouter({ store, internalSecret = () => "" }) {
     if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "weeks must be a positive integer.", code: "invalid_weeks" });
     res.setHeader("Cache-Control", "no-store");
     try { res.json(await weeklyUsage(store, { weeks: Math.min(requested, 12) })); } catch (error) { next(error); }
+  });
+  // Partner invites created / opened / joined and the share joined within 48 hours: node scripts/partner-join-report.mjs.
+  router.get("/api/internal/partner-joins", async (req, res, next) => {
+    const status = internalBearerStatus(req, internalSecret());
+    if (status === 503) return res.status(503).json({ error: "Usage reporting is not configured." });
+    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    const requested = req.query.days === undefined ? 30 : Number(req.query.days);
+    if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "days must be a positive integer.", code: "invalid_days" });
+    res.setHeader("Cache-Control", "no-store");
+    try { res.json(partnerJoinReport(await store.listInvitationsForJob(), { days: Math.min(requested, 365) })); } catch (error) { next(error); }
   });
   // Model calls per day, per couple (or unpaired person) and per feature, with the caps in force: for tuning AI_CAPS.
   router.get("/api/internal/ai-usage", async (req, res, next) => {

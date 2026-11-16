@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkReplyFormat, repairReplyFormat, wantsOneSentence } from "../server/reply-contract.mjs";
+import { checkReplyFormat, repairReplyFormat, wantsDraftOnly, wantsOneSentence } from "../server/reply-contract.mjs";
 
 test("explicit sentence requests include drafting verbs without truncating mixed answers", () => {
   assert.equal(wantsOneSentence("帮我写一句祝贺，不要发送。"), true);
@@ -93,4 +93,9 @@ test("captured round 23, 24 and 26 drafts use the structured field without label
     assert.equal(checkReplyFormat({ reply: row.reply, sendableDraft: row.draft }, row.request).ok, true, row.source);
     assert.equal(checkReplyFormat({ reply: row.raw, sendableDraft: null }, row.request).ok, true, "explicit empty field skips measurement without guessing a draft");
   }
+});
+
+test("asking for just the line to send is told apart from asking how to reply (11-15)", () => {
+  for (const request of ["我该回什么？就一句能直接发的。", "给我一句能直接发的", "帮我写一句能直接发给她的", "just the line please", "solo el mensaje"]) assert.equal(wantsDraftOnly(request), true, request);
+  for (const request of ["怎么回他", "我们问题在哪？", "他这句什么意思？", "how should I reply?"]) assert.equal(wantsDraftOnly(request), false, request);
 });

@@ -102,7 +102,7 @@ test("an old detail is found in older pages and notes, with its day, scoped to a
   assert.match(await searchMemory({ store, userId: users[0].id, query: "订餐厅", personId: jie.id }), /No matching record/);
 });
 
-test("Pinky searches when it needs an old detail and answers with what it found", async (t) => {
+test("Pinky searches when it needs an old detail and answers with what it found, without a second model check", async (t) => {
   const { store, users, thread, said } = await setup(t);
   await thread(users[0].id, { earlier: [{ messages: [said("阿明道歉说以后每年都提前一周订好餐厅", "2025-03-12T10:00:00.000Z")] }] });
   const contexts = [], sourceChecks = [];
@@ -120,12 +120,11 @@ test("Pinky searches when it needs an old detail and answers with what it found"
   assert.match(contexts[1].lookups[0].findings, /2025-03-12.*提前一周订好餐厅/);
   assert.match(reply.text, /2025 年 3 月 12 日/);
   assert.equal(reply.sources.length, 1);
-  assert.equal(sourceChecks.length, 1);
-  assert.match(sourceChecks[0].sources[0].text, /提前一周订好餐厅/);
-  assert.doesNotMatch(sourceChecks[0].reply, /recall:/);
-  await post(`/assistant/sessions/${session.id}/messages`, { text: "2025-03-12 那天我说了什么？", itemId: randomUUID() });
-  assert.equal(sourceChecks.length, 2, "prefetched recalls also reach the source check");
-  assert.match(sourceChecks[1].sources[0].text, /提前一周订好餐厅/);
+  assert.equal(sourceChecks.length, 0, "the answer is delivered as written");
+  const prefetched = (await post(`/assistant/sessions/${session.id}/messages`, { text: "2025-03-12 那天我说了什么？", itemId: randomUUID() })).session.messages.at(-1);
+  assert.match(JSON.stringify(contexts.at(-1).lookups), /提前一周订好餐厅/, "prefetched recalls reach the planner");
+  assert.match(prefetched.text, /2025 年 3 月 12 日/);
+  assert.equal(sourceChecks.length, 0);
   assert.doesNotMatch(reply.text, /recall:/);
   const source = reply.sources[0];
   const url = `http://127.0.0.1:${server.address().port}/api/assistant/sessions/${source.conversationId}/locate?messageId=${source.messageId}`;

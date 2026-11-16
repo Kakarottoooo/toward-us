@@ -11,6 +11,9 @@ function hasSentenceRequest(request) {
     || /(?:^|[。！？!?\n])\s*(?:就|只要|只|回我)?一句话?(?:就(?:行|好|够了?|可以))?\s*(?:[。！!.]|$)/u.test(request || "");
 }
 export const wantsOneSentence = (request) => hasSentenceRequest(request) && !/[?？]|(?:最后|再|另外|同时).{0,8}(?:给|写)|(?:then|also).{0,20}(?:draft|sentence)/iu.test(request);
+// "就一句能直接发的" / "just the line": the user wants only the sendable draft, so the reply around it stays empty (11-15:
+// an analysis paragraph before the line lost to both plain ChatGPT and Claude on exactly this request).
+export const wantsDraftOnly = (request) => /(?:一句|一条)[^。！？\n]{0,6}(?:能|可以)?直接发|能直接发的|直接能发的|只要(?:回复|那句|一句)|(?:just|only)\s+(?:the\s+)?(?:line|message|text)\b|(?:solo|sólo)\s+(?:el\s+)?mensaje/iu.test(request || "");
 
 const number = (value) => /^\d+$/.test(value) ? Number(value) : value === "十" ? 10 : value.includes("十") ? (number(value.split("十")[0] || "一") * 10 + number(value.split("十")[1] || "零")) : "零一二三四五六七八九".indexOf(value.replace("两", "二"));
 const countToken = "([0-9]+|[一二两三四五六七八九十]{1,3})";
@@ -397,7 +400,7 @@ export function mergeReceipts(receipts = [], language = "zh") {
 // fragments). A sentence whose trailing clauses alone are the claim keeps its leading clauses when they say something
 // ("先说感受，再谈当下，我会提醒你明天沟通。" keeps "先说感受，再谈当下。"); otherwise the whole sentence goes.
 const interjection = /^(?:好的?|嗯|行|可以|没问题|收到|明白|OK|okay|sure|got it|vale|claro|de acuerdo|listo)[\s!！。.,，]*$/iu;
-export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, webPages = [], sourceTranscript } = {}) {
+export function finishReply(reply, { request = "", language = "zh", receipts = [], reminderWritten = false, webPages = [], sourceTranscript, formatChecked = false } = {}) {
   const parts = deliveryParts(reply, language);
   const deferred = part => webPages.length && /(?:之后|拿到后|稍后|晚点).{0,20}(?:告诉你|给你|发给你)|(?:will|I'll).{0,30}(?:later|once I)/iu.test(part);
   const transcriptEcho = part => sourceTranscript && reminderWritten && /(?:转写|原话|原文|你说|transcri|you said)/iu.test(part);
@@ -422,7 +425,7 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   if (!text && parts.some(deferred)) text = language === "en" ? "I could not confirm the requested information in this turn." : language === "es" ? "No pude confirmar la información solicitada en este turno." : "这次未能确认你问的信息。";
   const merged = mergeReceipts(receipts, language);
   // Final code acceptance of the user format contract for every channel: receipts are never cut.
-  text = settleContract(text, request, language, { receipts: merged });
+  if (!formatChecked || wantsOneSentence(request)) text = settleContract(text, request, language, { receipts: merged });
   if (merged.length) text = [text, ...merged].filter(Boolean).join("\n");
   if (reminderRemoved && !reminderWritten) text = [text, language === "en" ? "No reminder was created in this turn." : language === "es" ? "No se creó ningún recordatorio en este turno." : "这轮尚未创建提醒。"].filter(Boolean).join("\n");
   if (!text && removed) text = language === "en" ? "No new record was saved in this turn." : language === "es" ? "No se guardó ningún registro nuevo en este turno." : "这轮没有新增记录。";
@@ -572,7 +575,7 @@ export function deliveredReply(final, lastGood = "", caveat = "") {
   throw Object.assign(new Error("No deliverable reply"), { code: "NO_DELIVERABLE" });
 }
 
-export const replyContractInstructions = `Only requested content; obey length/format, including draft explanations. sendableDraft: copyable wording or null. reply: analysis only; empty for draft-only; <=2 sentences for mixed asks. Invent no facts, feelings, affection, acceptance or promises. Preserve speakers, sources, full day+time; states aren't outcomes. Inherit no unconfirmed details. Writes use server receipts; reminders need actions after lookup. Say no booking for bookable activities. No interrogation/private-chat hints; one neutral privacy boundary.
+export const replyContractInstructions = `Only requested content; obey any length/format the user states. For a question about a chat, a person or a relationship, what they need (How to answer) counts as requested, at the depth it gives, unless they set a limit. sendableDraft: copyable wording or null; obey its requested sentence count, including any explanation inside it. reply: analysis only, empty for draft-only, <=2 sentences when they mainly want a draft. No invented facts/feelings/affection/acceptance/promises. Preserve sources, speakers and times; states aren't outcomes. Inherit no unconfirmed details. Server receipts report writes; reminders need actions after lookup. Say no booking for bookable activities. No interrogation or private-chat/access hints; one neutral privacy boundary.
 Examples (good / bad):
 Which shelf, moved A to C? "C." / "C, formerly A."
 Which gate? "C." / "According to records, C." Source asked? "The notice says C."

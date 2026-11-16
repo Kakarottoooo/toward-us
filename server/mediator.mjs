@@ -13,7 +13,8 @@ import { meterOpenAI } from "./ai-ledger.mjs";
 
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
-const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
+// Main allows complete question-playbook answers up to 90 seconds.
+const INTERACTIVE = { timeout: 90_000, maxRetries: 0 };
 // Never fail empty (task 56): a structured turn that timed out or came back malformed is asked for exactly once more, with
 // one constraint added. The CLI model sometimes wrote its reply as prose, then hundreds of "<br>" lines before the JSON;
 // at 45 s the process was killed and the couple read "Pinky 暂时不可用" (tool-agreement-draft, round 21). Usage limits are
@@ -130,7 +131,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
     async answerScreenshot(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
       const response = await client.responses.create({
-        model, store: false, max_output_tokens: 900,
+        model, store: false, max_output_tokens: 2600,
         text: { format: { type: "json_schema", name: "private_screenshot_advice", strict: true, schema: screenshotAnswerSchema } },
         input: [{ role: "developer", content: screenshotAdviceInstructions(language) }, { role: "user", content: JSON.stringify(context) }],
       }, INTERACTIVE);
@@ -169,7 +170,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const schema = withPhotos ? { ...baseSchema, required: [...baseSchema.required, "readChatScreenshots"], properties: { ...baseSchema.properties, readChatScreenshots: { type: "boolean" } } } : baseSchema;
       const instructions = assistantInstructions(language) + (requiresPlanDelivery(context) ? "\n" + planDeliveryInstructions : "") + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
       const response = await withOneRetry((constraint) => client.responses.create({
-        model, store: false, max_output_tokens: checkedPlan ? 2400 : 1400,
+        model, store: false, max_output_tokens: checkedPlan ? 3600 : 3200,
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
         input: [{ role: "developer", content: constraint ? `${instructions}
 ${constraint}` : instructions }, { role: "user", content: JSON.stringify(context) }],
@@ -627,7 +628,7 @@ function buildFallbackAnalysis(room, notice, model) {
     notice,
     shared: {
       title: localText(room.language, "先把立场放到同一张桌面上", "Put both perspectives on the same table", "Pongan ambas perspectivas sobre la misma mesa"),
-      overview: localText(room.language, "目前更像是双方都在保护自己的需要，但表达方式让彼此先听见了压力，而不是需要。这个结论可以保留分歧，不要求立刻达成一致。", "Both people seem to be protecting important needs, but the way they are being expressed makes pressure easier to hear than the needs themselves. You can keep the disagreement without forcing immediate agreement.", "Ambas personas parecen estar protegiendo necesidades importantes, pero la forma de expresarlas hace que se perciba antes la presión que la necesidad. Pueden conservar el desacuerdo sin forzar un acuerdo inmediato."),
+      overview: localText(room.language, "目前更像是双方都在保护自己的需要，但表达方式让对方先听见了压力，而不是需要。这个结论可以保留分歧，不要求立刻达成一致。", "Both people seem to be protecting important needs, but the way they are being expressed makes pressure easier to hear than the needs themselves. You can keep the disagreement without forcing immediate agreement.", "Ambas personas parecen estar protegiendo necesidades importantes, pero la forma de expresarlas hace que se perciba antes la presión que la necesidad. Pueden conservar el desacuerdo sin forzar un acuerdo inmediato."),
       category,
       perspectives: [
         { participantId: a.id, name: a.name, view: localText(room.language, `你目前强调的是：“${truncate(latestA)}”`, `What you are emphasizing is: “${truncate(latestA)}”`, `Lo que estás destacando es: «${truncate(latestA)}»`) },

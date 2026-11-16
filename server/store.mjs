@@ -181,7 +181,8 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
     const members = Object.values(state().memberships)
       .filter((candidate) => candidate.relationshipId === relationship.id)
       .map((candidate) => ({ ...candidate, user: publicUser(state().users[candidate.userId]) }));
-    const invitation = Object.values(state().invitations).find((candidate) => candidate.relationshipId === relationship.id && !candidate.acceptedAt) || null;
+    // The newest open invite: one sent again after the first expired replaces it.
+    const invitation = Object.values(state().invitations).filter((candidate) => candidate.relationshipId === relationship.id && !candidate.acceptedAt).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
     return { relationship: { ...relationship }, membership: { ...membership }, members, invitation: invitation ? { ...invitation } : null };
   };
 
@@ -308,6 +309,20 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       return relationshipContext(membership.userId);
     },
     getInvitation(code) { return state().invitations[code] ? { ...state().invitations[code] } : null; },
+    // A fresh invite for a space that is still waiting for the partner (the first one expired).
+    async renewInvitation(invitation) {
+      const relationship = state().relationships[invitation.relationshipId];
+      if (relationship?.status !== "pending" || state().memberships[invitation.createdByUserId]?.relationshipId !== relationship.id) return null;
+      state().invitations[invitation.code] = { ...invitation };
+      await persist();
+      return relationshipContext(invitation.createdByUserId);
+    },
+    // Only the first time the link is opened is kept: the inviter sees it, and the partner-join report counts it.
+    async markInvitationOpened(code, openedAt) {
+      if (!state().invitations[code] || state().invitations[code].openedAt) return;
+      own(state().invitations, code).openedAt = openedAt; await persist();
+    },
+    async listInvitationsForJob() { return Object.values(state().invitations).map((invitation) => ({ ...invitation })); },
     async acceptInvitation(code, userId, acceptedAt) {
       if (!state().invitations[code]) return null;
       const invitation = own(state().invitations, code);
@@ -439,7 +454,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,
-    typeof value === "function" && /^(create|update|delete|accept|finalize|leave|consume|bind|unbind)/.test(name)
+    typeof value === "function" && /^(create|update|delete|accept|finalize|leave|consume|bind|unbind|renew|mark)/.test(name)
       ? (...args) => transaction("file", () => value(...args)) : value,
   ]));
   return store;

@@ -179,6 +179,14 @@ export async function createPostgresStore(databaseUrl) {
       } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
     },
     async getInvitation(code) { return mapInvitation((await pool.query("select * from invitations where code = $1", [code])).rows[0]); },
+    // A fresh invite for a space that is still waiting for the partner (the first one expired).
+    async renewInvitation(invitation) {
+      const inserted = await pool.query("insert into invitations (code,relationship_id,created_by_user_id,created_at,expires_at) select $1,$2,$3,$4,$5 where exists (select 1 from relationships r join relationship_members m on m.relationship_id=r.id where r.id=$2 and r.status='pending' and m.user_id=$3)", [invitation.code, invitation.relationshipId, invitation.createdByUserId, invitation.createdAt, invitation.expiresAt]);
+      return inserted.rowCount ? loadRelationshipContext(pool, invitation.createdByUserId) : null;
+    },
+    // Only the first time the link is opened is kept: the inviter sees it, and the partner-join report counts it.
+    async markInvitationOpened(code, openedAt) { await pool.query("update invitations set opened_at=$2 where code=$1 and opened_at is null", [code, openedAt]); },
+    async listInvitationsForJob() { return (await pool.query("select * from invitations order by created_at")).rows.map(mapInvitation); },
     async acceptInvitation(code, userId, acceptedAt) {
       const initial = await store.getInvitation(code); if (!initial) return null;
       return store.transaction(`relationship:${initial.relationshipId}`, async () => {
@@ -357,6 +365,7 @@ async function migrate(pool) {
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
     alter table users add column if not exists language text;
     alter table relationships add column if not exists imessage_group_id text;
+    alter table invitations add column if not exists opened_at timestamptz;
     create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
@@ -413,4 +422,4 @@ const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, p
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
-const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;
+const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;

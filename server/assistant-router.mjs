@@ -1,5 +1,5 @@
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
-import { deliveredReply, finishReply, formatContract, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsOneSentence } from "./reply-contract.mjs";
+import { deliveredReply, finishReply, formatContract, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { checklistReceipt, reminderReceipt, rememberReceipt } from "./receipts.mjs";
 import { checkPlanConstraints, settleCheckedPlan } from "./plan-constraints.mjs";
@@ -529,10 +529,12 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
       const receipts = { messages: [...delivery.replies, ...(delivery.remembered ? [delivery.remembered] : [])], records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
       const unrelated = !plan.planConstraints && !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
-      const audited = await prepareSourceReply(plan.reply, { planConstraints: plan.planConstraints, unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+      // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
+      const draftOnly = wantsDraftOnly(text) && typeof plan.sendableDraft === "string" && plan.sendableDraft.trim();
+      const audited = await prepareSourceReply(draftOnly ? "" : plan.reply, { planConstraints: plan.planConstraints, unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
-          ...(delivery.replies.length || changes.length || delivery.remembered ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, label: true });
+          ...(delivery.replies.length || changes.length || delivery.remembered ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, label: true, check: false });
       const own = finishReply(audited, { request: text, language, webPages: webTurn.results, sourceTranscript: context.sourceTranscript, receipts: delivery.writeReceipts,
         reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
       // Never fail empty: an audit can only degrade the delivered draft, so an empty or generic result keeps the reply

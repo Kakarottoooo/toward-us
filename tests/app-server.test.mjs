@@ -119,7 +119,8 @@ test("shared agreement drafting preserves given rules and labels reversible defa
   });
 });
 
-test("a person waits at most about 45 seconds for a reply; only background work may take minutes", async () => {
+// 90 s since 11-15: a complete analysis (question-playbooks.mjs) ran past 45 s and reached the user as "Pinky 暂时不可用".
+test("a person waits at most about 90 seconds for a reply; only background work may take minutes", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     const seen = [];
     globalThis.fetch = async (_url, init) => {
@@ -132,7 +133,7 @@ test("a person waits at most about 45 seconds for a reply; only background work 
     await mediator.mediateTogether({ messages: [] }, [], "en");
     await mediator.answerScreenshot({ question: "What should I reply?", names: { me: "Alex", partner: "Sam" }, transcript: "[you] Alex: I am here." }, "en");
     await mediator.structured({ name: "daily_question", schema: { type: "object", properties: {} }, instructions: "x", input: "{}" });
-    assert.deepEqual(seen, ["45", "45", "45", "45", "300"]);
+    assert.deepEqual(seen, ["90", "90", "90", "90", "300"]);
   });
   // Claude through the API honours the caller's limit instead of stretching every call to a minute or more.
   await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {

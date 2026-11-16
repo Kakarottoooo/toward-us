@@ -58,11 +58,10 @@ test("breakup support preserves autonomy and private deliberation instead of def
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /Neither push leaving nor persuade staying/);
-    assert.match(prompt, /distinguish wants from guilt or pressure with at most one question/);
+    assert.match(prompt, /a question that separates wants from guilt or pressure may close the answer, never replace it/);
     assert.match(prompt, /Focus on whether they want the relationship, not rephrasing a boundary/);
     assert.match(prompt, /No default couples counseling, repair script or requirement to try again/);
-    assert.match(prompt, /Respect a settled decision; for wording give ONLY the complete plain private draft, no preamble or closing/);
-    assert.match(prompt, /3–5 short sentences, overriding onboarding and feature offers/);
+    assert.match(prompt, /Respect a settled decision; for wording give ONLY the complete plain private draft \(3–5 short sentences\), no preamble or closing, overriding onboarding and feature offers/);
     assert.match(prompt, /Advice\/drafting uses actions:\[\] unless asked for a sharing preview/);
     assert.match(prompt, /never suggest sharing deliberation/);
     assert.match(prompt, /Only owner-confirmed wording reaches Us, never private conversation/);
@@ -103,7 +102,8 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
     // planner prompt cannot grow without anyone noticing what each turn costs.
     const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
     // 43,500 since 11-10: bounded reply grounding rules; plan metadata is added only for constrained planning.
-    assert.ok(system.length < 43_500, `planner prompt is ${system.length} characters`);
+    // 58,000 since 11-15: the question playbooks (question-playbooks.mjs), the founder's "帮用户把问题问好" layer.
+    assert.ok(system.length < 58_000, `planner prompt is ${system.length} characters`);
   }
 });
 
@@ -156,40 +156,35 @@ test("a reply cannot claim a memory write when this turn executed none", async (
   assert.equal((await say("我该怎么说？")).text, "可以先说自己的感受。");
 });
 
-test("an explicit voice transcript cannot skip the source check through planner classification", async (t) => {
-  let checks = 0;
-  const { say } = await setup(t, () => ({ reply: "最后说的是四点。", sourceBased: false, actions: [] }), undefined, async ({ sources }) => {
+test("an explicit voice transcript answer is delivered as written, without a second model check", async (t) => {
+  let checks = 0, rewrites = 0;
+  const { say } = await setup(t, () => ({ reply: "最后说的是四点。", sourceBased: false, actions: [] }), async () => { rewrites++; return "改写"; }, async () => {
     checks++;
-    assert.equal(sources[0].kind, "transcript");
-    assert.match(sources[0].text, /四点/);
     return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
   });
   assert.equal((await say("语音转写：三点，改成四点。最后是几点？")).text, "最后说的是四点。");
-  assert.equal(checks, 1);
+  assert.equal(checks, 0); assert.equal(rewrites, 0);
 });
 
-test("an explicit single-sentence answer has no unsolicited closing", async (t) => {
-  let repairs = 0;
-  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }), async ({ issues }) => { repairs++; assert.ok(issues.length); return "我也替你开心。"; });
+test("an explicit single-sentence answer drops the unsolicited closing deterministically, without a rewrite call", async (t) => {
+  let repairs = 0, checks = 0;
+  const { say } = await setup(t, () => ({ reply: "我也替你开心。时间不早了，早点休息。", actions: [] }), async () => { repairs++; return "我也替你开心。"; },
+    async () => { checks++; return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; });
   assert.equal((await say("谢谢，今天聊完好多了，只回我一句就好。")).text, "我也替你开心。");
   assert.equal((await say("谢谢，就像手机聊天那样回我一句，不要列清单。")).text, "我也替你开心。");
-  assert.equal(repairs, 2);
+  assert.equal(repairs, 0); assert.equal(checks, 0);
 });
 
-test("the transcript endpoint checks the corrected source before writing exactly one reminder", async (t) => {
-  let checks = 0;
+test("the transcript endpoint writes exactly one reminder at the corrected time and answers without a source check", async (t) => {
+  let checks = 0, rewrites = 0;
   const due = `${new Date(Date.now() + 86400_000).toISOString().slice(0, 10)}T16:00`;
   const { say, reminders } = await setup(t, () => ({ reply: "生日蛋糕按最后说的下午四点。", sourceBased: false,
     actions: [action({ kind: "reminder", operation: "create", query: null, fields: fields({ title: "买生日蛋糕", localDateTime: due, timezone: "UTC", frequency: "once" }) })],
-  }), undefined, async ({ sources, checkScope }) => {
-    checks++; assert.equal((await reminders()).length, 0, "check precedes the action");
-    assert.deepEqual(sources, [{ kind: "transcript", text: "明天下午三点，啊不对，四点提醒我买生日蛋糕。" }]);
-    assert.equal(checkScope, false);
-    return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] };
-  });
-  await say("明天下午三点，啊不对，四点提醒我买生日蛋糕。", "transcripts");
+  }), async () => { rewrites++; return "改写"; }, async () => { checks++; return { claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }; });
+  const reply = await say("明天下午三点，啊不对，四点提醒我买生日蛋糕。", "transcripts");
+  assert.match(reply.text, /^生日蛋糕按最后说的下午四点。/);
   const saved = await reminders();
-  assert.equal(checks, 1); assert.equal(saved.length, 1);
+  assert.equal(checks, 0); assert.equal(rewrites, 0); assert.equal(saved.length, 1);
   assert.equal(saved[0].dueAt, `${due}:00.000Z`);
   assert.equal(saved[0].visibility, "private");
 });

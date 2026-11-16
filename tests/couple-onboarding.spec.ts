@@ -2,7 +2,8 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { fileURLToPath } from "node:url";
 
 // The whole first run of a couple, each on their own phone (two browser contexts, so two separate sign-ins):
-// A signs up and invites, B opens the link and signs up, the two accounts link, they talk in Us for the first time, and
+// A signs up and invites, B opens the link, sees who invited them and signs up, which joins them to A in the same step; they
+// talk in Us for the first time, and
 // the character one of them makes appears for both. A writes in Chinese, B uses the English interface.
 // Accounts are synthetic and made fresh each run on the local test server (playwright.couple.config.ts).
 const PASSWORD = "synthetic-couple-2026";
@@ -26,17 +27,24 @@ test("a couple goes from invite to a shared conversation and character", async (
   await expect(pageA.getByTestId("onboarding")).toBeVisible();
   await pageA.getByTestId("onboarding-next").click();
   await pageA.getByTestId("onboarding-action").click(); // "邀请 TA 加入"
-  await pageA.getByRole("button", { name: "生成邀请链接" }).click();
+  await pageA.getByTestId("share-invite").click(); // makes the link, then shares it (or copies it without a share sheet)
   const code = (await pageA.locator(".invite-code strong").innerText()).trim();
   expect(code).toMatch(/^[A-Z0-9]{8}$/);
   // A's own material, which must never reach B.
   expect((await a.request.post("/api/memories", { data: { text: "A_PRIVATE_MEMORY 我其实有点担心见家长", allowPrivateAI: false, source: { type: "member" }, language: "zh" } })).ok()).toBe(true);
   expect((await a.request.post("/api/checkins", { data: { text: "A_PRIVATE_CHECKIN 今天有点累", kind: "checkin", mood: null, language: "zh" } })).ok()).toBe(true);
 
-  // 2. B opens the invite link, picks English, and is offered sign-up (not sign-in) because they were invited.
+  // 2. B opens the invite link: a page that names A and says what Pinky is for them, in B's chosen language; then sign-up.
   await pageB.goto(`/?invite=${code}`);
-  await pageB.getByTestId("home-screen").getByRole("button", { name: "EN", exact: true }).first().click();
-  await pageB.getByTestId("start-button").click();
+  const landing = pageB.getByTestId("invite-landing");
+  await landing.getByRole("button", { name: "EN", exact: true }).first().click();
+  await expect(pageB.getByTestId("invite-landing-title")).toHaveText(`${accountA.name} invited you to Pinky`);
+  await expect(landing.locator(".invite-landing-points")).not.toContainText(CJK);
+  await expectLanguagesReachable(pageB);
+  await pageB.screenshot({ path: testInfo.outputPath("b-landing-en.png") });
+  // A's link was opened: A's waiting card can say so.
+  await expect.poll(async () => Boolean((await getJson(a.request, "/api/auth/me")).pairing.invitation.openedAt)).toBe(true);
+  await pageB.getByTestId("invite-join").click();
   await expect(pageB.getByTestId("register-name")).toBeVisible();
   // A taken email is explained in the interface language, not in the server's Chinese.
   await signUp(pageB, { name: accountB.name, email: accountA.email });
@@ -45,20 +53,7 @@ test("a couple goes from invite to a shared conversation and character", async (
   await pageB.getByTestId("auth-email").fill(accountB.email);
   await pageB.getByTestId("auth-submit").click();
 
-  // 3. B lands on joining A, with the code filled in; creating an invite of their own is not offered.
-  const pairing = pageB.locator("main.pairing-content");
-  await expect(pairing.getByRole("heading", { name: "Join your partner" })).toBeVisible();
-  await expect(pairing.getByTestId("invite-code")).toHaveValue(code);
-  await expect(pairing.getByRole("button", { name: "Create partner invite" })).toHaveCount(0);
-  await expect(pairing).not.toContainText(CJK);
-  await expectLanguagesReachable(pageB);
-  await pageB.screenshot({ path: testInfo.outputPath("b-join-en.png") });
-  // Even if B had already started an invite of their own (say, from the drawer) before using A's link, A's link still works.
-  expect((await b.request.post("/api/partner/invitations", { data: {} })).status()).toBe(201);
-  await pageB.goto(`/?invite=${code}`);
-  await expect(pairing.getByRole("heading", { name: "Join your partner" })).toBeVisible();
-  await expect(pairing.getByTestId("invite-code")).toHaveValue(code);
-  await pairing.getByRole("button", { name: "Accept invite" }).click();
+  // 3. Signing up joined A in the same step: no code to type, B lands in the conversation.
   await expect(pageB.getByTestId("conversation-screen")).toBeVisible();
   // Joining opens on Us, not on B's private channel; the channel does not stay in the address.
   await expect(pageB.getByRole("tab", { name: /^Us\b/ })).toHaveAttribute("aria-selected", "true");
