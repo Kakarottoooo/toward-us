@@ -161,6 +161,7 @@ test("provider rejection is UNAVAILABLE/2; product timeouts, errors and malforme
     catch (error) { assert.equal(gateFailureCode(error), 2); }
   }
   for (const message of ["CLI timed out after 90000ms", "HTTP 503", "HTTP 422", "wrong reminder data"]) assert.equal(gateFailureCode(Error(message)), 1);
+  assert.equal(gateFailureCode(Object.assign(Error("CLI timed out after 90000ms"), { code: "ETIMEDOUT", stdout: "login required" })), 1);
   assert.equal(gateFailureCode(Error("Codex primary 额度已达 97%")), 2);
   assert.equal(gateFailureCode(Error("subscription quota error")), 2);
 });

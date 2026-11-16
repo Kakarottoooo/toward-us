@@ -14,7 +14,9 @@ export const saveJson = (path, value) => writeFileSync(path, JSON.stringify(valu
 export const canonical = value => JSON.stringify(value).replace(/http:\/\/127\.0\.0\.1:\d+/g, "{{origin}}");
 
 export function gateUnavailable(error) {
-  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authenticat(?:ion|e)|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|insufficient_quota|credit balance|97%|额度|认证失败)/iu.test(String(error?.message || error));
+  if (error?.code === "ETIMEDOUT") return false;
+  const detail = [error?.message || error, error?.stdout, error?.stderr].filter(Boolean).join("\n");
+  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authenticat(?:ion|e)|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|insufficient_quota|credit balance|97%|额度|认证失败)/iu.test(detail);
 }
 export const gateFailureCode = error => error?.unavailable || gateUnavailable(error) ? 2 : 1;
 

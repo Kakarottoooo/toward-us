@@ -4,7 +4,7 @@ import { register, syncBuiltinESMExports } from "node:module";
 import childProcess from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer } from "node:http";
-import { readJson, saveJson, machineChecks, compareMachine, canonical, assertGateTransport, gateUnavailable, gateFailureCode, gateAttachment } from "./model-gate.mjs";
+import { readJson, saveJson, machineChecks, compareMachine, canonical, assertGateTransport, gateFailureCode, gateAttachment } from "./model-gate.mjs";
 import { primaryQuota } from "./model-gate-quota.mjs";
 import { installCaseClock } from "./replay.mjs";
 import { renderAsset } from "./external-cases.mjs";
@@ -33,7 +33,7 @@ globalThis.modelGateBeforeCall = () => {
 };
 globalThis.modelGateFailure = (error, event) => {
   appendFileSync(join(directory, "transport-errors.jsonl"), JSON.stringify({ ...context.getStore(), ...event, error: error.message, code: error.code }) + "\n");
-  if (error.unavailable || gateUnavailable([error.message, error.stdout, error.stderr].filter(Boolean).join("\n"))) {
+  if (gateFailureCode(error) === 2) {
     globalThis.modelGateStopped = true;
     guard.stop(`${event.provider} 提供方拒绝、认证或额度失败，停止且不重试`);
   }
