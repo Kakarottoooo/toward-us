@@ -3,6 +3,7 @@ import { CaretRight, FilmSlate, LockSimple, PencilSimple, ShareFat, Sparkle, Tra
 import { localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { PlayWeek } from "../games/PlayWeek";
 import "./profile.css";
 
 type Category = "food" | "likes" | "dislikes" | "wishes" | "traits" | "people" | "history" | "other";
@@ -12,7 +13,7 @@ const CATEGORIES: Category[] = ["food", "likes", "dislikes", "wishes", "traits",
 type Shelf = { system?: string; visibility: string; items: Array<{ done?: boolean; idea?: number; archivedAt?: string | null }> };
 /** 我们一起的 (founder 11-07: "放在关于我们"): the couple's watched-together shelf and their 100 little things, counted, each one
  * tap from here. They used to sit among the photo stories in Memories, which is for photos. */
-function TogetherShelves({ language }: { language: Language }) {
+function TogetherShelves({ language, relationshipId }: { language: Language; relationshipId: string | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [counts, setCounts] = useState<{ watched: number; watching: number; ideas: number } | null>(null);
   useEffect(() => {
@@ -23,10 +24,10 @@ function TogetherShelves({ language }: { language: Language }) {
       setCounts({ watched: shelf.items.filter((item) => item.done).length, watching: shelf.items.filter((item) => !item.done).length, ideas: ideas.size });
     }).catch(() => setCounts(null));
   }, []);
-  if (!counts) return null;
+  if (!counts && !relationshipId) return null;
   return <section className="settings-group profile-together" data-testid="profile-together">
     <h2>{t("我们一起的", "Ours, together", "Lo nuestro")}</h2>
-    <div className="settings-card">
+    {counts && <div className="settings-card">
       <button type="button" className="settings-row" onClick={() => location.assign("/?view=moments&watched=1")} data-testid="profile-watched">
         <span className="settings-icon tone-watched"><FilmSlate size={18} weight="fill" /></span>
         <span className="settings-label">{t("一起看过的", "Watched together", "Vistos juntos")}</span>
@@ -39,13 +40,14 @@ function TogetherShelves({ language }: { language: Language }) {
         <span className="settings-value">{counts.ideas} / 100</span>
         <CaretRight size={16} weight="bold" className="settings-chevron" />
       </button>
-    </div>
+    </div>}
+    {relationshipId && <PlayWeek key={relationshipId} language={language} />}
   </section>;
 }
 
 /** 关于我们 (喜好档案, founder 11-06): what Pinky keeps about each of them, kept by itself from their conversations. Each
  * person's notes are their own; a line about yourself can be shared, and what was said together in Us belongs to both. */
-export function ProfilePage({ language }: { language: Language }) {
+export function ProfilePage({ language, relationshipId }: { language: Language; relationshipId: string | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [facts, setFacts] = useState<Fact[] | null>(null);
@@ -89,7 +91,7 @@ export function ProfilePage({ language }: { language: Language }) {
     : t("Pinky 记下的你们俩的习惯和默契。", "What Pinky remembers about you as a couple.", "Lo que Pinky recuerda de ustedes como pareja.");
 
   return <div className="profile-page" data-testid="profile-page">
-    <TogetherShelves language={language} />
+    <TogetherShelves language={language} relationshipId={relationshipId} />
     {tabs.length > 1 && <div className="profile-tabs" role="tablist" aria-label={t("关于谁", "About whom", "Sobre quién")}>{tabs.map(([value, name]) => <button key={value} type="button" role="tab" aria-selected={shown === value} className={shown === value ? "active" : ""} onClick={() => setTab(value)} data-testid={`profile-tab-${value}`}>{name}</button>)}</div>}
     <p className="settings-intro">{intro}</p>
     {facts === null ? <p className="profile-empty" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>

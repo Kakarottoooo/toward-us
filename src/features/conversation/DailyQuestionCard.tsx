@@ -13,10 +13,10 @@ export type DailyPlay = {
   aboutUserId?: string;
 };
 
-export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, readOnly = false, offline = false, inPlay = false }: {
+export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, onOpenPlan, readOnly = false, offline = false, inPlay = false }: {
   questionId: string; question: string; answers: DailyAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language;
   current: boolean; askedAt: string; listening: boolean; onVoice: (append: ((text: string) => void) | null) => void;
-  onAnswer: (answer: DailyAnswerInput) => Promise<boolean>; dailyPlay?: DailyPlay; onContinue?: (followup?: string) => void;
+  onAnswer: (answer: DailyAnswerInput) => Promise<boolean>; dailyPlay?: DailyPlay; onContinue?: (followup?: string) => void; onOpenPlan?: () => void;
   readOnly?: boolean; offline?: boolean; inPlay?: boolean;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
@@ -110,6 +110,9 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
         <li key={id}><small>{id === userId ? t("你", "You", "Tú") : partnerName}</small>{renderAnswer(answers[id])}</li>)}</ul>
       {onContinue && !readOnly && <div className="card-actions">
         <button className="card-primary" type="button" onClick={() => onContinue(variant?.followup)}>{t("接着聊这题", "Keep talking", "Seguir hablando")}</button>
+      </div>}
+      {onOpenPlan && !readOnly && <div className="card-actions">
+        <button type="button" onClick={onOpenPlan}>{t("看看约会点子", "See date ideas", "Ver ideas para una cita")}</button>
       </div>}
     </> : mine && !editing ? <>
       <div className="daily-mine">{renderAnswer(mine)}</div>

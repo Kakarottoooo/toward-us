@@ -14,13 +14,13 @@ type Round = { id: string; cardId: string; aboutUserId: string | null; answers: 
 type Board = { version: number; readOnly?: boolean; cards: Card[]; rounds: Round[] };
 type Translate = (zh: string, en: string, es: string) => string;
 type SharedChoices = { question: string; own: string; partner: string };
-export type PlayTab = "today" | "cards" | "week" | "distance";
+export type PlayTab = "today" | "cards";
 type Props = {
   language: Language; userId: string; partnerName: string; paired: boolean; readOnly?: boolean;
   revision: number; conversationId?: string; initialCardId?: string; onClose: () => void; onInvite: () => void;
   onAskPinky?: (choices: SharedChoices) => void;
-  renderDaily: (offline: boolean) => ReactNode; onRefreshDaily: () => void; onLeaveDaily: () => void;
-  initialTab?: PlayTab; renderWeek?: () => ReactNode; renderDistance?: () => ReactNode;
+  renderDaily: (offline: boolean) => ReactNode; onRefreshDaily: () => void;
+  initialTab: PlayTab; fromGames?: boolean;
   dailyPlanId?: string; renderPlans?: (questionId?: string) => ReactNode;
 };
 
@@ -40,7 +40,7 @@ const writeLocal = (key: string, value: string) => {
   try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch { /* Play still works without storage. */ }
 };
 
-export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, initialTab, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, onLeaveDaily, renderWeek, renderDistance, dailyPlanId, renderPlans }: Props) {
+export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, initialTab, fromGames, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, dailyPlanId, renderPlans }: Props) {
   const t: Translate = (zh, en, es) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const storage = draftSuffix(userId, conversationId);
@@ -48,9 +48,9 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
   const [activeId, setActiveId] = useState(() => initialCardId || readLocal(`${storage}:card`));
   const [mode, setMode] = useState<Mode | null>(null);
   const [history, setHistory] = useState(false);
-  const [tab, setTab] = useState<PlayTab>(initialCardId || !paired ? "cards" : initialTab || "today");
-  const today = tab === "today";
-  const deck = tab === "cards";
+  const today = paired && initialTab === "today";
+  const deck = !today;
+  const title = today ? t("今日双人题", "Today’s question", "Pregunta de hoy") : t("题卡库", "Card deck", "Cartas");
   const [paused, setPaused] = useState(() => !initialCardId && readLocal(`${storage}:paused`) === "1");
   const [offline, setOffline] = useState(() => !navigator.onLine);
   const [loadError, setLoadError] = useState(false);
@@ -121,12 +121,6 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
     pin(next);
     writeLocal(`${storage}:paused`, "");
   }
-  function pickTab(value: PlayTab) {
-    if (today && value !== "today") onLeaveDaily();
-    keyboard.hide();
-    setHistory(false);
-    setTab(value);
-  }
   function step(direction: 1 | -1, fresh = false) {
     if (!card) return;
     const index = available.indexOf(card);
@@ -165,28 +159,22 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
       return false;
     } finally { writing.current = false; setBusy(false); }
   }
-  return <div className="play-together" role="dialog" aria-modal="true" aria-label={t("一起玩", "Play together", "Jugar juntos")} data-testid="play-together">
+  return <div className="play-together" role="dialog" aria-modal="true" aria-label={title} data-testid="play-together">
     <header className="play-together-top">
-      <button type="button" className="play-icon" onClick={() => { keyboard.hide(); onClose(); }} aria-label={t("返回对话", "Back to chat", "Volver al chat")} autoFocus><ArrowLeft size={22} /></button>
-      <h1>{t("一起玩", "Play together", "Jugar juntos")}</h1>
-      <button type="button" className={`play-icon${history ? " is-selected" : ""}`} aria-pressed={history} disabled={busy} aria-label={t("玩过的题", "Played cards", "Cartas jugadas")} onClick={() => { pickTab("cards"); setHistory(!history); }}><ClockCounterClockwise size={23} /></button>
+      <button type="button" className="play-icon" onClick={() => { keyboard.hide(); onClose(); }} aria-label={fromGames ? t("返回小游戏", "Back to games", "Volver a los juegos") : t("返回对话", "Back to chat", "Volver al chat")} autoFocus><ArrowLeft size={22} /></button>
+      <h1>{title}</h1>
+      {deck ? <button type="button" className={`play-icon${history ? " is-selected" : ""}`} aria-pressed={history} disabled={busy} aria-label={t("玩过的题", "Played cards", "Cartas jugadas")} onClick={() => { keyboard.hide(); setHistory(!history); }}><ClockCounterClockwise size={23} /></button> : <span />}
     </header>
     <div className="play-together-scroll"><MobileScroll className="play-scroll"><div className="play-together-body">
       {offline && <p className="play-status" role="status">{t("没有网络。已经打开的牌还能看，联网后再回答。", "You're offline. You can still read open cards and answer once you're back online.", "Sin conexión. Puedes ver las cartas abiertas y responder al volver.")}</p>}
       {deck && loadError && <div className="play-status" role="alert">{t("题卡暂时没加载出来。", "Cards couldn't load.", "No se cargaron las cartas.")} <button className="play-link" type="button" disabled={offline} onClick={() => void load()}>{t("重试", "Retry", "Reintentar")}</button></div>}
-      {paired && <div className="play-switch" role="group" aria-label={t("一起玩", "Play together", "Jugar juntos")}>
-        <button type="button" disabled={busy} aria-pressed={today} onClick={() => pickTab("today")}>{t("今天", "Today", "Hoy")}</button>
-        <button type="button" disabled={busy} aria-pressed={deck && !history} onClick={() => pickTab("cards")}>{t("更多玩法", "Play more", "Más juegos")}</button>
-        <button type="button" disabled={busy} aria-pressed={tab === "week"} onClick={() => pickTab("week")}>{t("这周", "This week", "Semana")}</button>
-        <button type="button" disabled={busy} aria-pressed={tab === "distance"} onClick={() => pickTab("distance")}>{t("异地", "From afar", "De lejos")}</button>
-      </div>}
       {deck && !board && !loadError && <p className="play-status" role="status">{t("正在打开题卡…", "Opening your cards…", "Abriendo las cartas…")}</p>}
       {error && <p className="play-status is-error" role="alert">{error}</p>}
       {(deck ? frozen : readOnly) && <p className="play-status" role="status">{t("这个空间现在只供查看。", "This space is read-only right now.", "Por ahora solo puedes ver este espacio.")}</p>}
       {today ? <div className="play-today">{renderDaily(offline) ?? <div className="play-status" role="status">
         {t("新题准备好就会显示在这里。", "The new question will show up here when it's ready.", "La pregunta nueva aparecerá aquí cuando esté lista.")}
         <button type="button" className="play-link" disabled={offline || readOnly} onClick={onRefreshDaily}>{t("刷新", "Refresh", "Actualizar")}</button>
-      </div>}{renderPlans?.(dailyPlanId)}</div> : tab === "week" ? renderWeek?.() : tab === "distance" ? renderDistance?.()
+      </div>}{renderPlans?.(dailyPlanId)}</div>
       : board && (history ? <section className="play-history" aria-label={t("玩过的题", "Played cards", "Cartas jugadas")}>
         <h2>{t("玩过的题", "Played cards", "Cartas jugadas")}</h2>
         {historyCards.length ? historyCards.map((item) => {
