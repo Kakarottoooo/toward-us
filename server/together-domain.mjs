@@ -190,15 +190,18 @@ export async function olderTogetherMessages(store, { relationshipId, userId, bef
 
 /** The daily questions asked so far, oldest first: those still in the working set, then as many archive chunks back as it
  * takes to reach `limit`, so a question is never repeated just because the conversation moved past it. */
-export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120 }) {
-  const conversation = await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
+export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120, since = 0, withDetails = false, conversation: existing }) {
+  const conversation = existing ?? await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
   if (!conversation) return [];
-  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question").map((item) => item.text);
+  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question" && (!since || Date.parse(item.createdAt) >= since));
   let found = asked(conversation.messages);
   for (let seq = conversation.archived?.chunks || 0; seq >= 1 && found.length < limit; seq -= 1) {
-    found = [...asked((await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId))?.messages), ...found];
+    const archive = await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId);
+    if (since && Date.parse(archive?.lastAt) < since) break;
+    found = [...asked(archive?.messages), ...found];
   }
-  return found.slice(-limit);
+  const recent = found.slice(-limit);
+  return withDetails ? recent : recent.map((item) => item.text);
 }
 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved

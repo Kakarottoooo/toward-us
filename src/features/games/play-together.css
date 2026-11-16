@@ -36,6 +36,35 @@
   display: inline-grid; place-items: center; background: transparent;
 }
 .play-together .play-icon.is-selected { background: var(--play-peach); color: var(--play-berry); }
+.play-switch {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  border-radius: 22px;
+  background: #f3ece8;
+}
+.play-together .play-switch button {
+  min-height: 44px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  font-weight: 600;
+}
+.play-together .play-switch button[aria-pressed="true"] {
+  background: var(--play-cream);
+  color: var(--play-berry);
+}
+.play-today .daily-card {
+  border-color: var(--play-peach-line);
+  background: var(--play-peach);
+}
+.play-today .daily-card > strong {
+  font-size: clamp(20px, 6vw, 28px);
+  line-height: 1.25;
+}
 .play-card {
   --card-fill: var(--play-peach);
   --card-line: var(--play-peach-line);
