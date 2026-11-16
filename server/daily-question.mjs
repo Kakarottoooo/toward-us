@@ -4,6 +4,7 @@ import { MOMENTS } from "./space-domain.mjs";
 import { markShowedUp } from "./streak.mjs";
 import { needsTranslation } from "./shared-translate.mjs";
 import { dailyQuestionPool } from "./daily-question-pool.mjs";
+import { makeDailyPlay, nextDailyFormat, readDailyPlayAnswer } from "./daily-play.mjs";
 
 // Daily question: once a day Pinky asks both partners the same question in Us. Each answer stays with its author until
 // both have answered (hideUnrevealedAnswers enforces it for every reader); then both see both and Pinky says one line.
@@ -74,7 +75,7 @@ function alreadyAsked(recent, handle, dayStart) {
 }
 
 /** Posts today's question in Us once, whoever opens Us first that day. Never throws; returns true if posted. */
-export async function askDailyQuestion({ store, mediator, relationshipId, userId, language = "zh", today, emit = () => {} }) {
+export async function askDailyQuestion({ store, mediator, relationshipId, userId, language = "zh", today, rotate = false, emit = () => {} }) {
   const handle = `daily:${relationshipId}:${today}`;
   const dayStart = Date.parse(`${today}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today || "") || !Number.isFinite(dayStart) || inFlight.has(relationshipId)) return false;
@@ -96,16 +97,20 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
     const preparedQuestion = prepared?.language === language && Date.now() - Date.parse(prepared.at) < 2 * DAY_MS
       ? inLanguage(prepared.question, language) : "";
     const repeats = repeatFilter(recent);
-    const candidate = preparedQuestion && !repeats(preparedQuestion) ? preparedQuestion : await writeQuestion(mediator, material, language);
+    const format = rotate ? nextDailyFormat(recent) : "text";
+    const candidate = format !== "text" ? "" :
+      preparedQuestion && !repeats(preparedQuestion) ? preparedQuestion : await writeQuestion(mediator, material, language);
     const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
       const current = await tx.getRelationshipContext(userId);
       if (current?.relationship.id !== relationshipId || current.relationship.status !== "active" || current.members.length !== 2) return null;
       const lockedHistory = await previousDailyQuestions(tx, history);
       if (alreadyAsked(lockedHistory, handle, dayStart)) return null;
       const repeats = repeatFilter(lockedHistory);
-      let question = candidate, i18n = null;
-      if (repeats(question)) {
-        const day = Math.floor(dayStart / DAY_MS), size = dailyQuestionPool.length;
+      const day = Math.floor(dayStart / DAY_MS);
+      const play = rotate ? makeDailyPlay({ format: nextDailyFormat(lockedHistory), recent: lockedHistory, members: current.members, day, repeats }) : null;
+      let i18n = play?.i18n || null, question = i18n ? i18n[language] || i18n.zh : candidate;
+      if (!play && repeats(question)) {
+        const size = dailyQuestionPool.length;
         const start = ((day % size) + size) % size;
         const ordered = [...dailyQuestionPool.slice(start), ...dailyQuestionPool.slice(0, start)];
         i18n = ordered.find((item) => Object.values(item).every((text) => !repeats(text)));
@@ -114,12 +119,15 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
       }
       const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: DAILY, text: question, i18n, handle });
       if (posted.duplicate) return posted;
-      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === posted.message.id ? { ...item, day: today, answers: {} } : item); draft.preparedDaily = null; draft.version += 1; });
-      return { ...posted, conversation };
+      const message = { ...posted.message, day: today, answers: {}, ...(play ? { dailyPlay: play.dailyPlay } : {}) };
+      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === message.id ? message : item); draft.preparedDaily = null; draft.version += 1; });
+      return { ...posted, conversation, message };
     });
     if (!result || result.duplicate) return false;
     emit(result.conversation);
-    void prepareNext({ store, mediator, relationshipId, userId, language, material: { ...material, previousQuestions: [...material.previousQuestions, result.message.text] } });
+    if (!rotate || nextDailyFormat([result.message]) === "text") {
+      void prepareNext({ store, mediator, relationshipId, userId, language, material: { ...material, previousQuestions: [...material.previousQuestions, result.message.text] } });
+    }
     return true;
   } catch (error) { console.error("Daily question failed:", error?.message || error); return false; }
   finally { inFlight.delete(relationshipId); }
@@ -147,23 +155,24 @@ async function prepareNext({ store, mediator, relationshipId, userId, language, 
 }
 
 /** A member's answer. It can be changed until the partner has answered too; then both are revealed and final. */
-export async function answerDailyQuestion({ store, mediator, relationshipId, userId, messageId, text, language = "zh", emit = () => {} }) {
-  const answer = clean(text, 600);
-  if (!answer) throw decisionError(400, "message_required");
+export async function answerDailyQuestion({ store, mediator, relationshipId, userId, messageId, text, choice, drawing, language = "zh", emit = () => {} }) {
   const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(userId);
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
     const conversation = await tx.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
     const question = conversation?.messages.find((item) => item.id === messageId && item.kind === DAILY);
     if (!question) throw decisionError(404, "not_found");
+    const answer = question.dailyPlay ? readDailyPlayAnswer(question, { choice, drawing, language }) : null;
+    const value = answer || { text: clean(text, 600) };
+    if (!value.text) throw decisionError(400, "message_required");
     if (Object.keys(question.answers || {}).length >= 2) throw decisionError(409, "already_revealed");
-    const answers = { ...(question.answers || {}), [userId]: { text: answer, at: new Date().toISOString() } };
+    const answers = { ...(question.answers || {}), [userId]: { ...value, at: new Date().toISOString() } };
     const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === messageId ? { ...item, answers } : item); draft.version += 1; });
     await markShowedUp(tx, { relationshipId, userId, zone: conversation.zones?.[userId] });
     return { conversation: updated, question: { ...question, answers }, members: context.members };
   });
   emit(result.conversation);
-  if (Object.keys(result.question.answers).length >= 2) void reactToAnswers({ store, mediator, relationshipId, userId, question: result.question, members: result.members, language, emit });
+  if (!result.question.dailyPlay && Object.keys(result.question.answers).length >= 2) void reactToAnswers({ store, mediator, relationshipId, userId, question: result.question, members: result.members, language, emit });
   return result.conversation;
 }
 

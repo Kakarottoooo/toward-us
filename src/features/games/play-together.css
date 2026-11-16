@@ -37,9 +37,9 @@
 }
 .play-together .play-icon.is-selected { background: var(--play-peach); color: var(--play-berry); }
 .play-switch {
-  display: flex;
-  gap: 6px;
-  width: fit-content;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
   max-width: 100%;
   padding: 4px;
   border-radius: 22px;
@@ -47,11 +47,15 @@
 }
 .play-together .play-switch button {
   min-height: 44px;
-  padding: 7px 13px;
+  padding: 6px 5px;
   border: 0;
   border-radius: 18px;
   background: transparent;
   font-weight: 600;
+  font-size: 13px;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .play-together .play-switch button[aria-pressed="true"] {
   background: var(--play-cream);
@@ -61,9 +65,14 @@
   border-color: var(--play-peach-line);
   background: var(--play-peach);
 }
+.play-today { display: grid; gap: 14px; }
 .play-today .daily-card > strong {
   font-size: clamp(20px, 6vw, 28px);
   line-height: 1.25;
+}
+.play-today .daily-card .card-primary {
+  border-color: var(--play-berry);
+  background: var(--play-berry);
 }
 .play-card {
   --card-fill: var(--play-peach);

@@ -4,12 +4,12 @@ import { clean } from "./agreement-actions.mjs";
 import { sharePhotoCopy, visiblePhoto } from "./photo-store.mjs";
 import { markShowedUp } from "./streak.mjs";
 import { ensureTogetherConversation } from "./together-domain.mjs";
+import { readPlayDrawing } from "./play-drawing.mjs";
 
 const PATH = "/play-distance";
 const CARD_LIMIT = 20;
 const TOUCH_MS = 10_000;
 const TOUCH_RESULT_MS = 20_000;
-const PALETTE = new Set(["rose", "blue", "ink"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const writable = (context) => context?.relationship.status === "active" && context.members.length === 2;
 const err = (status, code) => Object.assign(new Error(code), { distanceCode: code, status });
@@ -21,20 +21,6 @@ const copy = {
   invalid_photo: ["这张照片没能读取，请重新挑一张。", "Couldn’t open this photo. Pick it again.", "No se pudo abrir esta foto. Elígela de nuevo."],
   invalid_touch: ["没能一起碰一下，请重试。", "Couldn’t tap together. Try again.", "No se pudo tocar juntos. Inténtalo de nuevo."],
 };
-
-function drawing(raw) {
-  if (!Array.isArray(raw) || !raw.length || raw.length > 16) throw err(400, "invalid_card");
-  let pixels = 0;
-  return raw.map((stroke) => {
-    if (!PALETTE.has(stroke?.color) || !Array.isArray(stroke.points) || !stroke.points.length) throw err(400, "invalid_card");
-    pixels += stroke.points.length;
-    if (pixels > 480) throw err(400, "invalid_card");
-    return { color: stroke.color, points: stroke.points.map((point) => {
-      if (!Array.isArray(point) || point.length !== 2 || point.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) throw err(400, "invalid_card");
-      return point;
-    }) };
-  });
-}
 
 function activeTouch(touch, now) {
   return touch && touch.expiresAt > now ? touch : null;
@@ -95,7 +81,8 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
     const { id, kind, photoId, strokes } = req.body || {};
     const text = typeof req.body?.text === "string" ? clean(req.body.text, 180) : "";
     if (typeof id !== "string" || !UUID.test(id) || !["note", "doodle", "photo"].includes(kind) || (kind === "note" && !text)) throw err(400, "invalid_card");
-    const shape = kind === "doodle" ? drawing(strokes) : null;
+    const shape = kind === "doodle" ? readPlayDrawing(strokes) : null;
+    if (kind === "doodle" && !shape) throw err(400, "invalid_card");
     const result = await change(req, async ({ tx, userId, relationshipId, conversation, current }) => {
       if (current.cards?.some((card) => card.id === id && card.userId === userId)) return null;
       const card = { id, userId, kind, at: new Date().toISOString() };
@@ -111,7 +98,7 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
         card.photoId = shared.id;
       }
       await markShowedUp(tx, { relationshipId, userId, zone: conversation.zones?.[userId] });
-      return { cards: [...(current.cards || []), card].slice(-CARD_LIMIT) };
+      return { cards: [...(current.cards || []), card].slice(-CARD_LIMIT), lastSentAt: { ...current.lastSentAt, [userId]: card.at } };
     });
     if (result.changed) {
       const partner = result.context.members.find((member) => member.userId !== req.auth.user.id)?.userId;

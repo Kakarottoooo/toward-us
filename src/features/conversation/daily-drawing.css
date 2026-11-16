@@ -1,0 +1,21 @@
+.daily-card .daily-options { display: grid; gap: 8px; }
+.daily-card .daily-options button {
+  min-height: 44px;
+  text-align: start;
+  background: rgba(255, 255, 255, .6);
+  overflow-wrap: anywhere;
+}
+.daily-card .daily-options button[aria-pressed="true"] {
+  background: #fffaf5;
+  border-color: #74365b;
+  color: #672b4c;
+}
+.daily-card .daily-answers li { min-width: 0; overflow-wrap: anywhere; }
+.daily-card .daily-answers { animation: daily-reveal 230ms ease-out both; }
+@keyframes daily-reveal {
+  from { opacity: .35; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-card .daily-answers { animation: none; }
+}

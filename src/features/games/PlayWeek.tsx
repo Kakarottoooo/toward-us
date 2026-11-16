@@ -83,7 +83,7 @@ export function PlayWeek({ language, revision, pet, onOpenPet }: PlayWeekProps) 
   const goals = [
     { key: "cards", icon: Sparkle, title: t("翻开三道本周每日题", "Reveal three of this week’s daily cards", "Revelen tres preguntas de esta semana") },
     { key: "games", icon: GameController, title: t("完成本周开的一局游戏", "Finish a game you start this week", "Terminen un juego que empiecen esta semana") },
-    { key: "notes", icon: Heart, title: t("两人各送一次想你了", "Each send a Thinking of you", "Envíense un «Pensé en ti» cada uno") },
+    { key: "notes", icon: Heart, title: t("两人各留一张小卡或点一次想你了", "Each send a little card or a Thinking of you", "Envíense una tarjeta o un «Pensé en ti» cada uno") },
   ] as const;
   const shortDate = new Intl.DateTimeFormat(languageTag(language), { month: "short", day: "numeric", timeZone: "UTC" });
   const fullDate = new Intl.DateTimeFormat(languageTag(language), { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });

@@ -61,7 +61,7 @@ export function createCoupleRituals({ store, mediator, reachable, emit = () => {
       // After a question neither of them answered, the next one waits until one of them opens Us: a couple who stopped
       // answering is not pinged (or paid for) every evening.
       const engaged = !last || Object.keys(last.answers || {}).length > 0;
-      if (engaged && once(`daily:${relationshipId}:${day}`)) started += Number(await askDailyQuestion({ store, mediator, relationshipId, userId, language, today: day, emit: publish }));
+      if (engaged && once(`daily:${relationshipId}:${day}`)) started += Number(await askDailyQuestion({ store, mediator, relationshipId, userId, language, today: day, rotate: true, emit: publish }));
     }
     return started;
   }

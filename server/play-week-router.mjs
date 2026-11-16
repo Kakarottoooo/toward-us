@@ -50,6 +50,12 @@ async function weeklyActivity(store, { conversation, matches, relationshipId, us
   };
 
   collect(conversation?.messages);
+  collect((conversation?.playDistance?.cards || []).map((card) => ({
+    kind: "nudge", actorUserId: card.userId, createdAt: card.at,
+  })));
+  for (const id of ids) {
+    if (inWeek(dateOf(conversation?.playDistance?.lastSentAt?.[id]))) notes.add(id);
+  }
   for (let seq = conversation?.archived?.chunks || 0; seq >= 1; seq -= 1) {
     const chunk = await store.getRelationshipRecordForUser("togetherArchives", `together:${relationshipId}:archive:${seq}`, userId);
     const last = dateOf(chunk?.lastAt || chunk?.messages?.at(-1)?.createdAt);

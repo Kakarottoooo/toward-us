@@ -85,26 +85,10 @@
 }
 .distance-modes button[aria-pressed="true"] { background: #f0dee8; border-color: #9d6686; color: #58324c; font-weight: 700; }
 
-.distance-drawing { display: grid; gap: 6px; }
-.distance-sketch { display: block; width: 100%; max-height: 180px; border-radius: 12px; background: #fffcf7; }
-.distance-sketch.is-editable { border: 1px solid #d9cac0; touch-action: none; cursor: crosshair; }
-.distance-drawing-tools { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
-.distance-drawing-tools :is(.distance-pen, .distance-icon) {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 11px;
-}
-.distance-pen span { width: 19px; height: 19px; border-radius: 50%; }
-.distance-pen[aria-pressed="true"] { border-color: #ad8c9e; background: #fffcf8; }
-
 .distance-pick-photo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .distance-pick-photo img { flex: 1 1 100%; width: 100%; min-width: 0; max-height: 180px; object-fit: contain; border-radius: 11px; background: #fffcf9; }
 .distance-pick-photo small { flex: 1 1 100%; }
-.distance-status, .distance-receipt, .distance-drawing small, .distance-pick-photo small { font-size: .83rem; line-height: 1.35; color: #5a4351; }
+.distance-status, .distance-receipt, .distance-pick-photo small { font-size: .83rem; line-height: 1.35; color: #5a4351; }
 .distance-status.is-error { color: #97374f; }
 .distance-panel .distance-text { min-height: 44px; padding: 4px 7px; border-radius: 9px; border: 1px solid #d5b9ca; background: #fffaf7; color: #693750; font: inherit; }
 
