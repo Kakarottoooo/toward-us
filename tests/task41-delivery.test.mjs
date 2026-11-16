@@ -104,7 +104,7 @@ test("requested stance needs a per-item quote from the draft, not analysis or a 
         checks++;
         const [stance] = input.requestedDeliverables.stances;
         assert.equal(stance.clause, request);
-        return { ...clean(), stanceChecks: [{ id: stance.id, requiredStance: request, present: true,
+        return { ...clean(), deliverableChecks: input.requestedDeliverables.items.map(({ id }) => ({ id, parts: [] })), stanceChecks: [{ id: stance.id, requiredStance: request, present: true,
           draftQuote: input.previousReply ? after.sendableDraft : before.reply }] };
       },
       async rewriteReply(input) { assert.match(input.issues[0], /Missing requested stance/); return after; },

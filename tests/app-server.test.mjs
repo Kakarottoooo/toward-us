@@ -37,15 +37,15 @@ test("without the model Pinky only says it is unavailable, in every language, an
     assert.equal((await local.continueTogether(asked, "en")).reply, turn.i18n.en);
     assert.match((await local.continueTogether(asked, "es")).reply, /^Pinky no está disponible/);
   });
-  // The model fails (here: the network): the same plain copy, no draft, and no silent retries that keep the couple waiting.
+  // The model fails (here: the network): one constrained retry (task 56), then the same plain copy and no draft.
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     let attempts = 0;
     globalThis.fetch = async () => { attempts += 1; throw new Error("connection reset"); };
     const failing = createMediator({ apiKey: "test-key" });
     const turn = await failing.continueTogether({ messages: [{ role: "member", text: "Pinky，帮我们定下来" }], activeAgreements: [], openCommitments: [], pendingAgreement: null }, "zh");
-    assert.deepEqual([turn.draftAgreement, turn.actions, turn.source, turn.reply, attempts], [null, [], "local", "Pinky 暂时不可用，稍后再试。", 1]);
+    assert.deepEqual([turn.draftAgreement, turn.actions, turn.source, turn.reply, attempts], [null, [], "local", "Pinky 暂时不可用，稍后再试。", 2]);
     await assert.rejects(failing.planAssistantTurn({ messages: [] }, "en"), /Connection error/i, "the private assistant reports the failure to its router, which answers with its own plain copy");
-    assert.equal(attempts, 2);
+    assert.equal(attempts, 4);
   });
 });
 

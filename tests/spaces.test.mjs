@@ -49,8 +49,8 @@ test("a private space and its items stay with their owner", async (t) => {
   const f = await fixture(t, { planner: () => ({ reply: "Started your list.", actions: [action("space", "create", { fields: fields({ title: "Gift ideas", layout: "list" }) }), action("space_item", "create", { fields: fields({ title: "Handwritten letter" }) })] }) });
   const response = await f.turn("Start a gift ideas list with a handwritten letter");
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.match(response.body.session.messages.at(-1).text, /Created "Gift ideas", visible only to you\./);
-  assert.match(response.body.session.messages.at(-1).text, /Added\./);
+  // Task 58: making a checklist and filling it is confirmed in one natural sentence from the stored records.
+  assert.match(response.body.session.messages.at(-1).text, /I made "Gift ideas", visible only to you, and added Handwritten letter\./);
   const mine = (await f.request("/spaces")).body.spaces.filter((space) => !space.system);
   assert.deepEqual(mine.map((space) => [space.visibility, space.title, space.items.map((item) => item.title)]), [["private", "Gift ideas", ["Handwritten letter"]]]);
   assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system), []);

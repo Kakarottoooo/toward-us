@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { fixtureValue } from "./external-cases.mjs";
 
 export const corpusHash = (cases) => createHash("sha256").update(JSON.stringify(cases)).digest("hex");
 
@@ -10,8 +11,11 @@ export function frozenCase(item, baseline, hash) {
   if (rows.length !== 1) throw new Error(`Frozen case missing or duplicated: ${item.id}`);
   const row = rows[0], at = Date.parse(row.visible?.now);
   if (!Number.isFinite(at) || !row.question) throw new Error(`Frozen case lacks time/question: ${item.id}`);
-  const question = item.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(at + Number(days) * 86400000).toISOString().slice(0, 10));
-  if (question !== row.question) throw new Error(`Frozen question differs: ${item.id}`);
+  const question = fixtureValue(item.probe.text, { at, timezone: item.timezone || "Asia/Shanghai" });
+  // Historical opponents must retain their exact question, including the old
+  // UTC-template wording. New runs use the corrected case-local calendar.
+  const legacyQuestion = fixtureValue(item.probe.text, { at, timezone: "UTC" });
+  if (question !== row.question && legacyQuestion !== row.question) throw new Error(`Frozen question differs: ${item.id}`);
   for (const provider of ["claude", "codex"]) {
     if (row.rivals?.[provider]?.error || !row.rivals?.[provider]?.answer) throw new Error(`Frozen answer unavailable: ${item.id}/${provider}`);
   }

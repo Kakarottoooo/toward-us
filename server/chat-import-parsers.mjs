@@ -5,6 +5,15 @@ import { inflateRawSync } from "node:zlib";
 export class ImportFormatError extends Error {
   constructor(message) { super(message); this.name = "ImportFormatError"; }
 }
+
+// Unknown chat formats may still be ordinary documents. Never decode binary or
+// compressed input as prose, and preserve the text instead of guessing speakers.
+export function parseTextAttachment(bytes) {
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return null; }
+  if (!text.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(text)) return null;
+  return text;
+}
 const fail = (message) => { throw new ImportFormatError(message); };
 
 const MAX_MESSAGES = 400_000, MAX_CONVERSATIONS = 200;

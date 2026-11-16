@@ -83,7 +83,8 @@ export async function searchMemoryResults({ store, userId, query = "", date = ""
     for (const { question, answer } of conversationTurns(await conversationMessages(store, userId, scope, thread))) {
       const message = question || answer;
       if (message.id === excludeMessageId) continue;
-      const source = { channel: scope, conversationId: thread.id, messageId: message.id, date: String(message.createdAt || "").slice(0, 10), ...(thread.personId ? { personId: thread.personId } : {}) };
+      const source = { channel: scope, conversationId: thread.id, messageId: message.id, date: String(message.createdAt || "").slice(0, 10), ...(thread.personId ? { personId: thread.personId } : {}),
+        ...(question?.text && answer?.text ? { exchange: { question: question.text, answer: answer.text, answerDate: String(answer.createdAt || "").slice(0, 10) } } : {}) };
       // Separate caps keep a long question from crowding out the answer. Mark truncation rather than invent the rest.
       const excerpt = (value) => `${squash(value, 220)}${String(value || "").length > 220 ? "…" : ""}`;
       consider([question?.text, answer?.text].filter(Boolean).join("\n"), message.createdAt, `${where} · ${question ? scope === "us" ? "成员说" : "你说" : "Pinky 说"}`, source,

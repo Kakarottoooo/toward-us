@@ -140,7 +140,10 @@ export function createClaudeCliClient({ model = process.env.CLAUDE_CLI_MODEL || 
         const system = [params.instructions, ...input.filter((item) => item.role === "developer" || item.role === "system").map((item) => textOf(item.content))].filter(Boolean).join("\n\n");
         const prompt = input.filter((item) => item.role === "user" || item.role === "assistant").map((item) => `${item.role === "assistant" ? "Assistant: " : ""}${textOf(item.content)}`).join("\n\n");
         const schema = params.text?.format?.type === "json_schema" ? params.text.format.schema : null;
-        const args = ["-p", "--output-format", "json", "--model", model, "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "project"];
+        // A caller's effort hint (the hosted Anthropic adapter's output_config.effort, OpenAI's reasoning effort) maps to the
+        // CLI flag, so a pre-delivery check is not slower here than on the hosted adapters (task 56: checks hit 45 s).
+        const effort = ["low", "medium", "high"].includes(options.effort) ? ["--effort", options.effort] : [];
+        const args = ["-p", "--output-format", "json", "--model", model, "--tools", "", ...effort, "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "project"];
         const call = async (extra, systemText) => {
           const stdout = systemText ? await withSystemFile(cwd, systemText, (file) => run(command, [...args, ...file, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS)) : await run(command, [...args, ...extra], prompt, cwd, options.timeout || DEFAULT_TIMEOUT_MS);
           let result;

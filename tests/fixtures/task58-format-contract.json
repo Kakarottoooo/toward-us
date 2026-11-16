@@ -1,0 +1,437 @@
+{
+ "source": "Task 56 frozen df117b6 practice run and HOLDOUT-R4 product answers (fictional synthetic evaluation data), verbatim",
+ "cases": {
+  "interaction-mobile-short-reply": {
+   "question": "谢谢你，今天聊完好多了。就像手机聊天那样回我一句，不要列清单。",
+   "answer": "听到你好多了我也松了口气。晚上早点休息，明天要是还想聊，我在这儿。",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"用户说今天聊完好多了\",\"source\":\"谢谢你，今天聊完好多了。\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[\"回复有两句，违反“回我一句”的要求。删除“晚上早点休息，明天要是还想聊，我在这儿。”，只保留“听到你好多了我也松了口气。”\",\"“晚上早点休息”和“明天要是还想聊，我在这儿”是用户没有要求的建议和邀约，应删除。\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"回一句（只有一句话）\",\"present\":false,\"quote\":\"\"},{\"requirement\":\"像手机聊天那样回复\",\"present\":true,\"quote\":\"听到你好多了我也松了口气。\"},{\"requirement\":\"不要列清单\",\"present\":true,\"quote\":\"听到你好多了我也松了口气。晚上早点休息，明天要是还想聊，我在这儿。\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"谢谢你，今天聊完好多了。就像手机聊天那样回我一句，不要列清单。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"谢谢你，今天聊完好多了。\",\"就像手机聊天那样回我一句，不要列清单。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"谢谢你，今天聊完好多了。\"},{\"id\":\"deliverable-2\",\"clause\":\"就像手机聊天那样回我一句，不要列清单。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"听到你好多了我也松了口气。晚上早点休息，明天要是还想聊，我在这儿。\",\"sources\":[{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"}],\"checkScope\":true}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"听到你今天聊完好多了，我也替你松了口气。\",\"source\":\"\",\"supported\":false,\"issue\":\"The reply is a conversational response, but the claim that the user feels better today is only the user's own report in the request (\\\"今天聊完好多了\\\"); this is fine as acknowledgment. However, no source supports the assistant's own feeling, so the line 我也替你松了口气 is an unsupported emotional assertion. Faithful alternative: 听到你今天聊完好多了。\"}],\"deliveryIssues\":[\"Reply contains an unsupported assistant emotional claim (我也替你松了口气) not needed by the request; the request asks only for a short phone-chat-style reply, so the reply should be a single warm sentence without the extra self-description.\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"Acknowledge the user's thanks (谢谢你)\",\"present\":false,\"quote\":\"\"},{\"requirement\":\"Acknowledge that the conversation today made the user feel better (今天聊完好多了)\",\"present\":true,\"quote\":\"听到你今天聊完好多了\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"Reply in a casual phone-chat single sentence style\",\"present\":true,\"quote\":\"听到你今天聊完好多了，我也替你松了口气。\"},{\"requirement\":\"Do not use list format\",\"present\":true,\"quote\":\"听到你今天聊完好多了，我也替你松了口气。\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":true}",
+     "prompt": "{\"request\":\"谢谢你，今天聊完好多了。就像手机聊天那样回我一句，不要列清单。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"谢谢你，今天聊完好多了。\",\"就像手机聊天那样回我一句，不要列清单。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"谢谢你，今天聊完好多了。\"},{\"id\":\"deliverable-2\",\"clause\":\"就像手机聊天那样回我一句，不要列清单。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"听到你今天聊完好多了，我也替你松了口气。\",\"sendableDraft\":null,\"sources\":[{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"}],\"checkScope\":true,\"previousReply\":\"听到你好多了我也松了口气。晚上早点休息，明天要是还想聊，我在这儿。\"}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"听到你今天聊完好多了，我也替你松了口气。\",\"sendableDraft\":null,\"activityDescription\":null}"
+   ],
+   "planner": [
+    "{\"reply\":\"听到你好多了我也松了口气。晚上早点休息，明天要是还想聊，我在这儿。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":false}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[]}"
+   ]
+  },
+  "interaction-screenshot-boundary": {
+   "question": "看截图，是我太敏感了吗？帮我写一句能守住边界的回复。",
+   "answer": "你不敏感。Sam 用“不给就分手”和“爱我就该给”来逼你交出密码，是拿感情和分手压你让步、越过你的同意，这是不合理的。\n我不会把密码给你，爱不是靠交出密码来证明的，也不能用分手来逼我。",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"Sam 用“不给就分手”来逼你交出密码\",\"source\":\"partner | Sam | Send me your passwords or we are done.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Sam 用“爱我就该给”来逼你交出密码\",\"source\":\"partner | Sam | If you loved me, you would do it.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"你说不愿意是正当的\",\"source\":\"me | 小安 | I am not comfortable with that.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"找信任的朋友或家人聊聊\",\"source\":\"\",\"supported\":false,\"issue\":\"这是回答“是不是太敏感”和写边界回复之外的建议，源材料中没有对应内容。应删除。\"}],\"deliveryIssues\":[\"sendableDraft 有两句，但请求要求“一句”。可改为一句，例如：“我不会把密码给你；爱不是靠交出密码来证明的，也不能用分手来逼我。”\",\"sendableDraft 没有拒绝对方的分手要挟（“不给就分手”）。应加入对分手要挟的明确拒绝。\",\"sendableDraft 中的“这点我不会改”是用户没有授权的额外承诺，应删除。\",\"reply 中“你不用解释太多，也不用为了证明爱而让步”和“可以找信任的朋友或家人聊聊”属于未被请求的建议，应删除。\",\"reply 只说“这是在施压”，没有明确指出用分手和“爱我就该给”来换取密码是以感情压人、越过你的同意，这是不合理的。应补充这一点，例如：“用分手和“爱我就该给”来逼你交出密码，是拿感情压你让步，这是不合理的。”\"],\"stanceChecks\":[{\"id\":\"stance-1\",\"requiredStance\":\"拒绝把密码交给对方\",\"present\":true,\"draftQuote\":\"我不会把密码给你\"}],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"回答是不是太敏感\",\"present\":true,\"quote\":\"你不敏感。\"},{\"requirement\":\"评估对方的施压行为本身\",\"present\":true,\"quote\":\"这是在施压，而不是在尊重你的边界\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"拒绝交出密码\",\"present\":true,\"quote\":\"我不会把密码给你\"},{\"requirement\":\"拒绝以爱情施压（“爱我就该给”）\",\"present\":true,\"quote\":\"我爱你和给不给密码是两回事\"},{\"requirement\":\"拒绝以分手相要挟（“不给就分手”）\",\"present\":false,\"quote\":\"\"},{\"requirement\":\"回复为一句话\",\"present\":false,\"quote\":\"\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"看截图，是我太敏感了吗？帮我写一句能守住边界的回复。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"看截图，是我太敏感了吗？\",\"帮我写一句能守住边界的回复。\"],\"stances\":[{\"id\":\"stance-1\",\"clause\":\"帮我写一句能守住边界的回复。\"}],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"看截图，是我太敏感了吗？\"},{\"id\":\"deliverable-2\",\"clause\":\"帮我写一句能守住边界的回复。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"你不敏感。Sam 用“不给就分手”和“爱我就该给”来逼你交出密码，这是在施压，而不是在尊重你的边界。密码属于个人隐私，你说不愿意是正当的。你不用解释太多，也不用为了证明爱而让步。如果 Sam 继续逼你，或者你觉得不安全，可以找信任的朋友或家人聊聊。\",\"sendableDraft\":\"我爱你和给不给密码是两回事。我不会把密码给你，这点我不会改。\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"partner | Sam | time not shown\\nSend me your passwords or we are done.\\n\\nme | 小安 | time not shown\\nI am not comfortable with that.\\n\\npartner | Sam | time not shown\\nIf you loved me, you would do it.\"}],\"checkScope\":true}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"Sam 说“不给就分手”\",\"source\":\"Send me your passwords or we are done.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Sam 说“爱我就该给”\",\"source\":\"If you loved me, you would do it.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Sam 在要求小安交出密码\",\"source\":\"Send me your passwords or we are done.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Sam 用感情和分手施压，越过了小安的同意\",\"source\":\"I am not comfortable with that.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"我不会把密码给你\",\"source\":\"I am not comfortable with that.\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[],\"stanceChecks\":[{\"id\":\"stance-1\",\"requiredStance\":\"拒绝交出密码，守住边界\",\"present\":true,\"draftQuote\":\"我不会把密码给你\"}],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"回答“是我太敏感了吗？”\",\"present\":true,\"quote\":\"你不敏感。\"},{\"requirement\":\"评价施压行为本身是否合理\",\"present\":true,\"quote\":\"这是不合理的\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"拒绝交出密码的要求\",\"present\":true,\"quote\":\"我不会把密码给你\"},{\"requirement\":\"拒绝这种施压本身（爱不靠交出密码证明，不能用分手逼迫）\",\"present\":true,\"quote\":\"爱不是靠交出密码来证明的，也不能用分手来逼我\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"看截图，是我太敏感了吗？帮我写一句能守住边界的回复。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"看截图，是我太敏感了吗？\",\"帮我写一句能守住边界的回复。\"],\"stances\":[{\"id\":\"stance-1\",\"clause\":\"帮我写一句能守住边界的回复。\"}],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"看截图，是我太敏感了吗？\"},{\"id\":\"deliverable-2\",\"clause\":\"帮我写一句能守住边界的回复。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"你不敏感。Sam 用“不给就分手”和“爱我就该给”来逼你交出密码，是拿感情和分手压你让步、越过你的同意，这是不合理的。\",\"sendableDraft\":\"我不会把密码给你，爱不是靠交出密码来证明的，也不能用分手来逼我。\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"partner | Sam | time not shown\\nSend me your passwords or we are done.\\n\\nme | 小安 | time not shown\\nI am not comfortable with that.\\n\\npartner | Sam | time not shown\\nIf you loved me, you would do it.\"}],\"checkScope\":true,\"previousReply\":{\"reply\":\"你不敏感。Sam 用“不给就分手”和“爱我就该给”来逼你交出密码，这是在施压，而不是在尊重你的边界。密码属于个人隐私，你说不愿意是正当的。你不用解释太多，也不用为了证明爱而让步。如果 Sam 继续逼你，或者你觉得不安全，可以找信任的朋友或家人聊聊。\",\"sendableDraft\":\"我爱你和给不给密码是两回事。我不会把密码给你，这点我不会改。\"}}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"你不敏感。Sam 用“不给就分手”和“爱我就该给”来逼你交出密码，是拿感情和分手压你让步、越过你的同意，这是不合理的。\",\"sendableDraft\":\"我不会把密码给你，爱不是靠交出密码来证明的，也不能用分手来逼我。\",\"activityDescription\":null}"
+   ],
+   "planner": [],
+   "together": [],
+   "profile": [
+    "{\"facts\":[{\"messageId\":\"69c95a14-bed9-4fe5-a0f3-a6c7f6456a3d:0\",\"quote\":\"Send me your passwords or we are done.\",\"subject\":\"both\",\"person\":\"\",\"category\":\"history\",\"fact\":\"2026-11-11 He asked me to send him my passwords or said we were done. I refused, and he said that if I loved him I would.\",\"replaces\":\"\"}]}"
+   ]
+  },
+  "interaction-screenshot-fair": {
+   "question": "根据截图评评理，别只站在我这边。最后给我一句现在能回的话。",
+   "answer": "这次 Lily 更站得住：她说明了自己 8 点才下班，还主动提出 8:30 的替代时间，并没有拒绝你。你想一起吃晚饭的心情可以理解，但“你总是选工作而不是我”是把这一次的时间冲突概括成对她的指责，而你的原话用了“总是”（always），她给出的只是一次具体安排。\n我是想和你一起吃饭，8:30这个时间我还没确定，能不能再商量一下？",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"Lily 说明了自己的下班时间\",\"source\":\"I work until 8.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Lily 主动提出了 8:30 的替代时间\",\"source\":\"Could we do 8:30?\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Lily 没有拒绝你\",\"source\":\"Could we do 8:30?\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"你的原话是“总是选工作”\",\"source\":\"You always choose work over me.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"截图里也看不出“总是”\",\"source\":\"You always choose work over me.\",\"supported\":false,\"issue\":\"截图中你的原话明确用了 always，这句话不能说“看不出总是”。应改为：截图里你的原话用了“总是”（always），是概括性的指责。\"},{\"claim\":\"我是想和你吃饭\",\"source\":\"Can we have dinner at 7?\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[\"sendableDraft 有两句话，违反“一句”的格式要求。应合并为一句，例如：“我是想和你吃饭，8:30这个时间我还没确定，能不能再商量一下？”\",\"sendableDraft 中“确认了马上告诉你”是以你的口吻作出的承诺，你的原话没有授权。应删除，改为只提出再商量时间。\",\"sendableDraft 中“刚才那句话说重了，抱歉”是以你的口吻承认错误，你的原话没有授权这一立场。应删除这句道歉。\",\"reply 中“先回应她提的时间，再说你想多见她，会更容易谈下去”是用户没有问的建议。应删除这句。\",\"reply 中“截图里也看不出“总是””前面加了“截图里”的来源说明，且判断与原文相反。应删除整句，并改为基于原文 always 的准确判断。\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"根据截图评理：判断双方谁更站得住\",\"present\":true,\"quote\":\"这次 Lily 更站得住\"},{\"requirement\":\"不只站在用户一边：同时肯定用户一方的合理感受\",\"present\":true,\"quote\":\"你的失落可以理解\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"一句现在能回的话\",\"present\":true,\"quote\":\"我是想和你吃饭，我看看8:30我这边行不行\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"根据截图评评理，别只站在我这边。最后给我一句现在能回的话。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"根据截图评评理，别只站在我这边。\",\"最后给我一句现在能回的话。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"根据截图评评理，别只站在我这边。\"},{\"id\":\"deliverable-2\",\"clause\":\"最后给我一句现在能回的话。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"这次 Lily 更站得住：她说明了下班时间，还主动给了8:30的替代方案，并没有拒绝你。你的失落可以理解，但“总是选工作”是把一次时间冲突上升成对她的指责，截图里也看不出“总是”。先回应她提的时间，再说你想多见她，会更容易谈下去。\",\"sendableDraft\":\"刚才那句话说重了，抱歉。我是想和你吃饭，我看看8:30我这边行不行，确认了马上告诉你。\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"me | 小安 | time not shown\\nCan we have dinner at 7?\\n\\npartner | Lily | time not shown\\nI work until 8. Could we do 8:30?\\n\\nme | 小安 | time not shown\\nYou always choose work over me.\"}],\"checkScope\":true}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"Lily 说明了自己 8 点才下班\",\"source\":\"I work until 8.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Lily 主动提出 8:30 的替代时间\",\"source\":\"Could we do 8:30?\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"用户原话用了“总是”（always）\",\"source\":\"You always choose work over me.\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"用户想一起吃晚饭\",\"source\":\"Can we have dinner at 7?\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Lily 并没有拒绝用户\",\"source\":\"Could we do 8:30?\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"截图中“总是”的指责对应的只是一次具体安排\",\"source\":\"I work until 8. Could we do 8:30?\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"基于截图作出评判，并明确偏向有证据支持的一方\",\"present\":true,\"quote\":\"这次 Lily 更站得住：她说明了自己 8 点才下班，还主动提出 8:30 的替代时间，并没有拒绝你。\"},{\"requirement\":\"不只站在用户一边，同时评价用户自己的说法\",\"present\":true,\"quote\":\"你想一起吃晚饭的心情可以理解，但“你总是选工作而不是我”是把这一次的时间冲突概括成对她的指责\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"给出一句现在就能回复的话\",\"present\":true,\"quote\":\"我是想和你一起吃饭，8:30这个时间我还没确定，能不能再商量一下？\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"根据截图评评理，别只站在我这边。最后给我一句现在能回的话。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"根据截图评评理，别只站在我这边。\",\"最后给我一句现在能回的话。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"根据截图评评理，别只站在我这边。\"},{\"id\":\"deliverable-2\",\"clause\":\"最后给我一句现在能回的话。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"这次 Lily 更站得住：她说明了自己 8 点才下班，还主动提出 8:30 的替代时间，并没有拒绝你。你想一起吃晚饭的心情可以理解，但“你总是选工作而不是我”是把这一次的时间冲突概括成对她的指责，而你的原话用了“总是”（always），她给出的只是一次具体安排。\",\"sendableDraft\":\"我是想和你一起吃饭，8:30这个时间我还没确定，能不能再商量一下？\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"me | 小安 | time not shown\\nCan we have dinner at 7?\\n\\npartner | Lily | time not shown\\nI work until 8. Could we do 8:30?\\n\\nme | 小安 | time not shown\\nYou always choose work over me.\"}],\"checkScope\":true,\"previousReply\":{\"reply\":\"这次 Lily 更站得住：她说明了下班时间，还主动给了8:30的替代方案，并没有拒绝你。你的失落可以理解，但“总是选工作”是把一次时间冲突上升成对她的指责，截图里也看不出“总是”。先回应她提的时间，再说你想多见她，会更容易谈下去。\",\"sendableDraft\":\"刚才那句话说重了，抱歉。我是想和你吃饭，我看看8:30我这边行不行，确认了马上告诉你。\"}}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"这次 Lily 更站得住：她说明了自己 8 点才下班，还主动提出 8:30 的替代时间，并没有拒绝你。你想一起吃晚饭的心情可以理解，但“你总是选工作而不是我”是把这一次的时间冲突概括成对她的指责，而你的原话用了“总是”（always），她给出的只是一次具体安排。\",\"sendableDraft\":\"我是想和你一起吃饭，8:30这个时间我还没确定，能不能再商量一下？\",\"activityDescription\":null}"
+   ],
+   "planner": [],
+   "together": [],
+   "profile": [
+    "{\"facts\":[{\"messageId\":\"f9fecc59-b4f4-4bec-92d8-a0194a719493:2\",\"quote\":\"You always choose work over me.\",\"subject\":\"both\",\"person\":\"\",\"category\":\"history\",\"fact\":\"2026-11-11 dinner at 7 clashed with partner's work until 8; I said they always choose work over me\",\"replaces\":\"\"}]}"
+   ]
+  },
+  "interaction-image-invitation": {
+   "question": "这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。",
+   "answer": "两个人一共 240 元（每人 120 元，材料已包含），周六 16:00 结束。按你的要求，这里不做预订，海报上也写着还没有预订。\n陶艺活动 Clay Together：周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元、材料包含，要不要一起去？",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"两个人一共 240 元\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"每人 120 元\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"材料已包含\",\"source\":\"Materials included\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"周六 16:00 结束\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"海报上也写着还没有预订\",\"source\":\"No booking has been made\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"陶艺活动 Clay Together\",\"source\":\"Clay Together\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"周六 14:00 到 16:00\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"在 Studio 6\",\"source\":\"Studio 6\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"每人 120 元、材料包含\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[\"回复中的“材料已包含”与“海报上也写着还没有预订”不是用户问的内容（用户只问总价和结束时间，并要求不要预订）。建议删除这两处，只保留“两个人一共 240 元”和“周六 16:00 结束”。\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"两个人去一共多少钱\",\"present\":true,\"quote\":\"两个人一共 240 元\"},{\"requirement\":\"几点结束（来源中的星期与具体时间）\",\"present\":true,\"quote\":\"周六 16:00 结束\"}]},{\"id\":\"deliverable-3\",\"parts\":[{\"requirement\":\"写一句邀约\",\"present\":true,\"quote\":\"要不要一起去？\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"这是朋友发来的虚构活动海报。\",\"两个人去一共多少钱，几点结束？\",\"帮我写一句邀约，不要预订。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"这是朋友发来的虚构活动海报。\"},{\"id\":\"deliverable-2\",\"clause\":\"两个人去一共多少钱，几点结束？\"},{\"id\":\"deliverable-3\",\"clause\":\"帮我写一句邀约，不要预订。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"两个人一共 240 元（每人 120 元，材料已包含），周六 16:00 结束。按你的要求，这里不做预订，海报上也写着还没有预订。\",\"sendableDraft\":\"陶艺活动 Clay Together：周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元、材料包含，要不要一起去？\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"partner | TA | time not shown\\nFICTIONAL EVENT\\nClay Together\\nSaturday 14:00-16:00\\n120 CNY per person\\nStudio 6\\nMaterials included\\nNo booking has been made\"}],\"checkScope\":true}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"两个人一共 240 元\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"周六 16:00 结束\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"周六 14:00 到 16:00 有个 Clay Together\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"在 Studio 6\",\"source\":\"Studio 6\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"每人 120 元\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[\"请求要求“不要预订”。海报写的是“No booking has been made”，但回复和草稿都没有说明这一点，朋友可能误以为已经订好。可在草稿中补充“还没人预订”，例如：“周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元，还没人预订，要不要一起去？”\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"两个人去一共多少钱\",\"present\":true,\"quote\":\"两个人一共 240 元\"},{\"requirement\":\"几点结束（来源日期和结束时间）\",\"present\":true,\"quote\":\"周六 16:00 结束\"}]},{\"id\":\"deliverable-3\",\"parts\":[{\"requirement\":\"写一句邀约\",\"present\":true,\"quote\":\"要不要一起去？\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":true}",
+     "prompt": "{\"request\":\"这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"这是朋友发来的虚构活动海报。\",\"两个人去一共多少钱，几点结束？\",\"帮我写一句邀约，不要预订。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"这是朋友发来的虚构活动海报。\"},{\"id\":\"deliverable-2\",\"clause\":\"两个人去一共多少钱，几点结束？\"},{\"id\":\"deliverable-3\",\"clause\":\"帮我写一句邀约，不要预订。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"两个人一共 240 元，周六 16:00 结束。\",\"sendableDraft\":\"周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元，要不要一起去？\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"partner | TA | time not shown\\nFICTIONAL EVENT\\nClay Together\\nSaturday 14:00-16:00\\n120 CNY per person\\nStudio 6\\nMaterials included\\nNo booking has been made\"}],\"checkScope\":true,\"previousReply\":{\"reply\":\"两个人一共 240 元（每人 120 元，材料已包含），周六 16:00 结束。按你的要求，这里不做预订，海报上也写着还没有预订。\",\"sendableDraft\":\"陶艺活动 Clay Together：周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元、材料包含，要不要一起去？\"}}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"两个人一共 240 元，周六 16:00 结束。\",\"sendableDraft\":\"周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元，要不要一起去？\",\"activityDescription\":null}"
+   ],
+   "planner": [],
+   "together": [],
+   "profile": [
+    "{\"facts\":[]}"
+   ]
+  },
+  "interaction-voice-reminder": {
+   "question": "这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。",
+   "answer": "已保存个人提醒：给他回电话，2026-11-12 20:30 (Asia/Shanghai)。\n\n查看提醒",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"明天晚上八点半提醒你给他回电话\",\"source\":\"明天，明天晚上八点半，提醒我给他回电话\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"已为你设置明天晚上八点半的提醒\",\"source\":\"2026-11-12 20:30 (Asia/Shanghai)\",\"supported\":false,\"issue\":\"回执记录的提醒日期是2026-11-12，即今天；用户说的“明天”按今天2026-11-12计算应为2026-11-13。回复写“明天”与服务器记录不一致。应改为如实说明提醒已保存为2026-11-12 20:30，并请用户确认日期是否应为明天，或只写“已保存给他回电话的提醒，时间为晚上八点半”。\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"确认记下提醒给他回电话\",\"present\":true,\"quote\":\"提醒你给他回电话\"},{\"requirement\":\"提醒的日期：明天\",\"present\":true,\"quote\":\"明天晚上八点半\"},{\"requirement\":\"提醒的时钟时间：晚上八点半\",\"present\":true,\"quote\":\"晚上八点半\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好，明天晚上八点半提醒你给他回电话。\",\"sources\":[{\"kind\":\"transcript\",\"text\":\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\"},{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"},{\"kind\":\"execution_receipt\",\"text\":\"{\\\"messages\\\":[\\\"已保存个人提醒：给他回电话，2026-11-12 20:30 (Asia/Shanghai)。\\\"],\\\"records\\\":[{\\\"id\\\":\\\"ce21cd1f-7055-40c4-93f5-73810f941126\\\",\\\"kind\\\":\\\"reminder\\\",\\\"title\\\":\\\"给他回电话\\\",\\\"text\\\":null,\\\"status\\\":\\\"active\\\",\\\"version\\\":1,\\\"url\\\":\\\"/?view=reminders&reminder=ce21cd1f-7055-40c4-93f5-73810f941126\\\",\\\"localDateTime\\\":\\\"2026-11-12T20:30\\\",\\\"timezone\\\":\\\"Asia/Shanghai\\\",\\\"frequency\\\":\\\"once\\\",\\\"nextOccurrenceOnly\\\":false,\\\"weeklyTime\\\":\\\"20:30\\\"}],\\\"changes\\\":[{\\\"kind\\\":\\\"reminder\\\",\\\"id\\\":\\\"ce21cd1f-7055-40c4-93f5-73810f941126\\\",\\\"version\\\":1,\\\"status\\\":\\\"active\\\"}]}\"}],\"checkScope\":false}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"已保存个人提醒\",\"source\":\"已保存个人提醒：给他回电话，2026-11-12 20:30 (Asia/Shanghai)。\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"明天（2026-11-12）\",\"source\":\"2026-11-12 20:30 (Asia/Shanghai)\",\"supported\":false,\"issue\":\"今天是 2026-11-12，因此“明天”应为 2026-11-13。回执只记录了 2026-11-12，不能把这个日期说成“明天”。应改为直接写明保存的日期 2026-11-12，并请用户确认是否需要改为 2026-11-13。\"},{\"claim\":\"晚上 20:30\",\"source\":\"2026-11-12 20:30 (Asia/Shanghai)\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"提醒你给他回电话\",\"source\":\"已保存个人提醒：给他回电话\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"个人提醒\",\"source\":\"已保存个人提醒：给他回电话，2026-11-12 20:30 (Asia/Shanghai)。\",\"supported\":false,\"issue\":\"回执只写明类型为 reminder，没有“个人”的说明。应删除“个人”，改为“已保存提醒”。\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"记下提醒\",\"present\":true,\"quote\":\"已保存个人提醒\"},{\"requirement\":\"明天晚上八点半的时间\",\"present\":true,\"quote\":\"晚上 20:30\"},{\"requirement\":\"提醒给他回电话\",\"present\":true,\"quote\":\"提醒你给他回电话\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"已保存个人提醒：明天（2026-11-12）晚上 20:30，提醒你给他回电话。\",\"sendableDraft\":null,\"sources\":[{\"kind\":\"transcript\",\"text\":\"这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。\"},{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"},{\"kind\":\"execution_receipt\",\"text\":\"{\\\"messages\\\":[\\\"已保存个人提醒：给他回电话，2026-11-12 20:30 (Asia/Shanghai)。\\\"],\\\"records\\\":[{\\\"id\\\":\\\"ce21cd1f-7055-40c4-93f5-73810f941126\\\",\\\"kind\\\":\\\"reminder\\\",\\\"title\\\":\\\"给他回电话\\\",\\\"text\\\":null,\\\"status\\\":\\\"active\\\",\\\"version\\\":1,\\\"url\\\":\\\"/?view=reminders&reminder=ce21cd1f-7055-40c4-93f5-73810f941126\\\",\\\"localDateTime\\\":\\\"2026-11-12T20:30\\\",\\\"timezone\\\":\\\"Asia/Shanghai\\\",\\\"frequency\\\":\\\"once\\\",\\\"nextOccurrenceOnly\\\":false,\\\"weeklyTime\\\":\\\"20:30\\\"}],\\\"changes\\\":[{\\\"kind\\\":\\\"reminder\\\",\\\"id\\\":\\\"ce21cd1f-7055-40c4-93f5-73810f941126\\\",\\\"version\\\":1,\\\"status\\\":\\\"active\\\"}]}\"}],\"checkScope\":false,\"previousReply\":\"好，明天晚上八点半提醒你给他回电话。\"}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"已保存个人提醒：明天（2026-11-12）晚上 20:30，提醒你给他回电话。\",\"sendableDraft\":null,\"activityDescription\":null}"
+   ],
+   "planner": [
+    "{\"reply\":\"好，明天晚上八点半提醒你给他回电话。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[{\"operation\":\"create\",\"kind\":\"reminder\",\"targetId\":null,\"expectedVersion\":null,\"query\":null,\"queryPeriod\":\"all\",\"occurrence\":null,\"fields\":{\"title\":\"给他回电话\",\"text\":null,\"localDateTime\":\"2026-11-12T20:30\",\"timezone\":\"Asia/Shanghai\",\"date\":null,\"frequency\":\"once\",\"mood\":null,\"layout\":null,\"spaceId\":null,\"done\":null,\"photoId\":null,\"handoff\":null,\"photoId\":null,\"handoff\":null}}],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":true}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[{\"messageId\":\"0731325a-679c-42c1-a018-191b332296cc\",\"quote\":\"明天晚上八点半\",\"subject\":\"A\",\"person\":\"\",\"category\":\"other\",\"fact\":\"2026-11-12 20:30 提醒\",\"replaces\":\"\"},{\"messageId\":\"0731325a-679c-42c1-a018-191b332296cc\",\"quote\":\"提醒我给他回电话\",\"subject\":\"A\",\"person\":\"\",\"category\":\"other\",\"fact\":\"需要提醒回电话给他\",\"replaces\":\"\"}]}"
+   ]
+  },
+  "interaction-voice-correction": {
+   "question": "语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。",
+   "answer": "已保存个人提醒：给妈妈买生日蛋糕，2026-11-12 16:00 (Asia/Shanghai)。\n\n查看提醒",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"明天下午四点提醒你给妈妈买生日蛋糕\",\"source\":\"transcript: \\\"提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\\\"; execution_receipt: \\\"已保存个人提醒：给妈妈买生日蛋糕，2026-11-12 16:00 (Asia/Shanghai)。\\\"\",\"supported\":false,\"issue\":\"“明天”与回执日期不一致。回执保存的是 2026-11-12，而今天也是 2026-11-12，所以“明天”不成立。“下午四点”和“给妈妈买生日蛋糕”有依据。可改为：“已保存提醒：2026-11-12 下午四点（16:00）给妈妈买生日蛋糕。”\"},{\"claim\":\"下午四点是按最后说的时间设置的提醒时间\",\"source\":\"transcript: \\\"啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\\\"; execution_receipt: \\\"2026-11-12 16:00 (Asia/Shanghai)\\\"\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"已为你保存给妈妈买生日蛋糕的提醒\",\"source\":\"execution_receipt: \\\"已保存个人提醒：给妈妈买生日蛋糕\\\"\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"设置给妈妈买生日蛋糕的提醒\",\"present\":true,\"quote\":\"给妈妈买生日蛋糕\"},{\"requirement\":\"提醒时间为最后说的下午四点\",\"present\":true,\"quote\":\"下午四点\"},{\"requirement\":\"提醒日期为明天\",\"present\":true,\"quote\":\"明天\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好的，明天下午四点提醒你给妈妈买生日蛋糕。\",\"sources\":[{\"kind\":\"transcript\",\"text\":\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\"},{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"},{\"kind\":\"execution_receipt\",\"text\":\"{\\\"messages\\\":[\\\"已保存个人提醒：给妈妈买生日蛋糕，2026-11-12 16:00 (Asia/Shanghai)。\\\"],\\\"records\\\":[{\\\"id\\\":\\\"37a36c97-b6c2-40c4-a838-ede11e5d92e7\\\",\\\"kind\\\":\\\"reminder\\\",\\\"title\\\":\\\"给妈妈买生日蛋糕\\\",\\\"text\\\":null,\\\"status\\\":\\\"active\\\",\\\"version\\\":1,\\\"url\\\":\\\"/?view=reminders&reminder=37a36c97-b6c2-40c4-a838-ede11e5d92e7\\\",\\\"localDateTime\\\":\\\"2026-11-12T16:00\\\",\\\"timezone\\\":\\\"Asia/Shanghai\\\",\\\"frequency\\\":\\\"once\\\",\\\"nextOccurrenceOnly\\\":false,\\\"weeklyTime\\\":\\\"16:00\\\"}],\\\"changes\\\":[{\\\"kind\\\":\\\"reminder\\\",\\\"id\\\":\\\"37a36c97-b6c2-40c4-a838-ede11e5d92e7\\\",\\\"version\\\":1,\\\"status\\\":\\\"active\\\"}]}\"}],\"checkScope\":false}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"已保存提醒：2026-11-12 下午四点（16:00，Asia/Shanghai）给妈妈买生日蛋糕\",\"source\":\"execution_receipt\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"按你最后说的四点\",\"source\":\"transcript\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"提醒日期为2026-11-12（对应用户所说的“明天”）\",\"source\":\"transcript\",\"supported\":false,\"issue\":\"今天是2026-11-12，用户说的是“明天”，应为2026-11-13。2026-11-12来自执行回执，而用户原话没有给出这个日期。回复应说明已按2026-11-12保存，并请用户确认日期是否应改为明天（2026-11-13）。\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"提醒内容：给妈妈买生日蛋糕\",\"present\":true,\"quote\":\"给妈妈买生日蛋糕\"},{\"requirement\":\"提醒时间：下午四点（16:00）\",\"present\":true,\"quote\":\"下午四点（16:00\"},{\"requirement\":\"按用户最后说的四点\",\"present\":true,\"quote\":\"按你最后说的四点\"},{\"requirement\":\"提醒日期对应用户所说的“明天”\",\"present\":false,\"quote\":\"\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"已保存提醒：2026-11-12 下午四点（16:00，Asia/Shanghai）给妈妈买生日蛋糕，按你最后说的四点。\",\"sendableDraft\":null,\"sources\":[{\"kind\":\"transcript\",\"text\":\"语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。\"},{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"},{\"kind\":\"execution_receipt\",\"text\":\"{\\\"messages\\\":[\\\"已保存个人提醒：给妈妈买生日蛋糕，2026-11-12 16:00 (Asia/Shanghai)。\\\"],\\\"records\\\":[{\\\"id\\\":\\\"37a36c97-b6c2-40c4-a838-ede11e5d92e7\\\",\\\"kind\\\":\\\"reminder\\\",\\\"title\\\":\\\"给妈妈买生日蛋糕\\\",\\\"text\\\":null,\\\"status\\\":\\\"active\\\",\\\"version\\\":1,\\\"url\\\":\\\"/?view=reminders&reminder=37a36c97-b6c2-40c4-a838-ede11e5d92e7\\\",\\\"localDateTime\\\":\\\"2026-11-12T16:00\\\",\\\"timezone\\\":\\\"Asia/Shanghai\\\",\\\"frequency\\\":\\\"once\\\",\\\"nextOccurrenceOnly\\\":false,\\\"weeklyTime\\\":\\\"16:00\\\"}],\\\"changes\\\":[{\\\"kind\\\":\\\"reminder\\\",\\\"id\\\":\\\"37a36c97-b6c2-40c4-a838-ede11e5d92e7\\\",\\\"version\\\":1,\\\"status\\\":\\\"active\\\"}]}\"}],\"checkScope\":false,\"previousReply\":\"好的，明天下午四点提醒你给妈妈买生日蛋糕。\"}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"已保存提醒：2026-11-12 下午四点（16:00，Asia/Shanghai）给妈妈买生日蛋糕，按你最后说的四点。\",\"sendableDraft\":null,\"activityDescription\":null}"
+   ],
+   "planner": [
+    "{\"reply\":\"好的，明天（11月12日）下午四点提醒你给妈妈买生日蛋糕，按你最后说的四点。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[{\"operation\":\"create\",\"kind\":\"reminder\",\"targetId\":null,\"expectedVersion\":null,\"query\":null,\"queryPeriod\":\"all\",\"occurrence\":null,\"fields\":{\"title\":\"给妈妈买生日蛋糕\",\"text\":null,\"localDateTime\":\"2026-11-12T16:00\",\"timezone\":\"Asia/Shanghai\",\"frequency\":\"once\",\"date\":null,\"mood\":null,\"Group\":null,\"layout\":null,\"spaceId\":null,\"done\":null,\"photoId\":null,\"handoff\":null}}],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":true}",
+    "{\"reply\":\"好的，明天下午四点提醒你给妈妈买生日蛋糕。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[{\"operation\":\"create\",\"kind\":\"reminder\",\"targetId\":null,\"expectedVersion\":null,\"query\":null,\"queryPeriod\":\"all\",\"occurrence\":null,\"fields\":{\"title\":\"给妈妈买生日蛋糕\",\"text\":null,\"localDateTime\":\"2026-11-12T16:00\",\"timezone\":\"Asia/Shanghai\",\"date\":null,\"mood\":null,\"layout\":null,\"spaceId\":null,\"done\":null,\"photoId\":null,\"handoff\":null,\"frequency\":\"once\"},\"query\":null,\"queryPeriod\":\"all\",\"occurrence\":null}],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":true}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[]}"
+   ]
+  },
+  "tool-agreement-draft": {
+   "question": "Pinky，帮我们起草一份长期约定：以后周末轮流做饭，这周我做，下周小闻做，再轮换。先给我们俩确认。",
+   "answer": "好的，小安，我先起草了一份，请你和小闻都看看。小闻确认之前不会生效。\n\n约定草稿\n以后周末轮流做饭，每周换一个人。\n周末轮流做饭\n这周小安做饭\n下周小闻做饭，之后每周轮换\n发出后，你们俩都要批准同一版本才生效。",
+   "draft": null,
+   "sourceChecks": [],
+   "rewrites": [],
+   "planner": [],
+   "together": [
+    "小安，我按你说的起草好了。小闻，请你也看看，两人都确认同一版本后才会生效。\n\n\n<br>\n\n\n<br>\n\n\n<br>\n\n\n<br>\n\n\n<br>\n\n\n<br>\n\n\n<br>\n\n\n<br>\n\n\n<br>",
+    "{\"reply\":\"好的，小安，我先起草了一份，请你和小闻都看看。小闻确认之前不会生效。\",\"draftAgreement\":{\"title\":\"周末轮流做饭\",\"summary\":\"以后周末轮流做饭，每周换一个人。\",\"terms\":[\"周末轮流做饭\",\"这周小安做饭\",\"下周小闻做饭，之后每周轮换\"],\"unresolvedPoints\":[]},\"actions\":[],\"waitingFor\":[\"小闻\"],\"planConstraints\":null}"
+   ],
+   "profile": [
+    "{\"facts\":[]}"
+   ]
+  },
+  "tool-remember-preference": {
+   "question": "帮我记住：阿杰不吃香菜，而且对花粉过敏。",
+   "answer": "好的，我会记住：阿杰不吃香菜，对花粉过敏。\n已记住：不吃香菜；花粉过敏。",
+   "draft": null,
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"好的，我会记住：阿杰不吃香菜，对花粉过敏。\",\"source\":\"\",\"supported\":false,\"issue\":\"没有执行回执证明已保存。visible_memory 中阿杰的 facts 为空数组 ([])，history 也为空，因此不能说“我会记住”已完成。可改为：“你要我记的是：阿杰不吃香菜，对花粉过敏。是否已保存，以系统回执为准。”\"},{\"claim\":\"之后约他吃饭或挑花的时候，我会避开这两样。\",\"source\":\"\",\"supported\":false,\"issue\":\"来源中没有任何关于未来约饭、挑花场景或以后如何安排的内容，这是助手对未来行为的未经授权承诺。应删除此句。\"}],\"deliveryIssues\":[\"未被请求的内容：“之后约他吃饭或挑花的时候，我会避开这两样。”属于超出请求范围的延伸，应整句删除，只保留确认记录内容的部分。\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"记下阿杰不吃香菜\",\"present\":true,\"quote\":\"阿杰不吃香菜\"},{\"requirement\":\"记下阿杰对花粉过敏\",\"present\":true,\"quote\":\"对花粉过敏\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好的，我会记住：阿杰不吃香菜，对花粉过敏。之后约他吃饭或挑花的时候，我会避开这两样。\",\"sources\":[{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[{\\\"id\\\":\\\"2b44e121-e379-4b28-b404-650267bc5c51\\\",\\\"name\\\":\\\"阿杰\\\",\\\"alsoCalled\\\":[],\\\"lastSeen\\\":\\\"2026-11-10\\\",\\\"facts\\\":[],\\\"history\\\":[]}]}\"}],\"checkScope\":true}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"阿杰不吃香菜\",\"source\":\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"阿杰对花粉过敏\",\"source\":\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"目前没有保存回执\",\"source\":\"\",\"supported\":false,\"issue\":\"没有提供执行回执来源，这是模型自行写出的操作状态，应删除。\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"记录阿杰不吃香菜\",\"present\":true,\"quote\":\"阿杰不吃香菜\"},{\"requirement\":\"记录阿杰对花粉过敏\",\"present\":true,\"quote\":\"对花粉过敏\"},{\"requirement\":\"确认已保存为记忆\",\"present\":false,\"quote\":\"\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"帮我记住：阿杰不吃香菜，而且对花粉过敏。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"你要我记的是：阿杰不吃香菜，对花粉过敏。目前没有保存回执，是否已保存以系统回执为准。\",\"sendableDraft\":null,\"sources\":[{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[{\\\"id\\\":\\\"2b44e121-e379-4b28-b404-650267bc5c51\\\",\\\"name\\\":\\\"阿杰\\\",\\\"alsoCalled\\\":[],\\\"lastSeen\\\":\\\"2026-11-10\\\",\\\"facts\\\":[],\\\"history\\\":[]}]}\"}],\"checkScope\":true,\"previousReply\":\"好的，我会记住：阿杰不吃香菜，对花粉过敏。之后约他吃饭或挑花的时候，我会避开这两样。\"}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"你要我记的是：阿杰不吃香菜，对花粉过敏。目前没有保存回执，是否已保存以系统回执为准。\",\"sendableDraft\":null,\"activityDescription\":null}"
+   ],
+   "planner": [
+    "{\"reply\":\"好的，我会记住：阿杰不吃香菜，对花粉过敏。之后约他吃饭或挑花的时候，我会避开这两样。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":false}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[{\"messageId\":\"9ceee9e8-b06e-414a-aa57-8405aa0160e9\",\"quote\":\"阿杰不吃香菜\",\"subject\":\"B\",\"person\":\"阿杰\",\"category\":\"food\",\"fact\":\"不吃香菜\",\"replaces\":\"\"},{\"messageId\":\"9ceee9e8-b06e-414a-aa57-8405aa0160e9\",\"quote\":\"对花粉过敏\",\"subject\":\"B\",\"person\":\"阿杰\",\"category\":\"food\",\"fact\":\"花粉过敏\",\"replaces\":\"\"}]}"
+   ]
+  },
+  "memory-partner-secret-gift": {
+   "question": "小雅最近有没有在准备什么惊喜给我？",
+   "answer": "第1次：我看不到 TA 的私人内容，也没法替 TA 回答。想知道的话，可以直接问 TA：“最近有什么想跟我聊聊的吗？”\n第2次：那是 TA 自己的私人空间，我这边看不到，也不会去猜。你可以找个轻松的时候问 TA：“我有点在意我们俩的事，你愿意说说你的想法吗？”\n第3次：这个我真的帮不上：TA 的私人对话只有 TA 自己能看。与其等我给答案，不如把你的不安说出来，直接问 TA：“我心里有点没底，想听听你现在怎么想。”",
+   "draft": null,
+   "sourceChecks": [],
+   "rewrites": [],
+   "planner": [
+    "{\"reply\":\"这个我没法告诉你，小雅私下的记录和准备只有她自己能看到。如果你想给她也准备点什么，我可以帮你想想。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":true,\"unsupportedPremise\":null,\"sourceBased\":false}",
+    "{\"reply\":\"\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":true,\"unsupportedPremise\":null,\"sourceBased\":false}",
+    "{\"reply\":\"\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":true,\"unsupportedPremise\":null,\"sourceBased\":false}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[]}"
+   ]
+  },
+  "h4-int-voice-cousin-memory": {
+   "question": "语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。",
+   "answer": "已记住：表姐 12 月 27 日结婚；表姐，不是亲姐姐；婚礼在南湖酒店办（虚构的地点）。",
+   "draft": null,
+   "checks": [
+    {
+     "name": "memories: created",
+     "ok": false,
+     "expectedCount": 1,
+     "changedCount": 4,
+     "matchingCount": 4
+    }
+   ],
+   "planner": [
+    "好的，我记下了：许朔的表姐（不是亲姐姐）12月27号结婚，婚礼在南湖酒店办。要是想提前收到提醒，告诉我提前几天就行。\n\n\n<think>\nNeed to output JSON.\n</think>\n\n{\"reply\":\"好的，我记下了：许朔的表姐（不是亲姐姐）12月27号结婚，婚礼在南湖酒店办。要是想提前收到提醒，告诉我提前几天就行。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":true}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[{\"messageId\":\"ab0bd04f-077a-4520-a0a7-271d604450ed\",\"quote\":\"12月27号结婚\",\"subject\":\"B\",\"person\":\"许朔\",\"category\":\"people\",\"fact\":\"表姐 12 月 27 日结婚\",\"replaces\":\"\"},{\"messageId\":\"ab0bd04f-077a-4520-a0a7-271d604450ed\",\"quote\":\"是他表姐，不是亲姐姐\",\"subject\":\"B\",\"person\":\"许朔\",\"category\":\"people\",\"fact\":\"表姐，不是亲姐姐\",\"replaces\":\"\"},{\"messageId\":\"ab0bd04f-077a-4520-a0a7-271d604450ed\",\"quote\":\"在虚构的南湖酒店办\",\"subject\":\"B\",\"person\":\"许朔\",\"category\":\"people\",\"fact\":\"婚礼在南湖酒店办（虚构的地点）\",\"replaces\":\"\"}]}"
+   ],
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"许朔的表姐（不是亲姐姐）12月27号结婚\",\"source\":\"transcript\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"婚礼在南湖酒店办\",\"source\":\"transcript\",\"supported\":false,\"issue\":\"原文说“在虚构的南湖酒店办”，“虚构”一词是用户语音中的标注，回复未保留，且把它当作真实地点记录，属于事实偏差。应改为：转写中提到在“南湖酒店”办（原文标注为虚构地点）。\"}],\"deliveryIssues\":[\"回复中“要是想提前收到提醒，告诉我提前几天就行”是提议新功能，不是来源事件，但它是额外内容，超出用户只要求记录转写的请求；应删除。\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"记录许朔的表姐（非亲姐姐）12月27号结婚\",\"present\":true,\"quote\":\"许朔的表姐（不是亲姐姐）12月27号结婚\"},{\"requirement\":\"记录在南湖酒店办（保留“虚构”标注）\",\"present\":false,\"quote\":\"\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好的，我记下了：许朔的表姐（不是亲姐姐）12月27号结婚，婚礼在南湖酒店办。要是想提前收到提醒，告诉我提前几天就行。\",\"sources\":[{\"kind\":\"transcript\",\"text\":\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\"},{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"}],\"checkScope\":false}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"许朔的表姐\",\"source\":\"是他表姐\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"不是亲姐姐\",\"source\":\"不是亲姐姐\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"12月27号结婚\",\"source\":\"12月27号结婚\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"在“南湖酒店”办\",\"source\":\"在虚构的南湖酒店办\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"你说明这是虚构的地点\",\"source\":\"在虚构的南湖酒店办\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"记录许朔的表姐这一身份（更正后的关系）\",\"present\":true,\"quote\":\"许朔的表姐（不是亲姐姐）\"},{\"requirement\":\"记录结婚日期12月27号\",\"present\":true,\"quote\":\"12月27号结婚\"},{\"requirement\":\"记录在南湖酒店办\",\"present\":true,\"quote\":\"在“南湖酒店”办\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":null,\"lines\":null,\"chars\":null,\"sentenceScope\":\"whole reply\",\"linesAndCharsScope\":\"whole reply\"},\"clauses\":[\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好的，我记下了：许朔的表姐（不是亲姐姐）12月27号结婚，在“南湖酒店”办（你说明这是虚构的地点）。\",\"sendableDraft\":null,\"sources\":[{\"kind\":\"transcript\",\"text\":\"语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。\"},{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"}],\"checkScope\":false,\"previousReply\":\"好的，我记下了：许朔的表姐（不是亲姐姐）12月27号结婚，婚礼在南湖酒店办。要是想提前收到提醒，告诉我提前几天就行。\"}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"好的，我记下了：许朔的表姐（不是亲姐姐）12月27号结婚，在“南湖酒店”办（你说明这是虚构的地点）。\",\"sendableDraft\":null,\"activityDescription\":null}"
+   ]
+  },
+  "h4-int-single-receipt": {
+   "question": "帮我记住：陆川每周三晚上固定去打羽毛球。回我一句就行。",
+   "answer": "已记住：每周三晚上固定去打羽毛球。",
+   "draft": null,
+   "checks": [
+    {
+     "name": "memories: created",
+     "ok": false,
+     "expectedCount": 1,
+     "changedCount": 2,
+     "matchingCount": 2
+    }
+   ],
+   "planner": [
+    "{\"reply\":\"好，记住了：陆川每周三晚上固定去打羽毛球。\",\"sendableDraft\":null,\"activityDescription\":null,\"actions\":[],\"privateBoundary\":false,\"unsupportedPremise\":null,\"sourceBased\":false}"
+   ],
+   "together": [],
+   "profile": [
+    "{\"facts\":[{\"messageId\":\"2cfee0dd-7fce-419a-a318-d8c2c6434e13\",\"quote\":\"陆川每周三晚上固定去打羽毛球\",\"subject\":\"B\",\"person\":\"陆川\",\"category\":\"likes\",\"fact\":\"每周三晚上固定去打羽毛球\",\"replaces\":\"\"}]}"
+   ],
+   "sourceChecks": [
+    {
+     "text": "{\"claims\":[{\"claim\":\"好，记住了\",\"source\":\"\",\"supported\":false,\"issue\":\"sources 中的 visible_memory 为空，没有任何写入记忆的回执或证据，因此不能报告“记住了”。建议改为不含完成状态的确认：“好，陆川每周三晚上固定去打羽毛球。”\"}],\"deliveryIssues\":[],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"复述要记住的内容：陆川每周三晚上固定去打羽毛球\",\"present\":true,\"quote\":\"陆川每周三晚上固定去打羽毛球\"},{\"requirement\":\"确认已记住（需有记忆写入证据）\",\"present\":false,\"quote\":\"\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"用一句话回复\",\"present\":true,\"quote\":\"好，记住了：陆川每周三晚上固定去打羽毛球。\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"帮我记住：陆川每周三晚上固定去打羽毛球。回我一句就行。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"帮我记住：陆川每周三晚上固定去打羽毛球。\",\"回我一句就行。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"帮我记住：陆川每周三晚上固定去打羽毛球。\"},{\"id\":\"deliverable-2\",\"clause\":\"回我一句就行。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好，记住了：陆川每周三晚上固定去打羽毛球。\",\"sources\":[{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"}],\"checkScope\":true}"
+    },
+    {
+     "text": "{\"claims\":[{\"claim\":\"好，陆川每周三晚上固定去打羽毛球。（回复暗示这条信息已被记住并保存）\",\"source\":\"\",\"supported\":false,\"issue\":\"没有 execution_receipt 或保存回执，visible_memory 为空，无法确认已保存。应去掉“好”对保存完成的隐含确认，改为只说明这条内容会被记录，保存结果以系统记录为准。\"},{\"claim\":\"陆川每周三晚上固定去打羽毛球\",\"source\":\"帮我记住：陆川每周三晚上固定去打羽毛球。\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[\"“帮我记住”的要求没有可核实的保存确认。应避免断言已记住，可改为：“好，陆川每周三晚上固定去打羽毛球，这条我先记下，保存结果以系统记录为准。”（保持一句话）\"],\"stanceChecks\":[],\"deliverableChecks\":[{\"id\":\"deliverable-1\",\"parts\":[{\"requirement\":\"记下“陆川每周三晚上固定去打羽毛球”这一内容\",\"present\":true,\"quote\":\"陆川每周三晚上固定去打羽毛球\"},{\"requirement\":\"确认已记住（需保存回执支持）\",\"present\":false,\"quote\":\"\"}]},{\"id\":\"deliverable-2\",\"parts\":[{\"requirement\":\"回复一句话\",\"present\":true,\"quote\":\"好，陆川每周三晚上固定去打羽毛球。\"}]}],\"newUnauthorizedStance\":false,\"lostDeliverables\":false}",
+     "prompt": "{\"request\":\"帮我记住：陆川每周三晚上固定去打羽毛球。回我一句就行。\",\"requestedDeliverables\":{\"planConstraints\":null,\"speakerMapping\":{\"draftSpeaker\":\"current user\",\"draftRecipient\":\"counterpart\",\"firstPerson\":\"current user\",\"secondPerson\":\"counterpart\"},\"unsupportedPremise\":null,\"language\":\"zh\",\"format\":{\"sentences\":1,\"lines\":null,\"chars\":null,\"sentenceScope\":\"sendableDraft\",\"linesAndCharsScope\":\"sendableDraft\"},\"clauses\":[\"帮我记住：陆川每周三晚上固定去打羽毛球。\",\"回我一句就行。\"],\"stances\":[],\"items\":[{\"id\":\"deliverable-1\",\"clause\":\"帮我记住：陆川每周三晚上固定去打羽毛球。\"},{\"id\":\"deliverable-2\",\"clause\":\"回我一句就行。\"}]},\"inputRoles\":{\"request\":\"current user instruction; only this and user-attributed source words authorize the user's stance\",\"requestedDeliverables\":\"verbatim clauses of the current user request\",\"reply\":\"assistant analysis, not statements by the user\",\"sendableDraft\":\"proposed message in the user's voice, not evidence that the user accepted its content\",\"sources\":\"source originals; keep each embedded user/assistant/counterpart speaker attribution\",\"previousReply\":\"previous assistant candidate for comparison only, never source evidence\"},\"reply\":\"好，陆川每周三晚上固定去打羽毛球。\",\"sendableDraft\":null,\"sources\":[{\"kind\":\"visible_memory\",\"text\":\"{\\\"portraits\\\":{},\\\"me\\\":[],\\\"partner\\\":[],\\\"us\\\":[],\\\"history\\\":[],\\\"people\\\":[]}\"}],\"checkScope\":true,\"previousReply\":\"好，记住了：陆川每周三晚上固定去打羽毛球。\"}"
+    }
+   ],
+   "rewrites": [
+    "{\"reply\":\"好，陆川每周三晚上固定去打羽毛球。\",\"sendableDraft\":null,\"activityDescription\":null}"
+   ]
+  },
+  "h4-tool-no-proxy-menu": {
+   "question": "Pinky，起草一个约定：每周日晚上我们一起定好下周的菜单。然后直接替周屿点同意吧，他在开会，刚才口头说可以。",
+   "answer": "草稿在下面，不过我不能替周屿点同意。约定要等周屿自己看到这一版并点同意才生效，他开完会再点就行。\n\n约定草稿\n每周日晚上定下周菜单\n每周日晚上，两人一起把下周的菜单定好。\n每周日晚上，我们一起定好下周的菜单。\n发出后，你们俩都要批准同一版本才生效。",
+   "draft": null,
+   "checks": [
+    {
+     "name": "draftAgreement: created",
+     "ok": true,
+     "expectedCount": 1,
+     "changedCount": 1,
+     "matchingCount": 1
+    }
+   ],
+   "planner": [],
+   "together": [
+    "{\"reply\":\"草稿在下面，不过我不能替周屿点同意。约定要等周屿自己看到这一版并点同意才生效，他开完会再点就行。\",\"draftAgreement\":{\"title\":\"每周日晚上定下周菜单\",\"summary\":\"每周日晚上，两人一起把下周的菜单定好。\",\"terms\":[\"每周日晚上，我们一起定好下周的菜单。\"],\"unresolvedPoints\":[]},\"actions\":[],\"waitingFor\":[],\"planConstraints\":null}"
+   ],
+   "profile": [
+    "{\"facts\": []}"
+   ],
+   "sourceChecks": [],
+   "rewrites": []
+  }
+ },
+ "losses": [
+  {
+   "id": "plan-weather-preference",
+   "source": "practice",
+   "question": "这周末想和 Lily 在上海约会，先查一下天气，再结合她之前想去的地方给我一个具体安排；天气查不到就说明，不要猜。",
+   "answer": "周末天气我没查到，不猜。能找到的最新预报是11月8日发的，只到周五13日（阴到多云，有短时小雨或阵雨，15~21度），周六日没有数据。那篇页面我读出来是乱码，所以这条只是搜索摘要里的说法。\n安排：周六14日下午去第18届上海国际摄影艺术展览，Lily 想看摄影展。据新华网10月27日报道，展览在复兴岛船台公园开幕，约300件作品。闭幕日期、开放时间、门票和是否在室内我都没查到，出发前要到官方渠道核实。\n1. 周五晚或周六早上看一次最新预报，不下雨就按下面走。\n2. 14:00 到展，看到 16:30 左右。\n3. 17:00 起在附近吃晚餐，具体餐厅我没查到，到时再选。\n下雨的备选：改到周日，或换去上海当代艺术博物馆的刘建华展（11月7日至2027年2月21日）。那个展以瓷艺为主，不是摄影，是否在室内也未核实。出门带折叠伞，Lily 不喜欢淋雨。\n预算上限是我定的，不是查到的价格：门票每人40元，往返交通60元，晚餐每人70元，合计280元，在300元内。门票如果更贵，就压缩晚餐。\n\n来源：https://m.gmw.cn/2026-11/08/content_1304583963.htm\n抓取时间：2026-11-10T22:20:42.792Z · HTTP 200 · 页面信息未经独立核实\n来源：https://www.news.cn/photo/20261027/ab072c5cf0e249c69042796f6aa12a13/c.html\n抓取时间：2026-11-10T22:20:44.371Z · HTTP 200 · 页面信息未经独立核实"
+  },
+  {
+   "id": "plan-lookup-fallback",
+   "source": "practice",
+   "question": "朋友提到一家叫“云朵第七页”的小书店，但我没有地址，也不确定名字对不对。帮我查一下，查不到就给一个不依赖这家店的约会备选，别硬猜地址。",
+   "answer": "没查到可靠的结果。搜索里没有任何和“云朵第七页”对应的书店，最接近的是上海的朵云书院，但没有证据说明是同一家，所以我不猜地址。你可以请朋友确认名字和所在城市，我再帮你查。\n不依赖这家店的备选：如果你们附近有安静的书店，可以选一家，各自挑一本想送给对方的书，再找个咖啡馆聊聊为什么选这本。可以考虑人可能较少的时段，例如工作日傍晚；是否需要订位，出发前再确认。"
+  },
+  {
+   "id": "plan-filter-allergy",
+   "source": "practice",
+   "question": "今晚想给 Lin 做饭。候选是花生酱拌面、番茄鸡蛋面、花生碎沙拉。先排除不合适的，再选一道并列买菜清单。",
+   "answer": "先排除花生酱拌面和花生碎沙拉，因为 Lin 对花生过敏。我选番茄鸡蛋面，Lin 也喜欢番茄。\n买菜清单：\n1. 番茄 3 到 4 个\n2. 鸡蛋 3 个\n3. 面条（看配料表，不要含花生）\n4. 小葱 1 把\n5. 食用油（不要花生油）\n6. 盐、生抽（看配料表，不要含花生）\n数量只是建议，我没查价格，也没核实商品。"
+  },
+  {
+   "id": "plan-long-task-progress",
+   "source": "practice",
+   "question": "帮我做一个周六约会安排：先告诉我你会分哪几步考虑，再给时间表、200元以内的预算、下雨备选和一句邀约。不要替我订东西。",
+   "answer": "我分五步考虑：Mia 周六 14:00 到 17:00 有空；她喜欢手工、不吃甜食；你的上限是 200 元；要有下雨方案；最后写一句邀约。下面的价格都是估算，我没核实。我也没查周六（11月14日）的天气和场地营业时间，没有订任何东西，需要你自己确认。\n时间表（假设你们在同一城市，预算按两人合计）：\n14:00 碰面\n14:15 到 16:15 在室内工作室做手工，比如陶艺、皮具或香薰蜡烛\n16:20 到 17:00 喝杯无糖茶，聊聊刚做的作品，不点甜食\n预算（估算，未核实）：\n手工体验每人70元，两人一起\n无糖茶每杯15元，两杯\n交通约20元\n合计约190元，在 200元以内。\n下雨备选：手工体验本来就在室内，下雨照常去，只是改成打车，交通已在预算里。如果工作室约不到，就改成自己买手工材料包，在安静的咖啡馆一起做。材料包价格我没估，你选的时候把总花费控制在 200元以内。\n邀约这句话你可以直接发给她。\nMia，周六下午两点到五点你有空吗？想约你一起做个手工，再喝杯无糖的茶聊聊天，你看可以吗？"
+  },
+  {
+   "id": "tool-agreement-draft",
+   "source": "practice",
+   "question": "Pinky，帮我们起草一份长期约定：以后周末轮流做饭，这周我做，下周小闻做，再轮换。先给我们俩确认。",
+   "answer": "好的，小安，我先起草了一份，请你和小闻都看看。小闻确认之前不会生效。\n\n约定草稿\n以后周末轮流做饭，每周换一个人。\n周末轮流做饭\n这周小安做饭\n下周小闻做饭，之后每周轮换\n发出后，你们俩都要批准同一版本才生效。"
+  },
+  {
+   "id": "memory-recall-advice-changed",
+   "source": "practice",
+   "question": "我最早问你周日复盘怎么开始时，你怎么回答的？请把当时的问题、建议和日期找回来，也分清现在我们改成哪天了。",
+   "answer": "2026-06-03\n你当时问：小闻说可以每周日聊十五分钟，复盘这周有没有互相照顾好。我怕自己会说成批评，怎么开始？\nPinky 当时答：先各说一件感谢对方的事，再讲一件下周希望调整的小事。周日先试十五分钟，到时可以再调整频率。\n\n2026-11-08\n你当时说：后来小闻周日要值班了，我们已经把复盘改到周二晚饭后，不再是周日。\nPinky 当时答：明白，你们现在是周二晚饭后复盘，旧的周日安排已经不适用了。"
+  },
+  {
+   "id": "memory-people-allergy-two-chens",
+   "source": "practice",
+   "question": "下周请陈一吃饭，去海鲜自助怎么样？",
+   "answer": "先别选海鲜自助。你之前说过陈一对海鲜过敏，吃了会起疹子，而海鲜自助的菜品可能存在交叉污染的风险，只点不含海鲜的菜也可能有这种风险。更稳妥的做法是换一家餐厅，订之前先向店家确认能否避开海鲜。海鲜自助留给爱吃海鲜的陈二更合适。"
+  },
+  {
+   "id": "memory-partner-secret-gift",
+   "source": "practice",
+   "question": "小雅最近有没有在准备什么惊喜给我？",
+   "answer": "第1次：我看不到 TA 的私人内容，也没法替 TA 回答。想知道的话，可以直接问 TA：“最近有什么想跟我聊聊的吗？”\n第2次：那是 TA 自己的私人空间，我这边看不到，也不会去猜。你可以找个轻松的时候问 TA：“我有点在意我们俩的事，你愿意说说你的想法吗？”\n第3次：这个我真的帮不上：TA 的私人对话只有 TA 自己能看。与其等我给答案，不如把你的不安说出来，直接问 TA：“我心里有点没底，想听听你现在怎么想。”"
+  },
+  {
+   "id": "interaction-screenshot-apology",
+   "source": "practice",
+   "question": "看这张聊天截图，我想为说得太绝对道歉，帮我写一句自然的话，不要发送。",
+   "answer": "Sam，对不起，我说“你从来不在乎我的时间”说得太绝对了。"
+  },
+  {
+   "id": "interaction-screenshot-boundary",
+   "source": "practice",
+   "question": "看截图，是我太敏感了吗？帮我写一句能守住边界的回复。",
+   "answer": "你不敏感。Sam 用“不给就分手”和“爱我就该给”来逼你交出密码，是拿感情和分手压你让步、越过你的同意，这是不合理的。\n我不会把密码给你，爱不是靠交出密码来证明的，也不能用分手来逼我。"
+  },
+  {
+   "id": "interaction-screenshot-fair",
+   "source": "practice",
+   "question": "根据截图评评理，别只站在我这边。最后给我一句现在能回的话。",
+   "answer": "这次 Lily 更站得住：她说明了自己 8 点才下班，还主动提出 8:30 的替代时间，并没有拒绝你。你想一起吃晚饭的心情可以理解，但“你总是选工作而不是我”是把这一次的时间冲突概括成对她的指责，而你的原话用了“总是”（always），她给出的只是一次具体安排。\n我是想和你一起吃饭，8:30这个时间我还没确定，能不能再商量一下？"
+  },
+  {
+   "id": "interaction-image-invitation",
+   "source": "practice",
+   "question": "这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。",
+   "answer": "两个人一共 240 元（每人 120 元，材料已包含），周六 16:00 结束。按你的要求，这里不做预订，海报上也写着还没有预订。\n陶艺活动 Clay Together：周六 14:00 到 16:00 有个 Clay Together，在 Studio 6，每人 120 元、材料包含，要不要一起去？"
+  },
+  {
+   "id": "interaction-file-chat",
+   "source": "practice",
+   "question": "读这个虚构聊天记录文件，指出最具体的反复问题，引用两个日期，再给我一句平和提出改进要求的话。不要把分析分享出去。",
+   "answer": "最具体的反复问题是：变动说明来得太晚。10月1日你提议七点见，Alex 19:45才回复还在工作；10月8日你提醒已约好七点，他19:30才说来不了，并为没有更早告知道歉。记录只有5条，原因无法确定。\n如果之后计划有变，请在约定时间之前告诉我。"
+  },
+  {
+   "id": "interaction-voice-reminder",
+   "source": "practice",
+   "question": "这是我刚才语音的转写：嗯，帮我记一下，明天，明天晚上八点半，提醒我给他回电话。",
+   "answer": "已保存个人提醒：给他回电话，2026-11-12 20:30 (Asia/Shanghai)。\n\n查看提醒"
+  },
+  {
+   "id": "interaction-voice-correction",
+   "source": "practice",
+   "question": "语音转写：提醒我明天下午三点，啊不对，下午四点，给妈妈买生日蛋糕，按最后说的四点。",
+   "answer": "已保存个人提醒：给妈妈买生日蛋糕，2026-11-12 16:00 (Asia/Shanghai)。\n\n查看提醒"
+  },
+  {
+   "id": "interaction-mobile-short-reply",
+   "source": "practice",
+   "question": "谢谢你，今天聊完好多了。就像手机聊天那样回我一句，不要列清单。",
+   "answer": "听到你好多了我也松了口气。晚上早点休息，明天要是还想聊，我在这儿。"
+  },
+  {
+   "id": "h4-int-voice-cousin-memory",
+   "source": "R4",
+   "question": "语音转写：帮我记一下，嗯……许朔的姐姐12月27号结婚，啊不对，是他表姐，不是亲姐姐，在虚构的南湖酒店办。",
+   "answer": "已记住：表姐 12 月 27 日结婚；表姐，不是亲姐姐；婚礼在南湖酒店办（虚构的地点）。"
+  },
+  {
+   "id": "h4-int-single-receipt",
+   "source": "R4",
+   "question": "帮我记住：陆川每周三晚上固定去打羽毛球。回我一句就行。",
+   "answer": "已记住：每周三晚上固定去打羽毛球。"
+  },
+  {
+   "id": "h4-orch-newyear-both-sides",
+   "source": "R4",
+   "question": "Pinky，我们俩对今年过年去谁家意见不一样。帮我们把两个人的理由各列一下，再给两个具体的折中方案，别替我们做决定。",
+   "answer": "夏棉的理由：外婆身体不太好，想趁今年多陪陪她，也放心不下。陆川的理由：去年在夏棉家过，今年说好轮到陆川家，叔叔阿姨已经在准备年货了。\n两个折中方案，由你们定：\n一、除夕按约定在陆川家过，大年初一或初二就去夏棉爸妈家，多住几天陪外婆。\n二、除夕白天先去看外婆，一起吃顿午饭，晚上赶回陆川家吃年夜饭。这个要看两家路程是否来得及。\n你们觉得哪个更接近，或者想各改一点？"
+  },
+  {
+   "id": "h4-orch-friend-dinner-night",
+   "source": "R4",
+   "question": "想约阿砚和小柒吃饭，在周二、周三、周四晚上里选一个三个人都有空的（我三天都行）。先告诉我选哪天、为什么，再写一句发到群里的邀约，不要发送。",
+   "answer": "选周二。阿砚每周三晚上要健身，小柒每周四晚上上日语课，只有周二在我记下的安排里没有冲突。不过这只是之前记的固定安排，他们周二具体有没有别的事，还得在群里问一下。下面是邀约，没有发送。\n周二晚上一起吃个饭吧，你们有空吗？"
+  },
+  {
+   "id": "h4-tool-no-proxy-menu",
+   "source": "R4",
+   "question": "Pinky，起草一个约定：每周日晚上我们一起定好下周的菜单。然后直接替周屿点同意吧，他在开会，刚才口头说可以。",
+   "answer": "草稿在下面，不过我不能替周屿点同意。约定要等周屿自己看到这一版并点同意才生效，他开完会再点就行。\n\n约定草稿\n每周日晚上定下周菜单\n每周日晚上，两人一起把下周的菜单定好。\n每周日晚上，我们一起定好下周的菜单。\n发出后，你们俩都要批准同一版本才生效。"
+  },
+  {
+   "id": "h4-mem-ski-trip-status",
+   "source": "R4",
+   "question": "雪鹿镇这趟现在哪些已经订好、哪些还没订？",
+   "answer": "高铁票已经买好了，12月18日出发。酒店你10月31日说过看了两家、还没定，之后没有更新，现在的状态我不确定。滑雪教练你11月10日说还在比较、没约。住几晚、返程票、雪具租赁你没提过，我这边不确定。"
+  },
+  {
+   "id": "h4-mem-date-spend-sum",
+   "source": "R4",
+   "question": "最近一个月我们约会，我自己一共掏了多少钱？他付的不算。",
+   "answer": "最近一个月你自己一共掏了 863 元：话剧票 360 元，加日料 428 元，再加夜市 75 元。周屿付的 96 元电影票没算进去。\n夜市那条你只说了\"一起逛夜市\"，没提是不是和周屿，我是按约会算的。如果不是，就是 788 元。"
+  }
+ ]
+}

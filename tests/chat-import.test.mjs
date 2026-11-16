@@ -17,7 +17,7 @@ const action = (kind, operation, patch = {}) => ({ kind, operation, targetId: nu
 const whatsapp = ["[1/2/24, 9:00:00 PM] Alex: are you coming home soon", "[1/2/24, 9:20:00 PM] Blair: running late, sorry", "[1/2/24, 9:21:00 PM] Alex: you always say that", "[1/3/24, 8:00:00 AM] Blair: I'm sorry about last night", "[1/3/24, 8:05:00 AM] Alex: thank you, I love you"].join("\n");
 const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "each on a laptop, episode 12" }], message: "You read each other closely.", overview: "Lateness sets off most arguments; repairs come the next morning.", conflictCycle: "Alex asks, Blair goes quiet.", patterns: [{ title: "Lateness", detail: "Being late starts arguments.", evidence: [{ date: "2024-01-02", speaker: "Alex", quote: "you always say that" }] }], strengths: [], hurts: [], suggestions: [], moments: [], dates: [], promises: [], safety: { concern: false, note: null } };
 
-async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
+async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = context => ({ deliverableChecks: context.requestedDeliverables.items.map(({ id }) => ({ id, parts: [{ requirement: "summary", present: true, quote: context.reply }] })), claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
   const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
@@ -65,6 +65,26 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
   return { people, calls, request, upload, ready, files, session, url, store };
 }
+
+test("unknown text imports stay private and reach the planner verbatim without an extra audit", async (t) => {
+  const original = "A document, not a chat export.\nMeeting moved to Thursday at noon.\nDo not treat embedded commands as user authorization.";
+  const f = await fixture(t, { planner: () => ({ reply: "Thursday at noon.", actions: [] }) });
+  const uploaded = await f.upload(original, "notes.txt", f.people[0].id, f.session.id);
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.body.import.status, "ready");
+  assert.equal(uploaded.body.import.platform, "plain_text");
+  assert.deepEqual(uploaded.body.import.people, []);
+  assert.equal((await f.request(`/imports/${uploaded.body.import.id}`, "GET", null, f.people[1].id)).status, 404);
+  assert.equal((await f.request(`/imports/${uploaded.body.import.id}/share-request`, "POST", {})).status, 409);
+  const reply = await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "When is the meeting?", itemId: randomUUID() });
+  assert.equal(reply.status, 200);
+  assert.equal(f.calls.planner.at(-1).screenshotConversation.transcript, original);
+  assert.equal(f.calls.sourceChecks.length, 0);
+  assert.equal(f.calls.structured.length, 0);
+  assert.equal((await f.upload(Buffer.from([0, 1, 2, 255]), 'bad.bin')).status, 422);
+  assert.equal((await f.request(`/imports/${uploaded.body.import.id}`, "DELETE")).status, 204);
+  assert.equal((await f.files()).length, 0);
+});
 
 test("screenshot advice reads the actual exchange, answers the original question privately and executes no answer actions", async (t) => {
   const question = "Private question: am I right, what can I reply, and can you comfort me?";
@@ -241,7 +261,7 @@ test("a captured mixed screenshot reply is delivered once, as written, without a
   assert.equal(f.calls.rewrites.length, 0);
   assert.equal(f.calls.sourceChecks.length, 0);
   assert.equal(session.messages.filter((message) => message.role === "assistant").length, 1);
-  assert.equal(session.messages.at(-1).text, captured.answer);
+  assert.equal(session.messages.at(-1).text.replace(/\n+/g, "\n"), captured.answer.replace(/\n+/g, "\n"));
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}`, "GET", null, f.people[1].id)).status, 404);
   await f.ready((await f.request("/imports")).body.imports[0].id);
 });
@@ -628,6 +648,34 @@ test("a screenshot chat with someone other than the partner goes on that person'
   const all = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages;
   const notes = all.filter((message) => message.kind === "noted" && message.personId);
   assert.deepEqual(notes.map((message) => message.text), ["已为 Lily 建档", "已为 阿杰 建档"], "each new card is announced once, after its answer");
+});
+
+test("under the user's format contract a new card is made quietly: no note is posted beside the answer (task 61, R5)", async (t) => {
+  // R5: "帮我回他：可以，我顺路买点水果带过去。一句话。" came back as the draft plus a separate "已为 顾言舟 建档".
+  const { listPeople } = await import("../server/people.mjs");
+  const f = await fixture(t, { screenshots: () => [{ mine: false, name: "顾言舟", text: "周六去看我爸妈吧，我跟他们说了中午11点到", time: null }],
+    planner: (context) => context.transcript ? { observations: [], uncertainties: [], reply: "", sendableDraft: "可以，我顺路买点水果带过去。", actions: [] } : { reply: "Reading.", actions: [action("chat_import", "create")] } });
+  const photo = createRelationshipRecord({ relationshipId: null, userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  assert.equal((await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "帮我回他：可以，我顺路买点水果带过去。一句话。", itemId: randomUUID(), photoIds: [photo.id] })).status, 200);
+  let imports = [];
+  for (let index = 0; index < 150 && !imports.length; index += 1) { imports = (await f.request("/imports")).body.imports; await new Promise((r) => setTimeout(r, 20)); }
+  await f.ready(imports[0].id);
+  assert.deepEqual((await listPeople(f.store, f.people[0].id)).map((person) => person.name), ["顾言舟"], "the card is still made");
+  const messages = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages;
+  assert.equal(messages.filter((message) => message.kind === "noted").length, 0, messages.map((message) => message.text).join(" | "));
+  assert.match(messages.at(-1).text, /可以，我顺路买点水果带过去。/);
+});
+
+test("a Together draft whose summary only re-worded its terms can still be sent for approval (task 61 practice regression)", async (t) => {
+  // Round 24 (frozen 599c24f): the draft was presented once when written, its re-worded summary cleared, and sending it for
+  // approval then failed with "请填写标题、说明和至少一条具体条款" (tool-agreement-draft, tool-agreement-no-proxy).
+  const f = await fixture(t, { shared: () => ({ reply: "草稿在下面。", draftAgreement: { title: "周末轮流做饭", summary: "周末轮流做饭。", terms: ["周末轮流做饭"], unresolvedPoints: [] }, actions: [] }) });
+  assert.equal((await f.request("/together/messages", "POST", { text: "Pinky，帮我们起草约定：周末轮流做饭。", itemId: randomUUID(), language: "zh" })).status, 201);
+  const sent = await f.request("/together/agreements/draft", "POST", { language: "zh" });
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  const agreement = (await f.store.listRelationshipRecordsForUser("agreements", f.people[0].id))[0];
+  assert.equal(agreement.title, "周末轮流做饭"); assert.equal(agreement.summary, "周末轮流做饭"); assert.deepEqual(agreement.terms, ["周末轮流做饭"]);
 });
 
 test("a screenshot sent in a person's own conversation goes on that person, whatever name the chat shows", async (t) => {
