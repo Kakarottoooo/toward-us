@@ -1,5 +1,15 @@
 # Pinky 手机 App 外壳（Capacitor 8）
 
+## SwiftUI 原生 iPhone 客户端
+
+Pinky 的原生工程位于 [ios-native/PinkyNative.xcodeproj](ios-native/PinkyNative.xcodeproj)，与下方原有外壳分开。登录、配对、聊天和「一起玩」界面由 SwiftUI 在手机上运行，使用 Render 上原有的 Pinky API 和账号。现有网页版本和服务继续独立更新。
+
+用 Xcode 26 打开工程，选择 `PinkyNative` 和一个运行 iOS 17 或更新系统的 iPhone 模拟器。`Debug` 的 Bundle ID 为 `us.toward.app.native`，可与原有包共同安装。GitHub 的 `Pinky native iOS` 工作流编译 iPhone 和 WidgetKit，打开模拟器，并保留启动截图。这些构建不含 Apple 签名。
+
+签名发行时在 Mac 上将 App 和 Widget 两个 target 选为同一 Apple Developer 团队。`Release` 用 Pinky 的 Bundle ID `us.toward.app`、扩展 `us.toward.app.widget` 和 App Group `group.us.toward.app`。在上传之前核对账号已占用的 Bundle ID 和 App Store Connect 里的构建号，并完成 App 与扩展的签名和授权。开启「设置 → 连接小组件」后，小组件只显示在一起和连续来访的天数。异地同步震动依赖支持震动、开启系统触感的 iPhone。
+
+下文说明原有 Capacitor 外壳。
+
 这是一个很薄的原生外壳：App 打开后直接加载网站（`server.url`），界面、登录、语音都是现有网页，没有重写。这样现有的 `HttpOnly` Cookie 登录不用改；网站更新后 App 里立即生效，不需要重新装包。公开上架前再评估要不要把前端打进安装包。
 
 - App ID：`us.toward.app`，名字：`Pinky`。Bundle ID 正式占用前要在开发者账号里确认可用。
