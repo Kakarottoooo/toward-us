@@ -102,8 +102,8 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
     // planner prompt cannot grow without anyone noticing what each turn costs.
     const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
     // 43,500 since 11-10: bounded reply grounding rules; plan metadata is added only for constrained planning.
-    // 54,000 since 11-15: the question playbooks (question-playbooks.mjs), the founder's "帮用户把问题问好" layer.
-    assert.ok(system.length < 54_000, `planner prompt is ${system.length} characters`);
+    // 58,000 since 11-15: the question playbooks (question-playbooks.mjs), the founder's "帮用户把问题问好" layer.
+    assert.ok(system.length < 58_000, `planner prompt is ${system.length} characters`);
   }
 });
 

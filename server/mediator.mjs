@@ -13,7 +13,8 @@ import { meterOpenAI } from "./ai-ledger.mjs";
 
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
-const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
+// 90 s since 11-15: a complete analysis (question-playbooks.mjs) can take longer than 45 s, and was cut off as "Pinky 暂时不可用".
+const INTERACTIVE = { timeout: 90_000, maxRetries: 0 };
 const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"], properties: {
   observations: { type: "array", items: { type: "string" }, maxItems: 3 },
   uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
