@@ -120,12 +120,16 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
       const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: DAILY, text: question, i18n, handle });
       if (posted.duplicate) return posted;
       const message = { ...posted.message, day: today, answers: {}, ...(play ? { dailyPlay: play.dailyPlay } : {}) };
-      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === message.id ? message : item); draft.preparedDaily = null; draft.version += 1; });
+      const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => {
+        draft.messages = draft.messages.map((item) => item.id === message.id ? message : item);
+        if (!play) draft.preparedDaily = null;
+        draft.version += 1;
+      });
       return { ...posted, conversation, message };
     });
     if (!result || result.duplicate) return false;
     emit(result.conversation);
-    if (!rotate || nextDailyFormat([result.message]) === "text") {
+    if (!result.message.dailyPlay || nextDailyFormat([result.message]) === "text") {
       void prepareNext({ store, mediator, relationshipId, userId, language, material: { ...material, previousQuestions: [...material.previousQuestions, result.message.text] } });
     }
     return true;
