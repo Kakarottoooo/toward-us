@@ -11,7 +11,7 @@ import { planToCalendar } from "./plan-to-calendar.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
-import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
+import { answerGame, answerPlayCard, GAME_TYPES, playTogetherView, replyToPlayCard, startGame } from "./games.mjs";
 import { careNoteFor } from "./cycle.mjs";
 import { petIt, syncPet } from "./pet.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
@@ -228,6 +228,43 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const conversation = await answerGame({ store, relationshipId: initial.relationship.id, userId, messageId: req.params.id, choice: req.body?.choice, text: req.body?.text, emit: (updated) => emit(updated, "together.updated") });
     res.json({ conversation: projectRecord(conversation, userId) });
+  });
+
+  router.get("/together/play", async (req, res) => {
+    const userId = req.auth.user.id;
+    const context = await store.getRelationshipContext(userId);
+    const relationshipId = context?.members.length === 2 ? context.relationship.id : null;
+    res.json(await playTogetherView(store, { relationshipId, userId, language: language(req), readOnly: !context || !writable(context) }));
+  });
+  router.post("/together/play/:cardId/answer", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req);
+    if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const relationshipId = initial.relationship.id;
+    const saved = await answerPlayCard({ store, relationshipId, userId, cardId: req.params.cardId,
+      aboutUserId: req.body?.aboutUserId, choice: req.body?.choice, text: req.body?.text, language: language(req) });
+    if (saved.changed) emit(saved.conversation, "together.updated", null, userId);
+    if (saved.started) void recordUsage(store, { userId, relationshipId, action: "game_started" });
+    res.status(saved.started ? 201 : 200).json(saved.view);
+  });
+  router.post("/together/play/:cardId/reply", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req);
+    if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const saved = await replyToPlayCard({ store, relationshipId: initial.relationship.id, userId, cardId: req.params.cardId,
+      text: req.body?.text, clientId: req.body?.clientId, language: language(req) });
+    if (saved.changed) emit(saved.conversation, "together.updated", null, userId);
+    res.status(saved.changed ? 201 : 200).json(saved.view);
+  });
+
+  const playErrors = {
+    game_subject_changed: ["这一轮换成猜 TA 的答案了，请先看更新后的题卡。", "This round is about your partner now. Open the updated card before answering.", "Ahora esta ronda es sobre tu pareja. Abre la tarjeta actualizada para responder."],
+    play_waiting: ["等你们两个人都回答后，就可以接着聊。", "You can keep chatting once you have both answered.", "Podrán seguir conversando cuando ambos hayan respondido."],
+    play_reply_conflict: ["这条回复已有一份，刷新后再试。", "This reply has already been saved. Refresh before trying again.", "Esta respuesta ya se guardó. Actualiza antes de intentarlo de nuevo."],
+    play_reply_limit: ["这道题的聊天已满，可以在「我们俩」里接着聊。", "This card's conversation is full. You can keep chatting in Us.", "La conversación de esta tarjeta está llena. Pueden seguir en Nosotros."],
+  };
+  router.use("/together/play", (error, req, res, next) => {
+    const copy = playErrors[error.decisionCode];
+    if (!copy) return next(error);
+    res.status(error.statusCode).json({ error: say(language(req), ...copy), code: error.decisionCode });
   });
 
   router.use(decisionErrorHandler);
