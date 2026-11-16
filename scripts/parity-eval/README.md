@@ -1,5 +1,31 @@
 # Pinky 对标评测
 
+## 换模型关卡（任务 66）
+
+`npm run gate:model -- --model <id> [--channel claude|openai] [--quick]`
+
+先执行全部 `tests/task*-*.test.mjs` 和历史来源、回执、格式、只读网页回放，再在本地虚构账号中运行固定的 60 题。`replay.mjs` 是原有语料哈希和逐题时钟库，继续复用其时钟及原测试覆盖；它本身不是独立的测试命令。没有改动产品代码或提示词。所有底层模型传输串行，包括延迟触发的后台记忆调用；600 Claude 实际内部轮次、400 Codex 调用为本次命令的硬上限，原始调用与实际 `num_turns` 均保留。Claude 主模型取 `--model`，后台保持线上 `haiku` 路由；OpenAI 的全部产品调用使用显式指定的同一个模型。不同厂商差异只存在评测适配器中。
+
+`model-gate-cases.json` 固定每层 8 道练习、4 道代表题，共 60 题。练习环境题沿用任务 09 的只读虚构站点，其余练习题来自原 cases。代表题取自最终 R7，覆盖隐私、时间限定、截图立场、真实写入、网页恢复和注入等已知风险，不是新出题，也不导入被拒候选的任何答案。题集保存原留出文件 SHA-256。代表题中的声明式网页由关卡自己的本地站点托管，不修改运行时或产品。
+
+固定存档 `model-gate-baselines/task65-claude.json` 只包含任务 65 main 的 40 份产品原答及可见资料/机器证据；来源提交 `de725b8c81e297a0ebea2a24f40e85e0cb805bd7`，来源报告为 `pinky-task65-final/work/task65/main-claude/report.json`，报告内两份产品提交都等于该 main。原报告 SHA-256 与存档 SHA-256 分别记录在存档和题集。未复制 #197 产品代码、候选答案或它的评委票。每次运行校验存档哈希、问题和逐题可见资料；只有临时 localhost 端口按等价来源规范化，日期仍沿用原时钟。网页观察的稳定字段也核对；互联网搜索仍是实时搜索，不声称能冻结互联网。
+
+代表题目前没有 main 存档，按任务要求本轮不录制。首次完整使用前运行：
+
+```powershell
+npm run gate:model -- --model sonnet --record-baseline
+```
+
+仅录制 20 道代表题，不运行评委；必须是当前 main 的产品代码和线上 sonnet/haiku，完整答案写入 `model-gate-baselines/claude-representatives.json`，拒绝覆盖已有文件或用测试替身录制。录制结果不等于完整质量通过，应审阅、提交存档，再跑完整关卡。专项测试使用临时假数据验证录制完整性和防覆盖，不消耗模型额度。
+
+机器检查直接复用 `fixture.mjs` 的真实写入、双方同版本批准、隐私投影、引用定位和页面状态证据，以及产品 `checkReplyFormat` 的句数/字数/行数契约，并补充“只答时间”的格式检查；具体时间是否正确、未授权立场等语义仍由原盲评 rubric 检查，不把 quick 当语义质量证明。内容型 `completed:null` 不伪造为已完成。失败页的正确处置不代表原查询成功。
+
+完整模式将候选与同通道 main 存档按 `score.mjs` 的同一 rubric 随机 A/B 盲评：Codex 先评，赢即不输，平/输再请 Claude；单票输为有争议，不计不输。每层 12 题至少 11 题不输且无待定，机器检查全通过才 `PASS`。`--quick` 只运行回放和全部 60 题的机器检查，不调用评委；输出明确写“未盲评”，不能声称完整不输率。
+
+`--channel openai` 只走 ChatGPT 订阅 CLI，强制显式模型与 ChatGPT 登录方式，不使用付费密钥。完整运行在缺少同通道 main 存档时直接报告无法评测（退出码 2）；quick 可单独观察其机器表现，不借用 Claude 的对照答案。每次实际 Codex 子进程启动前读取最新会话 `rate_limits.primary.used_percent`，到 97% 或读数缺失即停止；任意订阅额度、提供方、传输或评委错误均保留部分证据并退出 2，不重试、不回退付费 API/credits。
+
+输出目录为 `work/model-gate/<UTC>/`，包括 JSON 结果、历史回放日志、逐题答案/检查、调用和用量账本。最后一行为 `GATE: PASS` / `GATE: FAIL`，无法评测为 `GATE: UNAVAILABLE`，退出码分别 0/1/2。`--fake-empty --quick --model empty` 是显式坏模型验收入口，不调用模型、不能录制基线，也不允许用它取得 PASS。
+
 ## 第四轮外部题入口（2026-11-11）
 
 `node scripts/parity-eval/run.mjs --cases-file scripts/parity-eval/examples.json --label round4-examples --concurrency 1 --budget-file work/task18/model-budget.json`

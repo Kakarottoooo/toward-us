@@ -23,6 +23,21 @@ Before making substantial visual changes, use the Product Design plugin's `get-c
 
 ## Delivery and self-verification
 
+### Model swap regression gate
+
+Before changing a model, prompts, the harness, or model-related dependencies, run
+`npm run gate:model -- --model <id> --channel claude|openai`.
+Only a full `GATE: PASS` permits switching. `FAIL`, `UNAVAILABLE`, and a quick-only
+result do not authorize a switch. `--quick` runs historical deterministic replay
+and machine checks for all 60 fixed cases without judges. Before the first full
+Claude run, record the missing representative baseline with
+`npm run gate:model -- --model sonnet --record-baseline`, review it and commit it.
+Do not record it during TASK-66. The immutable 40-answer archive comes from main
+`de725b8`; never substitute answers from rejected PR #197. OpenAI requires an
+explicit model and same-channel main answers; missing/provider-unavailable
+evidence exits 2 without paid API or credits fallback. See
+`scripts/parity-eval/README.md` for provenance, commands, and limits.
+
 - Treat a reproducible product bug report as authorization to diagnose, fix, regression-test, deploy under existing authority, and verify production unless the user explicitly asks for analysis only.
 - Before handing off a UI change, exercise the affected interaction at representative phone widths (the desktop web version is no longer maintained), including focus, keyboard, hover, disabled, and responsive states that the change can influence.
 - Keep `docs/features.zh-CN.md` (the founder's long-lived feature list) current: any PR that adds, changes or removes a user-visible feature updates it in the same PR, in plain words as the user sees it, and bumps its 最后更新 date.
