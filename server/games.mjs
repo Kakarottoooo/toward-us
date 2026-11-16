@@ -49,7 +49,7 @@ export async function startGame({ store, mediator, relationshipId, userId, type 
     if (!activePair(context, relationshipId)) return null;
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const { conversation, previous, profile } = material(snapshot, relationshipId);
-    const games = (conversation?.messages || []).filter((message) => message.kind === GAME);
+    const games = (conversation?.messages || []).filter((message) => message.kind === GAME && !message.game?.deckId);
     // Unasked, the kinds take turns.
     let kind = GAME_TYPES.includes(type) ? type : GAME_TYPES[(GAME_TYPES.indexOf(games.at(-1)?.game?.type) + 1) % GAME_TYPES.length];
 
@@ -130,7 +130,8 @@ async function writeGameAnswer(tx, conversation, userId, location, answer, newDe
   if (Object.keys(answers).length >= 2 && game.type !== "truth") {
     const [first, second] = Object.values(answers);
     const match = first.choice === second.choice;
-    const earlier = conversation.messages.filter((item) => item.kind === GAME && item.id !== round.id && item.game?.result);
+    const earlier = conversation.messages.filter((item) => item.kind === GAME && item.id !== round.id &&
+      item.game?.result && Boolean(item.game.deckId) === Boolean(game.deckId));
     game = { ...game, result: { match, matched: earlier.filter((item) => item.game.result.match).length + Number(match), played: earlier.length + 1 } };
   }
   const updated = await replaceGame(tx, conversation, userId, location, { ...round, answers, game }, newDeckId);
