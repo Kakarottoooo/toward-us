@@ -4,23 +4,31 @@ import SwiftUI
 @MainActor
 final class PinkyAccount: ObservableObject {
     @Published private(set) var identity: PinkyIdentity?
-    @Published private(set) var checking = true
+    @Published private(set) var checking: Bool
     @Published private(set) var busy = false
     @Published private(set) var warning: String?
+    @Published private(set) var restoreFailed = false
     @Published private(set) var widgetEnabled = false
     let api: PinkyAPI
 
-    init(api: PinkyAPI = .configured) { self.api = api }
+    init(api: PinkyAPI = .configured) {
+        self.api = api
+        checking = api.hasSessionCookie
+    }
 
     func restore() async {
         guard !busy else { return }
-        let firstLoad = identity == nil
-        if firstLoad { checking = true }
-        await perform {
-            identity = try await api.get("/api/auth/me")
+        defer { checking = false }
+        guard api.hasSessionCookie else {
+            if identity?.user != nil { clear() }
+            return
+        }
+        if identity == nil { checking = true }
+        let restored = await perform {
+            identity = try await api.restoreIdentity()
             widgetEnabled = PinkyWidgetAccess.restore(for: identity?.user?.id)
         }
-        checking = false
+        restoreFailed = !restored && warning != nil && identity == nil
     }
 
     func authenticate(email: String, password: String, name: String?, language: PinkyLanguage) async -> Bool {
@@ -120,7 +128,10 @@ final class PinkyAccount: ObservableObject {
         }
     }
 
-    func clearWarning() { warning = nil }
+    func clearWarning() {
+        warning = nil
+        restoreFailed = false
+    }
 
     private func clear() {
         api.clearSession()
@@ -133,7 +144,7 @@ final class PinkyAccount: ObservableObject {
     private func perform(_ action: () async throws -> Void) async -> Bool {
         guard !busy else { return false }
         busy = true
-        warning = nil
+        clearWarning()
         defer { busy = false }
         do {
             try await action()

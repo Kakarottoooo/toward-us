@@ -70,6 +70,7 @@ struct PinkyPairingResponse: Decodable {
 struct PinkyAPI: Sendable {
     let baseURL: URL
     private let session: URLSession
+    private let restoreSession: URLSession
 
     static let production = PinkyAPI(baseURL: URL(string: "https://toward-us-private-beta.onrender.com")!)
 
@@ -88,14 +89,29 @@ struct PinkyAPI: Sendable {
 
     init(baseURL: URL) {
         self.baseURL = baseURL
+        session = Self.makeSession(baseURL: baseURL, requestTimeout: 75, resourceTimeout: 180)
+        restoreSession = Self.makeSession(baseURL: baseURL, requestTimeout: 6, resourceTimeout: 8)
+    }
+
+    private static func makeSession(baseURL: URL, requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSession {
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpShouldSetCookies = true
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
-        config.timeoutIntervalForRequest = 75
-        config.timeoutIntervalForResource = 180
-        session = URLSession(configuration: config, delegate: PinkyRedirectPolicy(base: baseURL), delegateQueue: nil)
+        config.timeoutIntervalForRequest = requestTimeout
+        config.timeoutIntervalForResource = resourceTimeout
+        return URLSession(configuration: config, delegate: PinkyRedirectPolicy(base: baseURL), delegateQueue: nil)
+    }
+
+    var hasSessionCookie: Bool {
+        let url = baseURL.appending(path: "api/auth/me")
+        return HTTPCookieStorage.shared.cookies(for: url)?.contains { $0.name == "toward_us_session" } == true
+    }
+
+    func restoreIdentity() async throws -> PinkyIdentity {
+        let bytes = try await request("/api/auth/me", using: restoreSession)
+        return try JSONDecoder().decode(PinkyIdentity.self, from: bytes)
     }
 
     func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
@@ -143,7 +159,8 @@ struct PinkyAPI: Sendable {
         method: String = "GET",
         query: [URLQueryItem] = [],
         payload: Data? = nil,
-        contentType: String? = nil
+        contentType: String? = nil,
+        using requestSession: URLSession? = nil
     ) async throws -> Data {
         guard path.hasPrefix("/api/"),
               let endpoint = URLComponents(string: path), endpoint.host == nil,
@@ -163,7 +180,7 @@ struct PinkyAPI: Sendable {
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
 
-        let (data, incoming) = try await session.data(for: request)
+        let (data, incoming) = try await (requestSession ?? session).data(for: request)
         guard let response = incoming as? HTTPURLResponse else {
             throw PinkyAPIError(statusCode: 0, message: "Pinky sent an unexpected response.")
         }

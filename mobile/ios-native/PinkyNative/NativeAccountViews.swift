@@ -24,83 +24,270 @@ private struct NativeWarning: View {
 struct NativeAuthView: View {
     @ObservedObject var account: PinkyAccount
     @Binding var language: PinkyLanguage
+    @Environment(\.colorScheme) private var colorScheme
+    @FocusState private var focus: Field?
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
     @State private var creating = false
     @State private var recovery = false
+    @State private var showingPassword = false
+    @State private var validation: String?
 
+    private enum Field: Hashable { case name, email, password, visiblePassword }
+
+    private var accent: Color {
+        colorScheme == .dark ? Color(red: 0.67, green: 0.76, blue: 1) : Color(red: 0.03, green: 0.22, blue: 0.65)
+    }
+    private var canvas: Color {
+        colorScheme == .dark ? Color(uiColor: .systemBackground) : Color(red: 0.98, green: 0.96, blue: 0.93)
+    }
+    private var surface: Color {
+        colorScheme == .dark ? Color(uiColor: .secondarySystemBackground) : .white
+    }
+    private var title: String {
+        creating ? language.text("创建账号", "Create your account", "Crea tu cuenta")
+                 : language.text("欢迎回来", "Welcome back", "Hola de nuevo")
+    }
+    private var action: String {
+        creating ? language.text("创建账号", "Create account", "Crear cuenta")
+                 : language.text("登录", "Sign in", "Iniciar sesión")
+    }
+    private var emailLabel: String { language.text("邮箱", "Email", "Correo") }
+    private var passwordLabel: String { language.text("密码", "Password", "Contraseña") }
+    private var nameLabel: String { language.text("你的称呼", "Your name", "Tu nombre") }
+    private var passwordFocus: Field { showingPassword ? .visiblePassword : .password }
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    if creating {
-                        TextField(language.text("你的称呼", "Your name", "Tu nombre"), text: $name)
-                            .textContentType(.givenName)
-                    }
-                    TextField(language.text("邮箱", "Email", "Correo"), text: $email)
-                        .keyboardType(.emailAddress)
-                        .textContentType(.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("pinky-email")
-                    SecureField(language.text("密码", "Password", "Contraseña"), text: $password)
-                        .textContentType(creating ? .newPassword : .password)
-                        .accessibilityIdentifier("pinky-password")
-                } header: {
-                    Text(creating ? language.text("创建账号", "Create an account", "Crea una cuenta") : language.text("登录", "Sign in", "Iniciar sesión"))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 30) {
+                HStack(spacing: 11) {
+                    Image("PinkyMark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 45, height: 45)
+                        .clipShape(.rect(cornerRadius: 13))
+                        .accessibilityHidden(true)
+                    Text("Pinky")
+                        .font(.title2.bold())
+                    Spacer()
+                    NativeLanguageMenu(language: $language)
+                        .frame(minHeight: 44)
+                        .disabled(account.busy)
                 }
 
-                Section {
-                    Button {
-                        Task {
-                            let success = await account.authenticate(email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                                     password: password, name: creating ? name : nil,
-                                                                     language: language)
-                            if success { password = "" }
-                        }
-                    } label: {
-                        if account.busy {
-                            ProgressView()
-                        } else {
-                            Text(creating ? language.text("创建账号", "Create account", "Crear cuenta") : language.text("登录", "Sign in", "Iniciar sesión"))
-                        }
-                    }
-                    .accessibilityIdentifier("pinky-auth-submit")
-                    .disabled(account.busy || email.isEmpty || password.isEmpty || (creating && (name.trimmingCharacters(in: .whitespaces).isEmpty || password.count < 10)))
-                    NativeWarning(message: account.warning)
-                    if account.identity == nil && account.warning != nil {
-                        Button(language.text("重新连接", "Reconnect", "Reconectar")) {
-                            Task { await account.restore() }
-                        }
-                    }
-                }
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(title)
+                        .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
 
-                Section {
-                    Button(creating ? language.text("已有账号，去登录", "I already have an account", "Ya tengo una cuenta")
-                           : language.text("创建 Pinky 账号", "Create a Pinky account", "Crear una cuenta Pinky")) {
-                        creating.toggle()
-                        password = ""
-                        account.clearWarning()
+                    VStack(alignment: .leading, spacing: 15) {
+                        if creating { nameInput }
+                        emailInput
+                        passwordInput
                     }
+
                     if !creating {
-                        Button(language.text("忘记密码", "Forgot password", "Olvidé la contraseña")) {
-                            account.clearWarning()
+                        Button(language.text("忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")) {
+                            focus = nil
+                            resetMessages()
                             recovery = true
                         }
+                        .frame(minHeight: 44)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .disabled(account.busy)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.top, -12)
                     }
+
+                    if let message = validation ?? account.warning {
+                        VStack(alignment: .leading, spacing: 3) {
+                            NativeWarning(message: message)
+                            if validation == nil && account.restoreFailed {
+                                Button(language.text("重试连接", "Try connecting again", "Volver a conectar")) {
+                                    Task { await account.restore() }
+                                }
+                                .frame(minHeight: 44)
+                            }
+                        }
+                    }
+                    submitButton
                 }
-            }
-            .navigationTitle("Pinky")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { NativeLanguageMenu(language: $language) }
-            }
-            .sheet(isPresented: $recovery, onDismiss: account.clearWarning) {
-                NavigationStack {
-                    NativeRecoveryView(account: account, initialEmail: email, language: language)
+
+                VStack(spacing: 0) {
+                    Text(creating ? language.text("已经有账号？", "Already have an account?", "¿Ya tienes una cuenta?")
+                                  : language.text("第一次使用 Pinky？", "New to Pinky?", "¿Primera vez en Pinky?"))
+                        .foregroundStyle(.secondary)
+                    Button(creating ? language.text("去登录", "Sign in", "Inicia sesión")
+                                    : language.text("创建账号", "Create an account", "Crea una cuenta")) {
+                        focus = nil
+                        creating.toggle()
+                        password = ""
+                        showingPassword = false
+                        resetMessages()
+                    }
+                    .fontWeight(.semibold)
+                    .frame(minHeight: 44)
+                    .disabled(account.busy)
                 }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: 460)
+            .padding(.horizontal, 26)
+            .padding(.top, 22)
+            .padding(.bottom, 22)
+            .frame(maxWidth: .infinity)
+        }
+        .background(canvas.ignoresSafeArea())
+        .tint(accent)
+        .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $recovery, onDismiss: account.clearWarning) {
+            NavigationStack {
+                NativeRecoveryView(account: account, initialEmail: email, language: language)
             }
         }
+    }
+
+    private var nameInput: some View {
+        field(nameLabel, highlighted: focus == .name) {
+            TextField(nameLabel, text: $name, prompt: Text(language.text("你希望我们怎么称呼你", "What should we call you?", "¿Cómo te llamamos?")))
+                .textContentType(.givenName)
+                .submitLabel(.next)
+                .focused($focus, equals: .name)
+                .onSubmit { focus = .email }
+        }
+    }
+
+    private var emailInput: some View {
+        field(emailLabel, highlighted: focus == .email) {
+            TextField(emailLabel, text: $email, prompt: Text(verbatim: "name@example.com"))
+                .keyboardType(.emailAddress)
+                .textContentType(.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("pinky-email")
+                .submitLabel(.next)
+                .focused($focus, equals: .email)
+                .onSubmit { focus = passwordFocus }
+        }
+    }
+
+    private var passwordInput: some View {
+        field(passwordLabel, highlighted: focus == passwordFocus) {
+            HStack(spacing: 8) {
+                Group {
+                    if showingPassword {
+                        TextField(passwordLabel, text: $password, prompt: Text(passwordPrompt))
+                            .focused($focus, equals: .visiblePassword)
+                    } else {
+                        SecureField(passwordLabel, text: $password, prompt: Text(passwordPrompt))
+                            .focused($focus, equals: .password)
+                    }
+                }
+                .textContentType(creating ? .newPassword : .password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("pinky-password")
+                .submitLabel(creating ? .go : .done)
+                .onSubmit(submit)
+
+                Button {
+                    let wasFocused = focus == passwordFocus
+                    showingPassword.toggle()
+                    if wasFocused { focus = passwordFocus }
+                } label: {
+                    Image(systemName: showingPassword ? "eye.slash" : "eye")
+                        .font(.body)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(showingPassword ? language.text("隐藏密码", "Hide password", "Ocultar contraseña")
+                                                     : language.text("显示密码", "Show password", "Mostrar contraseña"))
+            }
+        }
+    }
+
+    private var passwordPrompt: String {
+        creating ? language.text("至少 10 个字符", "At least 10 characters", "Al menos 10 caracteres")
+                 : language.text("输入密码", "Enter your password", "Escribe tu contraseña")
+    }
+
+    private func field<Content: View>(_ label: String, highlighted: Bool, @ViewBuilder input: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .accessibilityHidden(true)
+            input()
+                .padding(.leading, 15)
+                .padding(.trailing, 10)
+                .frame(minHeight: 54)
+                .background(surface, in: .rect(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(highlighted ? accent : Color.primary.opacity(0.16), lineWidth: highlighted ? 2 : 1)
+                        .allowsHitTesting(false)
+                }
+                .disabled(account.busy)
+        }
+    }
+
+    private var submitButton: some View {
+        Button(action: submit) {
+            HStack(spacing: 9) {
+                if account.busy { ProgressView().tint(colorScheme == .dark ? .black : .white) }
+                Text(account.busy ? language.text("请稍候…", "Please wait…", "Espera un momento…") : action)
+                    .font(.headline)
+            }
+            .foregroundStyle(colorScheme == .dark ? Color.black : .white)
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .background(accent, in: .rect(cornerRadius: 14))
+            .contentShape(.rect(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("pinky-auth-submit")
+        .disabled(account.busy)
+    }
+
+    private func submit() {
+        guard !account.busy else { return }
+        if creating && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            validation = language.text("请输入你的称呼。", "Enter your name.", "Escribe tu nombre.")
+            focus = .name
+            return
+        }
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let emailParts = trimmedEmail.split(separator: "@", omittingEmptySubsequences: false)
+        guard emailParts.count == 2, emailParts.allSatisfy({ !$0.isEmpty }),
+              !trimmedEmail.contains(where: \.isWhitespace) else {
+            validation = language.text("请检查邮箱地址。", "Check your email address.", "Revisa tu dirección de correo.")
+            focus = .email
+            return
+        }
+        guard !password.isEmpty else {
+            validation = language.text("请输入密码。", "Enter your password.", "Escribe tu contraseña.")
+            focus = passwordFocus
+            return
+        }
+        if creating && password.count < 10 {
+            validation = language.text("密码至少要有 10 个字符。", "Use at least 10 characters for your password.",
+                                       "Usa al menos 10 caracteres para tu contraseña.")
+            focus = passwordFocus
+            return
+        }
+        resetMessages()
+        focus = nil
+        showingPassword = false
+        Task {
+            let success = await account.authenticate(email: trimmedEmail, password: password, name: creating ? name : nil, language: language)
+            if success { password = "" }
+        }
+    }
+
+    private func resetMessages() {
+        validation = nil
+        account.clearWarning()
     }
 }
 
