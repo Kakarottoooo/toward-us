@@ -70,7 +70,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       if (week) void composeStory({ store, mediator, relationshipId, userId, language: lang, key: week.key, week, occasion: lang === "en" ? `their week of ${week.from} to ${week.to}` : lang === "es" ? `su semana del ${week.from} al ${week.to}` : `${week.from} 到 ${week.to} 这一周`, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
       // Every day: the first one to open Us gets today's question for both of them. The opener is looking at it, so only the
       // partner is pushed about it.
-      void askDailyQuestion({ store, mediator, relationshipId, userId, language: lang, today, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
+      void askDailyQuestion({ store, mediator, relationshipId, userId, language: lang, today, rotate: true, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
       // Promises said in Us through iMessage or a call are noticed here, a little after Us is opened.
       promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId);
     }
@@ -196,7 +196,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
 
   router.post("/together/daily/:id/answer", async (req, res) => {
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
-    const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text: req.body?.text, language: language(req), emit: (updated) => emit(updated, "together.updated") });
+    const { text, choice, drawing } = req.body || {};
+    const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text, choice, drawing, language: language(req), emit: (updated) => emit(updated, "together.updated") });
     void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "daily_answered" });
     res.json({ conversation: projectRecord(conversation, userId) });
   });
