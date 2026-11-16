@@ -62,7 +62,8 @@ export function loadGate(root = gateRoot) {
   }
   const baselinePath = join(root, "model-gate-baselines", "task65-claude.json");
   const bytes = readFileSync(baselinePath);
-  if (digest(bytes) !== config.baseline.sha256) throw Error("任务65存档哈希不符");
+  // Git's Windows checkout may expand LF to CRLF; prose/JSON content stays frozen.
+  if (digest(bytes.toString("utf8").replaceAll("\r\n", "\n")) !== config.baseline.sha256) throw Error("任务65存档哈希不符");
   const baseline = JSON.parse(bytes);
   if (baseline.sourceCommit !== config.baseline.sourceCommit || baseline.channel !== "claude" || baseline.results.length !== 40) throw Error("任务65存档来源不符");
   return { config, baseline };

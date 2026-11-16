@@ -20,6 +20,8 @@ test("an edited archived answer fails closed before model calls", () => {
   cpSync(join(gateRoot, "model-gate-baselines"), join(root, "model-gate-baselines"), { recursive: true });
   cpSync(join(gateRoot, "model-gate-cases.json"), join(root, "model-gate-cases.json"));
   const archive = join(root, "model-gate-baselines/task65-claude.json");
+  writeFileSync(archive, readFileSync(archive, "utf8").replaceAll("\n", "\r\n"));
+  assert.equal(loadGate(root).baseline.results.length, 40);
   writeFileSync(archive, readFileSync(archive, "utf8").replace('"answer":', '"changedAnswer":'));
   assert.throws(() => loadGate(root), /哈希/);
 });
