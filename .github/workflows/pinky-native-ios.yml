@@ -1,0 +1,56 @@
+name: Pinky native iOS
+
+on:
+  pull_request:
+    paths:
+      - mobile/ios-native/**
+      - .github/workflows/pinky-native-ios.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 22
+    defaults:
+      run:
+        working-directory: mobile/ios-native
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile unsigned iPhone app and widget
+        run: |
+          xcodebuild -version
+          xcodebuild -project PinkyNative.xcodeproj -scheme PinkyNative \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/pinky-device" \
+            CODE_SIGNING_ALLOWED=NO build
+          test -d "$RUNNER_TEMP/pinky-device/Build/Products/Release-iphoneos/PinkyNative.app/PlugIns/PinkyNativeWidget.appex"
+      - name: Compile simulator app and launch a clean session
+        run: |
+          device=$(xcrun simctl list devices booted --json | python3 -c 'import json, sys; print(next((d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if "iPhone" in d["name"]), ""))')
+          if [[ -z "$device" ]]; then
+            device=$(xcrun simctl list devices available --json | python3 -c 'import json, sys; print(next(d["udid"] for group in reversed(tuple(json.load(sys.stdin)["devices"].values())) for d in group if "iPhone" in d["name"] and d["isAvailable"]))')
+            xcrun simctl boot "$device"
+          fi
+          xcodebuild -project PinkyNative.xcodeproj -scheme PinkyNative \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/pinky-simulator" \
+            CODE_SIGNING_ALLOWED=NO build
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl status_bar "$device" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState unplugged --batteryLevel 100
+          xcrun simctl install "$device" "$RUNNER_TEMP/pinky-simulator/Build/Products/Debug-iphonesimulator/PinkyNative.app"
+          xcrun simctl launch "$device" us.toward.app.native
+          for _ in {1..10}; do
+            xcrun simctl io "$device" screenshot "$RUNNER_TEMP/Pinky-native-launch.png" >/dev/null
+            if curl -fsS --max-time 5 https://toward-us-private-beta.onrender.com/api/health >/dev/null; then break; fi
+          done
+          sleep 5
+          xcrun simctl io "$device" screenshot "$RUNNER_TEMP/Pinky-native-launch.png"
+          xcrun simctl terminate "$device" us.toward.app.native
+      - name: Keep simulator launch evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinky-native-simulator-launch
+          path: ${{ runner.temp }}/Pinky-native-launch.png
+          retention-days: 7
