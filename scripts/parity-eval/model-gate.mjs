@@ -81,7 +81,7 @@ export function writeRepresentativeBaseline(path, input, results) {
 export function deterministicFiles() {
   return [...new Set([
     ...readdirSync(resolve("tests")).filter(name => /^task.*-.*\.test\.mjs$/.test(name)).map(name => `tests/${name}`),
-    "tests/source-reply.test.mjs", "tests/source-rewrite.test.mjs", "tests/reply-format.test.mjs",
+    "tests/source-reply.test.mjs", "tests/source-rewrite.test.mjs", "tests/reply-format.test.mjs", "tests/chat-import.test.mjs",
     "tests/answer-fixes.test.mjs", "tests/awaited-reply.test.mjs", "tests/save-time.test.mjs",
     "tests/trust-and-drafts.test.mjs", "tests/plan-constraints.test.mjs", "tests/round4.test.mjs",
     "tests/readonly-web.test.mjs", "tests/readonly-workflow.test.mjs",

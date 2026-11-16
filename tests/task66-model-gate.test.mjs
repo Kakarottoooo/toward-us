@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, cpSync } from "nod
 import { resolve, join } from "node:path";
 import { gateSummary, loadGate, gateRoot, machineChecks, writeRepresentativeBaseline, canonical } from "../scripts/parity-eval/model-gate.mjs";
 import { primaryQuota } from "../scripts/parity-eval/model-gate-quota.mjs";
+import { prepareSourceReply } from "../server/source-reply.mjs";
+import { renderReply } from "../server/reply-contract.mjs";
 
 test("the gate freezes 40 verified main answers and 20 independent representative cases", () => {
   const { config, baseline } = loadGate();
@@ -76,4 +78,30 @@ test("Codex quota uses the latest metadata and stops at 97 percent or when readi
   assert.equal(primaryQuota(root, home).usedPercent, 96);
   writeFileSync(file, event("2026-11-02T00:00:00Z", 97));
   assert.throws(() => primaryQuota(root, home), /97%/);
+});
+
+test("standalone historical source observations remain covered by the whole-candidate replay corpus", () => {
+  const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
+  const corpus = fixture("source-selection-replay.json").rows.flatMap(row => row.events.map(event => event.text));
+  const standalone = fixture("source-rewrite-replay.json");
+  for (const event of [standalone.check, standalone.rewrite]) assert.ok(corpus.includes(event.text));
+});
+
+test("all historical rollback sequences select a whole original or rewritten answer", async () => {
+  const { events } = JSON.parse(readFileSync(new URL("./fixtures/source-rollback-replay.json", import.meta.url), "utf8"));
+  assert.equal(events.length, 9);
+  for (let index = 0; index < events.length; index += 3) {
+    const [check, rewrite, review] = events.slice(index, index + 3);
+    assert.deepEqual([check.name, rewrite.name, review.name], ["reply_source_check", "reply_format_repair", "reply_source_check"]);
+    const input = JSON.parse(check.prompt);
+    let candidate;
+    try { candidate = JSON.parse(rewrite.text); } catch { candidate = rewrite.text; }
+    let calls = 0;
+    const answer = await prepareSourceReply(input.reply, { ...input, mediator: {
+      async checkReplySources() { return { ...JSON.parse((calls++ ? review : check).text), newUnauthorizedStance: false, lostDeliverables: false }; },
+      async rewriteReply() { return candidate; },
+    } });
+    assert.ok([renderReply(input), renderReply(candidate)].includes(answer), check.case);
+    assert.ok(answer.trim());
+  }
 });
