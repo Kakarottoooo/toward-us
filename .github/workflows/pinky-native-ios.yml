@@ -38,14 +38,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/pinky-simulator" \
             CODE_SIGNING_ALLOWED=NO build
           xcrun simctl bootstatus "$device" -b
-          xcrun simctl status_bar "$device" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState unplugged --batteryLevel 100
           xcrun simctl install "$device" "$RUNNER_TEMP/pinky-simulator/Build/Products/Debug-iphonesimulator/PinkyNative.app"
           xcrun simctl launch "$device" us.toward.app.native
-          for _ in {1..10}; do
-            xcrun simctl io "$device" screenshot "$RUNNER_TEMP/Pinky-native-launch.png" >/dev/null
-            if curl -fsS --max-time 5 https://toward-us-private-beta.onrender.com/api/health >/dev/null; then break; fi
-          done
-          sleep 5
+          sleep 8
           xcrun simctl io "$device" screenshot "$RUNNER_TEMP/Pinky-native-launch.png"
           xcrun simctl terminate "$device" us.toward.app.native
       - name: Keep simulator launch evidence
