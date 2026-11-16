@@ -16,11 +16,18 @@ export function runCliProcess(command, args, ...rest) {
   const claude = /(?:^|[\\\\/])claude(?:\\.exe|\\.cmd)?$/i.test(command);
   if (claude && index >= 0 && changed[index + 1] !== 'haiku') changed[index + 1] = process.env.MODEL_GATE_MODEL;
   const job = queue.then(async () => { if (globalThis.modelGateStopped) throw Error('Model gate transport stopped; no retry');
-    const output = await native(command, changed, ...rest);
-    globalThis.modelGateTransport?.({ provider: claude ? 'claude' : 'codex', model: index >= 0 ? changed[index + 1] : null, output });
-    return output;
+    globalThis.modelGateBeforeCall?.();
+    const event = { provider: claude ? 'claude' : 'codex', model: index >= 0 ? changed[index + 1] : null };
+    try {
+      const output = await native(command, changed, ...rest);
+      globalThis.modelGateTransport?.({ ...event, output });
+      return output;
+    } catch (error) {
+      globalThis.modelGateFailure?.(error, event);
+      throw error;
+    }
   });
-  jobs.add(job); job.then(() => {}, () => { globalThis.modelGateStopped = true; }).finally(() => { jobs.delete(job); last = now(); });
+  jobs.add(job); job.catch(() => {}).finally(() => { jobs.delete(job); last = now(); });
   queue = job.catch(() => {}); return job;
 }`;
   return { url: "data:text/javascript," + encodeURIComponent(source), shortCircuit: true };

@@ -1,6 +1,6 @@
 # Pinky 对标评测
 
-## 换模型关卡（任务 66）
+## 换模型关卡（任务 66、67）
 
 `npm run gate:model -- --model <id> [--channel claude|openai] [--quick]`
 
@@ -20,9 +20,11 @@ npm run gate:model -- --model sonnet --record-baseline
 
 机器检查直接复用 `fixture.mjs` 的真实写入、双方同版本批准、隐私投影、引用定位和页面状态证据，以及产品 `checkReplyFormat` 的句数/字数/行数契约，并补充“只答时间”的格式检查；具体时间是否正确、未授权立场等语义仍由原盲评 rubric 检查，不把 quick 当语义质量证明。内容型 `completed:null` 不伪造为已完成。失败页的正确处置不代表原查询成功。
 
-完整模式将候选与同通道 main 存档按 `score.mjs` 的同一 rubric 随机 A/B 盲评：Codex 先评，赢即不输，平/输再请 Claude；单票输为有争议，不计不输。每层 12 题至少 11 题不输且无待定，机器检查全通过才 `PASS`。`--quick` 只运行回放和全部 60 题的机器检查，不调用评委；输出明确写“未盲评”，不能声称完整不输率。
+机器检查逐项与同通道存档用同一检查器重算：旧答通过、新答失败才是退步；旧答不通过、新答仍不通过列为已知缺口，新答通过列为改进。缺失的新检查视为失败；同名检查按出现次序对应。没有存档的代表题只做绝对检查、单列，不计入机器判定。非聊天文件不能送进聊天导入解析器；门槛复用 `renderAsset` 把原文渲染为图片，经真实图片读取路径输入，保留原文件文字及传输方式；正常聊天文件仍走 `/imports`。
 
-`--channel openai` 只走 ChatGPT 订阅 CLI，强制显式模型与 ChatGPT 登录方式，不使用付费密钥。完整运行在缺少同通道 main 存档时直接报告无法评测（退出码 2）；quick 可单独观察其机器表现，不借用 Claude 的对照答案。每次实际 Codex 子进程启动前读取最新会话 `rate_limits.primary.used_percent`，到 97% 或读数缺失即停止；任意订阅额度、提供方、传输或评委错误均保留部分证据并退出 2，不重试、不回退付费 API/credits。
+完整模式将候选与同通道 main 存档按 `score.mjs` 的同一 rubric 随机 A/B 盲评：Codex 先评，赢即不输，平/输再请 Claude；单票输为有争议，不计不输。每层 12 题至少 11 题不输且无待定，机器无退步才 `PASS`。`--quick` 只运行回放和全部 60 题的机器检查，不调用评委；输出明确写“未盲评”，不能声称完整不输率。报告和新旧答案均直接按 UTF-8 写入，不经 PowerShell 管道转码。
+
+`--channel openai` 只走 ChatGPT 订阅 CLI，强制显式模型与 ChatGPT 登录方式，不使用付费密钥。完整运行缺少同通道存档时以 FAIL/1 阻止切换；quick 可单独观察绝对机器表现，不借用 Claude 的对照答案。每次实际 Codex 子进程启动前读取最新会话 `rate_limits.primary.used_percent`，到 97% 或读数缺失即停止。提供方拒绝模型、认证失败、97% 截止或订阅额度错误为 UNAVAILABLE/2；产品超时、HTTP 错误、写错数据及普通传输错误记作该题失败，按退步判定并继续。不重试失败传输，同一题的后续传输会被拒绝；不会重采样已完成题，也不回退付费 API/credits。
 
 输出目录为 `work/model-gate/<UTC>/`，包括 JSON 结果、历史回放日志、逐题答案/检查、调用和用量账本。最后一行为 `GATE: PASS` / `GATE: FAIL`，无法评测为 `GATE: UNAVAILABLE`，退出码分别 0/1/2。`--fake-empty --quick --model empty` 是显式坏模型验收入口，不调用模型、不能录制基线，也不允许用它取得 PASS。
 

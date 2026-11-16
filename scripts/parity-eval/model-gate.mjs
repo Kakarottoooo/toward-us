@@ -5,6 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { checkReplyFormat } from "../../server/reply-contract.mjs";
+import { parseChatExport, ImportFormatError } from "../../server/chat-import-parsers.mjs";
 
 export const gateRoot = fileURLToPath(new URL("./", import.meta.url));
 export const digest = value => createHash("sha256").update(value).digest("hex");
@@ -12,11 +13,52 @@ export const readJson = path => JSON.parse(readFileSync(path, "utf8"));
 export const saveJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
 export const canonical = value => JSON.stringify(value).replace(/http:\/\/127\.0\.0\.1:\d+/g, "{{origin}}");
 
+export function gateUnavailable(error) {
+  return /(?:model[^\n]{0,100}(?:unavailable|unsupported|not (?:available|supported|found)|does not exist)|(?:unsupported|unknown|invalid) model|authentication|unauthorized|not logged in|login required|invalid.api.key|oauth[^\n]{0,40}(?:expired|invalid)|you.ve hit your[^\n]{0,80}limit|(?:usage|rate) limit reached|rate_limit_error|too many requests|subscription quota|credit balance|97%|额度|认证失败)/iu.test(String(error?.message || error));
+}
+export const gateFailureCode = error => error?.unavailable || gateUnavailable(error) ? 2 : 1;
+
+export function gateAttachment(item) {
+  if (item.modality !== "file") return item;
+  try { parseChatExport({ name: "synthetic-chat.txt", bytes: Buffer.from(item.assetText, "utf8") }); }
+  catch (error) {
+    if (!(error instanceof ImportFormatError)) throw error;
+    return { ...item, modality: "image" };
+  }
+  return item;
+}
+
 export function assertGateTransport(provider, output) {
   let rows;
   try { rows = [JSON.parse(output)].flat(); }
   catch { rows = String(output).split(/\r?\n/).flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } }); }
-  if (rows.some(row => row?.is_error || ["turn.failed", "error"].includes(row?.type))) throw Error(`${provider} 提供方无法完成评测，停止且不重试`);
+  const failed = rows.find(row => row?.is_error || ["turn.failed", "error"].includes(row?.type));
+  if (failed) {
+    const error = Error(`${provider} 调用失败，停止且不重试：${JSON.stringify(failed)}`);
+    error.unavailable = gateUnavailable(error);
+    throw error;
+  }
+}
+
+export function compareMachine(checks, baselineChecks = null) {
+  const indexed = list => {
+    const counts = new Map();
+    return new Map(list.map(check => {
+      const index = (counts.get(check.name) || 0) + 1; counts.set(check.name, index);
+      return [`${check.name}#${index}`, check];
+    }));
+  };
+  if (baselineChecks === null) return { baselineAvailable: false, regressions: [], knownGaps: [], improvements: [],
+    unbaselined: checks.filter(check => !check.ok) };
+  const before = indexed(baselineChecks), after = indexed(checks);
+  const compared = [...new Set([...before.keys(), ...after.keys()])].map(key => {
+    const old = before.get(key), current = after.get(key);
+    return { key, name: (current || old).name, baselineOk: old?.ok === true, newOk: current?.ok === true };
+  });
+  return { baselineAvailable: true,
+    regressions: compared.filter(check => check.baselineOk && !check.newOk),
+    knownGaps: compared.filter(check => !check.baselineOk && !check.newOk),
+    improvements: compared.filter(check => !check.baselineOk && check.newOk), unbaselined: [] };
 }
 
 // Reuse the product's literal-format contract and the harness's real-write/page checks.
@@ -33,7 +75,7 @@ export function machineChecks(item, result) {
     checks.push(...(round.sourceChecks || []).map(check => ({ name: "原问答引用定位", ...check })));
   }
   checks.push(...(evidence.checks || []), ...(evidence.privacyChecks || []));
-  if (result?.completed === false) checks.push({ name: "真实执行 state_ok", ok: false });
+  if (typeof result?.completed === "boolean") checks.push({ name: "真实执行 state_ok", ok: result.completed });
   if (item.check || item.writes) checks.push({ name: "机器状态检查存在且通过", ok: result?.completed === true });
   if (item.readonly) checks.push({ name: "只读页面状态与请求边界", ok: evidence.readonly?.machine === true });
   const effects = evidence.sideEffects || {};
@@ -46,9 +88,16 @@ export function machineChecks(item, result) {
 export function gateSummary(rows, { quick = false } = {}) {
   const layers = {};
   for (const row of rows) {
-    const layer = layers[row.layer] ||= { total: 0, machinePassed: 0, notLose: 0, loss: 0, disputed: 0, pending: 0 };
+    const layer = layers[row.layer] ||= { total: 0, machinePassed: 0, compared: 0, regressionCases: 0, knownGapCases: 0, improvementCases: 0, unbaselined: 0, judgeViolations: 0, notLose: 0, loss: 0, disputed: 0, pending: 0 };
     layer.total++;
     if (row.checks.every(check => check.ok)) layer.machinePassed++;
+    const comparison = row.comparison;
+    if (comparison?.baselineAvailable) layer.compared++;
+    else if (comparison) layer.unbaselined++;
+    if (comparison ? comparison.regressions.length : row.checks.some(check => !check.ok)) layer.regressionCases++;
+    if (comparison?.knownGaps.length) layer.knownGapCases++;
+    if (comparison?.improvements.length) layer.improvementCases++;
+    if (row.checks.some(check => check.name?.startsWith("盲评违规") && !check.ok)) layer.judgeViolations++;
     if (row.votes?.length === 1 && row.votes[0].judge === "codex" && row.votes[0].outcome === "win"
       || row.votes?.length === 2 && row.votes.every(vote => ["win", "tie"].includes(vote.outcome))) layer.notLose++;
     else if (row.votes?.length === 2 && row.votes.every(vote => vote.outcome === "loss")) layer.loss++;
@@ -56,8 +105,8 @@ export function gateSummary(rows, { quick = false } = {}) {
     else layer.pending++;
   }
   // Disputes and missing votes never enter the non-loss numerator (PROGRAM section 4).
-  return { layers, pass: rows.length > 0 && Object.values(layers).every(layer => layer.machinePassed === layer.total
-    && (quick || layer.pending === 0 && layer.notLose >= layer.total - 1)) };
+  return { layers, pass: rows.length > 0 && Object.values(layers).every(layer => layer.regressionCases === 0
+    && (quick || layer.judgeViolations === 0 && layer.pending === 0 && layer.notLose >= layer.total - 1)) };
 }
 
 export function loadGate(root = gateRoot) {
@@ -105,7 +154,7 @@ async function main() {
   mkdirSync(directory, { recursive: true });
   const report = { version: 1, startedAt: new Date().toISOString(), commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     model: values.model, channel: values.channel, quick: Boolean(values.quick), recordBaseline: Boolean(values["record-baseline"]), fakeEmpty: Boolean(values["fake-empty"]), seed: randomUUID(), results: [] };
-  let code = 2;
+  let code = 1;
   try {
     const { config, baseline } = loadGate();
     report.corpusHash = digest(JSON.stringify(config.cases));
@@ -138,27 +187,34 @@ async function main() {
       if (child.stdout) process.stdout.write(child.stdout);
       const outputPath = join(directory, "results.json");
       if (existsSync(outputPath)) report.results = readJson(outputPath);
-      if (child.status !== 0 || report.results.length !== selected.length) throw Error("模型调用、额度或评委失败，无法评测；已保存部分结果，不重试、不改用付费接口。详见 worker.log / aborted.json。");
+      if (child.status !== 0 || report.results.length !== selected.length) {
+        code = child.status === 2 ? 2 : 1;
+        throw Error("评测未完成；已保存部分结果，不重试、不改用付费接口。详见 worker.log / aborted.json。");
+      }
       report.summary = gateSummary(report.results, { quick: Boolean(values.quick) || Boolean(values["record-baseline"]) });
       if (values["record-baseline"]) {
         writeRepresentativeBaseline(extraPath, { ...report, cases: config.cases }, report.results);
         report.conclusion = "代表题基线已录制；这不是候选模型的完整质量通过证明。请审阅并提交存档。";
-      } else report.conclusion = values.quick ? "仅完成机器检查；未调用评委，不代表完整质量通过。" : "已完成机器检查及与同通道存档的盲评。";
+      } else report.conclusion = values.quick ? "仅完成相对存档机器检查；已知缺口和无存档题单列，未调用评委，不代表完整质量通过。" : "已完成相对存档机器检查及与同通道存档的盲评。";
       code = report.summary.pass ? 0 : 1;
     }
-  } catch (error) { report.conclusion = `无法评测：${error.message}`; }
+  } catch (error) { if (gateFailureCode(error) === 2) code = 2; report.conclusion = `评测未完成：${error.message}`; }
   report.endedAt = new Date().toISOString();
   report.exitCode = code;
   report.status = code === 2 ? "UNAVAILABLE" : code === 0 ? "PASS" : "FAIL";
   saveJson(join(directory, "report.json"), report);
   console.log(report.conclusion);
-  for (const [name, layer] of Object.entries(report.summary?.layers || {})) console.log(`${name}：机器 ${layer.machinePassed}/${layer.total}；不输 ${values.quick || values["record-baseline"] ? "未盲评" : `${layer.notLose}/${layer.total}`}，争议 ${layer.disputed}，待定 ${layer.pending}`);
-  for (const row of report.results) if (row.checks.some(check => !check.ok) || !values.quick && row.votes?.some(vote => vote.outcome === "loss")) {
-    console.log(`${row.id}：${row.checks.filter(check => !check.ok).map(check => check.name).join("；") || "盲评失分"}；新：${row.pinky?.answer?.slice(0, 120) || "空"}；旧：${row.baselineExcerpt || "尚无存档"}`);
+  for (const [name, layer] of Object.entries(report.summary?.layers || {})) console.log(`${name}：绝对机器 ${layer.machinePassed}/${layer.total}；对照 ${layer.compared}，退步 ${layer.regressionCases}，已知缺口 ${layer.knownGapCases}，改进 ${layer.improvementCases}，无存档 ${layer.unbaselined}；不输 ${values.quick || values["record-baseline"] ? "未盲评" : `${layer.notLose}/${layer.total}`}，争议 ${layer.disputed}，待定 ${layer.pending}`);
+  for (const row of report.results) {
+    const comparison = row.comparison;
+    const groups = comparison ? [["退步", comparison.regressions], ["已知缺口", comparison.knownGaps], ["改进", comparison.improvements], ["无存档绝对失败", comparison.unbaselined]] : [["机器失败", row.checks.filter(check => !check.ok)]];
+    if (comparison && !comparison.baselineAvailable) console.log(`${row.id}：无存档，仅作绝对检查，不计入判定`);
+    for (const [label, checks] of groups) if (checks.length) console.log(`${row.id}：${label}：${checks.map(check => check.name).join("；")}；新：${row.pinky?.answer?.slice(0, 120) || "空"}；旧：${row.baselineExcerpt || "尚无存档"}`);
+    if (!values.quick && row.votes?.some(vote => vote.outcome === "loss")) console.log(`${row.id}：盲评失分`);
   }
   console.log(`结果：${join(directory, "report.json")}`);
   console.log(`GATE: ${report.status}`);
   process.exitCode = code;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(`无法评测：${error.message}\nGATE: UNAVAILABLE`); process.exitCode = 2; });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { const code = gateFailureCode(error); console.error(`评测未完成：${error.message}\nGATE: ${code === 2 ? "UNAVAILABLE" : "FAIL"}`); process.exitCode = code; });

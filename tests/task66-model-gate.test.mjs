@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, cpSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { gateSummary, loadGate, gateRoot, machineChecks, writeRepresentativeBaseline, canonical, assertGateTransport } from "../scripts/parity-eval/model-gate.mjs";
+import { gateSummary, loadGate, gateRoot, machineChecks, compareMachine, gateFailureCode, gateAttachment, saveJson, writeRepresentativeBaseline, canonical, assertGateTransport } from "../scripts/parity-eval/model-gate.mjs";
 import { primaryQuota } from "../scripts/parity-eval/model-gate-quota.mjs";
 import { prepareSourceReply } from "../server/source-reply.mjs";
 import { renderReply } from "../server/reply-contract.mjs";
@@ -111,4 +111,91 @@ test("provider errors inside successful CLI output stop evaluation before a fall
   assert.throws(() => assertGateTransport("codex", '{"type":"thread.started"}\n{"type":"turn.failed","error":{"message":"unsupported model"}}'), /停止且不重试/);
   assert.doesNotThrow(() => assertGateTransport("claude", '{"type":"result","is_error":false,"result":"ok"}'));
   assert.doesNotThrow(() => assertGateTransport("codex", '{"type":"turn.completed","usage":{}}'));
+});
+
+test("identical archived answers pass even when both have known machine gaps", () => {
+  const { config, baseline } = loadGate();
+  const rows = config.cases.filter(item => item.set === "practice").map(item => {
+    const checks = machineChecks(item, baseline.results.find(row => row.id === item.id).pinky);
+    return { layer: item.layer, checks, comparison: compareMachine(checks, checks) };
+  });
+  assert.ok(rows.some(row => row.comparison.knownGaps.length));
+  assert.equal(gateSummary(rows, { quick: true }).pass, true);
+  assert.ok(rows.every(row => row.comparison.regressions.length === 0));
+});
+
+test("an archived pass becoming a failed or missing check fails; improvements and unbaselined cases are separate", () => {
+  const before = [{ name: "真实写入", ok: true }, { name: "回复契约", ok: false }];
+  const checks = [{ name: "真实写入", ok: false }, { name: "回复契约", ok: true }];
+  const comparison = compareMachine(checks, before);
+  assert.deepEqual(comparison.regressions.map(row => row.name), ["真实写入"]);
+  assert.deepEqual(comparison.improvements.map(row => row.name), ["回复契约"]);
+  assert.equal(gateSummary([{ layer: "tools", checks, comparison }], { quick: true }).pass, false);
+  assert.equal(compareMachine([], before).regressions.length, 1);
+  const missing = compareMachine(checks);
+  assert.equal(missing.baselineAvailable, false);
+  assert.equal(missing.unbaselined.length, 1);
+  assert.equal(gateSummary([{ layer: "tools", checks, comparison: missing }], { quick: true }).pass, true);
+  const duplicate = compareMachine([{ name: "引用", ok: true }], [{ name: "引用", ok: true }, { name: "引用", ok: true }]);
+  assert.equal(duplicate.regressions.length, 1);
+});
+
+test("provider rejection is UNAVAILABLE/2; product timeouts, errors and malformed writes are FAIL/1", () => {
+  for (const payload of [
+    { type: "result", is_error: true, result: "model unavailable" },
+    { type: "turn.failed", error: { message: "unsupported model" } },
+    { type: "error", error: { message: "authentication failed" } },
+  ]) {
+    try { assertGateTransport("test", JSON.stringify(payload)); assert.fail("must reject"); }
+    catch (error) { assert.equal(gateFailureCode(error), 2); }
+  }
+  for (const message of ["CLI timed out after 90000ms", "HTTP 503", "HTTP 422", "wrong reminder data"]) assert.equal(gateFailureCode(Error(message)), 1);
+  assert.equal(gateFailureCode(Error("Codex primary 额度已达 97%")), 2);
+  assert.equal(gateFailureCode(Error("subscription quota error")), 2);
+});
+
+test("reports preserve UTF-8 Chinese in new and archived answer columns", () => {
+  const root = mkdtempSync(resolve("work", "gate-utf8-"));
+  const file = join(root, "report.json"), value = { conclusion: "已知缺口", pinky: { answer: "仪式改为18:18开始。" }, baselineExcerpt: "原答：18:08。" };
+  saveJson(file, value);
+  const decoded = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(file));
+  assert.deepEqual(JSON.parse(decoded), value);
+  assert.equal(decoded.includes("???"), false);
+});
+
+test("non-chat files use the existing asset renderer without changing their source or the chat-file route", async () => {
+  const { renderAsset } = await import("../scripts/parity-eval/external-cases.mjs");
+  const { config } = loadGate();
+  const chat = config.cases.find(item => item.id === "interaction-file-chat");
+  assert.equal(gateAttachment(chat), chat);
+  const document = config.cases.find(item => item.id === "h7-int-file-venue-time-only");
+  const attachment = gateAttachment(document);
+  assert.equal(attachment.modality, "image");
+  assert.equal(document.modality, "file");
+  assert.equal(attachment.assetText, document.assetText);
+  assert.deepEqual(attachment.probe, document.probe);
+  const file = await renderAsset(attachment, mkdtempSync(resolve("work", "gate-file-")));
+  assert.deepEqual([...readFileSync(file).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+});
+
+test("a real transport timeout fails only its case, suppresses retries and permits the next case", async () => {
+  const { resolve: loaderResolve } = await import("../scripts/parity-eval/model-gate-loader.mjs");
+  const { url } = await loaderResolve("cli-process", {}, async () => ({ url: new URL("../server/cli-process.mjs", import.meta.url).href }));
+  const { runCliProcess } = await import(url);
+  const keys = ["modelGateBeforeCall", "modelGateFailure", "modelGateTransport", "modelGateDrain", "modelGateStopped"];
+  const saved = Object.fromEntries(keys.map(key => [key, globalThis[key]]));
+  let current = "first", calls = 0;
+  const failures = new Map();
+  globalThis.modelGateBeforeCall = () => { if (failures.has(current)) throw failures.get(current); calls++; };
+  globalThis.modelGateFailure = error => { assert.equal(gateFailureCode(error), 1); failures.set(current, error); };
+  globalThis.modelGateTransport = event => assertGateTransport(event.provider, event.output);
+  try {
+    await assert.rejects(runCliProcess(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], "", process.cwd(), 30), /timed out/);
+    await assert.rejects(runCliProcess(process.execPath, ["-e", "throw Error('must not run')"], "", process.cwd(), 1000), /timed out/);
+    assert.equal(calls, 1);
+    assert.equal(globalThis.modelGateStopped, undefined);
+    current = "second";
+    assert.equal(await runCliProcess(process.execPath, ["-e", "process.stdout.write('正常中文')"], "", process.cwd(), 2000), "正常中文");
+    assert.equal(calls, 2);
+  } finally { for (const key of keys) if (saved[key] === undefined) delete globalThis[key]; else globalThis[key] = saved[key]; }
 });

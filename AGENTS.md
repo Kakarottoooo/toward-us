@@ -27,7 +27,10 @@ Before making substantial visual changes, use the Product Design plugin's `get-c
 
 Before changing a model, prompts, the harness, or model-related dependencies, run
 `npm run gate:model -- --model <id> --channel claude|openai`.
-Only a full `GATE: PASS` permits switching. `FAIL`, `UNAVAILABLE`, and a quick-only
+Machine checks fail only on regressions from a passing archived check; known
+archive gaps and unbaselined absolute checks are listed separately. Product
+timeouts/errors fail that case; only provider rejection, authentication or quota
+failures are UNAVAILABLE. Only a full `GATE: PASS` permits switching. `FAIL`, `UNAVAILABLE`, and a quick-only
 result do not authorize a switch. `--quick` runs historical deterministic replay
 and machine checks for all 60 fixed cases without judges. Before the first full
 Claude run, record the missing representative baseline with
@@ -35,7 +38,7 @@ Claude run, record the missing representative baseline with
 Do not record it during TASK-66. The immutable 40-answer archive comes from main
 `de725b8`; never substitute answers from rejected PR #197. OpenAI requires an
 explicit model and same-channel main answers; missing/provider-unavailable
-evidence exits 2 without paid API or credits fallback. See
+evidence blocks switching without paid API or credits fallback. See
 `scripts/parity-eval/README.md` for provenance, commands, and limits.
 
 - Treat a reproducible product bug report as authorization to diagnose, fix, regression-test, deploy under existing authority, and verify production unless the user explicitly asks for analysis only.

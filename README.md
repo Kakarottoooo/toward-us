@@ -42,7 +42,7 @@ npm run gate:model -- --model sonnet --channel claude
 npm run gate:model -- --model sonnet --quick
 ```
 
-只有完整运行的 `GATE: PASS` 才允许切换；`FAIL`、`UNAVAILABLE` 和仅 quick 的结果都不能作为切换批准。结果保存到 `work/model-gate/<UTC>/report.json`，退出码为 0（通过）、1（失败）、2（无法评测）。机器检查任何失败即不通过；完整盲评每层 12 题最多允许 1 题不进入“不输”分子，有争议不算不输。
+只有完整运行的 `GATE: PASS` 才允许切换；`FAIL`、`UNAVAILABLE` 和仅 quick 的结果都不能作为切换批准。结果保存到 `work/model-gate/<UTC>/report.json`，退出码为 0（通过）、1（失败或证据不完整）、2（提供方拒绝、认证或额度不可用）。机器检查按相对存档退步判定：旧答通过而新答失败才 FAIL；已知缺口、改进及无存档代表题的绝对检查单列。产品超时、返回错误或写错数据属于该题失败，继续检查其余题。完整盲评每层 12 题最多允许 1 题不进入“不输”分子，有争议不算不输。
 
 练习题 40 份 Claude 产品答案已从任务 65 的 main `de725b8` 固定存档，另外每层 4 道代表题尚无 main 答案。首次正式使用前，先运行 `npm run gate:model -- --model sonnet --record-baseline`，审阅并提交补录存档；任务 66 本轮不执行补录。OpenAI 必须指定模型，当前缺少同通道 main 存档，不能拿 Claude 答案替代或退回付费 API。范围、来源与额度见 [评测说明](scripts/parity-eval/README.md)。
 

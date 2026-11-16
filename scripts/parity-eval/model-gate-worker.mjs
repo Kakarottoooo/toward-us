@@ -4,7 +4,7 @@ import { register, syncBuiltinESMExports } from "node:module";
 import childProcess from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer } from "node:http";
-import { readJson, saveJson, machineChecks, canonical, assertGateTransport } from "./model-gate.mjs";
+import { readJson, saveJson, machineChecks, compareMachine, canonical, assertGateTransport, gateUnavailable, gateFailureCode, gateAttachment } from "./model-gate.mjs";
 import { primaryQuota } from "./model-gate-quota.mjs";
 import { installCaseClock } from "./replay.mjs";
 import { renderAsset } from "./external-cases.mjs";
@@ -26,6 +26,19 @@ const { installCallGuard } = await import("./call-guard.mjs");
 const { invoke } = await import("./cli.mjs");
 const { createRelationshipRecord } = await import("../../server/relationship-domain.mjs");
 const context = new AsyncLocalStorage(), restoreClock = installCaseClock(context), results = [];
+const failures = new Map();
+globalThis.modelGateBeforeCall = () => {
+  const error = failures.get(context.getStore()?.case);
+  if (error) throw error; // No retry or fallback after this case's failed transport.
+};
+globalThis.modelGateFailure = (error, event) => {
+  appendFileSync(join(directory, "transport-errors.jsonl"), JSON.stringify({ ...context.getStore(), ...event, error: error.message, code: error.code }) + "\n");
+  if (error.unavailable || gateUnavailable([error.message, error.stdout, error.stderr].filter(Boolean).join("\n"))) {
+    globalThis.modelGateStopped = true;
+    guard.stop(`${event.provider} 提供方拒绝、认证或额度失败，停止且不重试`);
+  }
+  failures.set(context.getStore()?.case, error);
+};
 globalThis.modelGateTransport = event => {
   appendFileSync(join(directory, "transport.jsonl"), JSON.stringify({ ...context.getStore(), ...event }) + "\n");
   assertGateTransport(event.provider, event.output);
@@ -97,15 +110,22 @@ try {
     if (old && (canonical(item.question) !== canonical(old.question)
       || canonical(item.visible) !== canonical(Object.fromEntries(Object.entries(old.visible).filter(([key]) => key !== "publicPages"))))) throw Error(`存档问题或可见资料不同：${item.id}`);
     const row = { id: item.id, layer: item.layer, question: item.question, visible: item.visible, checks: [], votes: [], baselineExcerpt: old?.pinky.answer?.slice(0, 160) || null };
+    const baselineChecks = old ? machineChecks(item, old.pinky) : null;
     const root = join(directory, item.id); mkdirSync(root, { recursive: true });
     if (input.fakeEmpty) row.pinky = { answer: "", completed: false, evidence: {} };
     else {
-      const picture = await renderAsset(item, root);
       try { row.pinky = await context.run({ case: item.id, phase: "product", clock }, async () => {
+        // Non-chat documents cannot be parsed by /imports. Preserve every source
+        // line and use the existing image reader; never invent a chat export.
+        const attachment = gateAttachment(item);
+        if (attachment !== item) row.attachment = { originalModality: "file", transport: "renderAsset:image", text: item.assetText };
+        const picture = await renderAsset(attachment, root);
         const setup = await harness.setup(item);
         if (item.readonly && setup.partner) await harness.store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: null,
           userId: setup.partner.user.id, visibility: "private", aiAccessScope: "private", kind: "profile", text: "PARTNER_PRIVATE_CANARY_09" }));
-        return harness.ask(setup, item, picture);
+        const answer = await harness.ask(setup, attachment, picture);
+        const failure = failures.get(item.id);
+        return failure ? { ...answer, error: failure.message, completed: false } : answer;
       }); } catch (error) {
         if (globalThis.modelGateStopped) throw error;
         row.pinky = { answer: "", error: error.message, completed: false, evidence: {} };
@@ -123,13 +143,14 @@ try {
         row.visible.publicPages = observations;
         if (old?.visible.publicPages) {
           const stable = list => list.map(({ url, status, title, text, structured, fields }) => ({ url, status, title, text, structured, fields }));
-          if (canonical(stable(observations)) !== canonical(stable(old.visible.publicPages))) row.checks.push({ name: "冻结网页观察一致", ok: false });
+          row.checks.push({ name: "冻结网页观察一致", ok: canonical(stable(observations)) === canonical(stable(old.visible.publicPages)) });
+          baselineChecks.push({ name: "冻结网页观察一致", ok: true });
         }
       }
-      if (picture) item.visible = { ...row.visible, imageText: item.assetText };
     }
     row.checks.push(...machineChecks(item, row.pinky));
-    if (!input.quick && !input.recordBaseline && row.checks.every(check => check.ok)) {
+    row.comparison = compareMachine(row.checks, baselineChecks);
+    if (!input.quick && !input.recordBaseline && row.comparison.regressions.length === 0) {
       if (!old?.pinky?.answer) throw Error(`同通道存档缺失：${item.id}`);
       for (const judge of ["codex", "claude"]) {
         if (judge === "claude" && row.votes[0].outcome === "win") break;
@@ -141,12 +162,24 @@ try {
       }
     }
     results.push(row); save();
-    console.log(`${item.id}：${row.checks.every(check => check.ok) ? "机器通过" : "机器失败"}`);
+    console.log(`${item.id}：${row.comparison.baselineAvailable ? row.comparison.regressions.length ? "机器退步" : "机器无退步" : "无存档，仅作绝对检查"}`);
     if (globalThis.modelGateStopped) throw Error("调用失败，停止且不重试");
   }
   if (!input.fakeEmpty) await globalThis.modelGateDrain?.();
   if (globalThis.modelGateStopped) throw Error("后台调用失败，无法评测");
-} catch (error) { console.error(error.stack); process.exitCode = 2; }
+  // Background calls keep their originating case even if a later case is active.
+  for (const row of results) if (failures.has(row.id)) {
+    row.pinky.error = failures.get(row.id).message;
+    row.pinky.completed = false;
+    row.checks.find(check => check.name === "非空回答且无调用错误").ok = false;
+    const state = row.checks.find(check => check.name === "真实执行 state_ok");
+    if (state) state.ok = false;
+    const old = input.archived.find(item => item.id === row.id);
+    const baselineChecks = old ? machineChecks(input.selected.find(item => item.id === row.id), old.pinky) : null;
+    if (baselineChecks && row.checks.some(check => check.name === "冻结网页观察一致")) baselineChecks.push({ name: "冻结网页观察一致", ok: true });
+    row.comparison = compareMachine(row.checks, baselineChecks);
+  }
+} catch (error) { console.error(error.stack); process.exitCode = gateFailureCode(error); }
 finally {
   save(); usageListeners.delete(listener); restoreClock();
   if (harness) await harness.close();
