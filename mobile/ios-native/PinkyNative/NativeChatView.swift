@@ -8,11 +8,12 @@ struct NativeChatView: View {
     let paired: Bool
     var canReadShared = false
     var relationshipId: String? = nil
+    var playFollowup: Binding<String?> = .constant(nil)
     let onPair: () -> Void
 
     var body: some View {
         NativeChatPane(api: api, userId: userId, language: language, paired: paired,
-                       canReadShared: canReadShared, onPair: onPair)
+                       canReadShared: canReadShared, playFollowup: playFollowup, onPair: onPair)
             .id(ChatIdentity(userId: userId, relationshipId: relationshipId, paired: paired, canReadShared: canReadShared))
     }
 }
@@ -340,6 +341,7 @@ private struct ChatLane {
     let language: PinkyLanguage
     let paired: Bool
     let canReadShared: Bool
+    let playFollowup: Binding<String?>
     let onPair: () -> Void
 
     @Environment(\.scenePhase) private var scene
@@ -411,6 +413,10 @@ private struct ChatLane {
         .background(PinkyTheme.paper)
         .tint(PinkyTheme.accent)
         .onChange(of: channel) { _, _ in composing = false }
+        .onChange(of: playFollowup.wrappedValue, initial: true) { _, _ in openPlayFollowup() }
+        .onChange(of: model[.together].sending) { _, sending in
+            if !sending { openPlayFollowup() }
+        }
         .task(id: Refresh(channel: channel, language: language.rawValue, hasShared: hasShared, active: scene == .active)) {
             guard scene == .active else { return }
             let selected = channel
@@ -424,6 +430,18 @@ private struct ChatLane {
             }
         }
         .sheet(item: $review, content: shareSheet)
+    }
+
+    private func openPlayFollowup() {
+        let shared = model[.together]
+        guard paired, !shared.readOnly, !shared.sending,
+              let followup = playFollowup.wrappedValue,
+              !followup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let prior = shared.draft
+        model[.together].draft =
+            prior.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? followup : prior + "\n\n" + followup
+        channel = .together
+        playFollowup.wrappedValue = nil
     }
 
     private var boundary: some View {
