@@ -160,6 +160,10 @@ async function archiveOldestMessages(tx, conversation, userId) {
   return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = draft.messages.slice(moving.length);
     draft.archived = { chunks: seq, messages: (draft.archived?.messages || 0) + moving.length };
+    for (const message of moving) {
+      const pointer = draft.playRoundIndex?.[message.game?.deckId];
+      if (pointer?.messageId === message.id) pointer.archiveSeq = seq;
+    }
   });
 }
 
