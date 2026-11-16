@@ -54,6 +54,10 @@ export function UpcomingPage({ clear = false, language, userId = "", streak = nu
       {open && <div className="upcoming-sheet">
         <dl>
           <dt>{t("日期", "Date", "Fecha")}</dt><dd>{date(String(open.date))}</dd>
+          {typeof open.sourcePlayPlanId === "string" && typeof open.dueAt === "string" && <>
+            <dt>{t("你这里的时间", "In your time zone", "En tu zona horaria")}</dt>
+            <dd>{new Date(open.dueAt).toLocaleString(languageTag(language), { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}</dd>
+          </>}
           <dt>{t("重复", "Repeats", "Se repite")}</dt><dd>{open.recurringRule === "yearly" ? t("每年", "Every year", "Cada año") : t("只有这一次", "Just once", "Solo una vez")}</dd>
           <dt>{t("提醒", "Reminder", "Aviso")}</dt><dd>{remindBefore ? t("Pinky 会在“我们俩”里提醒你们", "Pinky reminds you both in Us", "Pinky les avisa en Nosotros") : t("没有设提醒", "No reminder", "Sin aviso")}</dd>
         </dl>

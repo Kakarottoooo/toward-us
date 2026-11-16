@@ -46,6 +46,8 @@ export function canViewRecord(record, userId) {
 export function projectRecord(record, userId) {
   if (!canViewRecord(record, userId)) return null;
   const projected = structuredClone(record);
+  // Distance cards and the short-lived touch handshake have their own member-scoped projection.
+  delete projected.playDistance;
   if (projected.ownerUserId !== userId) {
     delete projected.privateNotes;
     delete projected.estimatedCostRange;

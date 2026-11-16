@@ -1,3 +1,6 @@
+import { dailyQuestionTopicsA } from "./daily-question-topics-a.mjs";
+import { dailyQuestionTopicsB } from "./daily-question-topics-b.mjs";
+
 // Each entry is one question in three languages, with the same meaning in each.
 // Keep the subjects distinct so the daily rotation has room to skip recent questions.
 export const dailyQuestionPool = [
@@ -501,4 +504,6 @@ export const dailyQuestionPool = [
     en: "What moment from today would you share with your partner that they weren’t there to see?",
     es: "¿Qué momento de hoy compartirías con tu pareja que no pudo ver en persona?",
   },
+  ...dailyQuestionTopicsA,
+  ...dailyQuestionTopicsB,
 ];
