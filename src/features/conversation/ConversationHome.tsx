@@ -236,6 +236,24 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   useEffect(() => { void ensureSession(paired, true).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, session: true }))); }, [user.id, paired]);
   useEffect(() => { void loadTogether().finally(() => setFirstLook((current) => ({ ...current, together: true }))); }, [loadTogether]);
   useEffect(() => {
+    if (!playTogether || !paired) return;
+    const refreshVisible = () => { if (!document.hidden && navigator.onLine) void loadTogether(); };
+    let date = new Date().toDateString();
+    refreshVisible();
+    const checkDay = window.setInterval(() => {
+      if (document.hidden || !navigator.onLine) return;
+      const next = new Date().toDateString();
+      if (next !== date) { date = next; refreshVisible(); }
+    }, 60_000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    window.addEventListener("online", refreshVisible);
+    return () => {
+      window.clearInterval(checkDay);
+      document.removeEventListener("visibilitychange", refreshVisible);
+      window.removeEventListener("online", refreshVisible);
+    };
+  }, [playTogether, paired, loadTogether]);
+  useEffect(() => {
     if (!paired) return;
     const events = new EventSource("/api/relationship/events");
     events.addEventListener("relationship", (event) => { try {
@@ -583,6 +601,18 @@ ${text}` : text, target);
   };
   // Today's question still waits for this member's answer.
   const todayQuestion = together?.conversation.messages.filter((message) => message.kind === "daily_question").at(-1);
+  const leavePlayDaily = () => { if (dictating.startsWith("play-daily:")) dictate("", null); };
+  useEffect(() => {
+    if (dictating.startsWith("play-daily:") && dictating !== `play-daily:${todayQuestion?.id}`) leavePlayDaily();
+  }, [dictating, todayQuestion?.id]);
+  const renderDaily = (message: SharedMessage, inPlay = false, offline = false) => {
+    const voiceId = inPlay ? `play-daily:${message.id}` : message.id;
+    const text = message.i18n?.[language] ?? message.translations?.[language]?.text ?? message.text;
+    return <DailyQuestionCard key={message.id} questionId={message.id} question={text} answers={message.answers || {}} userId={user.id}
+      members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000}
+      askedAt={message.createdAt} listening={dictating === voiceId && voiceActive} onVoice={(append) => dictate(voiceId, append)}
+      onAnswer={(answer) => answerDaily(message.id, answer)} inPlay={inPlay} offline={offline} readOnly={inPlay && together?.readOnly} />;
+  };
   const dailyWaiting = Boolean(todayQuestion && Date.now() - Date.parse(todayQuestion.createdAt) < 86_400_000 && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2);
   // Something in Us waits for this member: an agreement they have not approved yet, or a new line from the partner or Pinky.
   const unreadUs = channel !== "us" && (dailyWaiting || Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
@@ -652,7 +682,7 @@ ${text}` : text, target);
       return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} onOpenDeck={deckId ? () => openPlayTogether(deckId) : undefined} />;
     }
     if (message.kind === "watch_check") return <WatchCheckCard key={message.id} language={language} text={text} answer={message.watchAnswer} members={together?.members || []} onAnswer={(finished) => void answerWatch(message.id, finished)} />;
-    if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} questionId={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000} askedAt={message.createdAt} listening={dictating === message.id && voiceActive} onVoice={(append) => dictate(message.id, append)} onAnswer={(answer) => answerDaily(message.id, answer)} />;
+    if (message.kind === "daily_question") return playTogether && message.id === todayQuestion?.id ? null : renderDaily(message);
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {
@@ -803,7 +833,8 @@ ${text}` : text, target);
     {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }} />}
     {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0} initialCardId={playTogether.cardId}
-      onClose={() => setPlayTogether(null)} onInvite={() => { setPlayTogether(null); if (usHidden) void shareInvite(); else switchChannel("us"); }}
+      onClose={() => { leavePlayDaily(); setPlayTogether(null); }} onInvite={() => { setPlayTogether(null); if (usHidden) void shareInvite(); else switchChannel("us"); }}
+      onRefreshDaily={() => void loadTogether()} onLeaveDaily={leavePlayDaily} renderDaily={(offline) => todayQuestion ? renderDaily(todayQuestion, true, offline) : null}
       onAskPinky={usHidden ? undefined : ({ question, own, partner: theirChoice }) => {
         const prompt = t(
           `Pinky，刚才一起玩的题是「${question}」。我选了「${own}」，TA 选了「${theirChoice}」。请给我们一个能一起试的小计划。`,
