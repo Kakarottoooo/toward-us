@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { ArrowsClockwise, GameController, LockKey, Sparkle } from "@phosphor-icons/react";
+import { ArrowsClockwise, ChatCircleDots, GameController, LockKey, Sparkle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { KeyboardTextarea, useKeyboard } from "../../mobile";
 import { QuickReply } from "./QuickReply";
 
-export type GameRound = { type: "choice" | "guess" | "truth"; options: string[]; aboutUserId: string | null; result?: { match: boolean; matched: number; played: number } };
+export type GameRound = { type: "choice" | "guess" | "truth"; options: string[]; aboutUserId: string | null; deckId?: string; result?: { match: boolean; matched: number; played: number } };
 export type GameAnswers = Record<string, { choice?: number; text: string; at: string }>;
 
 // 小游戏: one round on a card in Us. The server sends the partner's answer only once both have answered, so the card shows
 // what it was given: pick or write yours, wait for theirs, or both together with whether they matched.
-export function GameCard({ questionId, prompt, game, answers, userId, members, language, onAnswer, onAgain }: {
+export function GameCard({ questionId, prompt, game, answers, userId, members, language, onAnswer, onAgain, onOpenDeck }: {
   questionId: string; prompt: string; game: GameRound; answers: GameAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language;
-  onAnswer: (answer: { choice?: number; text?: string }) => Promise<boolean>; onAgain: () => void;
+  onAnswer: (answer: { choice?: number; text?: string }) => Promise<boolean>; onAgain: () => void; onOpenDeck?: () => void;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
@@ -46,7 +46,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
     if (!game.result) return null;
     const score = t(`默契值 ${game.result.matched}/${game.result.played}`, `In sync ${game.result.matched}/${game.result.played}`, `Sintonía ${game.result.matched}/${game.result.played}`);
     const line = game.type === "guess" ? (game.result.match ? t("猜中了！", "Guessed right!", "¡Acertaste!") : t("没猜中～", "Not quite!", "¡Casi!")) : game.result.match ? t("心有灵犀！", "Same pick!", "¡Misma elección!") : t("选得不一样～", "Different picks!", "¡Elecciones distintas!");
-    return <p className={`game-result ${game.result.match ? "is-match" : ""}`}><Sparkle size={16} weight="fill" />{line}<small>{score}</small></p>;
+    return <p className={`game-result ${game.result.match ? "is-match" : ""}`}><Sparkle size={16} weight="fill" />{line}{!game.deckId && <small>{score}</small>}</p>;
   };
   if (deferred && !mine && !revealed) return <article className="conversation-card game-card" data-testid="game-card">
     <header><GameController size={16} />{t("小游戏 · 已在此设备收起", "Game · Hidden on this device", "Juego · Oculto en este dispositivo")}</header>
@@ -68,6 +68,8 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
     {!mine && !revealed && <div className="card-actions"><button type="button" disabled={busy} onClick={() => defer(true)} data-testid="game-defer">{t("这题先不玩", "Pass on this question", "Pasar esta pregunta")}</button></div>}
     {mine && !revealed && <small className="game-wait"><LockKey size={14} />{t(`等 ${partnerName} 也答完，一起揭晓`, `Revealed together once ${partnerName} answers`, `Se revela cuando ${partnerName} también responda`)}</small>}
     {revealed && outcome()}
-    {revealed && <div className="card-actions"><button type="button" onClick={onAgain} data-testid="game-again"><ArrowsClockwise size={16} />{t("再来一局", "Play again", "Otra ronda")}</button></div>}
+    {revealed && <div className="card-actions">{onOpenDeck
+      ? <button type="button" onClick={onOpenDeck} data-testid="game-open-deck"><ChatCircleDots size={16} />{t("接着聊这题", "Keep talking", "Seguir hablando")}</button>
+      : <button type="button" onClick={onAgain} data-testid="game-again"><ArrowsClockwise size={16} />{t("再来一局", "Play again", "Otra ronda")}</button>}</div>}
   </article>;
 }

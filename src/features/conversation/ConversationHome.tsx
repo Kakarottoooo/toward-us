@@ -25,6 +25,7 @@ import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking
 import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
+import { PlayTogether } from "../games/PlayTogether";
 import { MatchInviteCard } from "../games/MatchInviteCard";
 import { PeopleRow, TogetherSheet, plainName, usePeople, type Person } from "../people/People";
 import { RecallLinks, useConversationRecall, type ConversationSource } from "./RecallHistory";
@@ -40,7 +41,7 @@ type Session = { id: string; language: Language; timezone: string; version: numb
 type Ref = Partial<ConversationSource> & { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
 type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
-type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
+type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; version?: number; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
 const AGENT_CALL = /\bpinky\b|@agent/i;
@@ -112,6 +113,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // 游戏大厅 (11-06): opened from the drawer, from a game card in Us, or from a "轮到你了" notice (?game=<id>).
   const [gameHall, setGameHall] = useState<{ match: string | null } | null>(() => { const game = new URLSearchParams(location.search).get("game"); return game ? { match: game === "hall" ? null : game } : null; });
   const openGames = (match: string | null = null) => { keyboard.hide(); setGameHall({ match }); };
+  const [playTogether, setPlayTogether] = useState<{ cardId?: string } | null>(null);
+  const openPlayTogether = (cardId?: string) => { keyboard.hide(); setPlayTogether({ cardId }); };
   const closeGames = () => { setGameHall(null); const params = new URLSearchParams(location.search); if (params.has("game")) { params.delete("game"); history.replaceState(history.state, "", `${location.pathname}${params.toString() ? `?${params}` : ""}`); } };
   const [petHidden, setPetHidden] = useState(() => { try { return localStorage.getItem(petHiddenKey(user.id)) === "1"; } catch { return false; } });
   const hidePet = (hidden: boolean) => { setPetHidden(hidden); try { if (hidden) localStorage.setItem(petHiddenKey(user.id), "1"); else localStorage.removeItem(petHiddenKey(user.id)); } catch { /* private mode */ } };
@@ -644,7 +647,10 @@ ${text}` : text, target);
       </article>;
     }
     if (message.kind === "match_invite" && message.match) return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
-    if (message.kind === "game" && message.game) return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} />;
+    if (message.kind === "game" && message.game) {
+      const deckId = message.game.deckId;
+      return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} onOpenDeck={deckId ? () => openPlayTogether(deckId) : undefined} />;
+    }
     if (message.kind === "watch_check") return <WatchCheckCard key={message.id} language={language} text={text} answer={message.watchAnswer} members={together?.members || []} onAnswer={(finished) => void answerWatch(message.id, finished)} />;
     if (message.kind === "daily_question") return <DailyQuestionCard key={message.id} questionId={message.id} question={text} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000} askedAt={message.createdAt} listening={dictating === message.id && voiceActive} onVoice={(append) => dictate(message.id, append)} onAnswer={(answer) => answerDaily(message.id, answer)} />;
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
@@ -792,10 +798,22 @@ ${text}` : text, target);
     {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
     {offerCharacter && !touring && !mascot && <OnboardingTour characterOnly language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
-    {paired && together?.pet && !petHidden && !petRoom && !gameHall && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
+    {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
     {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }} />}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
+      readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0} initialCardId={playTogether.cardId}
+      onClose={() => setPlayTogether(null)} onInvite={() => { setPlayTogether(null); if (usHidden) void shareInvite(); else switchChannel("us"); }}
+      onAskPinky={usHidden ? undefined : ({ question, own, partner: theirChoice }) => {
+        const prompt = t(
+          `Pinky，刚才一起玩的题是「${question}」。我选了「${own}」，TA 选了「${theirChoice}」。请给我们一个能一起试的小计划。`,
+          `Pinky, we just played “${question}” I chose “${own}” and my partner chose “${theirChoice}”. Give us one small plan we could try together.`,
+          `Pinky, acabamos de jugar «${question}». Yo elegí «${own}» y mi pareja «${theirChoice}». Danos un plan pequeño para probar juntos.`,
+        );
+        keyboard.hide(); setPlayTogether(null); switchChannel("us");
+        setDraft((current) => current.trim() ? `${current}\n\n${prompt}` : prompt, "us");
+      }} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onPlay={() => { setDrawer(false); openPlayTogether(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 
@@ -818,7 +836,7 @@ async function loadDrawerData(paired: boolean): Promise<DrawerData> {
   return { home, spaces, chats, alerts };
 }
 /** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
-function ConversationDrawer({ user, paired, language, data, onData, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; data: DrawerData; onData: (data: DrawerData) => void; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
+function ConversationDrawer({ user, paired, language, data, onData, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onPlay, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; data: DrawerData; onData: (data: DrawerData) => void; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onPlay: () => void; onShare: () => void; onFeedback: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   // Shown at once from what was fetched with the conversation; refreshed quietly while the drawer is open.
   const { home, spaces, chats } = data;
@@ -832,6 +850,7 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
     { key: "invite", icon: <UserPlus size={22} />, label: t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja"), onClick: onInvite },
     { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=reminders") },
   ];
+  fixed.push({ key: "play-together", icon: <ChatCircleDots size={22} />, label: t("一起玩", "Play together", "Jugar juntos"), onClick: onPlay });
   const fixedSpaces: DrawerItem[] = [
     ...(paired ? [] : [moments]),
     // Entries for features that otherwise only start by talking (founder 11-06: "我不知道怎么用，去哪里用").
