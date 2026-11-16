@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
@@ -136,10 +136,21 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // Suggestions show only when the app has just been opened, and are gone once the person starts using it (founder 11-09:
   // "一般刚打开 APP 的时候可以出现，只要开始使用了之后就会消失掉建议。或者用户可以主动问有什么建议"). No button calls them back.
   const [started, setStarted] = useState(false);
+  const [reopenedAt, setReopenedAt] = useState(0);
   // Coming back after a long time away counts as opening the app again; a quick switch away and back does not.
   useEffect(() => {
     let hiddenAt = 0;
-    const onVisibility = () => { if (document.hidden) hiddenAt = Date.now(); else if (hiddenAt && Date.now() - hiddenAt >= REOPEN_AFTER) setStarted(false); };
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+      } else if (hiddenAt) {
+        if (Date.now() - hiddenAt >= REOPEN_AFTER) {
+          setStarted(false);
+          setReopenedAt(Date.now());
+        }
+        hiddenAt = 0;
+      }
+    };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
@@ -177,7 +188,8 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [seen, setSeen] = useState<Record<string, string>>(() => { try { return JSON.parse(localStorage.getItem(threadSeenKey) || "{}"); } catch { return {}; } });
   const markSeen = (id: string) => setSeen((currentSeen) => { const next = { ...currentSeen, [id]: new Date().toISOString() }; try { localStorage.setItem(threadSeenKey, JSON.stringify(next)); } catch { /* the dot may show again */ } return next; });
   const audienceId = useId();
-  const endRef = useRef<HTMLDivElement>(null);
+  const conversationContent = useRef<HTMLElement>(null);
+  const followingLatest = useRef(true);
   const keyboard = useKeyboard();
   const recall = useConversationRecall({ channel, sessionId: session?.id, language, userId: user.id, members: together?.members || [], photos: (ids) => <Photos ids={ids} /> });
   const accessChanged = useRef(onAccessChanged); accessChanged.current = onAccessChanged;
@@ -222,6 +234,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const loadOlder = async () => {
     const before = (older?.messages[0] || together?.conversation.messages[0])?.id;
     if (!before || loadingOlder) return;
+    followingLatest.current = false;
     setLoadingOlder(true);
     try {
       const page = await relationshipApi<{ messages: SharedMessage[]; more: boolean }>(`/api/together/history?before=${encodeURIComponent(before)}&limit=50`);
@@ -292,7 +305,6 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     if (channel !== "us" || !latestUs) return;
     setSeenUs(latestUs.createdAt); try { localStorage.setItem(seenKey, latestUs.createdAt); } catch { /* The dot just shows again. */ }
   }, [channel, latestUs?.createdAt, seenKey]);
-  useEffect(() => { if (!recall.active) endRef.current?.scrollIntoView({ block: "end" }); }, [channel, session?.version, together?.conversation.messages.length, pending.me, queued.length, recall.active]);
 
   const say = (text: string) => {
     if (!("speechSynthesis" in window) || !text) return;
@@ -692,6 +704,7 @@ ${text}` : text, target);
   const privateMessages = [...shownEarlier.messages, ...(session?.messages || [])];
   const loadEarlierMe = async () => {
     if (!session || loadingEarlierMe) return;
+    followingLatest.current = false;
     setLoadingEarlierMe(true);
     try { const result = await relationshipApi<{ messages: PrivateMessage[] }>(`/api/assistant/sessions/${encodeURIComponent(session.id)}/earlier?page=${shownEarlier.page + 1}`); setEarlierMe({ sessionId: session.id, page: shownEarlier.page + 1, messages: [...result.messages, ...shownEarlier.messages] }); }
     catch (error) { setNotice((error as Error).message); } finally { setLoadingEarlierMe(false); }
@@ -709,7 +722,6 @@ ${text}` : text, target);
   // Typing, talking or sending anything (a photo included) is starting to use the app.
   useEffect(() => { if (draft.trim() || voice.listening || queued.length) setStarted(true); }, [Boolean(draft.trim()), voice.listening, queued.length]);
   const showNudge = channel === "us" && paired && wantIdeas && !draft.trim() && !voice.listening && !readOnly && Boolean(nudge);
-  useEffect(() => { if (showIdeas || showNudge) endRef.current?.scrollIntoView({ block: "end" }); }, [showIdeas, showNudge, ideas[channel].length]);
   useEffect(() => {
     if (channel !== "us" || !paired || !wantIdeas) return;
     let alive = true;
@@ -728,7 +740,33 @@ ${text}` : text, target);
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
   const extrasIn = (firstLook.ideas || !wantIdeas || coachAlone) && (firstLook.discover || readOnly || coachAlone) && (!paired || mascotLoaded);
   if (!shown.current && (firstLook.cap || firstLook.session && firstLook.together && (extrasIn || firstLook.grace))) shown.current = true;
-  if (!shown.current) return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
+  const conversationVisible = shown.current;
+  const currentThread = channel === "me" ? thread : null;
+  useLayoutEffect(() => {
+    const content = conversationContent.current;
+    const viewport = content?.closest<HTMLElement>(".mobile-scroll");
+    if (!conversationVisible || recall.active || !content || !viewport) return;
+
+    // The viewport does not exist while the opening screen is showing.
+    followingLatest.current = true;
+    const follow = () => {
+      if (followingLatest.current) viewport.scrollTop = viewport.scrollHeight;
+    };
+    const trackScroll = () => {
+      followingLatest.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+    };
+    follow();
+    viewport.addEventListener("scroll", trackScroll, { passive: true });
+    const observer = new ResizeObserver(follow);
+    observer.observe(content);
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener("scroll", trackScroll);
+    };
+  }, [conversationVisible, channel, currentThread, recall.active, reopenedAt]);
+
+  if (!conversationVisible) return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
   return <div className={`paper-screen conversation-home ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen">
     {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
@@ -750,7 +788,7 @@ ${text}` : text, target);
       {recall.controls}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
-    <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main className="conversation-thread" aria-live="polite">{recall.active ? recall.history : <>
+    <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main ref={conversationContent} className="conversation-thread" aria-live="polite">{recall.active ? recall.history : <>
       {channel === "me" ? <>{session && (session.earlierPages || 0) > shownEarlier.page && <button type="button" className="conversation-earlier" disabled={loadingEarlierMe} onClick={() => void loadEarlierMe()} data-testid="earlier-me">{loadingEarlierMe ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}{session && !privateMessages.length && !queued.length && meEmpty}{privateMessages.map((message, index) => message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask"><p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about && thread !== about.id) openThread(about.id); else if (about) open(`/?view=people&person=${encodeURIComponent(about.id)}`); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{thread !== about.id ? t("去对话", "Open chat", "Ir al chat") : t("档案", "Page", "Ficha")}</span>}</button>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span>Pinky</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}</article><RecallLinks sources={message.sources} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />{groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard)}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>)}</> :
         !paired ? invite : <>{together && !sharedMessages.length && usEmpty}
           {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()} data-testid="earlier-messages">{loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
@@ -763,7 +801,7 @@ ${text}` : text, target);
       {!readOnly && !coachAlone && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} used={discoverUsed} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=upcoming")} />}
       {showIdeas && suggest(ideas[channel], channel)}
-      <div ref={endRef} />
+      <div aria-hidden="true" />
     </>}</main></MobileScroll></div>
     <TogetherSheet language={language} person={settledOn} others={putAway} onClose={() => setTogetherPerson(null)} onInvite={() => { setTogetherPerson(null); switchChannel("us"); }} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
