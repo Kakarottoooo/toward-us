@@ -58,11 +58,10 @@ test("breakup support preserves autonomy and private deliberation instead of def
   for (const language of ["zh", "en", "es"]) {
     const prompt = assistantInstructions(language);
     assert.match(prompt, /Neither push leaving nor persuade staying/);
-    assert.match(prompt, /distinguish wants from guilt or pressure with at most one question/);
+    assert.match(prompt, /a question that separates wants from guilt or pressure may close the answer, never replace it/);
     assert.match(prompt, /Focus on whether they want the relationship, not rephrasing a boundary/);
     assert.match(prompt, /No default couples counseling, repair script or requirement to try again/);
-    assert.match(prompt, /Respect a settled decision; for wording give ONLY the complete plain private draft, no preamble or closing/);
-    assert.match(prompt, /3–5 short sentences, overriding onboarding and feature offers/);
+    assert.match(prompt, /Respect a settled decision; for wording give ONLY the complete plain private draft \(3–5 short sentences\), no preamble or closing, overriding onboarding and feature offers/);
     assert.match(prompt, /Advice\/drafting uses actions:\[\] unless asked for a sharing preview/);
     assert.match(prompt, /never suggest sharing deliberation/);
     assert.match(prompt, /Only owner-confirmed wording reaches Us, never private conversation/);
@@ -103,7 +102,8 @@ test("birthday gift advice uses visible wishes without invented prices, unsuitab
     // planner prompt cannot grow without anyone noticing what each turn costs.
     const system = `${prompt}\n${jsonInstruction(assistantTurnSchema)}`;
     // 43,500 since 11-10: bounded reply grounding rules; plan metadata is added only for constrained planning.
-    assert.ok(system.length < 43_500, `planner prompt is ${system.length} characters`);
+    // 58,000 since 11-15: the question playbooks (question-playbooks.mjs), the founder's "帮用户把问题问好" layer.
+    assert.ok(system.length < 58_000, `planner prompt is ${system.length} characters`);
   }
 });
 

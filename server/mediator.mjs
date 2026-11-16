@@ -13,7 +13,8 @@ import { meterOpenAI } from "./ai-ledger.mjs";
 
 // A person is waiting on these calls (the App shows "thinking"): about 45 s, then the fixed fallback copy, instead of a reply
 // minutes later. Only background work (`structured`: chat imports, recaps, the daily question) may take longer.
-const INTERACTIVE = { timeout: 45_000, maxRetries: 0 };
+// 90 s since 11-15: a complete analysis (question-playbooks.mjs) can take longer than 45 s, and was cut off as "Pinky 暂时不可用".
+const INTERACTIVE = { timeout: 90_000, maxRetries: 0 };
 const screenshotAnswerSchema = { type: "object", additionalProperties: false, required: ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"], properties: {
   observations: { type: "array", items: { type: "string" }, maxItems: 3 },
   uncertainties: { type: "array", items: { type: "string" }, maxItems: 3 },
@@ -118,7 +119,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
     async answerScreenshot(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
       const response = await client.responses.create({
-        model, store: false, max_output_tokens: 900,
+        model, store: false, max_output_tokens: 2600,
         text: { format: { type: "json_schema", name: "private_screenshot_advice", strict: true, schema: screenshotAnswerSchema } },
         input: [{ role: "developer", content: screenshotAdviceInstructions(language) }, { role: "user", content: JSON.stringify(context) }],
       }, INTERACTIVE);
@@ -157,7 +158,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const schema = withPhotos ? { ...baseSchema, required: [...baseSchema.required, "readChatScreenshots"], properties: { ...baseSchema.properties, readChatScreenshots: { type: "boolean" } } } : baseSchema;
       const instructions = assistantInstructions(language) + (requiresPlanDelivery(context) ? "\n" + planDeliveryInstructions : "") + (checkedPlan ? "\n" + planConstraintsInstructions : "") + (withPhotos ? "\nYou MUST set readChatScreenshots: true when the attached images are described as chat screenshots or the user asks to assess an argument, suggest a reply, or comfort them about the exchange, or asks what someone said or meant or what to do about them; the words need not say \"screenshot\". Also set it true for questions requiring the contents of a poster, invitation or document. Set it false only for ordinary photos to keep without reading their contents; when unsure, true. Never tell the user you cannot see their photo. This flag starts the screenshot reader even when actions is empty. Never say you are reading screenshots while setting it false." : "");
       const response = await client.responses.create({
-        model, store: false, max_output_tokens: checkedPlan ? 2400 : 1400,
+        model, store: false, max_output_tokens: checkedPlan ? 3600 : 3200, // room for a complete analysis (question-playbooks.mjs)
         text: { format: { type: "json_schema", name: "private_assistant_operations", strict: true, schema } },
         input: [{ role: "developer", content: instructions }, { role: "user", content: JSON.stringify(context) }],
       }, { ...INTERACTIVE, allowProseReply: false });
