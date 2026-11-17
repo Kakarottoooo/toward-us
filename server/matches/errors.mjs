@@ -17,6 +17,7 @@ export const MATCH_ERRORS = {
   match_over: ["这局已经结束了。", "This game is over.", "Esta partida terminó."],
   match_changed: ["地图已经更新，请重新选一格。", "The map changed. Pick a tile again.", "El mapa cambió. Elige una casilla de nuevo."],
   game_board_changed: ["刚刚有了新一步，请看一眼再继续。", "The game just changed. Take another look and try again.", "La partida cambió. Revísala y vuelve a intentarlo."],
+  arcade_busy: ["游戏连接有点忙，等一下再试。", "The game is busy. Try again in a moment.", "La partida está ocupada. Inténtalo en un momento."],
   date_budget_changed: ["这份约会方案刚刚更新了，请重新确认。", "The plan has changed. Review it again.", "El plan cambió. Vuelve a revisarlo."],
   date_budget_schedule: ["请选择有效的未来日期或时间。", "Choose a valid date or time in the future.", "Elige una fecha u hora futura válida."],
   forbidden_clue: ["线索里有答案或禁词，换个说法。", "Your clue includes the answer or a forbidden word. Try another way.", "Tu pista contiene la respuesta o una palabra prohibida. Prueba otra forma de decirlo."],

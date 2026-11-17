@@ -1,0 +1,94 @@
+.coop-route { width: min(100%, 430px); display: grid; gap: 9px; margin: 0 auto; min-width: 0; }
+.coop-route-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; padding-inline: 2px; }
+.coop-route-header > div { display: grid; gap: 3px; min-width: 0; }
+.coop-route-header small { display: inline-flex; align-items: center; gap: 6px; color: #426568; font-size: .78rem; font-weight: 750; }
+.coop-route-header strong { color: #263f3e; font-size: clamp(1.35rem, 5.7vw, 1.72rem); line-height: 1.08; letter-spacing: -.025em; }
+.coop-route-step { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid #dcbbab; border-radius: 99px; background: #fff2e4; color: #8c3438; font-size: .79rem; font-weight: 760; }
+.coop-route-result { display: grid; justify-items: center; gap: 5px; color: #274947; text-align: center; }
+.coop-route-result strong { font-size: 1.22rem; }
+.coop-route-result span { color: #586561; font-size: .86rem; }
+
+.pilot-road-scene {
+  position: relative; isolation: isolate; overflow: hidden; aspect-ratio: 1.64; border: 1px solid #8fafa9; border-radius: 18px;
+  background: linear-gradient(#89b8c8, #c4e0db 59%, #bacda0 59%);
+  --pilot-hills: #789b8d; --pilot-grass: #879c6d; --pilot-horizon: #a9bb87; --pilot-shoulder: #d1d3ae;
+}
+.pilot-road-scene[data-course="mountain"] { background: linear-gradient(#91adca, #d1d6ce 59%, #acb38e 59%); --pilot-hills: #7c88a1; --pilot-grass: #73846d; --pilot-horizon: #a1aa87; }
+.pilot-road-scene[data-course="desert"] { background: linear-gradient(#ae8294, #edd1ab 59%, #d6ae83 59%); --pilot-hills: #a8756d; --pilot-grass: #b17c61; --pilot-horizon: #d8a681; --pilot-shoulder: #e0b98b; }
+.pilot-road-scene > div { position: absolute; }
+.pilot-sun { width: 14%; aspect-ratio: 1; border-radius: 100%; top: 10%; right: 17%; background: #f6dfac; box-shadow: 0 0 0 9px #fff3c73d; }
+.pilot-mountains { inset: 16% 0 38%; background: var(--pilot-hills); clip-path: polygon(0 73%,12% 37%,24% 69%,44% 12%,58% 66%,69% 38%,81% 67%,94% 36%,100% 62%,100% 100%,0 100%); }
+.pilot-ground { inset: 48% 0 0; background: repeating-linear-gradient(158deg, transparent 0 30px, #fff7db13 30px 35px), linear-gradient(var(--pilot-horizon), var(--pilot-grass)); }
+.pilot-branch { top: var(--pilot-junction-y); left: 0; right: 0; height: 17%; transform: translateY(-45%) skewY(-1.5deg); background: #566059; border-block: 3px solid var(--pilot-shoulder); transition: top 90ms linear; }
+.pilot-road { inset: 43% 0 0; background: #404b49; clip-path: polygon(45% 0, 55% 0, 87% 100%, 13% 100%); }
+.pilot-road::before, .pilot-road::after { content: ""; position: absolute; top: 0; bottom: 0; width: 4px; background: #f3e7c5; }
+.pilot-road::before { left: 45%; transform: skewX(-43deg); transform-origin: top; }
+.pilot-road::after { right: 45%; transform: skewX(43deg); transform-origin: top; }
+.pilot-road i { position: absolute; top: 0; bottom: 0; left: 50%; width: 6px; transform: translateX(-50%); background: repeating-linear-gradient(to bottom, #e9dcb1 0 13px, transparent 13px 28px); background-position-y: var(--pilot-stripe-y); }
+.pilot-location { position: absolute; left: 7%; top: var(--pilot-junction-y); display: inline-flex; align-items: center; gap: 5px; max-width: 42%; padding: 4px 7px; transform: translateY(-120%); border: 1px solid #e2edd99c; border-radius: 7px; background: #23484c; color: #fff6dd; font-size: .73rem; font-weight: 760; box-shadow: 0 2px 0 #153b435a; transition: top 90ms linear; }
+.pilot-car { bottom: 10%; left: calc(50% + var(--pilot-shift) * 8%); width: 16%; min-width: 44px; height: 20%; border-radius: 9px 9px 6px 6px; border: 2px solid #8b463e; background: linear-gradient(#e29e77, #bc6558); box-shadow: -5px 5px 0 -2px #30352d, 5px 5px 0 -2px #30352d, 0 5px 0 #28392f70; transform: translateX(-50%) rotate(calc(var(--pilot-shift) * 9deg)); transition: left 140ms, transform 140ms; }
+.pilot-car i { display: block; height: 41%; margin: 12% 13% 0; border: 1px solid #83574a; border-radius: 4px 4px 2px 2px; background: #a8c7c2; }
+.pilot-car b { display: block; height: 14%; margin: 7% 11%; background: linear-gradient(90deg, #fff4bb 0 14%, transparent 14% 86%, #fff4bb 86%); }
+.pilot-road-scene[data-recovery="true"] .pilot-car { transform: translateX(-50%) rotate(-11deg); opacity: .76; }
+
+.pilot-map { min-width: 0; display: grid; margin: 0; padding: 5px 8px; list-style: none; border: 1px solid #b9c9b3; border-radius: 17px; background: repeating-linear-gradient(45deg, #e3ebd9 0 7px, #e8eee0 7px 14px); }
+.pilot-map li { position: relative; display: grid; grid-template-columns: 25px 1fr minmax(65px, auto); align-items: center; gap: 7px; min-height: 32px; padding: 3px 7px; color: #255355; }
+.pilot-map li[data-status="current"] { border-radius: 9px; background: #fffdf0; box-shadow: inset 0 0 0 1px #91a88b, 0 2px 3px #33493e18; }
+.pilot-map li[data-status="passed"] { color: #55695d; }
+.pilot-map li:not(:last-child)::after { content: ""; position: absolute; left: 18px; top: calc(50% + 10px); bottom: -8px; width: 2px; background: #829e89; }
+.pilot-map-index { z-index: 1; display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #8fa98d; border-radius: 50%; background: #edf2e5; font-size: .73rem; font-weight: 800; }
+.pilot-map li[data-status="current"] .pilot-map-index { background: #38605c; color: #f9f7e7; border-color: #375853; }
+.pilot-map-place, .pilot-map-direction { display: flex; align-items: center; gap: 4px; font-size: .82rem; font-weight: 700; }
+.pilot-map-place { flex-wrap: wrap; }
+.pilot-map-direction { justify-content: flex-end; min-width: 0; }
+.pilot-map-direction small { font-size: .71rem; }
+.pilot-map-direction svg { flex: none; }
+.pilot-approach { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #46626b; font-size: .78rem; font-weight: 700; }
+.pilot-approach progress { width: clamp(70px, 34%, 125px); height: 8px; border: 0; border-radius: 20px; background: #dbe5df; accent-color: #3b706b; }
+.pilot-approach progress::-webkit-progress-bar { border-radius: 20px; background: #dbe5df; }
+.pilot-approach progress::-webkit-progress-value { border-radius: 20px; background: #3b706b; }
+.pilot-callout { min-height: 40px; display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 10px; background: #eeece2; color: #4f5f5b; font-size: .78rem; font-weight: 650; }
+.pilot-callout[data-ready="true"] { background: #dfece1; color: #2b5147; }
+.pilot-callout[data-recovery="true"] { background: #f5ded3; color: #783d34; }
+.pilot-callout svg { flex: none; }
+.pilot-controls { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.pilot-direction-button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 53px; border: 1px solid #9eb4aa; border-radius: 11px; background: #f1f6ed; color: #2c5557; padding: 4px 1px; font-weight: 770; font-size: .79rem; }
+.pilot-direction-button[aria-pressed="true"] { border-color: #2b5c57; background: #346462; color: #fffef2; }
+.pilot-direction-button:disabled { opacity: .52; }
+.pilot-direction-button:focus-visible, .river-stroke:focus-visible { outline: 2px solid #304f51; outline-offset: 2px; }
+
+.river-scene { position: relative; isolation: isolate; aspect-ratio: 1.3; border: 1px solid #92ad96; border-radius: 18px; overflow: hidden; background: #6c997b; --river-water: #63aaa7; --river-bank: #729571; --river-white: #f7f0d0; }
+.river-scene[data-course="canyon"] { --river-water: #7fa9a7; --river-bank: #b09270; --river-white: #ffecd0; }
+.river-scene[data-course="glow"] { --river-water: #568680; --river-bank: #536f62; --river-white: #f5efba; }
+.river-bank { position: absolute; inset-block: 0; width: 15%; background: repeating-linear-gradient(115deg, #f0d59c29 0 6px, transparent 6px 21px), var(--river-bank); }
+.river-bank-left { left: 0; } .river-bank-right { right: 0; }
+.river-surface { position: absolute; inset: 0; background: radial-gradient(ellipse 23px 2px at 24% 29%,#e3f0d1a0 0 60%,transparent 80%) 0 var(--river-flow) / 113px 41px, radial-gradient(ellipse 15px 2px at 51% 81%,#d1ede3ac 0 53%,transparent 84%) 4px calc(var(--river-flow) + 15px) / 70px 58px, var(--river-water); clip-path: polygon(10% 0,91% 0,94% 18%,87% 40%,89% 55%,94% 80%,93% 100%,7% 100%,8% 81%,13% 56%,10% 40%,6% 24%); transition: background-position 75ms linear; }
+.river-rock, .river-gate, .river-boat, .river-finish-line { position: absolute; transition: top 85ms linear, left 85ms linear; }
+.river-rock { height: 6%; border-radius: 46% 33% 38% 28%; border: 1px solid #425a58; background: linear-gradient(150deg,#899d8d 0 31%,#576b64 31% 74%,#3e5955 74%); transform: translate(-50%,-50%) rotate(-9deg); box-shadow: 0 3px 0 #daebc861; }
+.river-gate { display: flex; justify-content: space-between; align-items: center; height: 3px; border-top: 2px dotted #f5f3c2e0; color: #a95344; transform: translate(-50%, -50%); }
+.river-gate[data-next="true"] { border-color: #faf6ce; color: #b73f38; }
+.river-gate[data-status="passed"] { border-color: #d8f0c5; color: #36855f; }
+.river-gate[data-status="missed"] { border-color: #dce4cd85; color: #576e68; }
+.river-gate b { display: block; width: 8px; height: 12px; border: 1px solid #4c6560a3; background: var(--river-white); border-bottom: 5px solid currentColor; border-radius: 5px; }
+.river-boat { width: 27px; height: 45px; border: 2px solid #543c34; border-radius: 45% 45% 34% 34%; background: #cf775c; transform: translate(-50%, -50%) rotate(var(--river-tilt)); box-shadow: 0 5px 0 #d5e8c685; transition: left 85ms linear, transform 130ms linear; }
+.river-boat i, .river-boat b { position: absolute; width: 12px; height: 7px; left: 5px; border-radius: 2px; background: #f4ca8d; }
+.river-boat i { top: 10px; } .river-boat b { top: 24px; }
+.river-boat span { position: absolute; width: 14px; height: 4px; border: 1px solid #4d6661; border-radius: 4px; background: #f1d2a1; transition: transform 95ms linear; }
+.river-left-oar { right: 19px; top: 15px; transform: rotate(18deg); }
+.river-right-oar { left: 19px; top: 21px; transform: rotate(-18deg); }
+.river-left-oar[data-active="true"] { transform: rotate(-25deg) translateX(-3px); }
+.river-right-oar[data-active="true"] { transform: rotate(25deg) translateX(3px); }
+.river-scene[data-boost="true"] .river-boat { box-shadow: 0 4px 0 #fff3a9, 0 9px 0 #f4e9ab96; }
+.river-finish-line { left: 10%; right: 10%; height: 10px; background: conic-gradient(#f2f3cb 25%,#3c685a 0 50%,#f2f3cb 0 75%,#3c685a 0) 0 0 / 14px 10px; transform: translateY(-50%); }
+.river-hud { display: flex; gap: 4px 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; color: #3f6260; font-size: .78rem; font-weight: 750; }
+.river-hud span,.river-stroke-panel small { display: flex; gap: 5px; align-items: center; }
+.river-hud span[data-active="true"] { color: #7b4c22; }
+.river-stroke-panel { display: grid; gap: 3px; }
+.river-stroke { display: flex; justify-content: center; min-height: 48px; min-width: 44px; touch-action: manipulation; }
+.river-stroke-panel small,.river-hint { color: #526762; font-size: .76rem; }
+.river-stroke-panel small { justify-content: center; }
+.river-hint { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pilot-road-scene *, .river-scene * { transition: none; }
+}

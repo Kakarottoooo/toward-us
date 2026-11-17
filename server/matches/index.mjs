@@ -31,6 +31,15 @@ import { liarDice } from "./liar-dice.mjs";
 import { miniGolf } from "./mini-golf.mjs";
 import { stackTower } from "./stack-tower.mjs";
 import { forbiddenWords } from "./forbidden-words.mjs";
+import { arcadeGame } from "./arcade-game.mjs";
+import { airHockey } from "./air-hockey.mjs";
+import { pinballDuo } from "./pinball-duo.mjs";
+import { blockDuel } from "./block-duel.mjs";
+import { coPilot } from "./co-pilot.mjs";
+import { riverRow } from "./river-row.mjs";
+import { greenLight } from "./green-light.mjs";
+import { minesDuo } from "./mines-duo.mjs";
+import { crazyEights } from "./crazy-eights.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
 // the same shape, so adding one is adding a module here and its screen in src/features/games:
@@ -56,6 +65,9 @@ export const GAMES = Object.freeze({
   dots: dotsBoxes, doodle: doodleRelay, jigsaw, detective: photoDetective, sokoban, battleship, kitchen, timeline, "photo-relay": photoRelay, song,
   "escape-room": escapeRoom, "spot-difference": spotDifference, "memory-pairs": memoryPairs, "date-budget": dateBudget,
   "liar-dice": liarDice, "mini-golf": miniGolf, "stack-tower": stackTower, "forbidden-words": forbiddenWords,
+  "air-hockey": arcadeGame(airHockey), "pinball-duo": arcadeGame(pinballDuo), "block-duel": arcadeGame(blockDuel),
+  "co-pilot": arcadeGame(coPilot), "river-row": arcadeGame(riverRow), "green-light": arcadeGame(greenLight),
+  "mines-duo": minesDuo, "crazy-eights": crazyEights,
 });
 export const COLLECTION = "matches";
 const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"], reversi: ["黑白棋", "Reversi", "Reversi"], connect4: ["四子棋", "Four in a row", "Cuatro en raya"], truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"], rps: ["石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"], xiangqi: ["象棋", "Chinese chess", "Ajedrez chino"], ludo: ["情侣飞行棋", "Couples' ludo", "Parchís de pareja"], soup: ["海龟汤", "Lateral puzzles", "Acertijos laterales"], hunt: ["双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"], dots: ["连点占格", "Dots and Boxes", "Puntos y cajas"], doodle: ["接力涂鸦", "Doodle Relay", "Dibujo por turnos"], jigsaw: ["双人拼图", "Jigsaw Together", "Rompecabezas en pareja"], detective: ["照片侦探", "Photo Detective", "Detective de fotos"] };
@@ -67,6 +79,10 @@ Object.assign(NAMES, {
   "memory-pairs": ["翻牌搭档", "Memory Match Together", "Parejas de memoria"], "date-budget": ["约会拼预算", "Budget a Date", "Una cita con presupuesto"],
   "liar-dice": ["吹牛骰子", "Liar's Dice", "Dados mentirosos"], "mini-golf": ["迷你高尔夫", "Mini Golf", "Minigolf"],
   "stack-tower": ["双人叠塔", "Stack a Tower", "Construyan una torre"], "forbidden-words": ["禁词猜词", "Forbidden Words", "Palabras prohibidas"],
+  "air-hockey": ["双人冰球", "Air Hockey", "Hockey de aire"], "pinball-duo": ["双人弹珠台", "Two-Player Pinball", "Pinball en pareja"],
+  "block-duel": ["方块对战", "Block Duel", "Duelo de bloques"], "co-pilot": ["你指挥我开车", "You Navigate, I Drive", "Tú guías, yo conduzco"],
+  "river-row": ["双人划船", "Row Together", "Remen juntos"], "green-light": ["绿灯抢拍", "Green Light", "Luz verde"],
+  "mines-duo": ["双人扫雷", "Minesweeper Together", "Buscaminas en pareja"], "crazy-eights": ["疯狂八点", "Crazy Eights", "Ochos locos"],
 });
 export const gameName = (game, language) => { const names = NAMES[game] || [game, game, game]; return language === "en" ? names[1] : language === "es" ? names[2] : names[0]; };
 
@@ -166,7 +182,7 @@ export async function createMatch({ store, userId, game, pet = false }) {
 
 /** One move (or resign, end, ...) by a player. Returns the match and whose turn it was before. `as` is PET for 小家伙's moves,
  * made in the name of the member playing with it. */
-export async function actOnMatch({ store, userId, matchId, action, as = userId, expectedGame }) {
+export async function actOnMatch({ store, userId, matchId, action, as = userId, expectedGame, arcadeInternal = false }) {
   const initial = await store.getRelationshipContext(userId);
   if (!initial) throw matchError(409, "pairing_required");
   return store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
@@ -185,7 +201,7 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId, 
     const timedResult = kitchenResult(match, now);
     if (action?.type === "abandon" && !timedResult) return endMatch(tx, { match, userId, as, context });
     const move = module.prepareAction ? await module.prepareAction({ tx, match, userId, action }) : action;
-    let state = timedResult || module.act(match.state, { userId: as, action: move, now });
+    let state = timedResult || module.act(match.state, { userId: as, action: move, now, arcadeInternal });
     if (match.game === "photo-relay" && state === match.state) return { match, unchanged: true };
     if ((match.game === "detective" && action?.type === "create_clue") || (match.game === "jigsaw" && action?.type === "photo")) {
       const photo = await requireGamePhoto(tx, { userId, relationshipId: match.relationshipId, photoId: action.photoId });

@@ -6,9 +6,11 @@ import { BOTH, MATCH_ERRORS, matchError } from "./matches/errors.mjs";
 import { listGamePhotos, readGamePhoto, requireGamePhoto } from "./matches/photo-game-media.mjs";
 import { readPhotoRelayMedia } from "./matches/photo-relay.mjs";
 import { readSpotImage } from "./matches/spot-difference.mjs";
+import { mountArcadeRooms } from "./matches/arcade-room.mjs";
 
 const invitePush = new Set(["hunt", "dots", "doodle", "jigsaw", "detective", "sokoban", "battleship", "kitchen", "timeline", "photo-relay", "song",
-  "escape-room", "spot-difference", "memory-pairs", "date-budget", "liar-dice", "mini-golf", "stack-tower", "forbidden-words"]);
+  "escape-room", "spot-difference", "memory-pairs", "date-budget", "liar-dice", "mini-golf", "stack-tower", "forbidden-words",
+  "air-hockey", "pinball-duo", "block-duel", "co-pilot", "river-row", "green-light", "mines-duo", "crazy-eights"]);
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
@@ -21,6 +23,13 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     if (conversation) emit(conversation, "together.updated", null, userId);
   };
   router.use("/matches", (req, res, next) => req.auth ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") }));
+  const arcade = mountArcadeRooms(router, {
+    store, games: GAMES,
+    persist: async ({ userId, matchId, game, action }) => {
+      const { match } = await actOnMatch({ store, userId, matchId, action, expectedGame: game, arcadeInternal: true });
+      if (match.status === "finished") emit(match, "match.updated");
+    },
+  });
 
   router.get("/matches", async (req, res) => {
     const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);
@@ -121,6 +130,7 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     const userId = req.auth.user.id;
     const { match, before, conversation, milestone, unchanged } = await actOnMatch({ store, userId, matchId: req.params.id, action, expectedGame });
     if (unchanged) return res.json({ match: viewMatch(match, userId) });
+    if (match.status === "ended" && GAMES[match.game]?.live) arcade.close(match.id);
     if (conversation) emit(conversation, "together.updated", null, userId);
     if (milestone) emit(milestone, "milestone.updated");
     if (withPet(match)) { const after = await autoTurn(req, match); return res.json({ match: viewMatch(after, userId) }); }

@@ -1,0 +1,12 @@
+.arcade-stage { display: grid; gap: 10px; width: min(100%, 460px); margin: 0 auto; }
+.arcade-stage-status { display: flex; align-items: center; gap: 10px; min-height: 41px; }
+.arcade-stage-status > span { flex: 1; color: #5c514a; font-size: .85rem; font-weight: 680; }
+.arcade-stage-status time { font-size: .94rem; font-weight: 760; font-variant-numeric: tabular-nums; }
+.arcade-stage-pause { min-height: 44px; }
+.arcade-stage-board { position: relative; min-width: 0; }
+.arcade-stage-count { display: grid; place-items: center; position: absolute; inset: 0; z-index: 4; border-radius: 20px; color: #fffdf4; background: #18282191; font-size: 5rem; font-weight: 810; font-variant-numeric: tabular-nums; pointer-events: none; }
+.arcade-stage-instructions { margin: 0; color: #5e554d; font-size: .91rem; line-height: 1.4; }
+.arcade-stage > button, .arcade-stage-result > button { min-height: 44px; justify-content: center; }
+.arcade-stage-result { display: grid; gap: 7px; padding: 13px; border: 1px solid #dfd0bd; border-radius: 16px; background: #f7edde; color: #3b322e; }
+.arcade-stage-result strong { font-size: 1.22rem; }
+.arcade-stage-result p { margin: 0 0 4px; color: #65574b; }

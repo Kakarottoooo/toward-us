@@ -1,0 +1,106 @@
+.sports-game {
+  display: grid;
+  gap: .65rem;
+  width: min(100%, 22rem, 42svh);
+  margin-inline: auto;
+}
+
+.sports-board {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.2rem;
+  user-select: none;
+}
+
+.sports-score {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .3rem;
+  color: #243f42;
+}
+
+.sports-score > div { display: grid; min-width: 0; }
+.sports-score small { display: flex; align-items: center; gap: .3rem; color: #4b6061; font-size: .73rem; line-height: 1.2; }
+.sports-score strong { font-size: clamp(1.35rem, 5.5vw, 1.8rem); font-variant-numeric: tabular-nums; line-height: 1.17; }
+.sports-seat { display: inline-block; flex: none; width: .55rem; height: .55rem; border-radius: 50%; }
+.sports-seat-you { background: #956738; }
+.sports-seat-partner { background: #3d777c; }
+.sports-disc { position: absolute; display: grid; place-items: center; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); }
+.hockey-score > div:last-child { justify-items: end; text-align: end; }
+.hockey-score > span { flex: none; padding: .2rem .52rem; border: 1px solid #d6e2e1; border-radius: 2rem; color: #49625f; background: #f2f9f6; font-size: .7rem; font-weight: 700; }
+
+.hockey-rink {
+  border: 3px solid #6c9e9c;
+  outline: 1px solid #a3c3bf;
+  background: repeating-linear-gradient(112deg, #ffffff69 0, #ffffff69 1px, transparent 2px, transparent 9px), linear-gradient(#dcedeb, #f5faf7 49%, #eef6ed 50%, #dbeee9);
+  box-shadow: inset 0 0 0 2px #b2d1c9, 0 .3rem .85rem #47655d27;
+}
+
+.hockey-rink-active { cursor: grab; touch-action: none; }
+.hockey-rink-active:active { cursor: grabbing; }
+.hockey-center-line { position: absolute; top: 50%; right: 0; left: 0; border-top: 1px dashed #7fa8a1; }
+.hockey-center-circle { position: absolute; top: 50%; left: 50%; width: 32%; border: 1px solid #86aca6; border-radius: 50%; aspect-ratio: 1; transform: translate(-50%, -50%); }
+.hockey-goal { position: absolute; height: 7%; border: 1px solid #669692; background: repeating-linear-gradient(125deg, #ffffff77 0, #ffffff77 1px, transparent 1px, transparent 6px), #b4d4d0; }
+.hockey-goal-away { top: 0; border-top: 0; border-radius: 0 0 .6rem .6rem; }
+.hockey-goal-home { bottom: 0; border-bottom: 0; border-radius: .6rem .6rem 0 0; }
+.hockey-paddle { border: 1px solid #ffffffa4; box-shadow: 0 .12rem .3rem #3c524349, inset 0 0 0 .23rem #ffffff30; transition: left 55ms linear, top 55ms linear; }
+.hockey-paddle-home { background: radial-gradient(circle at 36% 33%, #eeb287, #b27949 68%); }
+.hockey-paddle-away { background: radial-gradient(circle at 36% 33%, #72aaa8, #477f85 68%); }
+.hockey-puck { z-index: 1; border: 1px solid #fffdfa; background: radial-gradient(circle at 35% 35%, #39515a, #233238 85%); box-shadow: 0 .11rem .18rem #31464988; transition: left 55ms linear, top 55ms linear; }
+.hockey-reset { position: absolute; z-index: 2; top: 44%; left: 50%; padding: .35rem .65rem; border-radius: 2rem; background: #fffdf1; color: #365751; font-size: .85rem; font-weight: 700; white-space: nowrap; transform: translate(-50%, -50%); pointer-events: none; }
+.hockey-directions { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; }
+
+.sports-control {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: .38rem;
+  padding: .42rem .55rem;
+  border: 1px solid #9ebfba;
+  border-radius: .78rem;
+  background: #e8f4f0;
+  color: #315a59;
+  font: inherit;
+  font-size: .91rem;
+  font-weight: 700;
+  line-height: 1.11;
+  touch-action: manipulation;
+}
+
+.sports-control:active:not(:disabled) { background: #cfebe2; }
+.sports-control:disabled { opacity: .53; }
+.sports-control:focus-visible, .hockey-rink:focus-visible { outline: 2px solid #376c64; outline-offset: 2px; }
+.sports-outcome { display: grid; gap: .24rem; text-align: center; }
+.sports-outcome span { font-variant-numeric: tabular-nums; }
+.pinball-score { align-items: start; color: #45333d; }
+.pinball-score small { color: #62515a; }
+.pinball-score-target { color: #655761; font-size: .7rem; font-weight: 650; }
+.pinball-lives { justify-items: end; }
+.pinball-lives span { display: flex; gap: .16rem; color: #8b5c78; }
+
+.pinball-board {
+  border: 3px solid #65475a;
+  outline: 1px solid #9e7b93;
+  background: radial-gradient(ellipse at 52% 34%, #ffe9dd, #e8c9d6 62%, #ccb0ca 100%);
+  box-shadow: inset 0 0 0 2px #fbeced8e, 0 .3rem .85rem #593f5129;
+}
+
+.pinball-orbit { position: absolute; left: 18%; top: 17%; width: 64%; height: 49%; border: 1px solid #faf0eb; border-radius: 50%; transform: rotate(-24deg); box-shadow: inset 0 0 0 1px #cba6bb7a; }
+.pinball-bar { position: absolute; display: block; transform-origin: left center; }
+.pinball-rail { height: 1.9%; border: 1px solid #fff1f3; border-radius: 2rem; background: linear-gradient(#a8809e, #805c78); box-shadow: 0 .13rem .16rem #65475c63; }
+.pinball-flipper { z-index: 1; height: 2.5%; border: 1px solid #fff8ec; border-radius: 2rem; box-shadow: 0 .14rem .18rem #65475c63; transition: transform 75ms ease-out; }
+.pinball-flipper-you { background: linear-gradient(#d4936d, #98603e); }
+.pinball-flipper-partner { background: linear-gradient(#79a4a8, #537f84); }
+.pinball-bumper { border: 1px solid #f9ecec; background: radial-gradient(circle at 35% 30%, #faf1ee, #cd829c 70%); color: #553448; box-shadow: inset 0 0 0 2px #f9e6ee93, 0 .1rem .18rem #65475d71; font-size: clamp(.48rem, 2.45vw, .78rem); font-style: normal; font-weight: 750; }
+.pinball-bumper-lit { background: #ffeaaa; color: #5d4831; box-shadow: inset 0 0 0 2px #fffaf0, 0 0 .75rem #ffe197; }
+.pinball-ball { z-index: 2; background: radial-gradient(circle at 32% 29%, #ffffff, #a99aaf 65%, #685970); box-shadow: 0 .1rem .2rem #593f577d; transition: left 55ms linear, top 55ms linear; }
+.pinball-side { position: absolute; top: .48rem; left: .55rem; padding: .22rem .46rem; border-radius: 2rem; background: #fff6efdc; color: #684655; font-size: .68rem; font-weight: 700; }
+.pinball-action { border-color: #ac7f96; background: #f2e0e8; color: #69425b; }
+.pinball-action:active:not(:disabled) { background: #ecd2dd; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hockey-paddle, .hockey-puck, .pinball-flipper, .pinball-ball { transition: none; }
+}

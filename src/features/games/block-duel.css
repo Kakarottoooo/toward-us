@@ -1,0 +1,23 @@
+.block-duel { --ink: #f7f5ff; --muted: #c5cbe3; --panel: #202744; display: grid; gap: 0.6rem; max-width: 25rem; margin-inline: auto; width: 100%; color: var(--ink); }
+.block-duel:focus-visible { outline: 2px solid #7061b8; outline-offset: 3px; border-radius: 0.95rem; }
+.block-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(5.8rem, 0.54fr); align-items: start; gap: 0.6rem; padding: 0.7rem; border-radius: 1rem; background: #1a1e36; box-shadow: inset 0 0 0 1px #494774; }
+.block-own, .block-side { min-width: 0; display: grid; gap: 0.36rem; }
+.block-board-label { min-height: 1.75rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.06rem 0.35rem; font-size: 0.75rem; line-height: 1.15; }
+.block-board-label span { max-width: 100%; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block-board-label strong { color: #f1d78c; white-space: nowrap; }
+.block-panels canvas { display: block; width: 100%; aspect-ratio: 1 / 2; border-radius: 0.45rem; background: #151a31; outline: 1px solid #5c6290; }
+.block-own canvas { width: min(100%, 24dvh); justify-self: center; }
+.block-side canvas { opacity: 0.82; }
+.block-next { display: grid; gap: 0.28rem; justify-items: center; padding: 0.48rem 0.2rem; border-radius: 0.63rem; background: var(--panel); font-size: 0.78rem; }
+.block-next-cells { display: grid; grid-template: repeat(2, 0.72rem) / repeat(4, 0.72rem); gap: 0.12rem; }
+.block-next-cells i { border-radius: 2px; box-shadow: inset 0 1px #ffffff62; }
+.block-attack { margin: 0; padding: 0.45rem 0.35rem; border-radius: 0.5rem; color: #291531; background: #fac5be; font-size: 0.74rem; font-weight: 700; line-height: 1.2; text-align: center; }
+.block-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.3rem; }
+.block-controls button { display: grid; place-items: center; align-content: center; gap: 0.14rem; min-height: 3rem; padding: 0.18rem 0.08rem; border: 1px solid #524a78; border-radius: 0.65rem; color: var(--ink); background: #30324f; font-size: 0.68rem; line-height: 1.15; cursor: pointer; touch-action: manipulation; }
+.block-controls button:last-child { border-color: #af80b8; background: #734b9b; }
+.block-controls button:active { transform: translateY(1px); background: #5b5781; }
+.block-controls button:focus-visible { outline: 2px solid #a087e6; outline-offset: 2px; }
+.block-controls button:disabled { opacity: 0.72; cursor: default; }
+.block-result strong { color: #45317f; font-size: 1.42rem; }
+.block-result p { margin-block: 0.4rem 0; }
+@media (max-width: 350px) { .block-panels { padding: 0.5rem; gap: 0.48rem; } }

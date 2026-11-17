@@ -78,6 +78,7 @@ const chatGameNames: Record<ChatGame, [string, string, string]> = {
   "memory-pairs": ["翻牌搭档", "Memory Match Together", "Parejas de memoria"],
   "date-budget": ["约会拼预算", "Budget a Date", "Una cita con presupuesto"],
   "forbidden-words": ["禁词猜词", "Forbidden Words", "Palabras prohibidas"],
+  "mines-duo": ["双人扫雷", "Minesweeper Together", "Buscaminas en pareja"],
 };
 type QuestionTarget = { kind: "deck" | "daily" | ChatGame; id: string };
 type QuestionFocus = QuestionTarget & { expanded: boolean; order: QuestionTarget[] | null; index: number };

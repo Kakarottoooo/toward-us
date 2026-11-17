@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target, TreasureChest, PuzzlePiece, Images, PencilSimple, GridFour } from "@phosphor-icons/react";
 import { Camera, ClockCounterClockwise, CookingPot, MusicNotes, Package, Sailboat } from "@phosphor-icons/react";
 import { Cards, ChatTeardropDots, Coins, DiceFive, Door, Golf, MagnifyingGlass, Stack } from "@phosphor-icons/react";
+import { Boat, Bomb, CirclesFour, GameController, Hockey, SteeringWheel, TrafficSignal } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -177,6 +178,54 @@ export function gameCatalog(language: Language): GameEntry[] {
       name: t("禁词猜词", "Forbidden Words", "Palabras prohibidas"),
       tagline: t("让 TA 猜出答案，但线索不能用卡片上的禁词。", "Get your partner to guess the answer without using the words on the card.", "Haz que tu pareja adivine la respuesta sin usar las palabras prohibidas de la carta."),
       rules: [t("一人发线索，一人猜。猜中或这一轮结束时换人。", "One sends clues, the other guesses. Swap when the round ends.", "Una persona da pistas y la otra adivina. Cambien de rol al acabar la ronda.")],
+    },
+    {
+      id: "air-hockey", category: "casual", kind: "match", partnerOnly: true, icon: <Hockey size={26} weight="duotone" />,
+      name: t("双人冰球", "Air Hockey", "Hockey de aire"),
+      tagline: t("拖动球拍挡球和反击，先进五球。", "Drag your paddle to defend and shoot. First to five goals.", "Arrastra tu paleta para defender y atacar. Gana quien meta cinco goles."),
+      rules: [t("两人都准备好后开球。球可以从侧墙反弹。", "The puck drops when you're both ready. Bank shots off the walls.", "El disco sale cuando ambos estén listos. Hazlo rebotar contra las paredes.")],
+    },
+    {
+      id: "pinball-duo", category: "casual", kind: "match", partnerOnly: true, icon: <CirclesFour size={26} weight="duotone" />,
+      name: t("双人弹珠台", "Two-Player Pinball", "Pinball en pareja"),
+      tagline: t("各控一块挡板，合力接住快掉下去的球。", "Control one flipper each and keep the same ball alive.", "Cada uno controla una aleta. Mantengan la misma bola en juego."),
+      rules: [t("发球后用挡板打进不同机关，三颗球用完前冲到目标分。", "Hit bumpers and targets to reach the goal before the three balls run out.", "Golpeen los obstáculos y objetivos para llegar a la meta antes de gastar las tres bolas.")],
+    },
+    {
+      id: "block-duel", category: "casual", kind: "match", partnerOnly: true, icon: <GridNine size={26} weight="duotone" />,
+      name: t("方块对战", "Block Duel", "Duelo de bloques"),
+      tagline: t("转动方块消行，一次消两行就给 TA 加障碍。", "Rotate and clear blocks. Clear two lines to send your opponent an obstacle.", "Gira y elimina bloques. Al borrar dos filas, envías un obstáculo a tu rival."),
+      rules: [t("双方拿到同样的方块顺序，棋盘先堆满的一方输。", "You both get the same sequence of blocks. The first board to fill loses.", "Ambos reciben la misma secuencia de bloques. Pierde quien llene su tablero primero.")],
+    },
+    {
+      id: "co-pilot", category: "casual", kind: "match", partnerOnly: true, icon: <SteeringWheel size={26} weight="duotone" />,
+      name: t("你指挥我开车", "You Navigate, I Drive", "Tú guías, yo conduzco"),
+      tagline: t("一个看路线，一个开车。下一路口听 TA 的。", "One sees the route and one drives. Follow your partner's directions at each junction.", "Uno ve la ruta y el otro conduce. Sigue las indicaciones de tu pareja en cada cruce."),
+      rules: [t("领航员发方向信号，司机在路口前选方向。走错可以回到这个路口。", "The navigator sends signals. Choose before reaching the junction. A wrong turn sends you back to try it again.", "Tu guía envía señales. Elige antes de llegar al cruce. Si te equivocas, puedes volver a intentarlo.")],
+    },
+    {
+      id: "river-row", category: "casual", kind: "match", partnerOnly: true, icon: <Boat size={26} weight="duotone" />,
+      name: t("双人划船", "Row Together", "Remen juntos"),
+      tagline: t("你划一边，TA 划另一边，一起穿过河上的浮标。", "Take one paddle each and guide the boat through the buoys.", "Cada uno lleva un remo. Guíen el bote entre las boyas."),
+      rules: [t("一起划就加速，单边划可以调整方向。", "Stroke together to speed up. Paddle on one side to steer.", "Remen juntos para acelerar. Remen de un solo lado para girar.")],
+    },
+    {
+      id: "green-light", category: "casual", kind: "match", partnerOnly: true, icon: <TrafficSignal size={26} weight="duotone" />,
+      name: t("绿灯抢拍", "Green Light", "Luz verde"),
+      tagline: t("等灯变绿再拍，五轮比谁反应快。", "Wait for green, then tap. Five heats of quick reactions.", "Espera la luz verde y toca. Cinco rondas para ver quién reacciona más rápido."),
+      rules: [t("绿灯先拍得分，抢跑会把这一轮的分送给 TA。", "Tap first on green to score. A false start gives the point to your partner.", "Toca primero en verde para sumar. Si te adelantas, el punto es de tu pareja.")],
+    },
+    {
+      id: "mines-duo", category: "puzzle", kind: "match", partnerOnly: true, icon: <Bomb size={26} weight="duotone" />,
+      name: t("双人扫雷", "Minesweeper Together", "Buscaminas en pareja"),
+      tagline: t("共用一张雷区，一个翻格，一个帮忙插旗。", "Share one minefield. Reveal tiles and help flag the mines.", "Compartan el campo minado. Abran casillas y marquen minas juntos."),
+      rules: [t("第一个格子安全。数字表示周围有几个雷，打开所有安全格就赢。", "Your first tile is safe. Numbers tell you how many mines touch a tile. Open every safe tile to win.", "La primera casilla es segura. Los números indican cuántas minas hay alrededor. Abran todas las casillas seguras para ganar.")],
+    },
+    {
+      id: "crazy-eights", category: "board", kind: "match", partnerOnly: true, icon: <Cards size={26} weight="duotone" />,
+      name: t("疯狂八点", "Crazy Eights", "Ochos locos"),
+      tagline: t("接同花色或同点数，8 可以换花色。", "Match the suit or rank. Play an eight to change the suit.", "Iguala el palo o el número. Juega un ocho para cambiar el palo."),
+      rules: [t("轮流出一张牌，也可以抽一张。先出完手牌的人赢。", "Take turns playing a card or draw one from the deck. First to empty their hand wins.", "Túrnense para jugar una carta o robar del mazo. Gana quien se quede sin cartas primero.")],
     },
     {
       id: "hunt", category: "puzzle", kind: "match", partnerOnly: true, icon: <TreasureChest size={26} weight="duotone" />, name: t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"),

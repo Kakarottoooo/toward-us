@@ -26,7 +26,7 @@ export type ScreenProps<State = unknown> = { match: MatchView<State>; language: 
 
 // Games played in rounds end with their own button at the bottom (their rounds count); the header doesn't repeat it.
 const OWN_END = new Set(["draw", "truths", "rps", "doodle", "jigsaw", "detective", "sokoban", "kitchen", "timeline", "photo-relay", "song",
-  "escape-room", "spot-difference", "memory-pairs", "date-budget", "forbidden-words"]);
+  "escape-room", "spot-difference", "memory-pairs", "date-budget", "forbidden-words", "mines-duo"]);
 
 // Each game's own screen, by game id (server/matches/index.mjs GAMES). Adding a game adds one line here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +47,14 @@ const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = {
   "mini-golf": lazy(() => import("./MiniGolf").then(({ MiniGolf }) => ({ default: MiniGolf }))),
   "stack-tower": lazy(() => import("./StackTower").then(({ StackTower }) => ({ default: StackTower }))),
   "forbidden-words": lazy(() => import("./ForbiddenWords").then(({ ForbiddenWords }) => ({ default: ForbiddenWords }))),
+  "air-hockey": lazy(() => import("./AirHockey").then(({ AirHockey }) => ({ default: AirHockey }))),
+  "pinball-duo": lazy(() => import("./PinballDuo").then(({ PinballDuo }) => ({ default: PinballDuo }))),
+  "block-duel": lazy(() => import("./BlockDuel").then(({ BlockDuel }) => ({ default: BlockDuel }))),
+  "co-pilot": lazy(() => import("./CoPilot").then(({ CoPilot }) => ({ default: CoPilot }))),
+  "river-row": lazy(() => import("./RiverRow").then(({ RiverRow }) => ({ default: RiverRow }))),
+  "green-light": lazy(() => import("./GreenLight").then(({ GreenLight }) => ({ default: GreenLight }))),
+  "mines-duo": lazy(() => import("./MinesDuo").then(({ MinesDuo }) => ({ default: MinesDuo }))),
+  "crazy-eights": lazy(() => import("./CrazyEights").then(({ CrazyEights }) => ({ default: CrazyEights }))),
 };
 
 /** One game's own screen. Loads the match, reloads when the other one moves (`changed`), and sends this player's moves. */
