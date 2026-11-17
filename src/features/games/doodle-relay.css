@@ -1,0 +1,30 @@
+.doodle-relay {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e1cdd6;
+  border-radius: 18px;
+  background: #fbf1f3;
+  color: #492d3a;
+}
+.doodle-relay-prompt { display: grid; gap: 3px; }
+.doodle-relay-prompt small, .doodle-relay-instructions p { color: #654555; }
+.doodle-relay-prompt strong { font-size: 20px; line-height: 1.24; }
+.doodle-relay h3 { margin: 0; font-size: 17px; }
+.doodle-relay-instructions p, .doodle-relay-wait { margin: 4px 0 0; font-size: 14px; line-height: 1.36; }
+.doodle-relay-pad { position: relative; }
+.doodle-relay .play-sketch { max-height: none; aspect-ratio: 320 / 170; }
+.doodle-relay-joins { position: absolute; inset: 0 1px auto; pointer-events: none; }
+.doodle-relay-joins i {
+  position: absolute;
+  width: 4px;
+  height: 7px;
+  transform: translateX(-50%);
+  border-radius: 0 0 2px 2px;
+  background: #a77890;
+}
+.doodle-relay-result { overflow: hidden; border: 1px solid #ead8e0; border-radius: 12px; }
+.doodle-relay-result .play-sketch { border-radius: 0; }
+.doodle-relay-act { flex-wrap: wrap; }
+.doodle-relay .game-primary { background: #a03f66; }
+.doodle-relay .game-primary:disabled { background: #e5d6dc; }

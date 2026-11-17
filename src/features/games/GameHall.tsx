@@ -67,7 +67,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   };
   // Each game's line in the hall, from what its server module counts: wins (board games, 石头剪刀布), drawings guessed
   // together (你画我猜), lies caught (两个真相一个谎言), puzzles solved (海龟汤).
-  type Stat = { wins?: Record<string, number>; played?: number; guessed?: number; caught?: Record<string, number>; solved?: number; found?: number };
+  type Stat = { wins?: Record<string, number>; played?: number; guessed?: number; caught?: Record<string, number>; solved?: number; assembled?: number; found?: number };
   const line = (stat: Stat | undefined, other: string, otherName: string, prefix: [string, string, string]) => {
     if (!stat?.played) return "";
     const [zh, en, es] = prefix;
@@ -75,7 +75,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     if (stat.guessed !== undefined) return t(`${zh}一起猜中 ${stat.guessed}/${stat.played} 幅`, `${en}Guessed ${stat.guessed} of ${stat.played} together`, `${es}Acertaron ${stat.guessed} de ${stat.played}`);
     if (stat.caught) return t(`${zh}你识破 ${stat.caught[userId] || 0} 次 · ${otherName} ${stat.caught[other] || 0} 次`, `${en}You caught ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`, `${es}Atrapaste ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`);
     if (stat.found !== undefined) return t(`一起找到 ${stat.found}/${stat.played} 张地图的宝物`, `Found ${stat.found}/${stat.played} treasures together`, `Encontraron ${stat.found}/${stat.played} tesoros juntos`);
-    if (stat.solved !== undefined) return t(`${zh}解开 ${stat.solved}/${stat.played} 碗`, `${en}Solved ${stat.solved} of ${stat.played}`, `${es}Resueltos ${stat.solved} de ${stat.played}`);
+    if (stat.assembled !== undefined) return t(`${zh}拼好 ${stat.assembled}/${stat.played} 张`, `${en}Completed ${stat.assembled} of ${stat.played} puzzles`, `${es}Completaron ${stat.assembled} de ${stat.played} rompecabezas`); return t(`${zh}解开 ${stat.solved}/${stat.played} 碗`, `${en}Solved ${stat.solved} of ${stat.played}`, `${es}Resueltos ${stat.solved} de ${stat.played}`);
     return "";
   };
   const stats = (hall?.stats || {}) as Record<string, Stat>, petStats = (hall?.petStats || {}) as Record<string, Stat>;

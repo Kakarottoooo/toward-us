@@ -61,6 +61,13 @@ export const readUsHidden = (userId: string) => { try { return localStorage.getI
 
 // Private records Pinky made that one tap can take back (server: assistant-router UNDOABLE).
 const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
+const chatGameNames: Record<ChatGame, [string, string, string]> = {
+  truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"],
+  hunt: ["双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"],
+  doodle: ["接力涂鸦", "Doodle Relay", "Dibujo por turnos"],
+  jigsaw: ["双人拼图", "Jigsaw Together", "Rompecabezas en pareja"],
+  detective: ["照片侦探", "Photo Detective", "Detective de fotos"],
+};
 type QuestionTarget = { kind: "deck" | "daily" | ChatGame; id: string };
 type QuestionFocus = QuestionTarget & { expanded: boolean; order: QuestionTarget[] | null; index: number };
 
@@ -783,9 +790,7 @@ ${text}` : text, target);
         <ChatCircleDots size={18} aria-hidden="true" /><span><small>{label}</small><strong>{text}</strong></span><CaretRight size={16} aria-hidden="true" />
       </button>;
     if (message.kind === "match_invite" && message.match) {
-      if (playsInChat(message.match.game)) return chatQuestionRecord(message.match.game === "hunt"
-        ? t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro")
-        : t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"), { kind: message.match.game, id: message.match.id });
+      if (playsInChat(message.match.game)) return chatQuestionRecord(t(...chatGameNames[message.match.game]), { kind: message.match.game, id: message.match.id });
       return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
     }
     if (message.kind === "game" && message.game) {
@@ -942,7 +947,7 @@ ${text}` : text, target);
       {recall.controls}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
-    {visibleQuestion && <section className={`conversation-question-focus${visibleQuestion.kind === "hunt" ? " is-hunt" : ""}`} aria-label={t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
+    {visibleQuestion && <section className={`conversation-question-focus${playsInChat(visibleQuestion.kind) && visibleQuestion.kind !== "truths" ? " is-tall-game" : ""}`} aria-label={t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
       <div className="conversation-question-tools">
         <button type="button" className="conversation-question-library" onClick={() => { keyboard.hide(); collapseQuestion(); setPlayTogether({ fromFocus: true }); }}><GameController size={17} />{t("题库", "Library", "Catálogo")}</button>
         {visibleQuestion.expanded && !playsInChat(visibleQuestion.kind) && <div className="conversation-question-arrows"
@@ -970,7 +975,7 @@ ${text}` : text, target);
             : playsInChat(visibleQuestion.kind) ? <MatchScreen embedded key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
               userId={user.id} members={together?.members || []} pet={{ name: "", picture: null }}
               changed={matchFocusUpdate?.id === visibleQuestion.id ? matchFocusUpdate.at : 0}
-              name={(game) => game === "hunt" ? t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro") : t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira")}
+              name={(game) => playsInChat(game) ? t(...chatGameNames[game]) : game}
               onBack={collapseQuestion} onRematch={async (game) => {
                 const { match } = await relationshipApi<{ match: MatchView }>("/api/matches", jsonBody({ game, language }));
                 if (playsInChat(match.game)) openQuestion(match.game, match.id);

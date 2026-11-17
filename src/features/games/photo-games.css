@@ -1,0 +1,26 @@
+.game-photo-pick { display: inline-flex; gap: 7px; align-items: center; min-height: 44px; }
+.game-photo-gallery { display: grid; gap: 12px; padding: 4px 2px 16px; }
+.game-photo-gallery [role="alert"] button { margin-inline-start: 8px; }
+.game-photo-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.game-photo-choices button { min-width: 0; aspect-ratio: 1; overflow: hidden; padding: 0; border: 1px solid #d0c3b6; border-radius: 10px; background: #f9f3ea; color: #493b31; }
+.game-photo-choices img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo-detective { display: grid; gap: 11px; color: #362b26; }
+.photo-detective > p { margin: 0; font-size: 14px; line-height: 1.4; }
+.photo-detective > .detective-prompt { font-size: 21px; font-weight: 720; }
+.detective-crop { position: relative; max-width: 270px; width: 100%; aspect-ratio: 1; align-self: start; overflow: hidden; border-radius: 14px; }
+.detective-crop > img { width: 100%; height: 100%; object-fit: cover; }
+.detective-crop > div { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+.detective-crop button { display: grid; place-items: center; min-height: 44px; border: 1px solid #fffc; background: #231c1920; color: #fff; }
+.detective-crop button[aria-pressed="true"] { border: 3px solid #fff; box-shadow: inset 0 0 0 3px #654056; background: #44233843; }
+.detective-questions { display: flex; flex-wrap: wrap; gap: 5px; }
+.detective-questions button { min-height: 44px; border: 1px solid #d4c6b8; background: #fff9f1; border-radius: 12px; padding: 6px 9px; color: inherit; font: inherit; font-size: 13px; }
+.detective-questions button[aria-pressed="true"] { border-color: #7c3a57; background: #f4e4ec; }
+.detective-field { display: grid; gap: 4px; font-size: 14px; font-weight: 650; }
+.detective-field input { min-height: 44px; width: 100%; box-sizing: border-box; padding: 7px 10px; border-radius: 12px; background: #fffcf8; border: 1px solid #cbbcad; color: inherit; font: inherit; font-weight: 400; }
+.detective-image { display: block; width: min(100%, 250px); aspect-ratio: 1; object-fit: cover; border-radius: 14px; background: #e5d8ce; }
+.detective-image.is-full { width: 100%; max-height: 270px; aspect-ratio: auto; object-fit: contain; }
+.detective-image-error { padding: 12px; border-radius: 12px; background: #fae9de; }
+.detective-results { display: grid; gap: 7px; }
+.detective-results p { display: grid; gap: 3px; margin: 0; padding: 8px 10px; overflow-wrap: anywhere; border-radius: 10px; background: #f6eadf; }
+.detective-results small { color: #5d4940; font-weight: 650; }
+.photo-detective .detective-end { justify-self: start; }

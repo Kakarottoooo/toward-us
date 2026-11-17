@@ -3,6 +3,9 @@ import { createHash } from "node:crypto";
 import { recordUsage } from "./usage.mjs";
 import { actOnMatch, autoPending, createMatch, gameName, GAMES, listMatches, matchStats, petPlays, viewMatch, withPet } from "./matches/index.mjs";
 import { BOTH, MATCH_ERRORS, matchError } from "./matches/errors.mjs";
+import { listGamePhotos, readGamePhoto, requireGamePhoto } from "./matches/photo-game-media.mjs";
+
+const invitePush = new Set(["hunt", "dots", "doodle", "jigsaw", "detective"]);
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
@@ -20,6 +23,27 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     res.json({ games: Object.keys(GAMES), matches: shown.map((match) => viewMatch(match, userId)), stats: matchStats(matches.filter((match) => !withPet(match))), petStats: matchStats(matches.filter(withPet)), members: context.members.map((member) => ({ id: member.userId, name: member.user.name })), readOnly: context.relationship.status !== "active" || context.members.length !== 2 });
   });
 
+  router.get("/matches/photos", async (req, res) => {
+    const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);
+    if (context?.relationship.status !== "active" || context.members.length !== 2) throw matchError(409, "pairing_required");
+    const after = typeof req.query.after === "string" ? req.query.after : null;
+    res.set("cache-control", "private, no-store").json(await listGamePhotos(store, { userId, relationshipId: context.relationship.id, after }));
+  });
+
+  router.get("/matches/:id/photo-clue", async (req, res) => {
+    const userId = req.auth.user.id;
+    const [match, context] = await Promise.all([
+      store.getRelationshipRecordForUser("matches", req.params.id, userId),
+      store.getRelationshipContext(userId),
+    ]);
+    const full = req.query.full === "1";
+    if (match?.game !== "detective" || match.relationshipId !== context?.relationship.id || !match.players.includes(userId) ||
+      match.status === "ended" || !match.state.photoId || (full && !match.state.guess)) throw matchError(404, "not_found");
+    const record = await requireGamePhoto(store, { userId, relationshipId: match.relationshipId, photoId: match.state.photoId });
+    const bytes = await readGamePhoto(record, { full, crop: match.state.crop });
+    res.set({ "cache-control": "private, no-store", "x-content-type-options": "nosniff" }).type("image/jpeg").send(bytes);
+  });
+
   router.get("/matches/:id", async (req, res) => {
     const userId = req.auth.user.id, match = (await listMatches(store, userId)).find((item) => item.id === req.params.id);
     if (!match) throw matchError(404, "not_found");
@@ -35,9 +59,14 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
       emit(match, "match.updated"); emit(result.conversation, "together.updated", null, userId);
       void recordUsage(store, { userId, relationshipId: match.relationshipId, action: "match_started" });
       const partner = match.players.find((id) => id !== userId);
-      if (match.game === "hunt" && partner && !online(partner)) {
+      if (invitePush.has(match.game) && partner && !online(partner)) {
+        const body = {
+          zh: `TA 邀请你玩${gameName(match.game, "zh")}`,
+          en: `Your partner invited you to play ${gameName(match.game, "en")}`,
+          es: `Tu pareja te invitó a jugar a ${gameName(match.game, "es")}`,
+        };
         void notify(partner, {
-          body: { zh: "TA 邀请你一起寻宝", en: "Your partner invited you on a treasure hunt", es: "Tu pareja te invitó a buscar el tesoro" },
+          body,
           url: `/?channel=us&game=${encodeURIComponent(match.id)}`, tag: `pinky-game-${match.id}`.slice(0, 64),
         }).catch(() => console.error("game push failed"));
       }

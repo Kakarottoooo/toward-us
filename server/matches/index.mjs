@@ -12,6 +12,11 @@ import { xiangqi } from "./xiangqi.mjs";
 import { ludo } from "./ludo.mjs";
 import { soup } from "./soup.mjs";
 import { treasureHunt } from "./treasure-hunt.mjs";
+import { photoDetective } from "./photo-detective.mjs";
+import { requireGamePhoto, readGamePhoto } from "./photo-game-media.mjs";
+import { dotsBoxes } from "./dots-boxes.mjs";
+import { doodleRelay } from "./doodle-relay.mjs";
+import { jigsaw } from "./jigsaw.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
 // the same shape, so adding one is adding a module here and its screen in src/features/games:
@@ -32,9 +37,9 @@ import { treasureHunt } from "./treasure-hunt.mjs";
 // turn(state) may be BOTH when either player may act.
 // A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
 // pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
-export const GAMES = Object.freeze({ gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps, xiangqi, ludo, soup, hunt: treasureHunt });
+export const GAMES = Object.freeze({ gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps, xiangqi, ludo, soup, hunt: treasureHunt, dots: dotsBoxes, doodle: doodleRelay, jigsaw, detective: photoDetective });
 export const COLLECTION = "matches";
-const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"], reversi: ["黑白棋", "Reversi", "Reversi"], connect4: ["四子棋", "Four in a row", "Cuatro en raya"], truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"], rps: ["石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"], xiangqi: ["象棋", "Chinese chess", "Ajedrez chino"], ludo: ["情侣飞行棋", "Couples' ludo", "Parchís de pareja"], soup: ["海龟汤", "Lateral puzzles", "Acertijos laterales"], hunt: ["双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"] };
+const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"], reversi: ["黑白棋", "Reversi", "Reversi"], connect4: ["四子棋", "Four in a row", "Cuatro en raya"], truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"], rps: ["石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"], xiangqi: ["象棋", "Chinese chess", "Ajedrez chino"], ludo: ["情侣飞行棋", "Couples' ludo", "Parchís de pareja"], soup: ["海龟汤", "Lateral puzzles", "Acertijos laterales"], hunt: ["双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"], dots: ["连点占格", "Dots and Boxes", "Puntos y cajas"], doodle: ["接力涂鸦", "Doodle Relay", "Dibujo por turnos"], jigsaw: ["双人拼图", "Jigsaw Together", "Rompecabezas en pareja"], detective: ["照片侦探", "Photo Detective", "Detective de fotos"] };
 export const gameName = (game, language) => { const names = NAMES[game] || [game, game, game]; return language === "en" ? names[1] : language === "es" ? names[2] : names[0]; };
 
 export const withPet = (match) => match.players.includes(PET);
@@ -95,6 +100,10 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId }
     // "abandon", not "end": 你画我猜, 两个真相 and 石头剪刀布 finish normally with their own "end".
     if (action?.type === "abandon") return endMatch(tx, { match, userId, as, context });
     const state = module.act(match.state, { userId: as, action });
+    if ((match.game === "detective" && action?.type === "create_clue") || (match.game === "jigsaw" && action?.type === "photo")) {
+      const photo = await requireGamePhoto(tx, { userId, relationshipId: match.relationshipId, photoId: action.photoId });
+      if (match.game === "detective") await readGamePhoto(photo, { crop: action.crop });
+    }
     const finished = module.finished(state);
     const updated = await tx.updateRelationshipRecordForUser(COLLECTION, match.id, userId, (draft) => {
       draft.state = state; draft.turn = module.turn(state); draft.version += 1;

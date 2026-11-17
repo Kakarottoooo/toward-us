@@ -42,8 +42,8 @@
 .conversation-question-scroll .game-body.match-in-chat {
   padding: 15px; margin-bottom: 10px; border: 1px solid #e6d9ce; border-radius: 22px; background: var(--jian-paper-bright);
 }
-.conversation-question-focus.is-hunt { max-height: 65%; }
-.conversation-question-focus.is-hunt .conversation-question-body { height: min(57dvh, 495px); }
+.conversation-question-focus.is-tall-game { max-height: 69%; }
+.conversation-question-focus.is-tall-game .conversation-question-body { height: min(61dvh, 520px); }
 .conversation-question-scroll .game-body.match-hunt { padding: 0; border: 0; background: transparent; }
 .match-in-chat h2 { margin: 0 0 12px; font-size: clamp(21px, 6vw, 29px); }
 .conversation-question-body { position: relative; flex: 0 1 auto; height: min(42dvh, 360px); min-height: 0; overflow: hidden; }

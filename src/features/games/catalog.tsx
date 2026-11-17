@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridFour, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target, TreasureChest } from "@phosphor-icons/react";
+import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target, TreasureChest, PuzzlePiece, Images, PencilSimple, GridFour } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -67,6 +67,30 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("紫色格抽心动卡：前进、后退、收钱、换位置、护身符、一起拍照或回答问题……冷静角会让你歇一回合，掷出 6 或对方说句好听的话就能出来。", "Purple squares draw a heart card: move, coins, swap places, a charm, a photo or a question together… The calm corner holds you a turn: a 6, or a sweet word from your partner, gets you out.", "Las casillas moradas dan una carta: avanzar, monedas, cambiar de sitio, un amuleto, una foto o una pregunta… El rincón de calma te detiene un turno: un 6 o unas palabras bonitas de tu pareja te sacan."),
         t("自己颜色的格子再跳 4 格，自己的飞行格沿虚线飞 12 格；停在对方飞机上会把它撞回去。也可以和小家伙玩，它会自己做选择。", "Your colour hops 4, your flight square flies 12 along the dashed line; land on your partner's plane to send it back. You can play your little one too: it makes its own choices.", "Tu color salta 4, tu casilla de vuelo vuela 12 por la línea; cae sobre el avión de tu pareja para devolverlo. También puedes jugar con tu pequeñín: decide solo."),
       ],
+    },
+    {
+      id: "doodle", category: "draw", kind: "match", partnerOnly: true,
+      icon: <PencilSimple size={26} weight="duotone" />, name: t("接力涂鸦", "Doodle Relay", "Dibujo por turnos"),
+      tagline: t("你画一半，TA 接一半，最后一起揭晓。", "Draw half, pass it on, and reveal the picture together.", "Dibuja una mitad, pasa el turno y descubran el dibujo juntos."),
+      rules: [t("先画上半张，再发给 TA 画下半张。TA 只看到接缝。", "Draw the top and pass it on. Your partner sees only the seam while drawing the bottom.", "Dibuja arriba y pasa el turno. Tu pareja solo ve la unión al dibujar abajo."), t("两个人画完，拼成一张图。", "Both halves come together after you finish.", "Al terminar se juntan las dos mitades.")],
+    },
+    {
+      id: "jigsaw", category: "puzzle", kind: "match", partnerOnly: true,
+      icon: <PuzzlePiece size={26} weight="duotone" />, name: t("双人拼图", "Jigsaw Together", "Rompecabezas en pareja"),
+      tagline: t("一起拼好 16 片，也可以选你们的共享照片。", "Solve a 16-piece puzzle together, with an illustration or a shared photo.", "Armen juntos 16 piezas, con una ilustración o una foto compartida."),
+      rules: [t("点一片，再点想放的格。两个人都能拼，进度会保留。", "Tap a piece, then its spot. You can both play and pick up later.", "Toca una pieza y luego su espacio. Ambos pueden jugar y continuar más tarde."), t("放第一片之前可以选一张共享照片。", "Choose a shared photo before the first piece goes in.", "Pueden elegir una foto compartida antes de poner la primera pieza.")],
+    },
+    {
+      id: "dots", category: "board", kind: "match", partnerOnly: true,
+      icon: <GridFour size={26} weight="duotone" />, name: t("连点占格", "Dots and Boxes", "Puntos y cajas"),
+      tagline: t("轮流连线，谁围出更多方格谁赢。", "Take turns drawing lines. Claim the most boxes to win.", "Tracen líneas por turnos. Gana quien cierre más cuadros."),
+      rules: [t("点相邻两点之间的一条线。围成格子得一分，再走一步。", "Connect two adjacent dots. Complete a box to score and go again.", "Une dos puntos vecinos. Al cerrar un cuadro ganas un punto y vuelves a jugar.")],
+    },
+    {
+      id: "detective", category: "puzzle", kind: "match", partnerOnly: true,
+      icon: <Images size={26} weight="duotone" />, name: t("照片侦探", "Photo Detective", "Detective de fotos"),
+      tagline: t("只给 TA 看一小角，猜猜照片背后的故事。", "Show one small crop and guess the story behind the photo.", "Muestra solo un recorte y adivinen la historia detrás de la foto."),
+      rules: [t("出题的人选一张共享照片和一小块，写下谜底。", "Choose a shared photo, pick the crop and write the answer.", "Elige una foto compartida, recorta una parte y escribe la respuesta."), t("TA 猜完一起翻开完整照片，再换人。", "Reveal the whole photo after your partner guesses, then swap roles.", "Tras la respuesta se revela la foto completa y cambian turnos.")],
     },
     {
       id: "hunt", category: "puzzle", kind: "match", partnerOnly: true, icon: <TreasureChest size={26} weight="duotone" />, name: t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"),
