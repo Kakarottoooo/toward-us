@@ -5,11 +5,11 @@ import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { categories, gameCatalog, type CategoryId, type GameEntry } from "./catalog";
 import { MatchScreen } from "./MatchScreen";
-import { BOTH, PET, type Hall, type MatchView } from "./types";
+import { BOTH, PET, playsInChat, type ChatGame, type Hall, type MatchView } from "./types";
 import "./games.css";
 
 /** 游戏大厅: every game by category with how to play it, games still going at the top, and each game's own screen. */
-export function GameHall({ language, userId, initialMatch = null, petPicture = null, onClose, onChatMatch, onQuestions }: { language: Language; userId: string; initialMatch?: string | null; petPicture?: string | null; onClose: () => void; onChatMatch: (id: string) => void; onQuestions: () => void }) {
+export function GameHall({ language, userId, initialMatch = null, petPicture = null, onClose, onChatMatch, onQuestions }: { language: Language; userId: string; initialMatch?: string | null; petPicture?: string | null; onClose: () => void; onChatMatch: (game: ChatGame, id: string) => void; onQuestions: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [hall, setHall] = useState<Hall | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState("");
@@ -33,7 +33,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   const petName = t("小家伙", "Little one", "Pequeñín");
   const vsPet = (match: MatchView) => match.players.includes(PET);
   const openMatch = (match: MatchView) => {
-    if (match.game === "truths" && !vsPet(match)) onChatMatch(match.id);
+    if (playsInChat(match.game) && !vsPet(match)) onChatMatch(match.game, match.id);
     else setOpen(match.id);
   };
   const going = (hall?.matches || []).filter((match) => match.status === "active");
@@ -67,13 +67,14 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   };
   // Each game's line in the hall, from what its server module counts: wins (board games, 石头剪刀布), drawings guessed
   // together (你画我猜), lies caught (两个真相一个谎言), puzzles solved (海龟汤).
-  type Stat = { wins?: Record<string, number>; played?: number; guessed?: number; caught?: Record<string, number>; solved?: number };
+  type Stat = { wins?: Record<string, number>; played?: number; guessed?: number; caught?: Record<string, number>; solved?: number; found?: number };
   const line = (stat: Stat | undefined, other: string, otherName: string, prefix: [string, string, string]) => {
     if (!stat?.played) return "";
     const [zh, en, es] = prefix;
     if (stat.wins) return t(`${zh}你 ${stat.wins[userId] || 0} : ${stat.wins[other] || 0} ${otherName}`, `${en}You ${stat.wins[userId] || 0} : ${stat.wins[other] || 0} ${otherName}`, `${es}Tú ${stat.wins[userId] || 0} : ${stat.wins[other] || 0} ${otherName}`);
     if (stat.guessed !== undefined) return t(`${zh}一起猜中 ${stat.guessed}/${stat.played} 幅`, `${en}Guessed ${stat.guessed} of ${stat.played} together`, `${es}Acertaron ${stat.guessed} de ${stat.played}`);
     if (stat.caught) return t(`${zh}你识破 ${stat.caught[userId] || 0} 次 · ${otherName} ${stat.caught[other] || 0} 次`, `${en}You caught ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`, `${es}Atrapaste ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`);
+    if (stat.found !== undefined) return t(`一起找到 ${stat.found}/${stat.played} 张地图的宝物`, `Found ${stat.found}/${stat.played} treasures together`, `Encontraron ${stat.found}/${stat.played} tesoros juntos`);
     if (stat.solved !== undefined) return t(`${zh}解开 ${stat.solved}/${stat.played} 碗`, `${en}Solved ${stat.solved} of ${stat.played}`, `${es}Resueltos ${stat.solved} de ${stat.played}`);
     return "";
   };
@@ -82,8 +83,9 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   const petStat = (game: GameEntry) => line(petStats[game.id], PET, petName, [`和${petName} · `, `With ${petName} · `, `Con ${petName} · `]);
   const nameOf = (id: string) => catalog.find((game) => game.id === id)?.name || id;
 
-  const openingInChat = open && hall?.matches.some((match) => match.id === open && match.game === "truths" && !vsPet(match));
-  useEffect(() => { if (open && openingInChat) onChatMatch(open); }, [open, openingInChat, onChatMatch]);
+  const openingGame = open && hall?.matches.find((match) => match.id === open && !vsPet(match))?.game;
+  const openingInChat = Boolean(openingGame && playsInChat(openingGame));
+  useEffect(() => { if (open && openingGame && playsInChat(openingGame)) onChatMatch(openingGame, open); }, [open, openingGame, onChatMatch]);
   if (open && (openingInChat || !hall && !error)) return <div className="game-hall" role="dialog" aria-modal="true" aria-label={t("游戏", "Games", "Juegos")}>
     <p className="game-wait" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>
   </div>;
@@ -124,8 +126,8 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
             </div>
             <div className="game-card-foot">
               <button type="button" className="game-rules-toggle" aria-expanded={rules === game.id} onClick={() => setRules(rules === game.id ? null : game.id)} data-testid={`game-rules-${game.id}`}><CaretDown size={14} />{t("怎么玩", "How to play", "Cómo se juega")}</button>
-              {game.kind === "match" && <button type="button" className="game-play is-pet" disabled={busy === `${game.id}:true`} onClick={() => void start(game, true)} data-testid={`game-pet-${game.id}`}>{game.solo ? <User size={15} weight="fill" /> : petPicture ? <img src={petPicture} alt="" /> : <PawPrint size={15} weight="fill" />}{game.solo ? (petGoing ? t("继续一个人玩", "Continue solo", "Seguir solo") : t("一个人玩", "Play solo", "Jugar solo")) : petGoing ? t(`继续和${petName}`, `Continue with ${petName}`, `Seguir con ${petName}`) : t(`和${petName}玩`, `Play ${petName}`, `Con ${petName}`)}</button>}
-              <button type="button" className="game-play" disabled={busy === `${game.id}:false` || hall?.readOnly} onClick={() => void start(game)} data-testid={`game-start-${game.id}`}><Play size={14} weight="fill" />{ongoing ? t("继续", "Continue", "Seguir") : game.id === "truths" ? t("在对话里玩", "Play in chat", "Jugar en el chat") : t("和 TA 玩", "Play your partner", "Con tu pareja")}</button>
+              {game.kind === "match" && !game.partnerOnly && <button type="button" className="game-play is-pet" disabled={busy === `${game.id}:true`} onClick={() => void start(game, true)} data-testid={`game-pet-${game.id}`}>{game.solo ? <User size={15} weight="fill" /> : petPicture ? <img src={petPicture} alt="" /> : <PawPrint size={15} weight="fill" />}{game.solo ? (petGoing ? t("继续一个人玩", "Continue solo", "Seguir solo") : t("一个人玩", "Play solo", "Jugar solo")) : petGoing ? t(`继续和${petName}`, `Continue with ${petName}`, `Seguir con ${petName}`) : t(`和${petName}玩`, `Play ${petName}`, `Con ${petName}`)}</button>}
+              <button type="button" className="game-play" disabled={busy === `${game.id}:false` || hall?.readOnly} onClick={() => void start(game)} data-testid={`game-start-${game.id}`}><Play size={14} weight="fill" />{ongoing ? t("继续", "Continue", "Seguir") : playsInChat(game.id) ? t("在对话里玩", "Play in chat", "Jugar en el chat") : t("和 TA 玩", "Play your partner", "Con tu pareja")}</button>
             </div>
             {rules === game.id && <ol className="game-rules">{game.rules.map((rule) => <li key={rule}>{rule}</li>)}</ol>}
           </article>;

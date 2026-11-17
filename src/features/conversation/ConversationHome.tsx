@@ -27,7 +27,7 @@ import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
 import { availableNewCards, PlayTogether, type PlayBoard } from "../games/PlayTogether";
 import { MatchScreen } from "../games/MatchScreen";
-import type { MatchView } from "../games/types";
+import { playsInChat, type ChatGame, type MatchView } from "../games/types";
 import { useQuestionSwipe } from "./useQuestionSwipe";
 import { PlayDistance } from "../games/PlayDistance";
 import { PlayPlans } from "../games/PlayPlans";
@@ -61,7 +61,7 @@ export const readUsHidden = (userId: string) => { try { return localStorage.getI
 
 // Private records Pinky made that one tap can take back (server: assistant-router UNDOABLE).
 const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
-type QuestionTarget = { kind: "deck" | "daily" | "truths"; id: string };
+type QuestionTarget = { kind: "deck" | "daily" | ChatGame; id: string };
 type QuestionFocus = QuestionTarget & { expanded: boolean; order: QuestionTarget[] | null; index: number };
 
 function questionOrder(first: QuestionTarget, ids: string[]) {
@@ -656,7 +656,7 @@ ${text}` : text, target);
   };
   const moveQuestion = (direction: -1 | 1) => {
     const focus = playFocus;
-    if (!focus?.expanded || focus.kind === "truths" || nextLoading.current) return;
+    if (!focus?.expanded || playsInChat(focus.kind) || nextLoading.current) return;
     const index = focus.index + direction;
     if (index < 0) return;
     const openFrom = (order: QuestionTarget[]) => {
@@ -783,7 +783,9 @@ ${text}` : text, target);
         <ChatCircleDots size={18} aria-hidden="true" /><span><small>{label}</small><strong>{text}</strong></span><CaretRight size={16} aria-hidden="true" />
       </button>;
     if (message.kind === "match_invite" && message.match) {
-      if (message.match.game === "truths") return chatQuestionRecord(t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"), { kind: "truths", id: message.match.id });
+      if (playsInChat(message.match.game)) return chatQuestionRecord(message.match.game === "hunt"
+        ? t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro")
+        : t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"), { kind: message.match.game, id: message.match.id });
       return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
     }
     if (message.kind === "game" && message.game) {
@@ -881,7 +883,7 @@ ${text}` : text, target);
   const conversationVisible = shown.current;
   const currentThread = channel === "me" ? thread : null;
   const visibleQuestion = channel === "us" && paired && !recall.active && !call ? playFocus : null;
-  const activeMatchId = visibleQuestion?.kind === "truths" ? visibleQuestion.id : "";
+  const activeMatchId = visibleQuestion && playsInChat(visibleQuestion.kind) ? visibleQuestion.id : "";
   useEffect(() => {
     if (!activeMatchId) return;
     const events = new EventSource("/api/relationship/events");
@@ -940,10 +942,10 @@ ${text}` : text, target);
       {recall.controls}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
-    {visibleQuestion && <section className="conversation-question-focus" aria-label={t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
+    {visibleQuestion && <section className={`conversation-question-focus${visibleQuestion.kind === "hunt" ? " is-hunt" : ""}`} aria-label={t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
       <div className="conversation-question-tools">
         <button type="button" className="conversation-question-library" onClick={() => { keyboard.hide(); collapseQuestion(); setPlayTogether({ fromFocus: true }); }}><GameController size={17} />{t("题库", "Library", "Catálogo")}</button>
-        {visibleQuestion.expanded && visibleQuestion.kind !== "truths" && <div className="conversation-question-arrows"
+        {visibleQuestion.expanded && !playsInChat(visibleQuestion.kind) && <div className="conversation-question-arrows"
           role="group" aria-label={t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}>
           <button type="button" aria-label={t("上一题", "Previous card", "Carta anterior")} disabled={fetchingNext || visibleQuestion.index === 0} onClick={() => moveQuestion(-1)}><CaretLeft size={19} /></button>
           <button type="button" aria-label={t("下一题", "Next card", "Carta siguiente")}
@@ -955,7 +957,7 @@ ${text}` : text, target);
         </button>
         <button type="button" className="conversation-question-dismiss" aria-label={t("关闭题卡", "Close card", "Cerrar carta")} onClick={() => { keyboard.hide(); leavePlayDaily(); setPlayFocus(null); }}><X size={19} /></button>
       </div>
-      {visibleQuestion.expanded && visibleQuestion.kind !== "truths" && <p className="conversation-question-swipe-hint">{t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}</p>}
+      {visibleQuestion.expanded && !playsInChat(visibleQuestion.kind) && <p className="conversation-question-swipe-hint">{t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}</p>}
       <div className="conversation-question-body" id="conversation-question-body" hidden={!visibleQuestion.expanded} {...questionSwipe}>
         <MobileScroll key={visibleQuestion.id} className="conversation-question-scroll">
           {focusedDaily ? <div className="play-chat-card play-today">{renderDaily(focusedDaily, true, !navigator.onLine)}</div>
@@ -965,13 +967,13 @@ ${text}` : text, target);
               onClose={collapseQuestion} onInvite={collapseQuestion} onLeaveDaily={leavePlayDaily} onContinueChat={chatAfterQuestion}
               onOpenPlan={(id) => { keyboard.hide(); setPlanQuestionId(id); }}
               onAskPinky={askForCardPlan} />
-            : visibleQuestion.kind === "truths" ? <MatchScreen embedded key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
+            : playsInChat(visibleQuestion.kind) ? <MatchScreen embedded key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
               userId={user.id} members={together?.members || []} pet={{ name: "", picture: null }}
               changed={matchFocusUpdate?.id === visibleQuestion.id ? matchFocusUpdate.at : 0}
-              name={() => t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira")}
+              name={(game) => game === "hunt" ? t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro") : t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira")}
               onBack={collapseQuestion} onRematch={async (game) => {
                 const { match } = await relationshipApi<{ match: MatchView }>("/api/matches", jsonBody({ game, language }));
-                openQuestion("truths", match.id);
+                if (playsInChat(match.game)) openQuestion(match.game, match.id);
               }} />
             : <p role="status">{t("这道题暂时没加载出来。", "This question couldn't be loaded.", "No se pudo cargar esta pregunta.")}</p>}
         </MobileScroll>
@@ -1022,7 +1024,7 @@ ${text}` : text, target);
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && !visibleQuestion?.expanded && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
     {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames}
-      onChatMatch={(id) => { closeGames(); openQuestion("truths", id); }} onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} />}
+      onChatMatch={(game, id) => { closeGames(); openQuestion(game, id); }} onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} />}
     {interaction && paired && <BottomSheet open onOpenChange={(open) => { if (!open) closeInteraction(); }}
       title={t("互动", "Connect", "Conectar")} description={t("碰一下，或者留张小卡。", "Touch together or leave a little card.", "Tóquense o deja una tarjetita.")} snap={0.76}>
       <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}

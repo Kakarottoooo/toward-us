@@ -10,6 +10,7 @@ import { Rps, TwoTruths } from "./FunGames";
 import { Xiangqi } from "./Xiangqi";
 import { Ludo } from "./Ludo";
 import { Soup } from "./Soup";
+import { TreasureHunt } from "./TreasureHunt";
 import { PET, type MatchView, type Member } from "./types";
 
 export type Opponent = { name: string; picture: string | null; pet: boolean };
@@ -24,17 +25,21 @@ const OWN_END = new Set(["draw", "truths", "rps"]);
 
 // Each game's own screen, by game id (server/matches/index.mjs GAMES). Adding a game adds one line here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = { gomoku: Gomoku, draw: DrawGuess, reversi: Reversi, connect4: ConnectFour, truths: TwoTruths, rps: Rps, xiangqi: Xiangqi, ludo: Ludo, soup: Soup };
+const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = { gomoku: Gomoku, draw: DrawGuess, reversi: Reversi, connect4: ConnectFour, truths: TwoTruths, rps: Rps, xiangqi: Xiangqi, ludo: Ludo, soup: Soup, hunt: TreasureHunt };
 
 /** One game's own screen. Loads the match, reloads when the other one moves (`changed`), and sends this player's moves. */
 export function MatchScreen({ matchId, language, userId, members, pet, changed, name, solo = () => false, embedded = false, onBack, onRematch }: { embedded?: boolean; solo?: (game: string) => boolean; matchId: string; language: Language; userId: string; members: Member[]; pet: { name: string; picture: string | null }; changed: number; name: (game: string) => string; onBack: () => void; onRematch: (game: string, pet: boolean) => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [match, setMatch] = useState<MatchView | null>(null), [error, setError] = useState(""), [ending, setEnding] = useState(false);
-  const load = useCallback(async () => { try { setMatch((await relationshipApi<{ match: MatchView }>(`/api/matches/${encodeURIComponent(matchId)}?language=${language}`)).match); } catch (caught) { setError((caught as Error).message); } }, [matchId, language]);
+  const update = (next: MatchView) => setMatch((current) => current && current.id === next.id && current.version > next.version ? current : next);
+  const load = useCallback(async () => {
+    try { update((await relationshipApi<{ match: MatchView }>(`/api/matches/${encodeURIComponent(matchId)}?language=${language}`)).match); setError(""); }
+    catch (caught) { setError((caught as Error).message); }
+  }, [matchId, language]);
   useEffect(() => { void load(); }, [load, changed]);
   const act: Act = async (action) => {
     setError("");
-    try { setMatch((await relationshipApi<{ match: MatchView }>(`/api/matches/${encodeURIComponent(matchId)}/actions`, jsonBody({ ...action, language }))).match); return true; }
+    try { update((await relationshipApi<{ match: MatchView }>(`/api/matches/${encodeURIComponent(matchId)}/actions`, jsonBody({ ...action, language }))).match); return true; }
     catch (caught) { setError((caught as Error).message); void load(); return false; }
   };
   const withPet = Boolean(match?.players.includes(PET));
@@ -43,9 +48,9 @@ export function MatchScreen({ matchId, language, userId, members, pet, changed, 
   // With 小家伙 it is the other player: its name, its picture, and no "we'll tell you" (it answers right away).
   const partnerName = withPet ? pet.name : partner?.name || t("TA", "your partner", "tu pareja");
   const opponent = { name: partnerName, picture: withPet ? pet.picture : null, pet: withPet };
-  const body = <div className={embedded ? "game-body match-body match-in-chat" : "game-body match-body"} data-testid="match-screen">
-      {embedded && <h2>{name("truths")}</h2>}
-      {error && <p className="space-error" role="alert">{error}</p>}
+  const body = <div className={embedded ? `game-body match-body match-in-chat${match?.game === "hunt" ? " match-hunt" : ""}` : "game-body match-body"} data-testid="match-screen">
+      {embedded && match && match.game !== "hunt" && <h2>{name(match.game)}</h2>}
+      {error && <p className="space-error" role="alert">{error}{!match && <button type="button" className="game-quiet" onClick={() => void load()}>{t("重试", "Retry", "Reintentar")}</button>}</p>}
       {!match && !error && <p className="game-wait" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>}
       {match?.status === "ended" && <section className="game-ended" data-testid="match-ended">
         <p>{match.endedBy === userId ? t("你结束了这局。没下完，不算输赢。", "You ended this game. It doesn't count for anyone.", "Terminaste esta partida. No cuenta para nadie.") : t(`${partnerName} 结束了这局。没下完，不算输赢。`, `${partnerName} ended this game. It doesn't count for anyone.`, `${partnerName} terminó esta partida. No cuenta para nadie.`)}</p>

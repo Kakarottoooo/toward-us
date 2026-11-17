@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridFour, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target } from "@phosphor-icons/react";
+import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridFour, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target, TreasureChest } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -8,7 +8,7 @@ import { localized, type Language } from "../../i18n";
 //   - kind "card": a round played as a card in Us (server/games.mjs).
 // A category is listed only once it has a game.
 export type CategoryId = "board" | "draw" | "words" | "puzzle" | "casual";
-export type GameEntry = { id: string; category: CategoryId; kind: "match" | "card"; cardType?: "choice" | "guess" | "truth"; solo?: boolean; icon: ReactNode; name: string; tagline: string; rules: string[] };
+export type GameEntry = { id: string; category: CategoryId; kind: "match" | "card"; cardType?: "choice" | "guess" | "truth"; solo?: boolean; partnerOnly?: boolean; icon: ReactNode; name: string; tagline: string; rules: string[] };
 
 export function categories(language: Language): Array<{ id: CategoryId; name: string }> {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
@@ -66,6 +66,14 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("停在桥头可以走爱心内圈：一样长，有爱心任务和 60 币格，但不能买地、不用付门票。每经过一座桥 +30 币。", "Stop on a bridge to take the heart ring: the same length, with heart tasks and 60-coin squares, but nothing to buy and no rent. Every bridge you pass pays 30.", "Detente en un puente para tomar el anillo de corazones: igual de largo, con tareas y casillas de 60, sin compras ni entradas. Cada puente que pasas paga 30."),
         t("紫色格抽心动卡：前进、后退、收钱、换位置、护身符、一起拍照或回答问题……冷静角会让你歇一回合，掷出 6 或对方说句好听的话就能出来。", "Purple squares draw a heart card: move, coins, swap places, a charm, a photo or a question together… The calm corner holds you a turn: a 6, or a sweet word from your partner, gets you out.", "Las casillas moradas dan una carta: avanzar, monedas, cambiar de sitio, un amuleto, una foto o una pregunta… El rincón de calma te detiene un turno: un 6 o unas palabras bonitas de tu pareja te sacan."),
         t("自己颜色的格子再跳 4 格，自己的飞行格沿虚线飞 12 格；停在对方飞机上会把它撞回去。也可以和小家伙玩，它会自己做选择。", "Your colour hops 4, your flight square flies 12 along the dashed line; land on your partner's plane to send it back. You can play your little one too: it makes its own choices.", "Tu color salta 4, tu casilla de vuelo vuela 12 por la línea; cae sobre el avión de tu pareja para devolverlo. También puedes jugar con tu pequeñín: decide solo."),
+      ],
+    },
+    {
+      id: "hunt", category: "puzzle", kind: "match", partnerOnly: true, icon: <TreasureChest size={26} weight="duotone" />, name: t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"),
+      tagline: t("同一张地图，两条不同线索。聊一聊，一起找到宝物。", "One map, two different clues. Talk it out and find the treasure together.", "Un mapa y dos pistas distintas. Hablen y encuentren el tesoro juntos."),
+      rules: [
+        t("各自看自己的线索。可以在「我们俩」里交流，或者点「给 TA 看」亮出线索。", "Read your own clue. Talk in Us, or tap Show partner to reveal your clue to them.", "Lee tu pista. Pueden hablar en Nosotros o tocar Mostrar a tu pareja para compartirla."),
+        t("各自选好一格并确认。两个人选同一格才打开，三次用完就揭晓。", "Pick and confirm a tile each. It opens when you agree. After three tries, the treasure is revealed.", "Cada uno elige y confirma una casilla. Se abre cuando coinciden. Tras tres intentos se revela el tesoro."),
       ],
     },
     {

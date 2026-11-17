@@ -34,6 +34,13 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     if (result.created && !pet) {
       emit(match, "match.updated"); emit(result.conversation, "together.updated", null, userId);
       void recordUsage(store, { userId, relationshipId: match.relationshipId, action: "match_started" });
+      const partner = match.players.find((id) => id !== userId);
+      if (match.game === "hunt" && partner && !online(partner)) {
+        void notify(partner, {
+          body: { zh: "TA 邀请你一起寻宝", en: "Your partner invited you on a treasure hunt", es: "Tu pareja te invitó a buscar el tesoro" },
+          url: `/?channel=us&game=${encodeURIComponent(match.id)}`, tag: `pinky-game-${match.id}`.slice(0, 64),
+        }).catch(() => console.error("game push failed"));
+      }
     }
     if (result.created) match = await autoTurn(req, match);
     res.status(result.created ? 201 : 200).json({ match: viewMatch(match, userId), created: result.created });

@@ -4,6 +4,9 @@ export const PET = "pet";
 export const BOTH = "both";
 export const HOST = "host";
 
+export type ChatGame = "truths" | "hunt";
+export const playsInChat = (game: string): game is ChatGame => game === "truths" || game === "hunt";
+
 // What /api/matches sends (server/matches/index.mjs viewMatch); `state` is each game's own view of itself.
 export type MatchView<State = unknown> = { id: string; game: string; status: "active" | "finished" | "ended"; endedBy?: string | null; players: string[]; turn: string | null; createdByUserId: string; createdAt: string; updatedAt: string; finishedAt: string | null; version: number; state: State };
 export type Member = { id: string; name: string };

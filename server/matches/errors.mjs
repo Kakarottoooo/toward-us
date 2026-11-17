@@ -15,6 +15,7 @@ export const MATCH_ERRORS = {
   not_your_turn: ["还没轮到你。", "It's not your turn yet.", "Aún no es tu turno."],
   occupied: ["这里已经有子了。", "There's already a stone there.", "Ya hay una ficha ahí."],
   match_over: ["这局已经结束了。", "This game is over.", "Esta partida terminó."],
+  match_changed: ["地图已经更新，请重新选一格。", "The map changed. Pick a tile again.", "El mapa cambió. Elige una casilla de nuevo."],
   invalid_action: ["这一步不行，再试一次。", "That move doesn't work. Try again.", "Ese movimiento no vale. Inténtalo de nuevo."],
   drawing_required: ["先画几笔再交给 TA。", "Draw something before passing it on.", "Dibuja algo antes de pasarlo."],
   guess_required: ["写下你的答案。", "Write your guess.", "Escribe tu respuesta."],
