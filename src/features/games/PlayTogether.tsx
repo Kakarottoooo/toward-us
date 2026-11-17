@@ -27,6 +27,7 @@ type Props = {
   inConversation?: boolean;
   onContinueChat?: (followup?: string) => void;
   onOpenPlan?: (roundId: string) => void;
+  onRoundReady?: (round: { cardId: string; id: string; revealed: boolean }) => void;
 };
 
 const playPath = "/api/together/play";
@@ -49,7 +50,7 @@ export function availableNewCards(cards: Card[], rounds: Round[]) {
     !(card.id.startsWith("question-v2-") && started.has(card.id.replace("-v2-", "-v1-"))));
 }
 
-export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, fromGames, onLeaveDaily, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, renderPlans, onPickCard, inConversation, onContinueChat, onOpenPlan, startAtList }: Props) {
+export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, fromGames, onLeaveDaily, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, renderPlans, onPickCard, inConversation, onContinueChat, onOpenPlan, onRoundReady, startAtList }: Props) {
   const t: Translate = (zh, en, es) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const storage = draftSuffix(userId, conversationId);
@@ -126,6 +127,9 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
   const card = openedCard ?? initial;
   const cardIndex = card ? available.indexOf(card) : -1;
   const round = card && byCard.get(card.id);
+  useEffect(() => {
+    if (round) onRoundReady?.({ cardId: round.cardId, id: round.id, revealed: round.revealed });
+  }, [round?.cardId, round?.id, round?.revealed, onRoundReady]);
   const subject = card?.type === "guess" ? round?.aboutUserId || userId : "";
   const inbox = all.filter((item) => incoming(byCard.get(item.id), userId));
   const historyCards = all.filter((item) => byCard.has(item.id));

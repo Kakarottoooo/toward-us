@@ -55,7 +55,8 @@
 .fit-profile-link small { color: #6c5d60; font-size: 13px; line-height: 1.5; }
 .fit-profile-link > svg { flex: none; }
 .fit-report { display: grid; gap: 13px; padding: 25px 0; border-bottom: 1px solid #e4d7cf; }
-.fit-report > p { color: #514248; }
+.fit-report > p { color: #514248; white-space: pre-line; }
+.fit-type-source { width: fit-content; padding-block: 10px; color: #883858; font-size: 13px; text-underline-offset: 3px; }
 .fit-report h2 { font-size: 22px; }
 .fit-report summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 44px; color: #883858; font-size: 14px; font-weight: 600; cursor: pointer; list-style: none; }
 .fit-report summary::-webkit-details-marker { display: none; }

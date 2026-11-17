@@ -47,7 +47,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
     const ticket = ++request.current;
     try {
       const next = await relationshipApi<FitState>(`/api/fit?language=${language}`, { signal });
-      if (!signal?.aborted && ticket === request.current) setData(next);
+      if (!signal?.aborted && ticket === request.current) { setData(next); setError(""); }
     } catch (caught) {
       if (!signal?.aborted && ticket === request.current) setError((caught as Error).message);
     } finally { if (!signal?.aborted && ticket === request.current) setLoading(false); }
@@ -195,7 +195,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
         {data.couple.status === "ready" && <>
           <button type="button" className="fit-copy" onClick={() => void copyReport(true)}>{t("复制双人摘要", "Copy our summary", "Copiar nuestro resumen")}</button>
           {data.couple.sections.map((section) => <PairSection key={section.id} section={section} partnerName={data.couple.partnerName} t={t} onDiscuss={() => { keyboard.hide(); onDiscuss(`${section.title}\n${section.summary}\n${section.suggestion}`); }} />)}
-          {data.couple.mbti && <section className="fit-report"><h2>{data.couple.mbti.title}</h2><p>{data.couple.mbti.summary}</p></section>}
+          {data.couple.mbti && <section className="fit-report"><h2>{data.couple.mbti.title}</h2><p>{data.couple.mbti.summary}</p><TypeSource t={t} /></section>}
           {data.couple.zodiac && <section className="fit-report fit-zodiac"><h2>{data.couple.zodiac.title}</h2><p className="fit-fine">{t("星座趣味解读", "Zodiac, just for fun", "Los signos, por diversión")}</p><p>{data.couple.zodiac.summary}</p></section>}
           <button className="fit-profile-link" type="button" onClick={startProfile}><span>{profileTitle}</span><CaretRight size={20} /></button>
         </>}
@@ -237,7 +237,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
 function PersonalSection({ section, t, expanded = false }: { section: FitSection; t: Translate; expanded?: boolean }) {
   return <section className="fit-report" data-testid={`fit-report-${section.id}`}><h2>{section.title}</h2><p>{section.summary}</p>
     <details open={expanded || undefined}><summary>{t("看看依据", "See what this is based on", "Ver en qué se basa")}<CaretRight size={15} /></summary><div className="fit-evidence">{section.evidence.map((item) => <div key={item.questionId}><p>{item.question}</p><blockquote>{item.answer}</blockquote><p>{item.meaning}</p></div>)}</div></details>
-    <p className="fit-suggestion">{section.suggestion}</p></section>;
+    <p className="fit-suggestion">{section.suggestion}</p>{section.id === "mbti" && <TypeSource t={t} />}</section>;
 }
 
 function PairSection({ section, partnerName, t, onDiscuss }: { section: FitPairSection; partnerName: string; t: Translate; onDiscuss: () => void }) {
@@ -245,4 +245,8 @@ function PairSection({ section, partnerName, t, onDiscuss }: { section: FitPairS
   return <section className={`fit-report fit-pair-${section.status}`} data-testid={`fit-couple-${section.id}`}><h2>{section.title}</h2><p className="fit-status">{status}</p><p>{section.summary}</p>
     {!!section.evidence.length && <details><summary>{t("看看双方的答案", "See both answers", "Ver las dos respuestas")}<CaretRight size={15} /></summary><div className="fit-evidence">{section.evidence.map((item) => <div key={item.questionId}><p>{item.question}</p><dl><dt>{t("你", "You", "Tú")}</dt><dd>{item.mine}</dd><dt>{partnerName}</dt><dd>{item.partner}</dd></dl></div>)}</div></details>}
     <p className="fit-suggestion">{section.suggestion}</p>{section.status !== "unknown" && <button className="fit-discuss" type="button" onClick={onDiscuss}>{t("带回我们俩聊聊", "Talk about this in Us", "Llevarlo al chat")}<ArrowRight size={16} /></button>}</section>;
+}
+
+function TypeSource({ t }: { t: Translate }) {
+  return <a className="fit-type-source" href="https://www.myersbriggs.org/my-mbti-personality-type/the-mbti-preferences/" target="_blank" rel="noopener noreferrer">{t("类型框架来源：Myers & Briggs Foundation", "Type framework: Myers & Briggs Foundation", "Marco de tipos: Myers & Briggs Foundation")}</a>;
 }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { appendTogetherMessage } from "./together-domain.mjs";
 import { fitQuestions, localizedFitModules, mbtiTypes, zodiacNames } from "./fit-questions.mjs";
 import { coupleFitReport, fitOverviewComplete, personalFitReport } from "./fit-report.mjs";
 
@@ -143,7 +144,7 @@ async function change(db, userId, context, mutation) {
   return true;
 }
 
-export function createFitRouter({ store, emit = () => {} }) {
+export function createFitRouter({ store, emit = () => {}, notify = () => {} }) {
   const router = express.Router();
   router.use("/fit", (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
@@ -164,9 +165,30 @@ export function createFitRouter({ store, emit = () => {} }) {
         const wasSharing = mutation && sharedIn(await readOwn(tx, userId), context);
         const changed = mutation ? await change(tx, userId, context, mutation) : false;
         const publicChanged = changed && (wasSharing || mutation?.action === "sharing");
-        return { payload: await view(tx, userId, language), publicChanged, relationshipId: context?.relationship.id };
+        const payload = await view(tx, userId, language);
+        let conversation;
+        if (changed && mutation?.action === "sharing" && mutation.values.on) {
+          const i18n = {
+            zh: "我分享了自己的关系说明书，邀请你一起看看我们哪里合拍。",
+            en: "I shared my relationship guide. Let's see how we connect.",
+            es: "Compartí mi guía de relación. Veamos cómo conectamos.",
+          };
+          ({ conversation } = await appendTogetherMessage(tx, {
+            relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: i18n[language],
+            refs: [{ type: "fit", id: "fit" }], handle: "fit-invite:" + userId + ":" + payload.profile.version,
+          }));
+        }
+        return { payload, publicChanged, relationshipId: context?.relationship.id, conversation,
+          partnerId: context?.members.find((member) => member.userId !== userId)?.userId };
       });
       if (result.publicChanged && result.relationshipId) emit({ id: "fit", relationshipId: result.relationshipId }, "fit.updated", null, userId);
+      if (result.conversation) {
+        emit(result.conversation, "together.updated", null, userId);
+        if (result.partnerId) void Promise.resolve().then(() => notify(result.partnerId, {
+          body: { zh: "TA 邀请你一起看关系说明书。", en: "Your partner invited you to explore your relationship guides.", es: "Tu pareja te invitó a ver sus guías de relación." },
+          url: "/?channel=us&fit=1", tag: "fit-invite",
+        })).catch(() => {});
+      }
       res.json(result.payload);
     } catch (error) {
       const code = Object.hasOwn(errors, error.code) ? error.code : "unavailable";

@@ -4,11 +4,59 @@ const say = (language, zh, en, es) => language === "en" ? en : language === "es"
 const selected = (profile, question) => question.options.find((option) => option.id === profile.answers?.[question.id]);
 export const fitOverviewComplete = (profile) => overviewQuestionIds.every((id) => typeof profile?.answers?.[id] === "string");
 
+// Preference definitions follow the Myers & Briggs Foundation's preference and
+// relationship guides. Practical prompts below are Pinky's suggested experiments.
+const mbtiAxes = [
+  {
+    title: ["恢复精力", "Recharging", "Recargar energía"],
+    choices: { E: ["向外交流、边聊边想", "interaction and thinking aloud", "interactuar y pensar en voz alta"], I: ["独处整理、想好再说", "reflection before sharing", "reflexionar antes de compartir"] },
+    together: ["先约一段一起聊的时间，也给各自整理思路的空隙。", "Agree on time to talk and room to gather your thoughts.", "Acuerden un rato para hablar y espacio para ordenar las ideas."],
+  },
+  {
+    title: ["接收信息", "Taking in information", "Recibir información"],
+    choices: { S: ["从具体事实和细节入手", "concrete facts and details", "hechos concretos y detalles"], N: ["从整体、联系和可能性入手", "patterns and possibilities", "patrones y posibilidades"] },
+    together: ["做计划时先讲想要的体验，再一起列出日期、预算和细节。", "Start a plan with the experience you want, then add dates, budget, and details.", "Empiecen por la experiencia deseada y añadan fechas, presupuesto y detalles."],
+  },
+  {
+    title: ["做决定", "Making decisions", "Tomar decisiones"],
+    choices: { T: ["先看逻辑和一致的原则", "logic and consistent principles", "lógica y principios coherentes"], F: ["先看个人价值和对人的影响", "personal values and impact on people", "valores personales e impacto en las personas"] },
+    together: ["遇到分歧，各说清现实利弊和对自己的影响，再一起选。", "In a disagreement, each explain both the practical trade-offs and the personal impact.", "Ante un desacuerdo, expliquen las ventajas prácticas y el impacto personal."],
+  },
+  {
+    title: ["安排生活", "Organizing life", "Organizar la vida"],
+    choices: { J: ["喜欢先定下来、有清楚安排", "settled plans and structure", "planes definidos y estructura"], P: ["喜欢保留选择、灵活调整", "open options and flexibility", "opciones abiertas y flexibilidad"] },
+    together: ["先定必须敲定的时间和预算，再留一段临场决定的空间。", "Set essential timing and budget, then leave part of the plan open.", "Fijen la hora y el presupuesto necesarios y dejen una parte abierta."],
+  },
+];
+const atLanguage = (values, language) => values[language === "en" ? 1 : language === "es" ? 2 : 0];
+
 function mbtiNote(profile, language) {
-  return say(language,
-    `你填写的类型是 ${profile.mbti}。可以借这个标签聊聊：怎样恢复精力、喜欢怎样接收信息、做决定时在意什么、怎样安排生活。把情景里的选择和真实经历放在一起看，会更了解自己。`,
-    `You entered ${profile.mbti}. Use this label to explore how you recharge, take in information, make decisions, and organize life. Your situation choices and lived experiences add useful detail.`,
-    `Ingresaste ${profile.mbti}. Usa esta etiqueta para explorar cómo recargas energía, recibes información, tomas decisiones y organizas tu vida. Tus elecciones y experiencias aportan más detalle.`);
+  const introduction = say(language,
+    `你自填的类型是 ${profile.mbti}。下面按类型框架解读这四个偏好，实际情况可以用你的经历核对。`,
+    `You reported ${profile.mbti}. Here is how the framework describes those preferences. Check them against your own experiences.`,
+    `Indicaste ${profile.mbti}. Así describe el marco esas preferencias. Compáralas con tus experiencias.`);
+  const preferences = mbtiAxes.map((axis, index) => `${profile.mbti[index]} · ${atLanguage(axis.title, language)} — ${atLanguage(axis.choices[profile.mbti[index]], language)}`);
+  const question = say(language,
+    "回想最近一次累了一天后的相处：你想先聊，还是先整理自己的思路？哪一种让你更舒服？",
+    "Think of your last tiring day: did you want to talk first or gather your thoughts? What felt better?",
+    "Piensa en tu último día agotador: ¿querías hablar primero o ordenar tus ideas? ¿Qué te sentó mejor?");
+  return [introduction, ...preferences, question].join("\n\n");
+}
+
+function mbtiPairNote(mine, partner, partnerName, language) {
+  const introduction = say(language,
+    `你自填 ${mine.mbti}，${partnerName} 自填 ${partner.mbti}。以下按类型框架比较双方偏好，适合拿真实场景核对和聊天。`,
+    `You reported ${mine.mbti}; ${partnerName} reported ${partner.mbti}. Use this framework comparison as a starting point and check it against real situations.`,
+    `Indicaste ${mine.mbti}; ${partnerName} indicó ${partner.mbti}. Usen esta comparación como punto de partida y contrástenla con situaciones reales.`);
+  const preferences = mbtiAxes.map((axis, index) => {
+    const own = atLanguage(axis.choices[mine.mbti[index]], language);
+    const theirs = atLanguage(axis.choices[partner.mbti[index]], language);
+    const comparison = mine.mbti[index] === partner.mbti[index]
+      ? say(language, `你们填写的偏好相同，都偏向${own}。`, `Your reported preferences match: ${own}.`, `Sus preferencias indicadas coinciden: ${own}.`)
+      : say(language, `你偏向${own}，${partnerName} 偏向${theirs}。`, `You lean toward ${own}; ${partnerName} toward ${theirs}.`, `Te inclinas por ${own}; ${partnerName}, por ${theirs}.`);
+    return `${atLanguage(axis.title, language)}\n${comparison} ${atLanguage(axis.together, language)}`;
+  });
+  return [introduction, ...preferences].join("\n\n");
 }
 
 const zodiacPrompts = {
@@ -30,9 +78,9 @@ function zodiacNote(mine, partner, language) {
   const index = language === "en" ? 1 : language === "es" ? 2 : 0;
   const first = zodiacPrompts[mine.zodiac][index], second = zodiacPrompts[partner.zodiac][index];
   return say(language,
-    `趣味星座故事：把「${first}」和「${second}」放进同一次小约会，会是什么样？各自挑一个喜欢的细节，试着给你们的组合起个名字。这段内容供娱乐和聊天，双方的相处解析依据下方真实回答。`,
-    `A playful zodiac story: what would a tiny date combine from “${first}” and “${second}”? Each pick a detail you like and name your duo. This is for entertainment and conversation; your relationship insights use your actual answers below.`,
-    `Un juego de signos: ¿cómo sería una pequeña cita que una «${first}» y «${second}»? Elijan un detalle cada uno y pónganle nombre a su dúo. Es entretenimiento para conversar; el análisis de su relación se basa en las respuestas reales de abajo.`);
+    `趣味星座故事：今晚你把「${first}」写在第一张小纸条上，TA 把「${second}」写在另一张。交换打开后，各为对方安排十分钟的小惊喜，再给这次约会起个名字。你想先准备哪一个细节？这段故事供娱乐和聊天，相处解析依据下方真实回答。`,
+    `A playful zodiac scene: write “${first}” on a note while your partner writes “${second}”. Swap notes, each create a ten-minute surprise, and name your little date. Which detail would you prepare first? This story is for entertainment and conversation; relationship insights use your actual answers below.`,
+    `Una escena de signos: escribe «${first}» en una nota mientras tu pareja escribe «${second}». Intercámbienlas, preparen una sorpresa de diez minutos cada uno y pónganle nombre a su cita. ¿Qué detalle prepararías primero? Este cuento es entretenimiento para conversar; el análisis usa sus respuestas reales.`);
 }
 
 export function personalFitReport(profile, language) {
@@ -60,7 +108,7 @@ export function personalFitReport(profile, language) {
     const name = zodiacNames[profile.zodiac][language];
     sections.push({
       id: "zodiac", title: say(language, "我的星座 · 趣味", "My sign · Just for fun", "Mi signo · Por diversión"),
-      summary: say(language, `你选了${name}。想象以「${zodiacPrompts[profile.zodiac][0]}」为主题，给自己设计一个小小的约会。`, `You chose ${name}. Imagine a tiny date inspired by ${zodiacPrompts[profile.zodiac][1]}.`, `Elegiste ${name}. Imagina una pequeña cita inspirada en ${zodiacPrompts[profile.zodiac][2]}.`),
+      summary: say(language, `你选了${name}。趣味小剧场：今天给你一张「${zodiacPrompts[profile.zodiac][0]}」任务卡。找一个能让你微笑的地方，拍一张照片，写一句想对未来自己说的话。你会把这段小约会留给哪一天？`, `You chose ${name}. A playful scene: today's little mission is ${zodiacPrompts[profile.zodiac][1]}. Find a place that makes you smile, take a photo, and write one line to your future self. Which day would you save this tiny date for?`, `Elegiste ${name}. Una escena por diversión: tu pequeña misión de hoy es ${zodiacPrompts[profile.zodiac][2]}. Busca un lugar que te haga sonreír, toma una foto y escribe una frase para tu yo del futuro. ¿Qué día reservarías para esta pequeña cita?`),
       evidence: [], suggestion: say(language, "来源：你填写的星座。这段趣味内容可以拿来聊天，相处解析采用你的情景回答。", "Source: your chosen zodiac sign. Enjoy this conversation prompt; your relationship insights use your situation answers.", "Fuente: el signo que elegiste. Disfruta esta idea para conversar; el análisis usa tus respuestas a las situaciones."), answered: 1, total: 1,
     });
   }
@@ -105,7 +153,7 @@ export function coupleFitReport(mine, partner, partnerName, language) {
   if (mine.mbti && partner.mbti) {
     report.mbti = {
       title: `${mine.mbti} × ${partner.mbti}`,
-      summary: say(language, `你填写 ${mine.mbti}，${partnerName} 填写 ${partner.mbti}。拿双方在「性格与生活节奏」里的选择，聊聊怎样充电、怎样做决定更舒服。类型由本人填写；具体相处建议以你们的场景回答为依据。`, `You entered ${mine.mbti}; ${partnerName} entered ${partner.mbti}. Use your Personality & pace answers to discuss how each of you likes to recharge and make decisions. Types are self-reported; practical suggestions come from your situation answers.`, `Ingresaste ${mine.mbti}; ${partnerName} ingresó ${partner.mbti}. Usen las respuestas de Personalidad y ritmo para hablar de cómo recargan energía y deciden. Los tipos son los que indicó cada uno; las sugerencias se apoyan en sus respuestas.`),
+      summary: mbtiPairNote(mine, partner, partnerName, language),
     };
   }
   if (mine.zodiac && partner.zodiac) report.zodiac = {

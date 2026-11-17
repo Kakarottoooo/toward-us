@@ -51,6 +51,7 @@ import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
 import { createPeopleRouter } from "./people.mjs";
 import { createPeopleComparer } from "./people-compare.mjs";
 import { createCycleRouter } from "./cycle.mjs";
+import { createFitRouter } from "./fit-router.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createLegalRouter } from "./legal.mjs";
@@ -541,6 +542,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createProfileRouter({ store, emit }));
   app.use("/api", createPeopleRouter({ store, emit, comparer: createPeopleComparer({ store, mediator }) }));
   app.use("/api", createCycleRouter({ store, emit }));
+  app.use("/api", createFitRouter({ store, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message) }));
   app.use("/api", createDiscoverRouter({ store }));
   app.use("/api", createPromisesRouter({ store, keeper: promiseKeeper, emit }));
   app.use("/api", createSpaceRouter({ store, emit }));

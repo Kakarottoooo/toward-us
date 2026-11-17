@@ -57,7 +57,11 @@ export function awaitedBy(earlier, actorUserId, now = Date.now()) {
  * the member it is waiting to hear from (`awaited`). */
 export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null, awaited = null } = {}) {
   if (!message || message.role !== "member") return false;
-  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo)) || Boolean(awaited);
+  const questionDiscussion = repliedTo?.kind === "daily_question" || repliedTo?.kind === "game";
+  return AGENT_CALL.test(String(message.text || "")) || !questionDiscussion && (
+    Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) ||
+    Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo)) || Boolean(awaited)
+  );
 }
 
 /** Reads only the shared conversation, shared agreements/commitments and jointly approved memories. Never private threads,
@@ -115,7 +119,22 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   const key = clean(handle, 200) || null;
   const duplicate = key && conversation.messages.find((item) => item.handle === key);
   if (duplicate) return { conversation, message: duplicate, duplicate: true };
-  const repliesTo = replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : answersCheckIn && actorUserId ? openCheckIn(conversation.messages, actorUserId)?.id || null : null;
+  let repliesTo = replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : null;
+  let repliedToKind = conversation.messages.find((item) => item.id === repliesTo)?.kind;
+  if (replyTo && !repliesTo) {
+    const indexed = Object.values(conversation.playRoundIndex || {}).find((item) => item.messageId === replyTo);
+    const newest = indexed?.archiveSeq || conversation.archived?.chunks || 0;
+    const oldest = indexed?.archiveSeq || 1;
+    for (let sequence = newest; sequence >= oldest; sequence -= 1) {
+      const archive = await tx.getRelationshipRecordForUser("togetherArchives", conversation.id + ":archive:" + sequence, userId);
+      if (archive?.relationshipId === relationshipId && archive.visibility === "shared" && !archive.archivedAt && archive.messages?.some((item) => item.id === replyTo)) {
+        repliesTo = replyTo;
+        repliedToKind = archive.messages.find((item) => item.id === replyTo)?.kind;
+        break;
+      }
+    }
+  }
+  if (!repliesTo && !replyTo && answersCheckIn && actorUserId) repliesTo = openCheckIn(conversation.messages, actorUserId)?.id || null;
   const message = {
     id: randomUUID(), role: actorUserId ? "member" : "agent", actorUserId: actorUserId || null, source, kind, text: body,
     refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: repliesTo, createdAt: new Date().toISOString(),
@@ -138,7 +157,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   // 连续一起来: saying anything in Us is showing up that day (streak.mjs), in the member's own time zone.
   if (message.role === "member") await markShowedUp(tx, { relationshipId, userId: actorUserId, zone: conversation.zones?.[actorUserId] });
   const updated = appended.messages.length > MESSAGE_LIMIT ? await archiveOldestMessages(tx, appended, userId) : appended;
-  return { conversation: updated, message, duplicate: false };
+  return { conversation: updated, message, duplicate: false, repliedToKind };
 }
 
 /** Moves the oldest messages of an over-full working set into the newest archive chunk (or a new one), in the caller's
@@ -220,7 +239,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;
   const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
   if (!saved.duplicate) emit(saved.conversation);
-  const repliedTo = message.replyTo ? messages.find((item) => item.id === message.replyTo) || null : null;
+  const repliedTo = message.replyTo ? messages.find((item) => item.id === message.replyTo) || (saved.repliedToKind ? { id: message.replyTo, kind: saved.repliedToKind } : null) : null;
   const awaited = awaitedBy(messages.slice(0, messages.findIndex((item) => item.id === message.id)), message.actorUserId);
   if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo, awaited }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
