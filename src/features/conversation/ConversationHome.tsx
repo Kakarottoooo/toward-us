@@ -1133,7 +1133,13 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
   return <div className="conversation-drawer-layer" data-testid="conversation-drawer">
     <button className="conversation-drawer-scrim" aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} onClick={onClose} />
     <nav className="conversation-drawer" aria-label={t("菜单", "Menu", "Menú")} onPointerDown={(event) => { start.current = event.clientX; }} onPointerUp={(event) => { if (start.current !== null && event.clientX - start.current < -60) onClose(); start.current = null; }}>
-      <header><div><strong>PINKY</strong><span>{user.name}</span>{together && <em className="drawer-together"><Heart size={12} weight="fill" />{t(`在一起 ${together.days} 天`, `Together ${counted(together.days, "day", "days")}`, `Juntos ${counted(together.days, "día", "días")}`)}</em>}</div><button onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")}><X size={22} /></button></header>
+      <header>
+        <div className="drawer-topline">
+          <strong>PINKY</strong>
+          <button type="button" onClick={onClose} aria-label={t("关闭菜单", "Close menu", "Cerrar menú")} data-testid="drawer-close"><X size={22} /></button>
+        </div>
+        <div className="drawer-profile"><span>{user.name}</span>{together && <em className="drawer-together"><Heart size={12} weight="fill" />{t(`在一起 ${together.days} 天`, `Together ${counted(together.days, "day", "days")}`, `Juntos ${counted(together.days, "día", "días")}`)}</em>}</div>
+      </header>
       <div className="drawer-group">{fixed.map(row)}</div>
       <div className="drawer-group"><h2>{paired ? t("我们俩的", "Ours", "Nuestro") : t("只有我的", "Just mine", "Solo mío")}</h2>{(paired ? ours : mine).map(row)}{fixedSpaces.map(row)}</div>
       {paired && !!mine.length && <div className="drawer-group"><h2>{t("只有我的", "Just mine", "Solo mío")}</h2>{mine.map(row)}</div>}

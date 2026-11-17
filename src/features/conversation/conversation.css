@@ -1,10 +1,10 @@
 /* Conversation-first home: one continuous ivory surface, header and composer float on it without hard dividers. */
-.conversation-home { position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--jian-paper); color: var(--jian-ink); }
-.conversation-header { position: relative; z-index: 4; flex: 0 0 auto; width: min(100%, 760px); margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 16px 6px; }
+.conversation-home { --conversation-toolbar-top: max(12px, env(safe-area-inset-top)); --conversation-toolbar-height: 44px; position: relative; display: flex; flex-direction: column; overflow: hidden; background: var(--jian-paper); color: var(--jian-ink); }
+.conversation-header { position: relative; z-index: 4; flex: 0 0 auto; width: min(100%, 760px); margin: 0 auto; padding: var(--conversation-toolbar-top) 16px 6px; }
 /* While Pinky works, its step pill hangs under the middle of the top row; the top of the thread makes room for it. */
 .agent-status-top { position: absolute; top: calc(100% - 4px); left: 50%; z-index: 5; transform: translateX(-50%); pointer-events: none; }
 .conversation-home.is-agent-working .conversation-thread { padding-top: 34px; }
-.conversation-topline { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 44px; }
+.conversation-topline { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: var(--conversation-toolbar-height); }
 .conversation-menu { display: inline-grid; place-items: center; width: 44px; height: 44px; margin-left: -6px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .conversation-menu:hover { background: rgba(37,37,37,.06); }
 /* Between the menu and the call button, the same 44px height as both. */
@@ -137,7 +137,7 @@
 .conversation-retry { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 4px 8px; font-size: 14px; color: #963c32; }
 .conversation-retry button { min-height: 40px; padding: 0 14px; border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; font-weight: 600; }
 .conversation-home button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-@media (min-width: 900px) { .conversation-header { padding-top: 22px; } .conversation-empty h1 { font-size: 34px; } }
+@media (min-width: 900px) { .conversation-home { --conversation-toolbar-top: 22px; } .conversation-empty h1 { font-size: 34px; } }
 
 .agreement-open { margin-top: 10px; }
 .agreement-open small { margin-top: 0; font-weight: 600; }
@@ -146,12 +146,13 @@
 /* Left drawer: covers the conversation, slides in from the left, closes on the scrim, the X, Escape or a left swipe. */
 .conversation-drawer-layer { position: absolute; inset: 0; z-index: 60; }
 .conversation-drawer-scrim { position: absolute; inset: 0; width: 100%; border: 0; padding: 0; background: rgba(28,26,24,.32); animation: drawer-fade .18s ease-out; cursor: pointer; }
-.conversation-drawer { position: absolute; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; width: min(84%, 320px); padding: max(54px, env(safe-area-inset-top)) 12px max(20px, env(safe-area-inset-bottom)); overflow-y: auto; background: var(--jian-paper-bright); box-shadow: 12px 0 32px rgba(37,37,37,.16); animation: drawer-in .22s cubic-bezier(.2,.8,.2,1); touch-action: pan-y; }
-.conversation-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 6px 18px 12px; }
-.conversation-drawer > header div { display: grid; gap: 4px; min-width: 0; }
+.conversation-drawer { position: absolute; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; width: min(84%, 320px); padding: var(--conversation-toolbar-top) 12px max(20px, env(safe-area-inset-bottom)); overflow-y: auto; background: var(--jian-paper-bright); box-shadow: 12px 0 32px rgba(37,37,37,.16); animation: drawer-in .22s cubic-bezier(.2,.8,.2,1); touch-action: pan-y; }
+.conversation-drawer > header { padding: 0 6px 18px 12px; }
+.drawer-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--conversation-toolbar-height); }
+.drawer-profile { display: grid; gap: 4px; min-width: 0; }
 .conversation-drawer > header strong { font-size: 15px; font-weight: 700; letter-spacing: .28em; color: var(--jian-ink); }
 .conversation-drawer > header span { overflow: hidden; color: #5f5952; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.conversation-drawer > header button { display: grid; place-items: center; width: 44px; height: 44px; margin: -8px -4px 0 0; border: 0; border-radius: 12px; background: transparent; color: var(--jian-ink); cursor: pointer; }
+.conversation-drawer > header button { display: grid; place-items: center; width: 44px; height: var(--conversation-toolbar-height); margin-right: -4px; border: 0; border-radius: 12px; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .drawer-group { display: grid; gap: 2px; padding: 10px 0; border-top: 1px solid rgba(37,37,37,.08); }
 .drawer-group:first-of-type { border-top: 0; padding-top: 0; }
 .drawer-group h2 { margin: 6px 12px 6px; color: #6f6860; font-size: 13px; font-weight: 600; letter-spacing: 0; }

@@ -13,6 +13,18 @@ import { localized, type Language } from "../../i18n";
 export type CategoryId = "board" | "draw" | "words" | "puzzle" | "casual";
 export type GameEntry = { id: string; category: CategoryId; kind: "match" | "card"; cardType?: "choice" | "guess" | "truth"; solo?: boolean; partnerOnly?: boolean; icon: ReactNode; name: string; tagline: string; rules: string[] };
 
+export type GameMode = "all" | "coop" | "versus" | "solo";
+const competitiveGames = new Set([
+  "gomoku", "xiangqi", "ludo", "dots", "battleship", "liar-dice", "mini-golf", "reversi", "connect4", "truths", "rps",
+  "air-hockey", "block-duel", "green-light", "crazy-eights",
+]);
+
+export function matchesGameMode(game: GameEntry, mode: GameMode) {
+  if (mode === "all") return true;
+  if (mode === "solo") return game.kind === "match" && !game.partnerOnly;
+  return competitiveGames.has(game.id) === (mode === "versus");
+}
+
 export function categories(language: Language): Array<{ id: CategoryId; name: string }> {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   return [
