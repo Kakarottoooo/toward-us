@@ -25,7 +25,7 @@ type Props = {
   renderPlans?: (questionId?: string) => ReactNode;
   onPickCard?: (cardId: string, nextIds: string[]) => void;
   inConversation?: boolean;
-  onContinueChat?: () => void;
+  onContinueChat?: (followup?: string) => void;
   onOpenPlan?: (roundId: string) => void;
 };
 
@@ -350,7 +350,7 @@ function RoundCard({ t, card, round, userId, partnerName, paired, frozen, disabl
   storage: string; editing: boolean; onEdit: () => void; onCancelEdit: () => void; onBegin: () => void;
   answer: (input: AnswerInput) => Promise<boolean>; reply: (input: { text: string; clientId: string }) => Promise<boolean>; onInvite: () => void;
   onAskPinky?: (choices: SharedChoices) => void;
-  onContinueChat?: () => void; onOpenPlan?: () => void;
+  onContinueChat?: (followup?: string) => void; onOpenPlan?: () => void;
 }) {
   const own = round?.answers[userId];
   const answerKey = `${storage}:${card.id}:answer:${card.type === "guess" ? round?.aboutUserId || userId : ""}`;
@@ -387,6 +387,7 @@ function RoundCard({ t, card, round, userId, partnerName, paired, frozen, disabl
   };
   return <section className={`play-card play-card-${card.type}${revealed ? " is-revealed" : ""}`} data-testid="play-card">
     <p className="play-kicker"><span>{modeName(t, card.type)}</span> · {card.title}</p>
+    {incoming(round, userId) && <p className="play-reveal-title" role="status">{t(`${partnerName} 答了，轮到你`, `${partnerName} answered. Your turn.`, `${partnerName} ya respondió. Te toca.`)}</p>}
     <h2>{card.prompt}</h2>
     {revealed ? <>
       <p className="play-reveal-title" role="status">{revealTitle}</p>
@@ -396,7 +397,7 @@ function RoundCard({ t, card, round, userId, partnerName, paired, frozen, disabl
       </div>
       {round.replies.length > 0 && <ul className="play-replies" aria-label={t("接着聊的内容", "Replies", "Respuestas")}>{round.replies.map((item) => <li key={item.id}><small>{item.userId === userId ? t("你", "You", "Tú") : partnerName}</small><p>{item.text}</p></li>)}</ul>}
       {onContinueChat && !frozen ? <div className="play-actions">
-        <button type="button" className="play-main" onClick={onContinueChat}>{t("接着聊这题", "Keep talking in Us", "Seguir hablando en Nosotros")}</button>
+        <button type="button" className="play-main" onClick={() => onContinueChat(card.followup)}>{t("接着聊这题", "Keep talking in Us", "Seguir hablando en Nosotros")}</button>
         {onOpenPlan && <button type="button" className="play-quiet" onClick={onOpenPlan}>{t("看看约会点子", "See date ideas", "Ver ideas para una cita")}</button>}
       </div> : paired && !frozen && (composing ? <div className="play-reply-form">
         <label htmlFor="play-reply">{t("给 TA 留一句", "Leave a reply", "Deja una respuesta")}</label>

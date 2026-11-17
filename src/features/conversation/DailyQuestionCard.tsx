@@ -9,14 +9,16 @@ export type DailyAnswerInput = { text?: string; choice?: number; drawing?: Strok
 export type DailyAnswers = Record<string, DailyAnswerInput & { text: string; at: string }>;
 export type DailyPlay = {
   kind: "choice" | "guess" | "draw";
+  activity?: "video";
   variants: Partial<Record<Language, { options: string[]; followup: string }>>;
   aboutUserId?: string;
 };
 
-export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, onOpenPlan, readOnly = false, offline = false, inPlay = false }: {
+export function DailyQuestionCard({ questionId, question, answers, partnerAnswered, videoPlanStarted, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, onOpenPlan, readOnly = false, offline = false, inPlay = false }: {
   questionId: string; question: string; answers: DailyAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language;
   current: boolean; askedAt: string; listening: boolean; onVoice: (append: ((text: string) => void) | null) => void;
   onAnswer: (answer: DailyAnswerInput) => Promise<boolean>; dailyPlay?: DailyPlay; onContinue?: (followup?: string) => void; onOpenPlan?: () => void;
+  partnerAnswered?: boolean; videoPlanStarted?: boolean;
   readOnly?: boolean; offline?: boolean; inPlay?: boolean;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
@@ -64,12 +66,22 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
   const [failed, setFailed] = useState(false);
   const partner = members.find((member) => member.id !== userId);
   const partnerName = partner?.name || t("TA", "your partner", "tu pareja");
+  const videoQuestion = dailyPlay?.activity === "video";
+  const partnerChoice = answers[partner?.id || ""]?.choice;
+  const bothVideo = videoQuestion && revealed && mine?.choice === 0 && partnerChoice === 0;
+  const planAction = videoQuestion && !bothVideo ? undefined : onOpenPlan;
+  const followup = !videoQuestion ? variant?.followup : bothVideo
+    ? t("想用这十分钟聊点什么？", "What would you like to talk about in those ten minutes?", "¿De qué les gustaría hablar en esos diez minutos?")
+    : mine?.choice === 1 && partnerChoice === 1
+      ? t("如果现在就留条语音，第一句会说什么？", "If you sent a voice note right now, what would you say first?", "Si mandaras una nota de voz ahora mismo, ¿qué dirías primero?")
+      : t("你更想听到 TA 的声音，还是想留一小段两个人都有空的时间？", "Do you mostly want to hear each other's voices, or have a little time set aside together?", "¿Qué te apetece más: oír su voz o reservar un ratito para los dos?");
   const answered = options ? choice !== undefined : drawing && !useWords ? sketch.length > 0 : Boolean(draft.trim());
   const modeLabel = dailyPlay?.kind === "guess" ? t("猜 TA 怎么选", "Guess the pick", "Adivina la elección")
     : options ? t("今日二选一", "Today's quick pick", "Elección del día")
       : drawing ? t("一起画一画", "Draw together", "Dibujen juntos") : t("今日一问", "Today's question", "Pregunta del día");
-  const revealText = options && revealed ? (
-    mine?.choice === answers[partner?.id || ""]?.choice
+  const revealText = bothVideo ? t("你们都想视频十分钟", "You both picked a ten-minute video call", "Los dos eligieron una videollamada de diez minutos")
+    : options && revealed ? (
+    mine?.choice === partnerChoice
       ? dailyPlay?.kind === "guess" ? t("猜中了", "Guessed it", "¡Acertaron!") : t("你们选到一起了", "You picked the same", "Eligieron lo mismo")
       : t("你们选得不一样", "You picked differently", "Eligieron distinto")
   ) : "";
@@ -98,8 +110,9 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
     <div className="card-actions"><button type="button" onClick={() => defer(false)} data-testid="daily-resume">{t("重新展开", "Show question", "Mostrar pregunta")}</button></div>
   </article>;
 
-  return <article className={`conversation-card daily-card ${current ? "" : "is-past"}`} data-testid="daily-question">
+  return <article className={`conversation-card daily-card${videoQuestion ? " daily-video" : ""}${current ? "" : " is-past"}`} data-testid="daily-question">
     <header><ChatCircleDots size={16} />{current ? modeLabel : t(`${day} 的问题`, `Question from ${day}`, `Pregunta del ${day}`)}</header>
+    {!revealed && !mine && partnerAnswered && <small className="daily-turn" role="status">{t(`${partnerName} 答了，轮到你`, `${partnerName} answered. Your turn.`, `${partnerName} ya respondió. Te toca.`)}</small>}
     {dailyPlay?.kind === "guess" && <small>{dailyPlay.aboutUserId === userId
       ? t("这题关于你。选你真的会做的事。", "This one's about you. Pick what you'd actually do.", "Esta va sobre ti. Elige lo que harías.")
       : t(`猜猜 ${partnerName} 会怎么选。`, `Guess what ${partnerName} would choose.`, `Adivina qué elegiría ${partnerName}.`)}</small>}
@@ -108,25 +121,28 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
       {revealText && <small role="status">{revealText}</small>}
       <ul className="daily-answers">{[userId, partner?.id || ""].map((id) => answers[id] &&
         <li key={id}><small>{id === userId ? t("你", "You", "Tú") : partnerName}</small>{renderAnswer(answers[id])}</li>)}</ul>
-      {(onOpenPlan || onContinue) && !readOnly && <div className="card-actions">
-        {onOpenPlan && <button className="card-primary" type="button" onClick={onOpenPlan}>
-          <CalendarBlank size={17} aria-hidden="true" />{t("看看约会点子", "See date ideas", "Ver ideas para una cita")}
+      {onContinue && followup && !bothVideo && <p className="daily-followup">{followup}</p>}
+      {(planAction || onContinue) && !readOnly && <div className="card-actions">
+        {planAction && <button className="card-primary" type="button" onClick={planAction}>
+          <CalendarBlank size={17} aria-hidden="true" />{bothVideo
+            ? videoPlanStarted ? t("查看视频时间", "Review video call time", "Ver hora de la videollamada") : t("约个时间", "Pick a time", "Elegir una hora")
+            : t("看看约会点子", "See date ideas", "Ver ideas para una cita")}
         </button>}
-        {onContinue && <button className={onOpenPlan ? undefined : "card-primary"} type="button" onClick={() => onContinue(variant?.followup)}>
+        {onContinue && <button className={planAction ? undefined : "card-primary"} type="button" onClick={() => onContinue(followup)}>
           {t("接着聊这题", "Keep talking", "Seguir hablando")}
         </button>}
       </div>}
     </> : mine && !editing ? <>
       <div className="daily-mine">{renderAnswer(mine)}</div>
-      <small><LockKey size={14} />{onOpenPlan && !readOnly
+      <small role="status"><LockKey size={14} />{onOpenPlan && !videoQuestion && !readOnly
         ? t(`等 ${partnerName} 也回答，就能一起翻牌、看约会点子。`, `Once ${partnerName} answers, reveal the card and see date ideas.`, `Cuando ${partnerName} responda, podrán revelar la carta y ver ideas para una cita.`)
-        : t(`等 ${partnerName} 也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partnerName} answers too`, `Sus respuestas aparecen juntas cuando ${partnerName} también responda`)}</small>
+        : t(`已答，等 ${partnerName} 回答后一起翻牌`, `Answered. Waiting for ${partnerName} to reveal both answers.`, `Respuesta guardada. Falta ${partnerName} para revelar las dos.`)}</small>
       {!readOnly && <div className="card-actions"><button type="button" onClick={() => {
         setDraft(mine.choice === undefined && !mine.drawing ? mine.text : "");
         setChoice(mine.choice); setSketch(mine.drawing || []); setUseWords(drawing && !mine.drawing); setEditing(true);
       }}>{t("改一下", "Edit", "Editar")}</button></div>}
     </> : readOnly ? null : !editing ? <>
-      {onOpenPlan && <small><LockKey size={14} />{t("两个人都回答后，就能翻牌、看约会点子。", "Answer together to reveal the card and see date ideas.", "Respondan ambos para revelar la carta y ver ideas para una cita.")}</small>}
+      {onOpenPlan && !videoQuestion && <small><LockKey size={14} />{t("两个人都回答后，就能翻牌、看约会点子。", "Answer together to reveal the card and see date ideas.", "Respondan ambos para revelar la carta y ver ideas para una cita.")}</small>}
       <div className="card-actions">
         <button type="button" className="card-primary" onClick={() => setEditing(true)}>{current ? t("回答", "Answer", "Responder") : t("回答这题", "Answer this question", "Responder esta pregunta")}</button>
         <button type="button" onClick={() => defer(true)} data-testid="daily-defer">{t("暂时不答", "Not now", "Ahora no")}</button>
@@ -150,7 +166,7 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
           {useWords ? t("改用画布", "Use the canvas", "Usar el lienzo") : t("用一句话描述", "Describe it in words", "Describirlo con palabras")}
         </button>
       </div>}
-      <small><LockKey size={14} />{onOpenPlan
+      <small><LockKey size={14} />{onOpenPlan && !videoQuestion
         ? t("两个人都回答后，才会揭晓答案和约会点子。", "Once you both answer, reveal your answers and see date ideas.", "Cuando ambos respondan, verán sus respuestas e ideas para una cita.")
         : t("两个人都回答后才揭晓。", "Answers appear once you both answer.", "Las respuestas se revelan cuando ambos respondan.")}</small>
       {inPlay && failed && <small role="alert">{t("答案没发出去，草稿还在。", "Your answer wasn't sent. Your draft is still here.", "No se envió tu respuesta. Tu borrador sigue aquí.")}</small>}

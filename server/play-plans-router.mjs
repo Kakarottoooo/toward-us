@@ -5,6 +5,7 @@ import { conversationDay, readableConversation } from "./conversation-recall.mjs
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { localDateTimeToInstant } from "./reminder-service.mjs";
 import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
+import { bothPickedVideo } from "./daily-play.mjs";
 
 const ROUND = "play_date_round";
 const VOTE = "play_date_picks";
@@ -15,6 +16,12 @@ const key = (kind, ...parts) => kind + "-" + createHash("sha256").update(JSON.st
 const labels = (zh, en, es) => ({ zh, en, es });
 const titleFor = (idea, language) => idea.title[language] || idea.title.zh;
 const sameList = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const videoIdea = {
+  id: "video",
+  title: labels("十分钟视频", "Ten-minute video call", "Videollamada de diez minutos"),
+  detail: labels("", "", ""),
+  fromBoth: true,
+};
 
 const IDEAS = [
   { id: "walk", cue: /散步|走走|公园|海边|遛弯|\bwalk|\bpark|\bbeach|pase[oa]|parque|playa/i,
@@ -77,9 +84,11 @@ async function readState(store, context, questionId, userId) {
     ? await store.getRelationshipRecordForUser("milestones", round.offer.milestoneId, userId)
     : null;
   const removed = round?.offer?.status === "confirmed" && (!milestone || milestone.archivedAt || milestone.withdrawnAt);
+  const directIdeaId = bothPickedVideo(question, members) ? videoIdea.id : null;
   return {
     question, round: removed ? { ...round, offer: { ...round.offer, status: "removed" } } : round,
-    votes: votes.filter(Boolean), ideas: ideasFor(question, members, round?.customTitle),
+    votes: votes.filter(Boolean), directIdeaId,
+    ideas: directIdeaId ? [videoIdea] : ideasFor(question, members, round?.customTitle),
   };
 }
 
@@ -98,6 +107,7 @@ function view(state, userId, language) {
     saved: Boolean(mine),
     partnerReady: state.votes.some((vote) => vote.ownerUserId !== userId),
     matches: matchIds(state),
+    directIdeaId: state.directIdeaId,
     offer: state.round?.offer || null,
   };
 }
@@ -154,7 +164,7 @@ async function mutate(store, context, state, userId, body, language) {
   const pending = offer?.status === "pending", confirmed = offer?.status === "confirmed";
 
   if (body.action === "save_picks") {
-    if (pending || confirmed) throw decisionError(409, "plan_locked");
+    if (pending || confirmed || state.directIdeaId) throw decisionError(409, "plan_locked");
     if (!Array.isArray(body.ideaIds) || body.ideaIds.length > state.ideas.length || body.ideaIds.some((id) => !state.ideas.some((idea) => idea.id === id))) throw decisionError(400, "invalid_picks");
     const picks = [...new Set(body.ideaIds)].sort();
     const own = state.votes.find((vote) => vote.ownerUserId === userId);
@@ -167,7 +177,7 @@ async function mutate(store, context, state, userId, body, language) {
     const title = typeof body.title === "string" ? body.title.replace(/[\p{C}\s]+/gu, " ").trim() : "";
     if (!title || title.length > 80) throw decisionError(400, "invalid_idea");
     if (state.round?.customTitle === title) return { state };
-    if (state.round?.customTitle || pending || confirmed) throw decisionError(409, "plan_locked");
+    if (state.round?.customTitle || pending || confirmed || state.directIdeaId) throw decisionError(409, "plan_locked");
     const round = await persistRound(store, context, questionId, userId, state, (record) => { record.customTitle = title; });
     return { state: { ...state, round, ideas: ideasFor(state.question, context.members, title) }, changed: true };
   }
@@ -175,12 +185,23 @@ async function mutate(store, context, state, userId, body, language) {
   if (body.action === "propose") {
     if (pending && offer.proposedBy === userId && matchesInput(offer, body)) return { state };
     if (pending || confirmed || body.version !== (state.round?.version || 0)) throw decisionError(409, "stale_version");
-    const idea = state.ideas.find((option) => option.id === body.ideaId && matchIds(state).includes(option.id));
+    const idea = state.ideas.find((option) => option.id === body.ideaId &&
+      (option.id === state.directIdeaId || matchIds(state).includes(option.id)));
     if (!idea) throw decisionError(409, "pick_together");
+    if (state.directIdeaId && !body.time) throw decisionError(400, "invalid_time");
     const times = validSchedule(body);
     const next = { ...times, ideaId: idea.id, title: titleFor(idea, language), status: "pending", proposedBy: userId };
     const round = await persistRound(store, context, questionId, userId, state, (record) => { record.offer = next; });
-    return { state: { ...state, round }, changed: true, invited: true };
+    let conversation;
+    if (state.directIdeaId) {
+      const i18n = labels("提议了一个视频时间。", "There's a suggested time for your video call.", "Hay una hora propuesta para su videollamada.");
+      ({ conversation } = await appendTogetherMessage(store, {
+        relationshipId: context.relationship.id, userId, actorUserId: null, source: "app",
+        text: i18n.zh, i18n, refs: [{ type: "video_plan", id: questionId }],
+        handle: "play-video:" + round.id + ":" + round.version,
+      }));
+    }
+    return { state: { ...state, round }, changed: true, invited: true, conversation };
   }
 
   if (body.action === "accept" && confirmed && offer.acceptedBy === userId && body.version === state.round.version - 1) return { state };
@@ -202,6 +223,7 @@ async function mutate(store, context, state, userId, body, language) {
     localDateTime: schedule.time ? schedule.date + "T" + schedule.time : null, dueAt: schedule.dueAt,
     recurringRule: "once", jointlyConfirmed: true, confirmedBy: [offer.proposedBy, userId],
     sourceQuestionId: questionId, sourcePlayPlanId: state.round.id, provenanceSource: "play_card",
+    ...(state.directIdeaId ? { titleI18n: videoIdea.title } : {}),
   });
   await store.createRelationshipRecord("milestones", milestone);
   const round = await persistRound(store, context, questionId, userId, state, (record) => {
@@ -275,7 +297,7 @@ export function createPlayPlansRouter({ store, emit = () => {}, notify = () => {
         const partner = context.members.find((member) => member.userId !== userId);
         if (partner) void Promise.resolve().then(() => notify(partner.userId, {
           body: labels("你有一个时间可以确认。", "You have a proposed time to review.", "Tienes una hora propuesta para revisar."),
-          url: "/?channel=us&play=today",
+          url: result.state.directIdeaId ? "/?channel=us&playPlan=" + encodeURIComponent(questionId) : "/?channel=us&play=today",
           tag: "play-plan-" + questionId,
         })).catch(() => {});
       }

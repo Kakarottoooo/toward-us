@@ -159,3 +159,6 @@
 .play-chat-card .play-card { min-height: clamp(190px, 38vh, 320px); }
 .play-chat-card .play-card h2 { font-size: clamp(26px, 7vw, 36px); }
 .play-chat-card.play-today .daily-card { min-height: clamp(190px, 33vh, 280px); }
+.play-today .daily-card.daily-video > strong { font-size: clamp(19px, 5.4vw, 22px); line-height: 1.25; }
+.daily-video .daily-answers { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.daily-video .daily-answers p { line-height: 1.3; }

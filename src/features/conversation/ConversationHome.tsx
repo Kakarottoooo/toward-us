@@ -46,7 +46,7 @@ type PrivateMessage = { sources?: ConversationSource[]; id: string; role: "user"
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[]; earlierPages?: number };
 type Ref = Partial<ConversationSource> & { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; answerCount?: number; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; version?: number; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
@@ -156,7 +156,19 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   });
   const [interaction, setInteraction] = useState<"touch" | "cards" | null>(() =>
     paired && !usHidden && new URLSearchParams(location.search).get("distance") === "1" ? "cards" : null);
-  const [planQuestionId, setPlanQuestionId] = useState<string | null>(null);
+  const [planQuestion, setPlanQuestion] = useState<{ id: string; video: boolean } | null>(() => {
+    const id = new URLSearchParams(location.search).get("playPlan") || "";
+    return paired && !usHidden && /^[0-9a-f-]{36}$/i.test(id) ? { id, video: true } : null;
+  });
+  const openQuestionPlan = (id: string, video = false) => { keyboard.hide(); setPlanQuestion({ id, video }); };
+  const closeQuestionPlan = () => {
+    keyboard.hide();
+    setPlanQuestion(null);
+    const params = new URLSearchParams(location.search);
+    if (!params.has("playPlan")) return;
+    params.delete("playPlan");
+    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
+  };
   const openGames = (match: string | null = null) => {
     keyboard.hide();
     if (paired) setGameHall({ match });
@@ -269,7 +281,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const loadTogether = useCallback(async () => {
     if (!paired) return;
     try {
-      const result = await relationshipApi<Together>(`/api/together?language=${language}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`); setTogether(result);
+      const result = await relationshipApi<Together>(`/api/together?language=${language}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`);
+      setTogether((current) => current && current.conversation.id === result.conversation.id &&
+        (current.conversation.version || 0) > (result.conversation.version || 0) ? current : result);
       if (result.pendingAgreement) {
         const home = await relationshipApi<{ graph: { approvals: GraphRecord[] } }>("/api/relationship/home");
         setApproved(home.graph.approvals.filter((item) => item.ownerUserId === user.id && !item.withdrawnAt).map((item) => `${item.agreementId}:${item.approvedVersion}`));
@@ -296,7 +310,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   useEffect(() => { void ensureSession(paired, true).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, session: true }))); }, [user.id, paired]);
   useEffect(() => { void loadTogether().finally(() => setFirstLook((current) => ({ ...current, together: true }))); }, [loadTogether]);
   useEffect(() => {
-    if (!playTogether || !paired) return;
+    if (!paired || (channel !== "us" && !playTogether)) return;
     const refreshVisible = () => { if (!document.hidden && navigator.onLine) void loadTogether(); };
     let date = new Date().toDateString();
     refreshVisible();
@@ -312,7 +326,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
       document.removeEventListener("visibilitychange", refreshVisible);
       window.removeEventListener("online", refreshVisible);
     };
-  }, [playTogether, paired, loadTogether]);
+  }, [playTogether, paired, channel, loadTogether]);
   useEffect(() => {
     if (!paired) return;
     const events = new EventSource("/api/relationship/events");
@@ -660,6 +674,16 @@ ${text}` : text, target);
   };
   // Today's question still waits for this member's answer.
   const todayQuestion = together?.conversation.messages.filter((message) => message.kind === "daily_question").at(-1);
+  const incomingQuestion = together?.conversation.messages.filter((message) =>
+    (message.kind === "daily_question" || (message.kind === "game" && message.game?.deckId)) &&
+    message.answerCount === 1 && !message.answers?.[user.id]).at(-1);
+  const firstQuestion = incomingQuestion || todayQuestion;
+  useEffect(() => {
+    if (channel !== "us" || !paired || together?.readOnly || !firstQuestion || gameHall || playTogether || planQuestion || call || recall.active) return;
+    const deckId = firstQuestion.game?.deckId;
+    const expanded = document.activeElement !== composerRef.current?.querySelector("textarea");
+    setPlayFocus((current) => current ?? { kind: deckId ? "deck" : "daily", id: deckId || firstQuestion.id, expanded, order: null, index: 0 });
+  }, [channel, paired, together?.readOnly, firstQuestion, gameHall, playTogether, planQuestion, call, recall.active]);
   const leavePlayDaily = () => { if (dictating.startsWith("play-daily:")) dictate("", null); };
   const closePlayTogether = () => {
     leavePlayDaily();
@@ -700,9 +724,12 @@ ${text}` : text, target);
     leavePlayDaily();
     setPlayFocus((focus) => focus?.expanded ? { ...focus, expanded: false } : focus);
   };
-  const chatAfterQuestion = () => {
+  const chatAfterQuestion = (followup?: string) => {
     collapseQuestion();
-    if (!readOnly) composerRef.current?.querySelector("textarea")?.focus();
+    if (!readOnly) {
+      if (followup) setDraft((current) => current.trim() ? current : followup, "us");
+      composerRef.current?.querySelector("textarea")?.focus();
+    }
   };
   const askForCardPlan = ({ question, own, partner: theirChoice }: { question: string; own: string; partner: string }) => {
     const prompt = t(
@@ -728,13 +755,15 @@ ${text}` : text, target);
     const voiceId = inPlay ? `play-daily:${message.id}` : message.id;
     const text = message.i18n?.[language] ?? message.translations?.[language]?.text ?? message.text;
     return <DailyQuestionCard key={message.id} questionId={message.id} question={text} answers={message.answers || {}} userId={user.id}
+      partnerAnswered={(message.answerCount || 0) > Number(Boolean(message.answers?.[user.id]))}
+      videoPlanStarted={message.dailyPlay?.activity === "video" && together?.conversation.messages.some((item) => item.refs.some((ref) => ref.type === "video_plan" && ref.id === message.id))}
       members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000}
       askedAt={message.createdAt} listening={dictating === voiceId && voiceActive} onVoice={(append) => dictate(voiceId, append)}
       dailyPlay={message.dailyPlay} onAnswer={(answer) => answerDaily(message.id, answer)}
-      onOpenPlan={paired && !together?.readOnly ? () => { keyboard.hide(); setPlanQuestionId(message.id); } : undefined}
+      onOpenPlan={paired && !together?.readOnly ? () => openQuestionPlan(message.id, message.dailyPlay?.activity === "video") : undefined}
       onContinue={inPlay && !usHidden ? chatAfterQuestion : undefined} inPlay={inPlay} offline={offline} readOnly={inPlay && together?.readOnly} />;
   };
-  const dailyWaiting = Boolean(todayQuestion && Date.now() - Date.parse(todayQuestion.createdAt) < 86_400_000 && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2);
+  const dailyWaiting = Boolean(incomingQuestion || (todayQuestion && Date.now() - Date.parse(todayQuestion.createdAt) < 86_400_000 && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2));
   // Something in Us waits for this member: an agreement they have not approved yet, or a new line from the partner or Pinky.
   const unreadUs = channel !== "us" && (dailyWaiting || Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
   const readOnly = channel === "us" && (!paired || Boolean(together?.readOnly));
@@ -797,7 +826,7 @@ ${text}` : text, target);
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t("我同意", "I agree", "Estoy de acuerdo")}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("我想改一下", "I'd change something", "Quiero cambiar algo")}</button></div></>)}
       </article>;
     }
-    const chatQuestionRecord = (label: string, target: QuestionTarget) => visibleQuestion?.expanded ? null :
+    const chatQuestionRecord = (label: string, target: QuestionTarget) => visibleQuestion?.expanded && visibleQuestion.id === target.id && visibleQuestion.kind === target.kind ? null :
       <button type="button" className="conversation-question-record" key={message.id}
         onClick={() => openQuestion(target.kind, target.id)} data-testid="chat-question-record">
         <ChatCircleDots size={18} aria-hidden="true" /><span><small>{label}</small><strong>{text}</strong></span><CaretRight size={16} aria-hidden="true" />
@@ -827,12 +856,15 @@ ${text}` : text, target);
       return <article key={message.id} className="conversation-card notice-card"><header>{message.kind === "review" ? t("该复盘了", "Time to review", "Hora de revisar") : t("提醒", "Reminder", "Recordatorio")}</header><p>{text}</p>{outcome && <div className="card-actions"><button onClick={() => open(`/?view=decide&outcome=${encodeURIComponent(outcome.id)}`)}>{t("去复盘", "Start review", "Empezar revisión")}<ArrowRight size={16} /></button></div>}{checkIn && <QuickReply language={language} busy={busy} testId="check-in-answers" options={[t("这周做到了", "Kept it this week", "Lo cumplimos esta semana"), t("做到了一部分", "Partly", "En parte"), t("这周没做到", "Not this week", "Esta semana no")].map((label) => ({ value: label, label }))} onAnswer={(answer) => sendShared(answer)} />}</article>;
     }
     const links = message.role === "agent" ? message.refs.filter((ref) => ref.type === "space" || ref.type === "milestone") : [];
+    const videoPlan = message.role === "agent" && message.refs.find((ref) => ref.type === "video_plan");
     const chatRequest = message.refs.find((ref) => ref.type === "chat_import_request"), chatShared = message.refs.find((ref) => ref.type === "chat_import");
     const handoffs = message.role === "agent" ? message.refs.filter((ref) => ref.type === "link" && ref.url) : [];
     const from = message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner";
     const article = <article className={`conversation-message ${from}`}>{!continued && (author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{text && <p>{message.role === "agent" ? <Linked text={text} /> : text}</p>}
       <RecallLinks sources={message.refs.filter((ref) => ref.type === "conversation" && ref.channel === "us" && ref.conversationId && ref.messageId) as ConversationSource[]} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />
       {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.system === "watched" ? "/?view=moments&watched=1" : ref.system === "moments" ? "/?view=moments" : ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.system === "watched" ? t("一起看过的", "Watched together", "Vistos juntos") : ref.system === "moments" ? t("回忆", "Moments", "Momentos") : ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
+      {videoPlan && !readOnly && !(visibleQuestion?.expanded && visibleQuestion.kind === "daily" && visibleQuestion.id === videoPlan.id) &&
+        <div className="message-links"><button type="button" onClick={() => openQuestionPlan(videoPlan.id, true)}><CalendarBlank size={16} />{t("查看视频时间", "Review video call time", "Ver hora de la videollamada")}<ArrowRight size={15} /></button></div>}
       {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} onOpen={open} />)}</div>}
       {chatRequest && <div className="card-actions">{approvedImports.has(chatRequest.id) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t("已同意一起看", "Agreed to look together", "Aceptado para verlo juntos")}</small> : mine ? <small className="card-state">{t("等 TA 同意", "Waiting for your partner", "Esperando a tu pareja")}</small> : <button className="card-primary" disabled={busy} onClick={() => void approveImport(chatRequest.id)}><CheckCircle size={18} weight="fill" />{t("同意一起看", "Agree to look together", "Aceptar verlo juntos")}</button>}</div>}
       {chatShared && <div className="message-links"><button onClick={() => open(`/?view=import&import=${encodeURIComponent(chatShared.id)}`)}><ChatsCircle size={16} />{t("查看聊天记录分析", "See the chat history analysis", "Ver el análisis del historial")}<ArrowRight size={15} /></button></div>}
@@ -985,7 +1017,7 @@ ${text}` : text, target);
               initialCardId={visibleQuestion.id} language={language} userId={user.id} partnerName={partnerName} paired={paired}
               readOnly={together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
               onClose={collapseQuestion} onInvite={collapseQuestion} onLeaveDaily={leavePlayDaily} onContinueChat={chatAfterQuestion}
-              onOpenPlan={(id) => { keyboard.hide(); setPlanQuestionId(id); }}
+              onOpenPlan={openQuestionPlan}
               onAskPinky={askForCardPlan} />
             : playsInChat(visibleQuestion.kind) ? <MatchScreen embedded visible={visibleQuestion.expanded} key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
               userId={user.id} members={together?.members || []} pet={{ name: "", picture: null }}
@@ -1050,18 +1082,19 @@ ${text}` : text, target);
       <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} conversationId={together?.conversation.id} incomingCard={interaction === "cards"} onClose={closeInteraction} />
     </BottomSheet>}
-    {planQuestionId && paired && <BottomSheet open onOpenChange={(open) => { if (!open) { keyboard.hide(); setPlanQuestionId(null); } }}
-      title={t("约会点子", "Date ideas", "Ideas para una cita")} snap={0.84}>
-      <PlayPlans key={planQuestionId} exactQuestion questionId={planQuestionId} language={language} userId={user.id}
+    {planQuestion && paired && <BottomSheet open onOpenChange={(open) => { if (!open) closeQuestionPlan(); }}
+      title={planQuestion.video ? t("十分钟视频", "Ten-minute video call", "Videollamada de diez minutos") : t("约会点子", "Date ideas", "Ideas para una cita")} snap={0.84}>
+      <PlayPlans key={planQuestion.id} exactQuestion questionId={planQuestion.id} language={language} userId={user.id}
         revision={together?.conversation.version || 0} readOnly={together?.readOnly}
-        onOpenCalendar={(url) => { setPlanQuestionId(null); closePlayTogether(); open(url); }} />
+        onClose={closeQuestionPlan}
+        onOpenCalendar={(url) => { closeQuestionPlan(); closePlayTogether(); open(url); }} />
     </BottomSheet>}
     {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
       fromGames={playTogether.fromGames} startAtList={playTogether.fromFocus} onLeaveDaily={leavePlayDaily}
       onPickCard={paired && !usHidden ? (id, ids) => openQuestion("deck", id, ids) : undefined}
       onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) void shareInvite(); else switchChannel("us"); }}
-      renderPlans={(questionId) => paired && !planQuestionId ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
+      renderPlans={(questionId) => paired && !planQuestion ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /> : null}
       onRefreshDaily={() => void loadTogether()} renderDaily={(_, freshIds) => todayQuestion && !usHidden ? <button
         className="play-daily-preview" type="button" onClick={() => openQuestion("daily", todayQuestion.id, freshIds)}>

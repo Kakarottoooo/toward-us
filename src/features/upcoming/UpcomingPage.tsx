@@ -21,9 +21,11 @@ export function UpcomingPage({ clear = false, language, userId = "", streak = nu
   const [open, setOpen] = useState<GraphRecord | null>(null);
   const [confirming, setConfirming] = useState(false), [error, setError] = useState("");
   const cycle = useCycle();
+  const milestoneTitle = (item: GraphRecord) => (item.titleI18n as Partial<Record<Language, string>> | undefined)?.[language] || String(item.title || "");
+  const milestoneDay = (item: GraphRecord) => item.titleI18n && typeof item.dueAt === "string" ? localDay(item.dueAt) || String(item.date) : String(item.date);
   useEffect(() => { relationshipApi<{ reminders: Reminder[] }>("/api/reminders").then((result) => setReminders(result.reminders)).catch(() => setReminders([])); }, []);
   const entries: CalendarEntry[] = [
-    ...milestones.filter((item) => !item.archivedAt && typeof item.date === "string").map((item) => ({ id: item.id, date: String(item.date), title: String(item.title || ""), kind: item.recurringRule === "yearly" ? "date" as const : "plan" as const, yearly: item.recurringRule === "yearly", onOpen: () => { setConfirming(false); setError(""); setOpen(item); } })),
+    ...milestones.filter((item) => !item.archivedAt && typeof item.date === "string").map((item) => ({ id: item.id, date: milestoneDay(item), title: milestoneTitle(item), kind: item.recurringRule === "yearly" ? "date" as const : "plan" as const, yearly: item.recurringRule === "yearly", onOpen: () => { setConfirming(false); setError(""); setOpen(item); } })),
     ...commitments.filter((item) => item.status === "active" && typeof item.dueAt === "string").map((item) => ({ id: item.id, date: localDay(String(item.dueAt)), title: String(item.description || ""), kind: "plan" as const, onOpen: onOpenCommitment ? () => onOpenCommitment(item.id) : undefined })),
     // A shared date's own reminder is already on the calendar as that date.
     ...reminders.filter((item) => item.dueAt && !item.milestoneId && !["paused", "cancelled", "archived"].includes(item.status)).map((item) => ({ id: item.id, date: localDay(item.dueAt!), title: item.title || "", kind: "reminder" as const, private: true, note: item.frequency === "weekly" ? t("每周", "Weekly", "Semanal") : undefined })),
@@ -50,10 +52,10 @@ export function UpcomingPage({ clear = false, language, userId = "", streak = nu
     {onSince && <TogetherCard language={language} since={since} onSave={onSince} streak={streak} partnerName={partnerName} />}
     <UpcomingYear language={language} entries={entries} onAsk={onAsk} counted={meetup?.id} />
     <details className="upcoming-manage"><summary>{t("管理我的提醒和通知", "Manage my reminders and notifications", "Gestionar mis recordatorios y avisos")}</summary><RemindersPanel language={language} onChanged={onChanged} compose={false} /></details>
-    <BottomSheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }} title={String(open?.title || "")} snap={0.5}>
+    <BottomSheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }} title={open ? milestoneTitle(open) : ""} snap={0.5}>
       {open && <div className="upcoming-sheet">
         <dl>
-          <dt>{t("日期", "Date", "Fecha")}</dt><dd>{date(String(open.date))}</dd>
+          <dt>{t("日期", "Date", "Fecha")}</dt><dd>{date(milestoneDay(open))}</dd>
           {typeof open.sourcePlayPlanId === "string" && typeof open.dueAt === "string" && <>
             <dt>{t("你这里的时间", "In your time zone", "En tu zona horaria")}</dt>
             <dd>{new Date(open.dueAt).toLocaleString(languageTag(language), { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}</dd>

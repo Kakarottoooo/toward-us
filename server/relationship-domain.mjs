@@ -60,7 +60,13 @@ export function projectRecord(record, userId) {
 /** A daily-question answer stays with its author until both partners have answered; then both see both. Mutates a copy. */
 export function hideUnrevealedAnswers(record, userId) {
   for (const message of Array.isArray(record?.messages) ? record.messages : []) {
-    if (message.answers && Object.keys(message.answers).length < 2) message.answers = message.answers[userId] ? { [userId]: message.answers[userId] } : {};
+    if (!message.answers) continue;
+    const answerCount = Object.keys(message.answers).length;
+    if (message.kind === "daily_question" || (message.kind === "game" && message.game?.deckId)) {
+      // A participant may know it's their turn without seeing the other answer.
+      message.answerCount = message.answerCount ?? answerCount;
+    }
+    if (answerCount < 2) message.answers = message.answers[userId] ? { [userId]: message.answers[userId] } : {};
   }
   return record;
 }

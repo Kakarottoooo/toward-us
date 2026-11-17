@@ -4,6 +4,24 @@ import { readPlayDrawing } from "./play-drawing.mjs";
 
 const languages = ["zh", "en", "es"];
 const rotation = ["text", "choice", "guess", "draw"];
+const videoCard = {
+  cardId: "talk-after-a-long-day",
+  activity: "video",
+  i18n: {
+    zh: "忙了一天，有点想 TA。你想视频十分钟，还是留条语音？",
+    en: "After a long day apart, a ten-minute video call or a voice note?",
+    es: "Al final de un día largo, ¿videollamada de diez minutos o nota de voz?",
+  },
+  variants: {
+    zh: { options: ["视频十分钟", "留条语音"], followup: "累的时候，什么样的联系最舒服？" },
+    en: { options: ["A ten-minute video call", "A voice note"], followup: "What kind of check-in feels best when you're tired?" },
+    es: { options: ["Una videollamada de diez minutos", "Una nota de voz"], followup: "Cuando tienes un día largo, ¿cómo te gusta que estemos en contacto?" },
+  },
+};
+export function bothPickedVideo(question, members) {
+  return question.dailyPlay?.cardId === videoCard.cardId && members.length === 2 &&
+    members.every(({ userId }) => question.answers?.[userId]?.choice === 0);
+}
 const drawingPrompts = [
   ["画一只正在度假的动物。", "Draw an animal on vacation.", "Dibuja un animal de vacaciones."],
   ["用几笔画出想送给 TA 的甜点。", "Sketch a dessert you would share with your partner.", "Dibuja un postre que compartirías con tu pareja."],
@@ -21,13 +39,18 @@ const drawingPrompts = [
 
 export function nextDailyFormat(recent) {
   const previous = recent.at(-1);
-  if (!previous) return "text";
+  if (!previous) return "choice";
   return rotation[(rotation.indexOf(previous.dailyPlay?.kind || "text") + 1) % rotation.length];
 }
 
 export function makeDailyPlay({ format, recent, members, day, repeats }) {
   if (format === "text") return null;
   const submitted = new Set(recent.map((item) => item.dailyPlay?.cardId).filter(Boolean));
+  const canUse = (item) => !submitted.has(item.cardId) && Object.values(item.i18n).every((text) => !repeats(text));
+  if (format === "choice" && canUse(videoCard)) {
+    const { i18n, ...dailyPlay } = videoCard;
+    return { i18n, dailyPlay: { ...dailyPlay, kind: format } };
+  }
   const cards = format === "draw"
     ? drawingPrompts.map((prompts, index) => ({
       cardId: `draw:${index}`,
@@ -43,8 +66,7 @@ export function makeDailyPlay({ format, recent, members, day, repeats }) {
       };
     });
   const start = ((day % cards.length) + cards.length) % cards.length;
-  const card = [...cards.slice(start), ...cards.slice(0, start)].find((item) =>
-    !submitted.has(item.cardId) && Object.values(item.i18n).every((text) => !repeats(text)));
+  const card = [...cards.slice(start), ...cards.slice(0, start)].find(canUse);
   if (!card) return null;
   const lastSubject = recent.findLast((item) => item.dailyPlay?.kind === "guess")?.dailyPlay.aboutUserId;
   const aboutUserId = format === "guess" ? members.find((member) => member.userId !== lastSubject)?.userId : undefined;

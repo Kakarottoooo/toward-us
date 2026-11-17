@@ -13,11 +13,11 @@ type Offer = {
 };
 type Plan = {
   questionId: string; questionTitle: string; version: number;
-  ideas: Idea[]; mine: string[]; saved: boolean; partnerReady: boolean; matches: string[]; offer: Offer | null;
+  ideas: Idea[]; mine: string[]; saved: boolean; partnerReady: boolean; matches: string[]; directIdeaId?: string | null; offer: Offer | null;
 };
 type Props = {
   language: Language; userId: string; questionId?: string;
-  revision: string | number; readOnly?: boolean; exactQuestion?: boolean; onOpenCalendar?: (url: string) => void;
+  revision: string | number; readOnly?: boolean; exactQuestion?: boolean; onOpenCalendar?: (url: string) => void; onClose?: () => void;
 };
 
 const path = "/api/play-plans";
@@ -25,7 +25,7 @@ const ended = (offer: Offer) => offer.dueAt ? Date.parse(offer.dueAt) < Date.now
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const dayIn = (zone: string) => new Date().toLocaleDateString("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
 
-export function PlayPlans({ language, userId, questionId, revision, readOnly = false, exactQuestion = false, onOpenCalendar }: Props) {
+export function PlayPlans({ language, userId, questionId, revision, readOnly = false, exactQuestion = false, onOpenCalendar, onClose }: Props) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -131,7 +131,10 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
   const ordering = (items: string[]) => [...items].sort().join(",");
   const editing = Boolean(plan && plan.saved && ordering(picks) !== ordering(plan.mine));
   const offer = plan?.offer;
-  const activeDraft = plan && draft?.source === plan.questionId ? draft : null;
+  const directIdeaId = plan?.directIdeaId;
+  const activeDraft = plan && draft?.source === plan.questionId ? draft : plan && directIdeaId
+    ? { source: plan.questionId, ideaId: directIdeaId, date: "", time: "" }
+    : null;
   const matching = plan?.ideas.filter((idea) => plan.matches.includes(idea.id)) || [];
   const knownTitle = offer && (plan?.ideas.find((idea) => offer.ideaId === idea.id)?.title || offer.title);
   const displayDate = (date: string) => new Date(date + "T12:00:00Z").toLocaleDateString(languageTag(language), { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
@@ -193,12 +196,13 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
           t("上一个时间已撤回。", "The previous time was withdrawn.", "Se retiró la hora anterior.")}</p>}
       {activeDraft ? <form className="play-plans-form" onSubmit={(event) => { event.preventDefault(); void schedule(); }}>
         <h2>{t("约个时间", "Pick a time", "Elijan una hora")}</h2>
-        <p>{plan.ideas.find((idea) => idea.id === activeDraft.ideaId)?.title}</p>
-        <label><span>{t("约在哪一天", "Pick a date", "Elige una fecha")}</span><KeyboardInput type="date" value={activeDraft.date} min={dayIn(timezone)} required disabled={unavailable} onChange={(event) => setDraft({ ...activeDraft, date: event.target.value })} /></label>
-        <label><span>{t("几点（可选）", "Time (optional)", "Hora (opcional)")}</span><KeyboardInput type="time" value={activeDraft.time} disabled={unavailable} onChange={(event) => setDraft({ ...activeDraft, time: event.target.value })} /></label>
+        {!directIdeaId && <p>{plan.ideas.find((idea) => idea.id === activeDraft.ideaId)?.title}</p>}
+        <label><span>{t("约在哪一天", "Pick a date", "Elige una fecha")}</span><KeyboardInput type="date" value={activeDraft.date} min={dayIn(timezone)} required disabled={unavailable} onFocus={() => keyboard.hide()} onChange={(event) => setDraft({ ...activeDraft, date: event.target.value })} /></label>
+        <label><span>{directIdeaId ? t("几点", "Time", "Hora") : t("几点（可选）", "Time (optional)", "Hora (opcional)")}</span><KeyboardInput type="time" value={activeDraft.time} required={Boolean(directIdeaId)} disabled={unavailable} onFocus={() => keyboard.hide()} onChange={(event) => setDraft({ ...activeDraft, time: event.target.value })} /></label>
         <small>{timezone}</small>
-        <div className="play-actions"><button type="submit" className="play-main" disabled={unavailable || !activeDraft.date}>{t("把时间发给 TA", "Send the time to your partner", "Enviar la hora a tu pareja")}</button>
-          <button type="button" className="play-quiet" disabled={busy} onClick={() => { keyboard.hide(); setDraft(null); }}>{t("返回点子", "Back to ideas", "Volver a las ideas")}</button></div>
+        <div className="play-actions"><button type="submit" className="play-main" disabled={unavailable || !activeDraft.date || Boolean(directIdeaId && !activeDraft.time)}>{t("把时间发给 TA", "Send the time to your partner", "Enviar la hora a tu pareja")}</button>
+          {directIdeaId ? onClose && <button type="button" className="play-quiet" disabled={busy} onClick={onClose}>{t("稍后再约", "Maybe later", "Quizá más tarde")}</button>
+            : <button type="button" className="play-quiet" disabled={busy} onClick={() => { keyboard.hide(); setDraft(null); }}>{t("返回点子", "Back to ideas", "Volver a las ideas")}</button>}</div>
       </form> : <>
         <h2>{matching.length ? t("你们俩都想试试", "You both want to try", "A los dos les apetece") : t("想一起做点什么？", "What would you like to do together?", "¿Qué les apetece hacer juntos?")}</h2>
         {plan.saved && !plan.partnerReady ? <p className="play-plans-status" role="status"><LockKey size={16} aria-hidden="true" />{t("你的选择已保存。等 TA 也选完才一起看。", "Your picks are saved. You'll see what matches after your partner chooses.", "Guardamos tus elecciones. Verán las coincidencias cuando tu pareja elija.")}</p> :

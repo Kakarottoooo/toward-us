@@ -261,6 +261,8 @@
 .onboarding-secondary { background: rgba(37,37,37,.07); color: var(--jian-ink); }
 .daily-card { border-color: rgba(198,62,48,.28); }
 .daily-card.is-past { border-color: rgba(37,37,37,.12); }
+.daily-card .daily-turn { color: var(--jian-red); font-weight: 650; }
+.daily-card .daily-followup { margin: 2px 0 0; }
 .daily-input { display: flex; align-items: flex-end; gap: 4px; margin-top: 12px; padding: 4px 4px 4px 8px; border: 1px solid rgba(37,37,37,.2); border-radius: 12px; background: #fff; }
 .daily-mic { flex: 0 0 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: rgba(37,37,37,.06); color: var(--jian-ink); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .daily-mic:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
