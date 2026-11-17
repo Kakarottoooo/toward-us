@@ -160,7 +160,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
       {!online && <p className="fit-notice" role="status">{t("你现在离线，已打开的说明书可以继续看。联网后再保存。", "You're offline. You can read this guide; reconnect to save changes.", "Estás sin conexión. Puedes leer tu guía; vuelve a conectarte para guardar cambios.")}</p>}
       {error && <div className="fit-error" role="alert"><p>{error}</p><button type="button" disabled={busy || !online} onClick={() => { setError(""); void load(); }}>{t("重新加载", "Reload", "Volver a cargar")}</button></div>}
       {loading && !data && <p className="fit-notice" role="status">{t("正在打开说明书…", "Opening your guide…", "Abriendo tu guía…")}</p>}
-      {question && data ? <div className="fit-question" key={question.id}>
+      {question && data ? <div className="fit-question">
         <div className="fit-question-progress"><label htmlFor="fit-position">{t("题目", "Question", "Pregunta")} {currentIndex + 1} / {questions.length}</label>
           <span aria-live="polite">{busy ? t("保存中…", "Saving…", "Guardando…") : t(`已记录 ${seen} 题`, `${seen} saved`, `${seen} guardadas`)}</span></div>
         <input id="fit-position" data-scroll-drag="ignore" className="fit-position" type="range" min={1} max={questions.length} value={currentIndex + 1} disabled={busy}
@@ -178,7 +178,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
         <section className="fit-intro fit-portrait">
           <h2>{report?.title || t("恋爱里的我，是什么样？", "What am I like in a relationship?", "¿Cómo soy en pareja?")}</h2>
           <p>{report?.summary || (seen === questions.length ? t("有些方面还缺少线索。可以从跳过的场景补答，也可以以后再来。", "A few areas need more detail. Revisit a skipped situation now or come back later.", "Faltan pistas en algunos aspectos. Puedes retomar una situación omitida ahora o volver después.")
-            : t("从一个约会，到一次意见不合。选出这些日常时刻里你更倾向的做法，看看自己的相处风格，以及怎样的伴侣能和你处得舒服。", "From making a date to disagreeing, choose what feels like you. Discover how you relate and what helps you feel at home with a partner.", "Desde planear una cita hasta un desacuerdo, elige lo que harías. Descubre cómo te relacionas y qué necesitas para sentirte a gusto en pareja."))}</p>
+            : t("想想最近一次类似的经历，选更接近当时发生的事。想不起来可以跳过。答完会看到自己的相处画像，具体答案只有你能看。", "Think of the last time something similar happened. Pick the closest memory, or skip it. Your choices shape your portrait and stay private.", "Piensa en la última vez que pasó algo parecido. Elige lo que más se acerque a tu recuerdo, o salta la pregunta. Tus respuestas forman tu retrato y son privadas."))}</p>
           {report ? <p className="fit-fine">{report.coverage}</p> : <p className="fit-fine">{seen ? t(`已记录 ${seen} / ${questions.length} 题`, `${seen} of ${questions.length} saved`, `${seen} de ${questions.length} guardadas`) : t(`${questions.length} 道情境题 · 可以分几次答`, `${questions.length} situations · Pause anytime`, `${questions.length} situaciones · A tu ritmo`)}</p>}
           <button className={report ? "fit-secondary" : "fit-primary"} type="button" disabled={busy || !questions.length} onClick={() => setQuestionFlow(true)} data-testid="fit-start">
             {report ? t("回看或修改答案", "Review or edit answers", "Revisar o editar respuestas") : seen === questions.length ? t("补答跳过的场景", "Revisit skipped situations", "Retomar situaciones omitidas") : seen ? t("继续答题", "Continue", "Continuar") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
@@ -264,7 +264,7 @@ function PersonalSection({ section, t, expanded = false }: { section: FitSection
 }
 
 function PairSection({ section, partnerName, t, onDiscuss }: { section: FitPairSection; partnerName: string; t: Translate; onDiscuss: () => void }) {
-  const status = section.status === "same" ? t("这里想到一起了", "On the same page", "Aquí coinciden") : section.status === "mixed" ? t("有共鸣，也有不同", "Some shared ground, some differences", "Coincidencias y diferencias") : section.status === "different" ? t("值得聊聊的不同", "A difference to talk about", "Una diferencia para conversar") : t("还可以多了解一点", "More to discover", "Queda por descubrir");
+  const status = section.status === "same" ? t("这里想到一起了", "On the same page", "Aquí coinciden") : section.status === "mixed" ? t("可以按情境聊聊", "Discuss it in context", "Conviene hablar del contexto") : section.status === "different" ? t("值得聊聊的不同", "A difference to talk about", "Una diferencia para conversar") : t("还可以多了解一点", "More to discover", "Queda por descubrir");
   return <section className={`fit-report fit-pair-${section.status}`} data-testid={`fit-couple-${section.id}`}><h2>{section.title}</h2>{!section.id.startsWith("support-") && <p className="fit-status">{status}</p>}<p>{section.summary}</p>
     {!!section.evidence.length && <details><summary>{t("看看双方的答案", "See both answers", "Ver las dos respuestas")}<CaretRight size={15} /></summary><div className="fit-evidence">{section.evidence.map((item) => <div key={item.questionId}><p>{item.question}</p><dl><dt>{t("你", "You", "Tú")}</dt><dd>{item.mine}</dd><dt>{partnerName}</dt><dd>{item.partner}</dd></dl></div>)}</div></details>}
     <p className="fit-suggestion">{section.suggestion}</p>{section.status !== "unknown" && <button className="fit-discuss" type="button" onClick={onDiscuss}>{t("带回我们俩聊聊", "Talk about this in Us", "Llevarlo al chat")}<ArrowRight size={16} /></button>}</section>;
