@@ -4,9 +4,10 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
 import { fitModules, fitQuestions, localizedFitModules, mbtiTypes, zodiacNames } from "./fit-questions.mjs";
 import { coupleFitReport, coupleSupportReport, fitOverviewComplete, personalFitReport, supportReady, supportSharingPreview } from "./fit-report.mjs";
-
 import { reviewedWording } from "./fit-support.mjs";
 import { previousFitQuestions } from "./fit-previous-questions.mjs";
+import { inventoryQuestions } from "./fit-inventory.mjs";
+import { inventoryReady, inventoryReport, inventoryPairReport, inventoryPreview, inventoryRevisitIds } from "./fit-inventory-report.mjs";
 
 const KIND = "relationship_guide";
 const collection = "checkins";
@@ -16,10 +17,11 @@ const activePair = (context) => context?.relationship.status === "active" && con
 const languageOf = (req) => supported.has(req.body?.language || req.query?.language) ? req.body?.language || req.query.language : "zh";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const fail = (statusCode, code) => Object.assign(new Error(code), { statusCode, code });
-const questionById = new Map(fitQuestions.map((question) => [question.id, question]));
+const questionById = new Map([...fitQuestions, ...inventoryQuestions].map((question) => [question.id, question]));
 const supportIds = new Set(fitModules.find(module => module.id === "support").questions.map(q => q.id));
 function shareMode(profile) {
   if (!profile) return "none";
+  if (inventoryQuestions.some(q => profile.answers?.[q.id])) return inventoryReady(profile) ? "inventory" : "none";
   if (Object.keys(profile.answers || {}).some(id => supportIds.has(id))) {
     return profile.supportReview && supportReady(profile) ? "support" : "none";
   }
@@ -46,10 +48,20 @@ async function view(db, userId, language) {
   const sharing = sharedIn(own, context);
   const partner = activePair(context) ? context.members.find((member) => member.userId !== userId) : null;
   const partnerName = partner?.user?.name || "";
+  const inventoryPersonal = inventoryReport(own, language);
+  const inventory = {
+    relationshipId: partner ? context.relationship.id : null,
+    questions: inventoryQuestions.map(q => ({
+      id: q.id, text: q.text[language], options: q.options.map(o => ({ id: o.id, text: o.text[language] })),
+    })),
+    report: inventoryPersonal,
+    preview: inventoryPersonal ? inventoryPreview(own, language) : [],
+    revisitIds: inventoryRevisitIds(own),
+  };
   let couple = {
     status: partner ? sharing ? "waiting" : "need-your-share" : "unpaired",
     partnerName,
-    summary: say(language, "各自确认愿意分享的内容后，来看看你难过时想要的陪伴，和 TA 习惯给出的回应。", "Once you both choose what to share, explore the support you want and how your partner responds.", "Cuando ambos decidan qué compartir, podrán ver qué apoyo buscan y cómo suele responder su pareja."),
+    summary: say(language, "各自完成同一套问卷并同意分享后，就能看到你们在哪些地方合拍，哪些事值得提前商量。", "Complete the same questionnaire and share your portraits to see where you click and what to talk through.", "Completen el mismo cuestionario y compartan sus perfiles para ver en qué coinciden y qué conviene conversar."),
     sections: [],
   };
   if (partner && sharing) {
@@ -59,19 +71,20 @@ async function view(db, userId, language) {
     if (sharedIn(theirs, context)) {
       const mode = shareMode(own);
       if (mode === shareMode(theirs)) {
-        couple = mode === "support" ? coupleSupportReport(own, theirs, partnerName, language) : coupleFitReport(own, theirs, partnerName, language);
+        const reportFor = { inventory: inventoryPairReport, support: coupleSupportReport, legacy: coupleFitReport };
+        couple = reportFor[mode](own, theirs, partnerName, language);
       } else {
         couple.status = "different-guides";
-        couple.summary = say(language, "你们分享了不同主题。两人都确认「心情不好时」的发现后，就能看看彼此想要和习惯给出的陪伴。", "You shared different guides. When both of you confirm your support discoveries, you can compare what helps and what each of you tends to do.", "Compartieron guías distintas. Cuando ambos confirmen su reflexión sobre el apoyo, podrán comparar qué ayuda y qué suele hacer cada uno.");
+        couple.summary = say(language, "你们分享的是不同版本的问卷。双方完成并分享同一套相处画像后，这里会出现双人解析。", "You shared different questionnaires. Complete and share the same relationship portrait to see your joint report.", "Compartieron cuestionarios distintos. Completen y compartan el mismo perfil para ver su lectura en pareja.");
       }
     }
   }
   return {
-    modules: localizedFitModules(language),
+    inventory, modules: localizedFitModules(language),
     profile: {
       version: own.version, answers: own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
       sharing, shareMode: shareMode(own), canShare: shareMode(own) !== "none", supportReview: own.supportReview ? { kind: own.supportReview.kind, text: own.supportReview.text } : null,
-      answeredCount: Object.values(own.answers || {}).filter(value => value !== "skip").length, totalQuestions: fitQuestions.length,
+      answeredCount: fitQuestions.filter(q => own.answers[q.id] && own.answers[q.id] !== "skip").length, totalQuestions: fitQuestions.length,
     },
     supportSharePreview: shareMode(own) === "support" ? supportSharingPreview(own, language) : [],
     previousAnswers, personal: personalFitReport(own, language), couple,
@@ -83,7 +96,7 @@ const errors = {
   invalid_input: ["内容无法保存，请检查选项后重试。", "Check your choices and try saving again.", "Revisa tus elecciones e intenta guardarlas de nuevo."],
   stale_version: ["你的说明书刚更新过，请刷新后再保存。", "Your guide changed. Refresh it before saving again.", "Tu guía cambió. Actualízala antes de volver a guardar."],
   pairing_required: ["先邀请 TA 加入，再确认分享。", "Invite your partner to join before sharing.", "Invita a tu pareja antes de compartir."],
-  overview_required: ["请先完成主题并确认你的发现，然后预览分享内容。", "Finish the topic and confirm your discovery to preview sharing.", "Completa el tema y confirma tu reflexión para revisar lo que compartirás."],
+  overview_required: ["请先完成问卷，再预览要分享的内容。", "Finish your questionnaire to preview what you can share.", "Termina el cuestionario para revisar lo que compartirás."],
   unavailable: ["说明书暂时无法打开，请稍后重试。", "Couldn't open your guide. Try again in a moment.", "No se pudo abrir tu guía. Inténtalo de nuevo en un momento."],
 };
 
@@ -93,7 +106,7 @@ function readMutation(req, action) {
   let values;
   if (action === "answers") {
     const answers = req.body?.answers;
-    if (!answers || typeof answers !== "object" || Array.isArray(answers) || !Object.keys(answers).length || Object.keys(answers).length > fitQuestions.length) throw fail(400, "invalid_input");
+    if (!answers || typeof answers !== "object" || Array.isArray(answers) || !Object.keys(answers).length || Object.keys(answers).length > questionById.size) throw fail(400, "invalid_input");
     const entries = Object.entries(answers).sort(([a], [b]) => a.localeCompare(b));
     for (const [id, answer] of entries) {
       if (!questionById.has(id) || answer !== null && answer !== "skip" && !questionById.get(id).options.some((choice) => choice.id === answer)) throw fail(400, "invalid_input");
@@ -110,8 +123,12 @@ function readMutation(req, action) {
   } else if (action === "sharing") {
     if (typeof req.body?.on !== "boolean") throw fail(400, "invalid_input");
     const mode = req.body.mode ?? "legacy";
-    if (req.body.on && mode !== "support" && mode !== "legacy") throw fail(400, "invalid_input");
+    if (req.body.on && !["inventory", "support", "legacy"].includes(mode)) throw fail(400, "invalid_input");
     values = req.body.on ? { on: true, mode } : { on: false };
+    if (values.on && mode === "inventory") {
+      if (typeof req.body.relationshipId !== "string" || !req.body.relationshipId) throw fail(400, "invalid_input");
+      values.relationshipId = req.body.relationshipId;
+    }
   } else values = {};
   return { action, version, values };
 }
@@ -123,6 +140,7 @@ async function change(db, userId, context, mutation) {
   const relationshipId = activePair(context) ? context.relationship.id : null;
   // Fingerprints retain no answer text and make a retry of the immediately previous
   // write safe. An older screen can never replay a grant into a new relationship.
+  if (values?.on && values.mode === "inventory" && values.relationshipId !== relationshipId) throw fail(409, "stale_version");
   const signature = createHash("sha256").update(JSON.stringify({ action, values, relationshipId })).digest("hex");
   if (profile.version !== version) {
     if (current?.lastMutation?.from === version && current.lastMutation.signature === signature) return false;
