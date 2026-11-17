@@ -88,7 +88,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
   const question = flow && questions[currentIndex];
   const selected = question ? choice?.id === question.id ? choice.value : data?.profile.answers[question.id] || "" : "";
   const starterAnswered = data?.modules.filter((module) => data.profile.answers[module.questions[0]?.id]).length || 0;
-  const starterComplete = Boolean(data && starterAnswered === data.modules.length && starterAnswered > 0);
+  const starterComplete = Boolean(data && starterAnswered === data.modules.length && data.profile.answeredCount > 0);
   const finish = () => { setQuestionFlow(""); setView("mine"); };
   useEffect(() => { const scroll = contentRef.current?.closest<HTMLElement>(".mobile-scroll"); if (scroll) scroll.scrollTop = 0; }, [flow, currentIndex, view]);
   const mutate = async (path: string, body: Record<string, unknown> = {}, remove = false) => {
@@ -108,9 +108,9 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
       if (refreshAfterWrite.current) { refreshAfterWrite.current = false; void load(); }
     }
   };
-  const nextQuestion = async () => {
-    if (!question || !selected) return;
-    if (selected !== data?.profile.answers[question.id] && !await mutate("answers", { answers: { [question.id]: selected } })) return;
+  const nextQuestion = async (answer = selected) => {
+    if (!question || !answer) return;
+    if (answer !== data?.profile.answers[question.id] && !await mutate("answers", { answers: { [question.id]: answer } })) return;
     setChoice(null);
     if (currentIndex === questions.length - 1) finish();
     else setIndex(currentIndex + 1);
@@ -156,9 +156,9 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
             <span>{option.text}</span><i aria-hidden="true">{selected === option.id && <Check size={15} weight="bold" />}</i>
           </button>)}
         </div>
-        <p className="fit-fine">{t("想想最近一次类似的经历，选最接近你当时做法的一项。", "Think of the last time something similar happened. Pick the closest thing to what you did.", "Recuerda la última vez que te pasó algo parecido. Elige lo más cercano a lo que hiciste.")}</p>
+        <button type="button" className="fit-copy" disabled={busy || !online} onClick={() => void nextQuestion("skip")} data-testid="fit-skip">{t("都不像 / 想不起来，跳过", "None fit or I can't recall. Skip", "Ninguna encaja o no lo recuerdo. Saltar")}</button>
         {data.profile.sharing && <p className="fit-fine">{t("修改后，重新确认分享才会更新双人解析。", "After an edit, review and share again to update your connection guide.", "Después de editar, revisa y comparte de nuevo para actualizar la guía de ambos.")}</p>}
-        <div className="fit-actions"><button className="fit-primary" type="button" disabled={busy || !online || !selected} onClick={() => void nextQuestion()} data-testid="fit-next">{busy ? t("保存中…", "Saving…", "Guardando…") : currentIndex === questions.length - 1 ? t("保存，看我的说明书", "Save & see my guide", "Guardar y ver mi guía") : t("保存，下一题", "Save & next", "Guardar y continuar")}<ArrowRight size={18} /></button>
+        <div className="fit-actions"><button className="fit-primary" type="button" disabled={busy || !online || !selected || selected === "skip"} onClick={() => void nextQuestion()} data-testid="fit-next">{busy ? t("保存中…", "Saving…", "Guardando…") : currentIndex === questions.length - 1 ? t("保存，看我的说明书", "Save & see my guide", "Guardar y ver mi guía") : t("保存，下一题", "Save & next", "Guardar y continuar")}<ArrowRight size={18} /></button>
           {currentIndex > 0 && <button type="button" className="fit-secondary" disabled={busy} onClick={() => { setChoice(null); setIndex(currentIndex - 1); }}>{t("上一题", "Previous", "Anterior")}</button>}</div>
       </div> : data && view === "mine" ? <>
         <div className="fit-intro">
@@ -167,7 +167,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
           <p>{data.personal?.summary || t("从六个日常小场景开始，看看你怎样靠近一个人、表达关心、处理分歧。", "Start with six everyday situations: how you get close, show care and work through differences.", "Empieza con seis situaciones cotidianas: cómo te acercas, muestras cariño y afrontas las diferencias.")}</p>
           {data.personal && <p className="fit-fine">{data.personal.coverage}</p>}
           {data.personal && <button type="button" className="fit-copy" onClick={() => void copyReport()}>{t("复制我的解析", "Copy my guide", "Copiar mi guía")}</button>}
-          {!starterComplete && <button type="button" className="fit-primary" disabled={!online || busy} onClick={() => setQuestionFlow("starter")} data-testid="fit-start">{starterAnswered ? t(`接着答 · 已保存 ${starterAnswered}/6`, `Continue · ${starterAnswered}/6 saved`, `Continuar · ${starterAnswered}/6 guardadas`) : t("用六个场景认识我", "Start with six situations", "Empezar con seis situaciones")}<ArrowRight size={18} /></button>}
+          {!starterComplete && <button type="button" className="fit-primary" disabled={!online || busy} onClick={() => setQuestionFlow("starter")} data-testid="fit-start">{starterAnswered === 6 && !data.profile.answeredCount ? t("回看跳过的题", "Revisit skipped items", "Volver a las preguntas omitidas") : starterAnswered ? t(`接着答 · 已保存 ${starterAnswered}/6`, `Continue · ${starterAnswered}/6 saved`, `Continuar · ${starterAnswered}/6 guardadas`) : t("用六个场景认识我", "Start with six situations", "Empezar con seis situaciones")}<ArrowRight size={18} /></button>}
         </div>
         {!!data.previousAnswers?.length && <details className="fit-report"><summary>{t("回看旧版答案（仅自己可见）", "Past answers (only you)", "Respuestas anteriores (solo tú)")}</summary>
           <p>{t("这些是按旧题保存的回答。本次解析使用新版情景的回答。", "These answers keep their original questions. Your current guide uses the new situations.", "Estas respuestas conservan sus preguntas originales. Tu guía actual usa las situaciones nuevas.")}</p>
@@ -177,7 +177,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
         <section className="fit-chapters"><h2>{t("慢慢认识得更深", "A little deeper, at your pace", "Conócete más, a tu ritmo")}</h2>
           <p>{t("每个方面都可以单独补充。", "Explore each part on its own.", "Puedes explorar cada aspecto por separado.")}</p>
           <div>{data.modules.map((module) => {
-            const answered = module.questions.filter((item) => data.profile.answers[item.id]).length;
+            const answered = module.questions.filter((item) => data.profile.answers[item.id] && data.profile.answers[item.id] !== "skip").length;
             return <button className="fit-chapter" type="button" key={module.id} onClick={() => setQuestionFlow(module.id)} disabled={busy} data-testid={`fit-module-${module.id}`}><span><strong>{module.title}</strong><small>{module.description}</small></span><span className="fit-chapter-count">{answered}/{module.questions.length}<CaretRight size={17} /></span></button>;
           })}</div>
         </section>
@@ -189,7 +189,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
             : paired ? <button type="button" className="fit-primary" disabled={busy || !online} onClick={() => { keyboard.hide(); setSheet("share"); }} data-testid="fit-preview-share">{t("预览，再分享给 TA", "Preview & share with them", "Revisar y compartir")}<ArrowRight size={18} /></button>
               : <button type="button" className="fit-primary" onClick={() => { keyboard.hide(); onInvite(); }}>{t("邀请 TA 一起了解", "Invite your partner", "Invitar a tu pareja")}<ArrowRight size={18} /></button>}
         </section>}
-        {(data.profile.answeredCount > 0 || !!data.previousAnswers?.length || !!data.profile.mbti || !!data.profile.zodiac) && <button type="button" className="fit-delete" disabled={busy} onClick={() => { keyboard.hide(); setSheet("delete"); }}>{t("删除我的答案与说明书", "Delete my answers and guide", "Eliminar mis respuestas y mi guía")}</button>}
+        {(Object.keys(data.profile.answers).length > 0 || !!data.previousAnswers?.length || !!data.profile.mbti || !!data.profile.zodiac) && <button type="button" className="fit-delete" disabled={busy} onClick={() => { keyboard.hide(); setSheet("delete"); }}>{t("删除我的答案与说明书", "Delete my answers and guide", "Eliminar mis respuestas y mi guía")}</button>}
       </> : data && <>
         <div className="fit-intro fit-couple-intro"><div className="fit-mark" aria-hidden="true"><UsersThree size={38} weight="duotone" /></div><h2>{data.couple.status === "ready" ? t("你们的相处，有迹可循", "The way you connect", "Su forma de conectar") : t("从我，到我们俩", "From me to us", "De mí a nosotros")}</h2><p>{data.couple.summary}</p>
           {data.couple.status === "unpaired" ? <button type="button" className="fit-primary" onClick={() => { keyboard.hide(); onInvite(); }}>{t("邀请 TA 一起了解", "Invite your partner", "Invitar a tu pareja")}<ArrowRight size={18} /></button>
@@ -240,7 +240,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
 
 function PersonalSection({ section, t, expanded = false }: { section: FitSection; t: Translate; expanded?: boolean }) {
   return <section className="fit-report" data-testid={`fit-report-${section.id}`}><h2>{section.title}</h2><p>{section.summary}</p>
-    <details open={expanded || undefined}><summary>{t("看看依据", "See what this is based on", "Ver en qué se basa")}<CaretRight size={15} /></summary><div className="fit-evidence">{section.evidence.map((item) => <div key={item.questionId}><p>{item.question}</p><blockquote>{item.answer}</blockquote><p>{item.meaning}</p></div>)}</div></details>
+    <details open={expanded || undefined}><summary>{t("看看依据", "See what this is based on", "Ver en qué se basa")}<CaretRight size={15} /></summary><div className="fit-evidence">{section.evidence.map((item) => <div key={item.questionId}><p>{item.question}</p><blockquote>{item.answer}</blockquote></div>)}</div></details>
     <p className="fit-suggestion">{section.suggestion}</p>{section.id === "mbti" && <TypeSource t={t} />}</section>;
 }
 

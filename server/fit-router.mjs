@@ -54,7 +54,7 @@ async function view(db, userId, language) {
     modules: localizedFitModules(language),
     profile: {
       version: own.version, answers: own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
-      sharing, answeredCount: Object.keys(own.answers || {}).length, totalQuestions: fitQuestions.length,
+      sharing, answeredCount: Object.values(own.answers || {}).filter(value => value !== "skip").length, totalQuestions: fitQuestions.length,
     },
     previousAnswers, personal: personalFitReport(own, language), couple,
   };
@@ -78,7 +78,7 @@ function readMutation(req, action) {
     if (!answers || typeof answers !== "object" || Array.isArray(answers) || !Object.keys(answers).length || Object.keys(answers).length > fitQuestions.length) throw fail(400, "invalid_input");
     const entries = Object.entries(answers).sort(([a], [b]) => a.localeCompare(b));
     for (const [id, answer] of entries) {
-      if (!questionById.has(id) || answer !== null && !questionById.get(id).options.some((choice) => choice.id === answer)) throw fail(400, "invalid_input");
+      if (!questionById.has(id) || answer !== null && answer !== "skip" && !questionById.get(id).options.some((choice) => choice.id === answer)) throw fail(400, "invalid_input");
     }
     values = Object.fromEntries(entries);
   } else if (action === "profile") {

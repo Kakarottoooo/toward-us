@@ -2,7 +2,7 @@ import { fitModules, overviewQuestionIds, zodiacNames } from "./fit-questions.mj
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const selected = (profile, question) => question.options.find((option) => option.id === profile.answers?.[question.id]);
-export const fitOverviewComplete = (profile) => overviewQuestionIds.every((id) => typeof profile?.answers?.[id] === "string");
+export const fitOverviewComplete = (profile) => overviewQuestionIds.every((id) => typeof profile?.answers?.[id] === "string") && fitModules.some(module => module.questions.some(q => selected(profile, q)));
 
 // Preference definitions follow the Myers & Briggs Foundation's preference and
 // relationship guides. Practical prompts below are Pinky's suggested experiments.
@@ -84,23 +84,19 @@ function zodiacNote(mine, partner, language) {
 }
 
 export function personalFitReport(profile, language) {
-  const answered = Object.keys(profile.answers || {}).length;
+  const answered = Object.values(profile.answers || {}).filter(value => value !== "skip").length;
   if (!answered && !profile.mbti && !profile.zodiac) return null;
   const sections = fitModules.flatMap((module) => {
     const evidence = module.questions.flatMap((question) => {
       const choice = selected(profile, question);
-      return choice ? [{ questionId: question.id, question: question.text[language], answer: choice.text[language], meaning: say(language, `这次选择优先顾到了：${choice.meaning.zh}。`, `In this situation, your choice prioritizes ${choice.meaning.en}.`, `En esta situación, tu elección da prioridad a ${choice.meaning.es}.`) }] : [];
+      return choice ? [{ questionId: question.id, question: question.text[language], answer: choice.text[language], topic: question.topic[language] }] : [];
     });
     if (!evidence.length) return [];
-    const firstQuestion = module.questions.find((question) => selected(profile, question));
-
-    const offering = evidence.find(item => item.questionId === "v2-closeness-busy");
-    const reaching = evidence.find(item => item.questionId === "v2-closeness-reach");
-    const summary = offering && reaching ? say(language,
-      `TA 心情不好、你马上要忙时，你选了「${offering.answer}」。换成你想诉苦、TA 马上要忙，你选了「${reaching.answer}」。如果这是同一天，你希望彼此怎么接话？`,
-      `When they had a rough day and you were about to get busy, you chose “${offering.answer}”. When you needed to vent and they had meetings, you chose “${reaching.answer}”. How would you want those two moments to play out?`,
-      `Cuando tu pareja tuvo un día difícil y tú tenías poco tiempo, elegiste «${offering.answer}». Cuando tú querías desahogarte y la otra persona tenía reuniones, elegiste «${reaching.answer}». ¿Cómo te gustaría que fueran esos dos momentos?`)
-      : evidence.map(item => item.meaning).join(" ");
+    const firstQuestion = module.questions.find(question => selected(profile, question));
+    const summary = evidence.map(item => say(language,
+      `${item.topic}，你选的是「${item.answer}」。`,
+      `${item.topic}: you picked “${item.answer}”.`,
+      `${item.topic}: elegiste «${item.answer}».`)).join("\n");
     return [{
       id: module.id, title: module.title[language],
       summary, evidence,
@@ -142,7 +138,7 @@ export function coupleFitReport(mine, partner, partnerName, language) {
     else {
       const own = selected(mine, anchor).text[language], theirs = selected(partner, anchor).text[language];
       summary = status === "same"
-        ? say(language, `在你们都答过的 ${evidence.length} 个场景里，选择一致。比如这次你们都选了「${own}」，可以从这个共同偏好安排一次相处。`, `You chose the same responses in ${evidence.length} shared situations. For example, you both chose “${own}”. That gives you a concrete shared preference to try.`, `Coincidieron en ${evidence.length} situaciones compartidas. Por ejemplo, ambos eligieron «${own}». Es una preferencia concreta que pueden probar juntos.`)
+        ? say(language, `在你们都答过的 ${evidence.length} 个场景里，选择一致。比如这次你们都选了「${own}」。`, `You chose the same responses in ${evidence.length} shared situations. For example, you both chose “${own}”.`, `Coincidieron en ${evidence.length} situaciones compartidas. Por ejemplo, ambos eligieron «${own}».`)
         : say(language, `在「${anchor.text.zh}」里，你选「${own}」，${partnerName} 选「${theirs}」。把各自期待说具体，有助于找到双方舒服的做法。`, `For “${anchor.text.en}”, you chose “${own}” and ${partnerName} chose “${theirs}”. Explaining what each of you hopes for can help you find an arrangement that works for both.`, `Ante «${anchor.text.es}», elegiste «${own}» y ${partnerName} eligió «${theirs}». Explicar qué espera cada uno puede ayudarles a encontrar algo cómodo para ambos.`);
     }
     return {
@@ -151,10 +147,10 @@ export function coupleFitReport(mine, partner, partnerName, language) {
     };
   });
   const known = sections.filter((section) => section.status !== "unknown").length;
-  const same = sections.filter((section) => section.status === "same").length;
+
   const report = {
     status: "ready", partnerName,
-    summary: say(language, `你们在 ${known} 个方面有共同回答，其中 ${same} 个方面的已答场景选择一致。下面逐项看哪些想法接近、哪些值得商量。解析只使用双方本次确认分享的回答。`, `You have shared answers in ${known} areas; in ${same}, all answered situations match. Explore the points you share and the ones worth discussing. These insights use only the answers you both agreed to share.`, `Tienen respuestas compartidas en ${known} áreas; en ${same} coincidieron en todas las situaciones respondidas. Exploren lo que comparten y lo que conviene conversar. Este análisis usa solo las respuestas que ambos aceptaron compartir.`),
+    summary: say(language, `你们在 ${known} 个主题下回答了相同的问题。点开每题，看看各自想到了什么。`, `You both answered questions on ${known} topics. Open an item to see what each of you picked.`, `Respondieron preguntas en común sobre ${known} temas. Abran cada una para ver sus respuestas.`),
     sections,
   };
   if (mine.mbti && partner.mbti) {

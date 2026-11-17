@@ -2,7 +2,7 @@ export type FitQuestion = { id: string; text: string; options: Array<{ id: strin
 export type FitModule = { id: string; title: string; description: string; questions: FitQuestion[] };
 export type FitSection = {
   id: string; title: string; summary: string; suggestion: string; answered: number; total: number;
-  evidence: Array<{ questionId: string; question: string; answer: string; meaning: string }>;
+  evidence: Array<{ questionId: string; question: string; answer: string; topic: string }>;
 };
 export type FitPairSection = {
   id: string; title: string; status: "same" | "mixed" | "different" | "unknown"; summary: string; suggestion: string;
