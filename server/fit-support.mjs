@@ -129,14 +129,16 @@ function discovery(profile, language) {
   return lines.join(language === "zh" ? "" : " ");
 }
 
-function reviewedWording(profile, language) {
+export function reviewedWording(profile, language) {
   const review = profile?.supportReview;
   if (!supportReady(profile) || !review) return "";
   if (review.kind === "edit") return review.text?.trim() || "";
+  if (review.kind !== "fits" && review.kind !== "sometimes") return "";
+  const saved = review.wording?.[language];
+  if (typeof saved === "string" && saved.trim()) return saved;
   const line = discovery(profile, language);
   if (review.kind === "fits") return line;
-  if (review.kind === "sometimes") return tr("有些时候，我希望你这样陪我：", "This helps me some of the time: ", "A veces me ayuda esto: ")[language] + line;
-  return "";
+  return tr("有些时候，我希望你这样陪我：", "This helps me some of the time: ", "A veces me ayuda esto: ")[language] + line;
 }
 
 export function supportPersonalSection(profile, language) {
