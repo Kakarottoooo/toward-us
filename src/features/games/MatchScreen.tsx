@@ -27,7 +27,7 @@ const OWN_END = new Set(["draw", "truths", "rps"]);
 const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = { gomoku: Gomoku, draw: DrawGuess, reversi: Reversi, connect4: ConnectFour, truths: TwoTruths, rps: Rps, xiangqi: Xiangqi, ludo: Ludo, soup: Soup };
 
 /** One game's own screen. Loads the match, reloads when the other one moves (`changed`), and sends this player's moves. */
-export function MatchScreen({ matchId, language, userId, members, pet, changed, name, solo = () => false, onBack, onRematch }: { solo?: (game: string) => boolean; matchId: string; language: Language; userId: string; members: Member[]; pet: { name: string; picture: string | null }; changed: number; name: (game: string) => string; onBack: () => void; onRematch: (game: string, pet: boolean) => Promise<void> }) {
+export function MatchScreen({ matchId, language, userId, members, pet, changed, name, solo = () => false, embedded = false, onBack, onRematch }: { embedded?: boolean; solo?: (game: string) => boolean; matchId: string; language: Language; userId: string; members: Member[]; pet: { name: string; picture: string | null }; changed: number; name: (game: string) => string; onBack: () => void; onRematch: (game: string, pet: boolean) => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [match, setMatch] = useState<MatchView | null>(null), [error, setError] = useState(""), [ending, setEnding] = useState(false);
   const load = useCallback(async () => { try { setMatch((await relationshipApi<{ match: MatchView }>(`/api/matches/${encodeURIComponent(matchId)}?language=${language}`)).match); } catch (caught) { setError((caught as Error).message); } }, [matchId, language]);
@@ -43,12 +43,8 @@ export function MatchScreen({ matchId, language, userId, members, pet, changed, 
   // With 小家伙 it is the other player: its name, its picture, and no "we'll tell you" (it answers right away).
   const partnerName = withPet ? pet.name : partner?.name || t("TA", "your partner", "tu pareja");
   const opponent = { name: partnerName, picture: withPet ? pet.picture : null, pet: withPet };
-  return <>
-    <header className="game-top has-side"><button type="button" className="page-back" onClick={onBack} data-testid="match-back" autoFocus><ArrowLeft size={20} />{t("游戏", "Games", "Juegos")}</button><h1>{match ? withPet && !solo(match.game) ? `${name(match.game)} · ${pet.name}` : name(match.game) : ""}</h1>
-      {/* Stops the game for both, no winner (founder 11-06); a second tap confirms. */}
-      <span className="game-top-side">{match?.status === "active" && !OWN_END.has(match.game) && <button type="button" className={`game-end ${ending ? "is-confirm" : ""}`} onClick={() => { if (!ending) { setEnding(true); return; } setEnding(false); void act({ type: "abandon" }); }} onBlur={() => setEnding(false)} data-testid="match-end">{ending ? t("确定结束？", "End it?", "¿Terminar?") : <><X size={14} weight="bold" />{t("结束", "End", "Terminar")}</>}</button>}</span>
-    </header>
-    <div className="game-stream"><MobileScroll className="game-scroll"><div className="game-body match-body" data-testid="match-screen">
+  const body = <div className={embedded ? "game-body match-body match-in-chat" : "game-body match-body"} data-testid="match-screen">
+      {embedded && <h2>{name("truths")}</h2>}
       {error && <p className="space-error" role="alert">{error}</p>}
       {!match && !error && <p className="game-wait" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>}
       {match?.status === "ended" && <section className="game-ended" data-testid="match-ended">
@@ -56,6 +52,13 @@ export function MatchScreen({ matchId, language, userId, members, pet, changed, 
         <button type="button" className="game-primary" onClick={() => void rematch()} data-testid="game-rematch"><ArrowsClockwise size={16} />{t("再来一局", "Play again", "Otra partida")}</button>
       </section>}
       {match && match.status !== "ended" && SCREENS[match.game] && (() => { const Screen = SCREENS[match.game]; return <Screen match={match} language={language} userId={userId} partnerName={partnerName} opponent={opponent} act={act} onRematch={rematch} />; })()}
-    </div></MobileScroll></div>
+  </div>;
+  if (embedded) return body;
+  return <>
+    <header className="game-top has-side"><button type="button" className="page-back" onClick={onBack} data-testid="match-back" autoFocus><ArrowLeft size={20} />{t("游戏", "Games", "Juegos")}</button><h1>{match ? withPet && !solo(match.game) ? `${name(match.game)} · ${pet.name}` : name(match.game) : ""}</h1>
+      {/* Stops the game for both, no winner (founder 11-06); a second tap confirms. */}
+      <span className="game-top-side">{match?.status === "active" && !OWN_END.has(match.game) && <button type="button" className={`game-end ${ending ? "is-confirm" : ""}`} onClick={() => { if (!ending) { setEnding(true); return; } setEnding(false); void act({ type: "abandon" }); }} onBlur={() => setEnding(false)} data-testid="match-end">{ending ? t("确定结束？", "End it?", "¿Terminar?") : <><X size={14} weight="bold" />{t("结束", "End", "Terminar")}</>}</button>}</span>
+    </header>
+    <div className="game-stream"><MobileScroll className="game-scroll">{body}</MobileScroll></div>
   </>;
 }

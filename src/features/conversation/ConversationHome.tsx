@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, CaretLeft, CaretRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
@@ -25,7 +25,10 @@ import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking
 import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
-import { PlayTogether } from "../games/PlayTogether";
+import { availableNewCards, PlayTogether, type PlayBoard } from "../games/PlayTogether";
+import { MatchScreen } from "../games/MatchScreen";
+import type { MatchView } from "../games/types";
+import { useQuestionSwipe } from "./useQuestionSwipe";
 import { PlayDistance } from "../games/PlayDistance";
 import { PlayPlans } from "../games/PlayPlans";
 import { MatchInviteCard } from "../games/MatchInviteCard";
@@ -58,6 +61,15 @@ export const readUsHidden = (userId: string) => { try { return localStorage.getI
 
 // Private records Pinky made that one tap can take back (server: assistant-router UNDOABLE).
 const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
+type QuestionTarget = { kind: "deck" | "daily" | "truths"; id: string };
+type QuestionFocus = QuestionTarget & { expanded: boolean; order: QuestionTarget[] | null; index: number };
+
+function questionOrder(first: QuestionTarget, ids: string[]) {
+  const index = first.kind === "deck" ? ids.indexOf(first.id) : -1;
+  const rest = index < 0 ? ids : [...ids.slice(index + 1), ...ids.slice(0, index)];
+  return [first, ...rest.map((id): QuestionTarget => ({ kind: "deck", id }))];
+}
+
 // Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
 const REOPEN_AFTER = 30 * 60_000;
 
@@ -114,8 +126,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [petRoom, setPetRoom] = useState(false);
   // 游戏大厅 (11-06): opened from the drawer, from a game card in Us, or from a "轮到你了" notice (?game=<id>).
   const [gameHall, setGameHall] = useState<{ match: string | null } | null>(() => { const game = new URLSearchParams(location.search).get("game"); return game ? { match: game === "hall" ? null : game } : null; });
-  const [playFocus, setPlayFocus] = useState<{ kind: "deck" | "daily"; id: string; expanded: boolean } | null>(null);
-  const [playTogether, setPlayTogether] = useState<{ fromGames?: boolean } | null>(() => {
+  const [playFocus, setPlayFocus] = useState<QuestionFocus | null>(null);
+  const [fetchingNext, setFetchingNext] = useState(false);
+  const nextLoading = useRef(false);
+  const [matchFocusUpdate, setMatchFocusUpdate] = useState<{ id: string; at: number } | null>(null);
+  const [playTogether, setPlayTogether] = useState<{ fromGames?: boolean; fromFocus?: boolean } | null>(() => {
     const params = new URLSearchParams(location.search);
     return params.get("play") === "today" ? {} : null;
   });
@@ -634,10 +649,33 @@ ${text}` : text, target);
     params.delete("play");
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
   };
-  const openQuestion = (kind: "deck" | "daily", id: string) => {
+  const openQuestion = (kind: QuestionTarget["kind"], id: string, ids?: string[]) => {
     keyboard.hide(); closePlayTogether(); switchChannel("us");
-    setPlayFocus({ kind, id, expanded: true });
+    const target = { kind, id };
+    setPlayFocus({ ...target, expanded: true, order: ids?.length ? questionOrder(target, ids) : null, index: 0 });
   };
+  const moveQuestion = (direction: -1 | 1) => {
+    const focus = playFocus;
+    if (!focus?.expanded || focus.kind === "truths" || nextLoading.current) return;
+    const index = focus.index + direction;
+    if (index < 0) return;
+    const openFrom = (order: QuestionTarget[]) => {
+      const target = order[index];
+      if (!target) return;
+      keyboard.hide(); leavePlayDaily();
+      setPlayFocus((current) => current === focus ? { ...target, order, index, expanded: true } : current);
+    };
+    if (focus.order) { openFrom(focus.order); return; }
+    nextLoading.current = true; setFetchingNext(true);
+    void relationshipApi<PlayBoard>(`/api/together/play?language=${language}`).then((board) => {
+      const order = questionOrder(focus, availableNewCards(board.cards, board.rounds).map((card) => card.id));
+      if (order.length > 1) openFrom(order);
+      else setPlayFocus((current) => current === focus ? { ...focus, order } : current);
+    }).catch((error) => setNotice(errorText(error as ApiError))).finally(() => {
+      nextLoading.current = false; setFetchingNext(false);
+    });
+  };
+  const questionSwipe = useQuestionSwipe(moveQuestion);
   const collapseQuestion = () => {
     leavePlayDaily();
     setPlayFocus((focus) => focus?.expanded ? { ...focus, expanded: false } : focus);
@@ -739,14 +777,26 @@ ${text}` : text, target);
           <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void decide(ref!.id, version, "approve")}><CheckCircle size={18} weight="fill" />{t("我同意", "I agree", "Estoy de acuerdo")}</button><button disabled={busy} onClick={() => void decide(ref!.id, version, "request-change")}>{t("我想改一下", "I'd change something", "Quiero cambiar algo")}</button></div></>)}
       </article>;
     }
-    if (message.kind === "match_invite" && message.match) return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
+    const chatQuestionRecord = (label: string, target: QuestionTarget) => visibleQuestion?.expanded ? null :
+      <button type="button" className="conversation-question-record" key={message.id}
+        onClick={() => openQuestion(target.kind, target.id)} data-testid="chat-question-record">
+        <ChatCircleDots size={18} aria-hidden="true" /><span><small>{label}</small><strong>{text}</strong></span><CaretRight size={16} aria-hidden="true" />
+      </button>;
+    if (message.kind === "match_invite" && message.match) {
+      if (message.match.game === "truths") return chatQuestionRecord(t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"), { kind: "truths", id: message.match.id });
+      return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
+    }
     if (message.kind === "game" && message.game) {
       const deckId = message.game.deckId;
-      if (visibleQuestion?.expanded && visibleQuestion.kind === "deck" && visibleQuestion.id === deckId) return null;
-      return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} onOpenDeck={deckId && !usHidden ? () => openQuestion("deck", deckId) : undefined} />;
+      if (deckId) return chatQuestionRecord(t("双人题卡", "Question card", "Carta para dos"), { kind: "deck", id: deckId });
+      return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} />;
     }
     if (message.kind === "watch_check") return <WatchCheckCard key={message.id} language={language} text={text} answer={message.watchAnswer} members={together?.members || []} onAnswer={(finished) => void answerWatch(message.id, finished)} />;
-    if (message.kind === "daily_question") return visibleQuestion?.expanded && visibleQuestion.kind === "daily" && visibleQuestion.id === message.id ? null : renderDaily(message);
+    if (message.kind === "daily_question") {
+      const isCurrent = message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000;
+      const label = isCurrent ? t("今日双人题", "Today's question", "Pregunta de hoy") : t("以前的双人题", "Earlier question", "Pregunta anterior");
+      return chatQuestionRecord(label, { kind: "daily", id: message.id });
+    }
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {
@@ -831,6 +881,18 @@ ${text}` : text, target);
   const conversationVisible = shown.current;
   const currentThread = channel === "me" ? thread : null;
   const visibleQuestion = channel === "us" && paired && !recall.active && !call ? playFocus : null;
+  const activeMatchId = visibleQuestion?.kind === "truths" ? visibleQuestion.id : "";
+  useEffect(() => {
+    if (!activeMatchId) return;
+    const events = new EventSource("/api/relationship/events");
+    events.addEventListener("relationship", (event) => {
+      try {
+        const update = JSON.parse((event as MessageEvent).data);
+        if (update.eventType === "match.updated" && update.objectId === activeMatchId) setMatchFocusUpdate({ id: activeMatchId, at: Date.now() });
+      } catch { /* Ignore invalid event payloads. */ }
+    });
+    return () => events.close();
+  }, [activeMatchId]);
   const focusedDaily = visibleQuestion?.kind === "daily" ? sharedMessages.find((message) => message.id === visibleQuestion.id && message.kind === "daily_question") : undefined;
   useLayoutEffect(() => {
     const content = conversationContent.current;
@@ -880,15 +942,22 @@ ${text}` : text, target);
     </header>
     {visibleQuestion && <section className="conversation-question-focus" aria-label={t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
       <div className="conversation-question-tools">
-        <button type="button" className="conversation-question-library" onClick={() => { keyboard.hide(); collapseQuestion(); setPlayTogether({}); }}><GameController size={17} />{t("题库", "Library", "Catálogo")}</button>
+        <button type="button" className="conversation-question-library" onClick={() => { keyboard.hide(); collapseQuestion(); setPlayTogether({ fromFocus: true }); }}><GameController size={17} />{t("题库", "Library", "Catálogo")}</button>
+        {visibleQuestion.expanded && visibleQuestion.kind !== "truths" && <div className="conversation-question-arrows"
+          role="group" aria-label={t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}>
+          <button type="button" aria-label={t("上一题", "Previous card", "Carta anterior")} disabled={fetchingNext || visibleQuestion.index === 0} onClick={() => moveQuestion(-1)}><CaretLeft size={19} /></button>
+          <button type="button" aria-label={t("下一题", "Next card", "Carta siguiente")}
+            disabled={fetchingNext || Boolean(visibleQuestion.order && visibleQuestion.index >= visibleQuestion.order.length - 1)} onClick={() => moveQuestion(1)}><CaretRight size={19} /></button>
+        </div>}
         <button type="button" aria-expanded={visibleQuestion.expanded} aria-controls="conversation-question-body"
           onClick={() => { keyboard.hide(); if (visibleQuestion.expanded) collapseQuestion(); else setPlayFocus({ ...visibleQuestion, expanded: true }); }}>
           {visibleQuestion.expanded ? t("收起题卡", "Minimize card", "Minimizar carta") : t("展开题卡", "Expand card", "Expandir carta")}
         </button>
         <button type="button" className="conversation-question-dismiss" aria-label={t("关闭题卡", "Close card", "Cerrar carta")} onClick={() => { keyboard.hide(); leavePlayDaily(); setPlayFocus(null); }}><X size={19} /></button>
       </div>
-      <div className="conversation-question-body" id="conversation-question-body" hidden={!visibleQuestion.expanded}>
-        <MobileScroll className="conversation-question-scroll">
+      {visibleQuestion.expanded && visibleQuestion.kind !== "truths" && <p className="conversation-question-swipe-hint">{t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}</p>}
+      <div className="conversation-question-body" id="conversation-question-body" hidden={!visibleQuestion.expanded} {...questionSwipe}>
+        <MobileScroll key={visibleQuestion.id} className="conversation-question-scroll">
           {focusedDaily ? <div className="play-chat-card play-today">{renderDaily(focusedDaily, true, !navigator.onLine)}</div>
             : visibleQuestion.kind === "deck" ? <PlayTogether key={`${together?.conversation.id || ""}:${visibleQuestion.id}`} inConversation
               initialCardId={visibleQuestion.id} language={language} userId={user.id} partnerName={partnerName} paired={paired}
@@ -896,6 +965,14 @@ ${text}` : text, target);
               onClose={collapseQuestion} onInvite={collapseQuestion} onLeaveDaily={leavePlayDaily} onContinueChat={chatAfterQuestion}
               onOpenPlan={(id) => { keyboard.hide(); setPlanQuestionId(id); }}
               onAskPinky={askForCardPlan} />
+            : visibleQuestion.kind === "truths" ? <MatchScreen embedded key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
+              userId={user.id} members={together?.members || []} pet={{ name: "", picture: null }}
+              changed={matchFocusUpdate?.id === visibleQuestion.id ? matchFocusUpdate.at : 0}
+              name={() => t("两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira")}
+              onBack={collapseQuestion} onRematch={async (game) => {
+                const { match } = await relationshipApi<{ match: MatchView }>("/api/matches", jsonBody({ game, language }));
+                openQuestion("truths", match.id);
+              }} />
             : <p role="status">{t("这道题暂时没加载出来。", "This question couldn't be loaded.", "No se pudo cargar esta pregunta.")}</p>}
         </MobileScroll>
       </div>
@@ -944,8 +1021,8 @@ ${text}` : text, target);
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && !visibleQuestion?.expanded && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
-    {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }}
-      onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} />}
+    {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames}
+      onChatMatch={(id) => { closeGames(); openQuestion("truths", id); }} onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} />}
     {interaction && paired && <BottomSheet open onOpenChange={(open) => { if (!open) closeInteraction(); }}
       title={t("互动", "Connect", "Conectar")} description={t("碰一下，或者留张小卡。", "Touch together or leave a little card.", "Tóquense o deja una tarjetita.")} snap={0.76}>
       <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
@@ -959,13 +1036,13 @@ ${text}` : text, target);
     </BottomSheet>}
     {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
-      fromGames={playTogether.fromGames} onLeaveDaily={leavePlayDaily}
-      onPickCard={paired && !usHidden ? (id) => openQuestion("deck", id) : undefined}
+      fromGames={playTogether.fromGames} startAtList={playTogether.fromFocus} onLeaveDaily={leavePlayDaily}
+      onPickCard={paired && !usHidden ? (id, ids) => openQuestion("deck", id, ids) : undefined}
       onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) void shareInvite(); else switchChannel("us"); }}
       renderPlans={(questionId) => paired && !planQuestionId ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /> : null}
-      onRefreshDaily={() => void loadTogether()} renderDaily={() => todayQuestion && !usHidden ? <button
-        className="play-daily-preview" type="button" onClick={() => openQuestion("daily", todayQuestion.id)}>
+      onRefreshDaily={() => void loadTogether()} renderDaily={(_, freshIds) => todayQuestion && !usHidden ? <button
+        className="play-daily-preview" type="button" onClick={() => openQuestion("daily", todayQuestion.id, freshIds)}>
         <strong>{todayQuestion.i18n?.[language] ?? todayQuestion.translations?.[language]?.text ?? todayQuestion.text}</strong>
         <span>{Object.keys(todayQuestion.answers || {}).length >= 2
           ? t("去聊天看结果", "See answers in chat", "Ver respuestas en el chat")

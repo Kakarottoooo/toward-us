@@ -57,7 +57,12 @@
   border-radius: 13px; padding: 8px 11px; background: var(--play-cream); color: inherit; font: inherit;
 }
 .play-browse input:focus-visible { outline: 2px solid var(--play-berry); outline-offset: 2px; }
-.play-browse ul { display: grid; gap: 7px; padding: 0; list-style: none; }
+.play-browse ul { display: grid; padding: 0; list-style: none; border: 1px solid #e4d3d4; border-radius: 14px; }
+.play-browse ul:empty { display: none; }
+.play-browse li + li { border-top: 1px solid #e4d3d4; }
+.play-browse li > .play-list-row { min-height: 48px; border: 0; background: transparent; border-radius: 0; padding: 6px 10px; }
+.play-browse li > .play-list-row strong { font-size: 15px; line-height: 1.3; }
+.play-result-count { color: #64554c; font-size: 13px; }
 .play-browse .play-list-row { width: 100%; }
 .play-browse .play-list-row span { flex: 1; min-width: 0; gap: 3px; overflow-wrap: anywhere; }
 .play-browse .play-list-row svg { flex: none; }
