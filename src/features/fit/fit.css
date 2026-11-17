@@ -110,3 +110,21 @@
   .fit-tabs { margin-inline: 18px; }
   .fit-tabs button { gap: 5px; padding-inline: 5px; font-size: 13px; }
 }
+
+.fit-support { gap: 17px; }
+.fit-support h2, .fit-finding h3 { text-wrap: wrap; overflow-wrap: anywhere; }
+.fit-finding { display: grid; gap: 14px; width: 100%; box-sizing: border-box; padding: 21px 18px 12px; border-inline-start: 3px solid #a95170; border-radius: 0 14px 14px 0; background: var(--fit-paper); }
+.fit-finding .fit-status { color: var(--fit-berry); font-size: 13px; font-weight: 650; }
+.fit-finding h3 { font-size: clamp(20px, 5.5vw, 25px); line-height: 1.5; white-space: pre-line; }
+.fit-finding > p, .fit-sheet .fit-report > p { white-space: pre-line; }
+.fit-basis summary, .fit-other > summary { display: flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; list-style: none; color: var(--fit-berry); font-size: 14px; font-weight: 650; }
+.fit-basis summary::-webkit-details-marker, .fit-other > summary::-webkit-details-marker { display: none; }
+.fit-basis[open] > summary svg, .fit-other[open] > summary svg { transform: rotate(90deg); }
+.fit-review { margin: 0; padding: 0; border: 0; min-width: 0; }
+.fit-review legend { padding: 0; margin-bottom: 7px; font-size: 16px; font-weight: 650; }
+.fit-review button { display: inline-flex; align-items: center; gap: 6px; margin: 3px 6px 3px 0; padding: 8px 12px; min-height: 44px; border: 1px solid var(--fit-line); border-radius: 14px; background: var(--fit-paper); color: var(--fit-ink); font-size: 14px; }
+.fit-review button[aria-pressed="true"] { border-color: var(--fit-berry); color: var(--fit-berry); background: #f3e2df; }
+.fit-other { margin-top: 14px; border-block: 1px solid var(--fit-line); }
+.fit-other > summary { justify-content: space-between; min-height: 54px; color: var(--fit-ink); font-size: 16px; }
+.fit-other .fit-chapters { padding-top: 0; }
+.fit-sheet textarea { box-sizing: border-box; width: 100%; padding: 12px 14px; font: inherit; font-size: 16px; line-height: 1.5; color: #342632; background: #fffaf4; border: 1px solid #c9bcb8; border-radius: 14px; resize: vertical; }
