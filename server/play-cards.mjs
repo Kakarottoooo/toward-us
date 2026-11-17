@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { dailyQuestionPool } from "./daily-question-pool.mjs";
+
 // [title, prompt, options, follow-up]. Option order is shared by all locales:
 // the saved choice is an index, even when partners use different languages.
 const cards = [
@@ -153,4 +156,36 @@ export function localizedPlayCards(language) {
     const [title, prompt, options, followup] = card[locale];
     return { id: card.id, type: card.type, title, prompt, options: [...options], followup };
   });
+}
+
+const promptEntries = dailyQuestionPool.map((question, index) => ({
+  // Keep the ID tied to the authored question across locales and catalog reordering.
+  id: `question-v1-${createHash("sha256").update(question.zh.normalize("NFC").trim()).digest("hex").slice(0, 24)}`,
+  number: index + 1,
+  question,
+}));
+const questionTitles = { zh: "第 {number} 题", en: "Question {number}", es: "Pregunta {number}" };
+const questionFollowups = {
+  zh: "TA 的回答里，哪一点让你想继续聊？",
+  en: "Which part of your partner’s answer would you like to talk about?",
+  es: "¿Qué parte de la respuesta de tu pareja te gustaría seguir conversando?",
+};
+const libraryByLocale = Object.fromEntries(Object.keys(questionTitles).map((locale) => [
+  locale,
+  [
+    ...promptEntries.map(({ id, number, question }) => ({
+      id,
+      collection: "questions",
+      type: "truth",
+      title: questionTitles[locale].replace("{number}", String(number)),
+      prompt: question[locale],
+      options: [],
+      followup: questionFollowups[locale],
+    })),
+    ...localizedPlayCards(locale).map((card) => ({ ...card, collection: "classic" })),
+  ],
+]));
+
+export function localizedPlayLibrary(language) {
+  return libraryByLocale[language === "en" || language === "es" ? language : "zh"];
 }
