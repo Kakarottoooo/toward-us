@@ -89,15 +89,22 @@ export function personalFitReport(profile, language) {
   const sections = fitModules.flatMap((module) => {
     const evidence = module.questions.flatMap((question) => {
       const choice = selected(profile, question);
-      return choice ? [{ questionId: question.id, question: question.text[language], answer: choice.text[language], meaning: choice.meaning[language] }] : [];
+      return choice ? [{ questionId: question.id, question: question.text[language], answer: choice.text[language], meaning: say(language, `这次选择优先顾到了：${choice.meaning.zh}。`, `In this situation, your choice prioritizes ${choice.meaning.en}.`, `En esta situación, tu elección da prioridad a ${choice.meaning.es}.`) }] : [];
     });
     if (!evidence.length) return [];
     const firstQuestion = module.questions.find((question) => selected(profile, question));
-    const first = selected(profile, firstQuestion);
+
+    const offering = evidence.find(item => item.questionId === "v2-closeness-busy");
+    const reaching = evidence.find(item => item.questionId === "v2-closeness-reach");
+    const summary = offering && reaching ? say(language,
+      `TA 心情不好、你马上要忙时，你选了「${offering.answer}」。换成你想诉苦、TA 马上要忙，你选了「${reaching.answer}」。如果这是同一天，你希望彼此怎么接话？`,
+      `When they had a rough day and you were about to get busy, you chose “${offering.answer}”. When you needed to vent and they had meetings, you chose “${reaching.answer}”. How would you want those two moments to play out?`,
+      `Cuando tu pareja tuvo un día difícil y tú tenías poco tiempo, elegiste «${offering.answer}». Cuando tú querías desahogarte y la otra persona tenía reuniones, elegiste «${reaching.answer}». ¿Cómo te gustaría que fueran esos dos momentos?`)
+      : evidence.map(item => item.meaning).join(" ");
     return [{
       id: module.id, title: module.title[language],
-      summary: evidence.map((item) => item.meaning).join(" "), evidence,
-      suggestion: module.advice[Number(first.id)][language], answered: evidence.length, total: module.questions.length,
+      summary, evidence,
+      suggestion: firstQuestion.followup[language], answered: evidence.length, total: module.questions.length,
     }];
   });
   if (profile.mbti) sections.push({
@@ -140,7 +147,7 @@ export function coupleFitReport(mine, partner, partnerName, language) {
     }
     return {
       id: module.id, title: module.title[language], status, summary, evidence,
-      suggestion: anchor ? say(language, `一起聊聊：「${anchor.text.zh}」里，对方的选项有什么吸引你的地方？下次可以怎样照顾两个人的偏好？`, `Talk about “${anchor.text.en}”: what appeals to you in your partner's choice, and how could you make room for both preferences next time?`, `Hablen sobre «${anchor.text.es}»: ¿qué te atrae de la elección de tu pareja y cómo podrían dar espacio a ambas preferencias?`) : module.description[language],
+      suggestion: anchor ? anchor.followup[language] : module.description[language],
     };
   });
   const known = sections.filter((section) => section.status !== "unknown").length;

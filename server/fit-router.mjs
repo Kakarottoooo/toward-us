@@ -5,6 +5,8 @@ import { appendTogetherMessage } from "./together-domain.mjs";
 import { fitQuestions, localizedFitModules, mbtiTypes, zodiacNames } from "./fit-questions.mjs";
 import { coupleFitReport, fitOverviewComplete, personalFitReport } from "./fit-report.mjs";
 
+import { previousFitQuestions } from "./fit-previous-questions.mjs";
+
 const KIND = "relationship_guide";
 const collection = "checkins";
 const supported = new Set(["zh", "en", "es"]);
@@ -16,7 +18,7 @@ const fail = (statusCode, code) => Object.assign(new Error(code), { statusCode, 
 const questionById = new Map(fitQuestions.map((question) => [question.id, question]));
 const validVersion = (value) => Number.isSafeInteger(value) && value >= 0;
 const emptyProfile = () => ({ version: 0, answers: {}, mbti: null, zodiac: null });
-const sharedIn = (profile, context) => activePair(context) && profile?.sharingRelationshipId === context.relationship.id && profile.sharedVersion === profile.version;
+const sharedIn = (profile, context) => activePair(context) && fitOverviewComplete(profile) && profile?.sharingRelationshipId === context.relationship.id && profile.sharedVersion === profile.version;
 
 async function readOwn(db, userId) {
   const profile = await db.getRelationshipRecordForUser(collection, ownId(userId), userId);
@@ -25,7 +27,12 @@ async function readOwn(db, userId) {
 
 async function view(db, userId, language) {
   const context = await db.getRelationshipContext(userId);
-  const own = await readOwn(db, userId) || emptyProfile();
+  const stored = await readOwn(db, userId) || emptyProfile();
+  const own = { ...stored, answers: Object.fromEntries(Object.entries(stored.answers || {}).filter(([id]) => questionById.has(id))) };
+  const previousAnswers = previousFitQuestions.flatMap((q) => {
+    const option = q.options[stored.answers?.[q.id]];
+    return option ? [{ question: q.text[language], answer: option[language] }] : [];
+  });
   const sharing = sharedIn(own, context);
   const partner = activePair(context) ? context.members.find((member) => member.userId !== userId) : null;
   const partnerName = partner?.user?.name || "";
@@ -49,7 +56,7 @@ async function view(db, userId, language) {
       version: own.version, answers: own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
       sharing, answeredCount: Object.keys(own.answers || {}).length, totalQuestions: fitQuestions.length,
     },
-    personal: personalFitReport(own, language), couple,
+    previousAnswers, personal: personalFitReport(own, language), couple,
   };
 }
 

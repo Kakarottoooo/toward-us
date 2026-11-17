@@ -9,6 +9,7 @@ export type FitPairSection = {
   evidence: Array<{ questionId: string; question: string; mine: string; partner: string }>;
 };
 export type FitState = {
+  previousAnswers: Array<{ question: string; answer: string }>;
   modules: FitModule[];
   profile: {
     version: number; answers: Record<string, string>; mbti: string | null; zodiac: string | null;
