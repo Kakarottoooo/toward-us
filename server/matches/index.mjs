@@ -23,6 +23,14 @@ import { kitchen } from "./kitchen.mjs";
 import { timeline } from "./timeline.mjs";
 import { photoRelay } from "./photo-relay.mjs";
 import { song } from "./song.mjs";
+import { escapeRoom } from "./escape-room.mjs";
+import { spotDifference } from "./spot-difference.mjs";
+import { memoryPairs } from "./memory-pairs.mjs";
+import { dateBudget } from "./date-budget.mjs";
+import { liarDice } from "./liar-dice.mjs";
+import { miniGolf } from "./mini-golf.mjs";
+import { stackTower } from "./stack-tower.mjs";
+import { forbiddenWords } from "./forbidden-words.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
 // the same shape, so adding one is adding a module here and its screen in src/features/games:
@@ -43,13 +51,22 @@ import { song } from "./song.mjs";
 // turn(state) may be BOTH when either player may act.
 // A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
 // pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
-export const GAMES = Object.freeze({ gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps, xiangqi, ludo, soup, hunt: treasureHunt, dots: dotsBoxes, doodle: doodleRelay, jigsaw, detective: photoDetective, sokoban, battleship, kitchen, timeline, "photo-relay": photoRelay, song });
+export const GAMES = Object.freeze({
+  gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps, xiangqi, ludo, soup, hunt: treasureHunt,
+  dots: dotsBoxes, doodle: doodleRelay, jigsaw, detective: photoDetective, sokoban, battleship, kitchen, timeline, "photo-relay": photoRelay, song,
+  "escape-room": escapeRoom, "spot-difference": spotDifference, "memory-pairs": memoryPairs, "date-budget": dateBudget,
+  "liar-dice": liarDice, "mini-golf": miniGolf, "stack-tower": stackTower, "forbidden-words": forbiddenWords,
+});
 export const COLLECTION = "matches";
 const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"], reversi: ["黑白棋", "Reversi", "Reversi"], connect4: ["四子棋", "Four in a row", "Cuatro en raya"], truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"], rps: ["石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"], xiangqi: ["象棋", "Chinese chess", "Ajedrez chino"], ludo: ["情侣飞行棋", "Couples' ludo", "Parchís de pareja"], soup: ["海龟汤", "Lateral puzzles", "Acertijos laterales"], hunt: ["双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"], dots: ["连点占格", "Dots and Boxes", "Puntos y cajas"], doodle: ["接力涂鸦", "Doodle Relay", "Dibujo por turnos"], jigsaw: ["双人拼图", "Jigsaw Together", "Rompecabezas en pareja"], detective: ["照片侦探", "Photo Detective", "Detective de fotos"] };
 Object.assign(NAMES, {
   sokoban: ["双人推箱子", "Together We Move", "Mudanza en pareja"], battleship: ["海战棋", "Battleship", "Batalla naval"],
   kitchen: ["两人开餐厅", "Two-Person Kitchen", "Cocina en pareja"], timeline: ["回忆时间线", "Memory Timeline", "Línea de recuerdos"],
   "photo-relay": ["拍照接力", "Photo Relay", "Reto de fotos"], song: ["一起做首歌", "Make a Song Together", "Hagamos una canción"],
+  "escape-room": ["双人密室", "Room for Two", "Escape en pareja"], "spot-difference": ["合作找不同", "Spot the Difference Together", "Encuentren las diferencias"],
+  "memory-pairs": ["翻牌搭档", "Memory Match Together", "Parejas de memoria"], "date-budget": ["约会拼预算", "Budget a Date", "Una cita con presupuesto"],
+  "liar-dice": ["吹牛骰子", "Liar's Dice", "Dados mentirosos"], "mini-golf": ["迷你高尔夫", "Mini Golf", "Minigolf"],
+  "stack-tower": ["双人叠塔", "Stack a Tower", "Construyan una torre"], "forbidden-words": ["禁词猜词", "Forbidden Words", "Palabras prohibidas"],
 });
 export const gameName = (game, language) => { const names = NAMES[game] || [game, game, game]; return language === "en" ? names[1] : language === "es" ? names[2] : names[0]; };
 
@@ -168,13 +185,18 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId, 
     const timedResult = kitchenResult(match, now);
     if (action?.type === "abandon" && !timedResult) return endMatch(tx, { match, userId, as, context });
     const move = module.prepareAction ? await module.prepareAction({ tx, match, userId, action }) : action;
-    const state = timedResult || module.act(match.state, { userId: as, action: move, now });
+    let state = timedResult || module.act(match.state, { userId: as, action: move, now });
     if (match.game === "photo-relay" && state === match.state) return { match, unchanged: true };
     if ((match.game === "detective" && action?.type === "create_clue") || (match.game === "jigsaw" && action?.type === "photo")) {
       const photo = await requireGamePhoto(tx, { userId, relationshipId: match.relationshipId, photoId: action.photoId });
       if (match.game === "detective") await readGamePhoto(photo, { crop: action.crop });
     }
     const finished = module.finished(state);
+    let milestone = null;
+    if (finished && module.persistFinish) {
+      const language = ["zh", "en", "es"].includes(action.language) ? action.language : "zh";
+      ({ state, milestone } = await module.persistFinish({ tx, match, state, userId, context, language }));
+    }
     const updated = await saveMove(tx, match, userId, module, state, finished);
     // A game between the two of them may end with a line in Us (石头剪刀布: who lost the bet).
     let conversation = finished ? await announceFinish(tx, updated, userId, context) : null;
@@ -185,7 +207,7 @@ export async function actOnMatch({ store, userId, matchId, action, as = userId, 
       const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: line.zh, i18n: line, handle: `match-say:${updated.id}:${updated.version}:${index}` });
       if (!posted.duplicate) conversation = posted.conversation;
     }
-    return { match: updated, before: match.turn, conversation };
+    return { match: updated, before: match.turn, conversation, milestone };
   });
 }
 

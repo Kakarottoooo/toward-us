@@ -1,0 +1,85 @@
+.forbidden-words {
+  display: grid;
+  gap: 11px;
+  width: min(100%, 420px);
+  margin-inline: auto;
+  --words-ink: #4e3042;
+  --words-muted: #654858;
+  --words-edge: #e6cad8;
+  --words-accent: #a14569;
+}
+.forbidden-words :is(h3, p) { margin: 0; }
+.forbidden-words-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; color: var(--words-ink); }
+.forbidden-words-hero > strong { display: inline-flex; align-items: center; gap: 5px; font-size: 15px; color: #913a63; }
+.forbidden-words-dots { display: flex; gap: 6px; }
+.forbidden-words-dots span {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 999px;
+  background: #f0e7eb;
+  color: var(--words-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.forbidden-words-dots span.is-current { color: #fff; background: #943b63; }
+.forbidden-words-dots span.is-past { background: #eacbd9; color: #642d49; }
+.forbidden-words-private, .forbidden-words-guess, .forbidden-words-result {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--words-edge);
+  border-radius: 15px;
+  background: linear-gradient(122deg, #f3dce6, #fcf3f3 80%);
+  color: var(--words-ink);
+}
+.forbidden-words-guess { background: #f6f0f7; border-color: #e4d7e7; }
+.forbidden-words-private > p { display: flex; align-items: center; gap: 5px; color: var(--words-muted); font-size: 12px; font-weight: 700; }
+.forbidden-words-private > p svg { flex-shrink: 0; }
+.forbidden-words-private h3, .forbidden-words-result h3 { font-size: clamp(23px, 6.5vw, 31px); font-weight: 800; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.forbidden-words-guess h3 { font-size: 20px; }
+.forbidden-words-guess p { font-size: 13px; line-height: 1.45; }
+.forbidden-words-banned { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; font-size: 12px; font-weight: 700; }
+.forbidden-words-banned span { color: var(--words-muted); }
+.forbidden-words-banned strong { padding: 4px 7px; border-radius: 6px; background: #fff8fa; color: #6c3450; overflow-wrap: anywhere; }
+.forbidden-words-clue { display: grid; gap: 4px; min-width: 0; padding: 8px 10px; border: 1px solid #decfb7; border-radius: 10px; background: #fff8e9; color: #554a35; }
+.forbidden-words-clue span { color: #735f3b; font-size: 11px; font-weight: 750; }
+.forbidden-words-clue p { font-size: 15px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.forbidden-words-attempts { display: flex; justify-content: space-between; align-items: center; gap: 5px; color: var(--words-muted); font-size: 13px; font-weight: 700; }
+.forbidden-words-attempt-dots { display: flex; gap: 5px; }
+.forbidden-words-attempt-dots i { width: 9px; height: 9px; border-radius: 999px; background: var(--words-accent); }
+.forbidden-words-attempt-dots i.is-used { background: #e9dde4; }
+.forbidden-words-status, .forbidden-words-guesses { color: var(--words-muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.forbidden-words-guesses > span { font-weight: 700; color: var(--words-ink); }
+.forbidden-words-form { display: grid; gap: 8px; min-width: 0; }
+.forbidden-words-form label { display: grid; gap: 5px; color: var(--words-ink); font-size: 13px; font-weight: 750; }
+.forbidden-words-form :is(textarea, input) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px;
+  border: 1px solid var(--words-edge);
+  border-radius: 9px;
+  background: #fffafc;
+  color: var(--words-ink);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+.forbidden-words :is(button, textarea, input, summary):focus-visible { outline: 2px solid var(--words-accent); outline-offset: 1px; }
+.forbidden-words-form :is(textarea, input)::placeholder { color: #785971; font-weight: 500; }
+.forbidden-words-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.forbidden-words :is(.game-primary, .game-quiet) { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 13px; }
+.forbidden-words-pass { justify-self: start; }
+.forbidden-words-result.is-correct { background: #e9f3e9; border-color: #c6d9c7; color: #34554a; }
+.forbidden-words-result > span { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 800; }
+.forbidden-words-result > p { font-size: 14px; line-height: 1.4; }
+.forbidden-words-recap { padding: 6px 9px; background: #fbf5f8; border: 1px solid var(--words-edge); border-radius: 9px; color: var(--words-ink); }
+.forbidden-words-recap summary { min-height: 32px; padding-block: 6px; font-size: 13px; font-weight: 700; line-height: 1.45; cursor: pointer; }
+.forbidden-words-recap ul { display: grid; gap: 5px; padding: 0 0 2px; margin: 0; list-style: none; font-size: 13px; }
+.forbidden-words-recap li { display: flex; justify-content: space-between; gap: 7px; }
+.forbidden-words-end { display: flex; justify-content: end; }
+.forbidden-words-end .is-confirm { border-color: #a22940; background: #a22940; color: #fff; }

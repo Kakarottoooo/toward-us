@@ -1,0 +1,107 @@
+.escape-room {
+  --escape-dark: #15373f;
+  --escape-light: #eff6f3;
+  --escape-ink: #173842;
+  --escape-accent: #2f666b;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  color: var(--escape-ink);
+}
+.escape-room[data-theme="greenhouse"] {
+  --escape-dark: #2e422a;
+  --escape-light: #f3f6e9;
+  --escape-ink: #293e24;
+  --escape-accent: #507346;
+}
+.escape-room[data-theme="lighthouse"] {
+  --escape-dark: #262c51;
+  --escape-light: #f1f0f8;
+  --escape-ink: #35335c;
+  --escape-accent: #584f83;
+}
+.escape-hero {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 17px 15px;
+  border-radius: 16px;
+  color: #fffbf2;
+  background: linear-gradient(140deg, var(--escape-accent), var(--escape-dark) 78%);
+}
+.escape-hero strong { font-size: 21px; font-weight: 800; line-height: 1.15; }
+.escape-hero p { margin: 5px 0 0; font-size: 14px; line-height: 1.42; color: #fcf8ef; }
+.escape-progress { display: flex; align-items: center; gap: 7px; padding-inline: 3px; color: var(--escape-accent); }
+.escape-progress span { margin-left: auto; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.escape-stage {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--escape-accent) 26%, transparent);
+  border-radius: 16px;
+  background: var(--escape-light);
+}
+.escape-stage p { margin: 0; font-size: 14px; line-height: 1.45; }
+.escape-stage-head small { color: var(--escape-accent); font-size: 13px; font-weight: 750; }
+.escape-stage-head h3 { margin: 4px 0 0; font-size: 19px; line-height: 1.2; }
+.escape-strip, .escape-input-slots, .escape-keys, .escape-dials, .escape-route-inputs {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+.escape-strip { list-style: none; margin: 0; padding: 0; }
+.escape-input-slots { gap: 7px; }
+.escape-strip li, .escape-key, .escape-input-slots > span, .escape-dial {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--escape-accent) 28%, transparent);
+  border-radius: 12px;
+  background: #fffdf6;
+  padding: 5px 1px;
+  text-align: center;
+  flex: 1;
+}
+.escape-strip li > span, .escape-key > span, .escape-input-slots > span {
+  font-size: 24px;
+  line-height: 1.12;
+}
+.escape-strip li > small, .escape-key > small { font-weight: 600; font-size: 11px; line-height: 1.1; overflow-wrap: anywhere; }
+.escape-input-slots > span { flex: 0 1 44px; min-height: 37px; padding: 6px 1px; }
+.escape-key, .escape-dial button, .escape-route-inputs button { min-height: 44px; color: inherit; cursor: pointer; }
+.escape-key:hover:enabled, .escape-dial button:hover:enabled, .escape-route-inputs button:hover:enabled { background: color-mix(in srgb, var(--escape-accent) 12%, #fffdf6); }
+.escape-key:disabled, .escape-dial button:disabled, .escape-route-inputs button:disabled { opacity: .52; cursor: default; }
+.escape-dial { padding: 6px 5px; font-size: 18px; }
+.escape-dial-symbol { font-size: 12px; line-height: 1.25; }
+.escape-dial button, .escape-route-inputs button {
+  min-width: 44px;
+  border: 1px solid color-mix(in srgb, var(--escape-accent) 28%, transparent);
+  border-radius: 10px;
+  background: #fffdf6;
+  font: 750 22px/1 system-ui, sans-serif;
+}
+.escape-dial output { display: block; margin-block: 1px; font-size: 23px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.escape-route-map { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; width: min(100%, 226px); margin-inline: auto; }
+.escape-route-map span {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1.36;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--escape-accent) 10%, #fffdf6);
+  color: var(--escape-dark);
+  font-weight: 800;
+}
+.escape-route-map span.is-route { background: color-mix(in srgb, var(--escape-accent) 27%, #fffdf6); }
+.escape-route-map span.is-exit { box-shadow: inset 0 0 0 2px var(--escape-accent); }
+.escape-route-inputs button { flex: 0 1 51px; }
+.escape-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.escape-actions .game-primary, .escape-win .game-primary { background: var(--escape-dark); color: #fffbf2; }
+.escape-actions button, .escape-end, .escape-hint, .escape-win button { min-height: 44px; }
+.escape-stage .escape-feedback { color: #874235; }
+.escape-tip { display: flex; align-items: center; gap: 8px; color: var(--escape-ink); }
+.escape-hint, .escape-end { justify-self: start; align-self: flex-start; }
+.escape-win { display: grid; justify-items: start; gap: 9px; padding: 13px; border-radius: 16px; background: var(--escape-light); }
+.escape-win strong { font-size: 19px; }

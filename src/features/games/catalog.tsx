@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target, TreasureChest, PuzzlePiece, Images, PencilSimple, GridFour } from "@phosphor-icons/react";
 import { Camera, ClockCounterClockwise, CookingPot, MusicNotes, Package, Sailboat } from "@phosphor-icons/react";
+import { Cards, ChatTeardropDots, Coins, DiceFive, Door, Golf, MagnifyingGlass, Stack } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -128,6 +129,54 @@ export function gameCatalog(language: Language): GameEntry[] {
       name: t("一起做首歌", "Make a Song Together", "Hagamos una canción"),
       tagline: t("一个写八拍鼓点，一个加旋律，合起来听。", "Make an eight-beat drum pattern, then let your partner add a melody.", "Crea ocho tiempos de percusión y deja que tu pareja añada una melodía."),
       rules: [t("前一个人做鼓点，后一个人可以先试听，再加旋律。", "One makes the rhythm. The other listens and adds a melody.", "Una persona crea el ritmo. La otra lo escucha y añade una melodía."), t("合成后，两人都可以回到这局随时播放。", "Once it's done, both of you can come back and play your track anytime.", "Cuando esté lista, ambos pueden volver a esta partida y escuchar su canción.")],
+    },
+    {
+      id: "escape-room", category: "puzzle", kind: "match", partnerOnly: true, icon: <Door size={26} weight="duotone" />,
+      name: t("双人密室", "Room for Two", "Escape en pareja"),
+      tagline: t("一个看线索，一个动手解机关。", "One sees the clues. The other works the controls.", "Uno ve las pistas y el otro maneja los controles."),
+      rules: [t("互相讲你们看到的东西，破解三个机关。", "Tell each other what you see and unlock three mechanisms.", "Cuéntense lo que ven y resuelvan tres mecanismos."), t("每关交换角色，卡住可以看提示。", "Switch roles at each stage. Ask for a hint if you get stuck.", "Cambien de rol en cada etapa. Si se atascan, pidan una pista.")],
+    },
+    {
+      id: "spot-difference", category: "puzzle", kind: "match", partnerOnly: true, icon: <MagnifyingGlass size={26} weight="duotone" />,
+      name: t("合作找不同", "Spot the Difference Together", "Encuentren las diferencias"),
+      tagline: t("每人看到一张图，聊聊哪里不一样。", "Each of you sees one image. Compare what you notice.", "Cada uno ve una imagen. Comparen qué detalles cambian."),
+      rules: [t("你和 TA 看到的是同一场景的两个版本。", "You and your partner see two versions of the same scene.", "Tú y tu pareja ven dos versiones de la misma escena."), t("一起找出五处差异，点图片标出来。", "Tap to mark all five differences together.", "Toquen la imagen para encontrar juntos las cinco diferencias.")],
+    },
+    {
+      id: "memory-pairs", category: "puzzle", kind: "match", partnerOnly: true, icon: <Cards size={26} weight="duotone" />,
+      name: t("翻牌搭档", "Memory Match Together", "Parejas de memoria"),
+      tagline: t("轮流翻两张牌，一起配完八对。", "Flip two cards each turn and find all eight pairs together.", "Volteen dos cartas por turno y encuentren juntos las ocho parejas."),
+      rules: [t("记住你们翻过的牌，叫 TA 去找和它一模一样的那张。", "Remember what you've turned over and help each other find the matching cards.", "Recuerden las cartas que han volteado y ayúdense a encontrar sus parejas.")],
+    },
+    {
+      id: "date-budget", category: "casual", kind: "match", partnerOnly: true, icon: <Coins size={26} weight="duotone" />,
+      name: t("约会拼预算", "Budget a Date", "Una cita con presupuesto"),
+      tagline: t("用共同的游戏点数，拼出你们都想去的约会。", "Use a shared pool of credits to build a date you both want.", "Usen sus créditos para armar una cita que les guste a los dos."),
+      rules: [t("商量怎么选吃饭、活动和交通，让三项加起来不超预算。", "Pick food, an activity, and transportation without going over budget.", "Elijan comida, actividad y transporte sin pasarse del presupuesto."), t("你们可以选一个时间，双方确认后会加入共同日历。", "Pick a time if you like. Confirm it together to add it to your shared calendar.", "Si quieren, elijan una hora y confírmenla juntos para añadirla al calendario compartido.")],
+    },
+    {
+      id: "liar-dice", category: "board", kind: "match", partnerOnly: true, icon: <DiceFive size={26} weight="duotone" />,
+      name: t("吹牛骰子", "Liar's Dice", "Dados mentirosos"),
+      tagline: t("你只看得到自己的骰子。听 TA 怎么押，再决定要不要开。", "See only your own dice. Raise your partner's bid or call their bluff.", "Solo ves tus dados. Sube la apuesta de tu pareja o ponla a prueba."),
+      rules: [t("报两人的骰子加起来至少有几个同样的点数。下一个人要报更高，或者开盅。", "Bid on how many dice of one face both players have in total. The next player raises or challenges.", "Di cuántos dados de una cara hay entre los dos. La otra persona sube la apuesta o la cuestiona."), t("每次开盅，输的人少一颗骰子。最后还有骰子的人赢。", "The loser of each challenge loses a die. The last player with dice wins.", "Quien pierda el desafío pierde un dado. Gana quien se quede con dados al final.")],
+    },
+    {
+      id: "mini-golf", category: "casual", kind: "match", partnerOnly: true, icon: <Golf size={26} weight="duotone" />,
+      name: t("迷你高尔夫", "Mini Golf", "Minigolf"),
+      tagline: t("点一下瞄准，调力度。打完三洞，杆数少的赢。", "Aim, set your power, and putt. Lowest score after three holes wins.", "Apunta, ajusta la fuerza y golpea. Gana quien use menos golpes en tres hoyos."),
+      rules: [t("轮流打三洞。可以绕过水坑，也可以借墙弹一下。", "Take turns playing three holes. Go around water or bounce your shot off a wall.", "Jueguen tres hoyos por turnos. Rodeen el agua o hagan rebotar la bola contra una pared.")],
+    },
+    {
+      id: "stack-tower", category: "casual", kind: "match", partnerOnly: true, icon: <Stack size={26} weight="duotone" />,
+      name: t("双人叠塔", "Stack a Tower", "Construyan una torre"),
+      tagline: t("轮流放积木，小心偏重和风，一起搭到十二层。", "Take turns stacking blocks. Balance their weight and the wind to reach twelve levels.", "Apilen bloques por turnos. Equilibren el peso y el viento para llegar a doce pisos."),
+      rules: [t("看积木哪边重，把它放稳，再轮到 TA。塔倒了也可以立刻重开。", "Check which side is heavier, place the block, and pass the turn. If the tower falls, play again.", "Mira qué lado pesa más, coloca el bloque y pasa el turno. Si la torre cae, vuelvan a jugar.")],
+    },
+    {
+      id: "forbidden-words", category: "words", kind: "match", partnerOnly: true, icon: <ChatTeardropDots size={26} weight="duotone" />,
+      name: t("禁词猜词", "Forbidden Words", "Palabras prohibidas"),
+      tagline: t("让 TA 猜出答案，但线索不能用卡片上的禁词。", "Get your partner to guess the answer without using the words on the card.", "Haz que tu pareja adivine la respuesta sin usar las palabras prohibidas de la carta."),
+      rules: [t("一人发线索，一人猜。猜中或这一轮结束时换人。", "One sends clues, the other guesses. Swap when the round ends.", "Una persona da pistas y la otra adivina. Cambien de rol al acabar la ronda.")],
     },
     {
       id: "hunt", category: "puzzle", kind: "match", partnerOnly: true, icon: <TreasureChest size={26} weight="duotone" />, name: t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"),

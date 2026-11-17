@@ -5,8 +5,10 @@ import { actOnMatch, autoPending, createMatch, gameName, GAMES, listMatches, mat
 import { BOTH, MATCH_ERRORS, matchError } from "./matches/errors.mjs";
 import { listGamePhotos, readGamePhoto, requireGamePhoto } from "./matches/photo-game-media.mjs";
 import { readPhotoRelayMedia } from "./matches/photo-relay.mjs";
+import { readSpotImage } from "./matches/spot-difference.mjs";
 
-const invitePush = new Set(["hunt", "dots", "doodle", "jigsaw", "detective", "sokoban", "battleship", "kitchen", "timeline", "photo-relay", "song"]);
+const invitePush = new Set(["hunt", "dots", "doodle", "jigsaw", "detective", "sokoban", "battleship", "kitchen", "timeline", "photo-relay", "song",
+  "escape-room", "spot-difference", "memory-pairs", "date-budget", "liar-dice", "mini-golf", "stack-tower", "forbidden-words"]);
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
@@ -60,6 +62,14 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     return performMove(req, res, { type: "submit", bytes: req.body }, "photo-relay");
   });
 
+  router.get("/matches/:id/spot-image", async (req, res) => {
+    const userId = req.auth.user.id;
+    const match = (await listMatches(store, userId)).find((item) => item.id === req.params.id && item.game === "spot-difference");
+    if (!match || match.status === "ended") throw matchError(404, "not_found");
+    const bytes = await readSpotImage(match, userId);
+    res.set({ "cache-control": "private, no-store", "x-content-type-options": "nosniff" }).type("image/png").send(bytes);
+  });
+
   router.get("/matches/:id", async (req, res) => {
     const userId = req.auth.user.id, match = (await listMatches(store, userId, onSettled)).find((item) => item.id === req.params.id);
     if (!match) throw matchError(404, "not_found");
@@ -109,9 +119,10 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
 
   async function performMove(req, res, action, expectedGame) {
     const userId = req.auth.user.id;
-    const { match, before, conversation, unchanged } = await actOnMatch({ store, userId, matchId: req.params.id, action, expectedGame });
+    const { match, before, conversation, milestone, unchanged } = await actOnMatch({ store, userId, matchId: req.params.id, action, expectedGame });
     if (unchanged) return res.json({ match: viewMatch(match, userId) });
     if (conversation) emit(conversation, "together.updated", null, userId);
+    if (milestone) emit(milestone, "milestone.updated");
     if (withPet(match)) { const after = await autoTurn(req, match); return res.json({ match: viewMatch(after, userId) }); }
     emit(match, "match.updated");
     void autoTurn(req, match);

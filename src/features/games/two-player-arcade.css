@@ -1,0 +1,61 @@
+.arcade-game { max-width: 430px; margin: 0 auto; display: grid; gap: 11px; }
+.arcade-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 1px; }
+.arcade-heading > div { display: grid; gap: 3px; }
+.arcade-heading div > span { display: inline-flex; align-items: center; gap: 5px; color: #61564f; font-size: .84rem; font-weight: 650; }
+.arcade-heading strong { color: #2d3029; font-size: clamp(22px, 7vw, 29px); letter-spacing: -.026em; line-height: 1.12; }
+.golf-course, .tower-board { position: relative; overflow: hidden; isolation: isolate; border: 1px solid #799780; border-radius: 20px; }
+.golf-course { aspect-ratio: 1; background: repeating-linear-gradient(125deg, #8fbc8d 0 15px, #9ec599 15px 30px); box-shadow: inset 0 0 0 8px #527c5c50; }
+.golf-patches, .tower-landscape { position: absolute; inset: 0; }
+.golf-patches i, .tower-landscape > i { position: absolute; }
+.golf-water { background: repeating-linear-gradient(162deg, #a6cfdf 0 7px, #91bfd5 7px 14px); border: 1px solid #528196; border-radius: 5px; }
+.golf-sand { background: radial-gradient(circle, #c69b5e 9%, transparent 12%) 0 0 / 9px 9px, #e9cf95; border: 1px solid #b79b64; border-radius: 5px; }
+.golf-wall { background: #426c4d; border: 1px solid #395842; border-radius: 3px; box-shadow: inset 0 3px #65916e, 0 3px 0 #38604455; }
+.golf-tee { width: 13px; height: 13px; border: 1px solid #3c604986; border-radius: 50%; transform: translate(-50%, -50%); }
+.golf-hole { width: 13px; height: 13px; border: 1px solid #244632; border-radius: 50%; background: #305842; transform: translate(-50%, -50%); }
+.golf-hole svg { position: absolute; bottom: 7px; left: 5px; color: #f7edc4; filter: drop-shadow(1px 1px #3d612f); }
+.golf-ball { width: 13px; height: 13px; border: 2px solid #344d3d; border-radius: 50%; transform: translate(-50%, -50%); z-index: 4; box-shadow: 0 2px 3px #1d33274c; }
+.golf-ball.is-own { background: #fff9d1; }
+.golf-ball.is-partner { background: #f5a273; z-index: 3; transform: translate(-34%, -33%); }
+.golf-ball.is-sunk { visibility: hidden; }
+.golf-trace { width: 4px; height: 4px; background: #28473460; border-radius: 50%; transform: translate(-50%, -50%); }
+.golf-aim { width: 23%; height: 2px; border-top: 2px dashed #314e3b; transform-origin: left center; }
+.golf-target { width: 18px; height: 18px; border: 1px solid #284936; border-radius: 50%; transform: translate(-50%, -50%); }
+.golf-aim-plane { position: absolute; inset: 0; width: 100%; z-index: 5; border: 0; border-radius: inherit; background: transparent; cursor: crosshair; }
+.golf-aim-plane:focus-visible { outline: 3px solid #384e3e; outline-offset: -5px; }
+.arcade-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.arcade-scores > div { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 6px; min-width: 0; border: 1px solid #d8cdbb; border-radius: 13px; background: #faf5eb; padding: 7px 11px; }
+.arcade-scores > .is-own { border-color: #b4bca5; background: #eef1e5; }
+.arcade-scores span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 720; }
+.arcade-scores strong { grid-row: span 2; color: #2c472f; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.arcade-scores small, .arcade-instruction { color: #635a50; font-size: .85rem; line-height: 1.35; }
+.arcade-instruction, .arcade-feedback { margin: 0; }
+.arcade-feedback { color: #5a4642; background: #f1dfd6; border-radius: 10px; padding: 8px 10px; font-size: .85rem; }
+.arcade-aim-controls { display: flex; align-items: center; gap: 5px; }
+.arcade-icon-button { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px; border: 1px solid #d9cdbd; background: #fbf8ef; color: #453c34; }
+.arcade-aim-controls label { display: grid; grid-template-columns: 1fr auto; align-items: center; margin-inline-start: 7px; flex: 1; min-width: 0; font-size: .82rem; color: #585148; }
+.arcade-game input[type="range"] { width: 100%; margin: 0; min-height: 30px; accent-color: #5d7653; }
+.arcade-aim-controls input { grid-column: 1 / -1; }
+.arcade-game .game-primary { justify-content: center; min-height: 44px; }
+.arcade-result { display: grid; justify-items: stretch; gap: 5px; padding: 12px; border-radius: 14px; background: #f6ebdc; }
+.arcade-result strong { font-size: 1.15rem; }
+.arcade-result > span { color: #63584f; font-size: .9rem; }
+.arcade-result button { margin-top: 4px; }
+.tower-board { aspect-ratio: 1.04; border-color: #c9ad9c; background: linear-gradient(#eee4ee 0%, #f9ede3 63%, #faead9 86%, #d8bda8 86%); }
+.tower-rail { left: 8%; right: 8%; top: 13%; border-top: 2px dotted #c3acb7; }
+.tower-base { bottom: 7%; height: 3%; border-radius: 100px; background: #876857; box-shadow: 0 2px #593f3566; }
+.tower-tail { position: absolute; bottom: 4.5%; left: 8%; font-size: .7rem; color: #674d46; }
+.tower-piece { height: 7.6%; border: 1px solid #68463bba; border-radius: 4px; box-shadow: inset 0 2px #ffffff54, inset 0 -2px #4f312929; transform-origin: center bottom; }
+.tower-piece b { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #4d332e; border: 1px solid #ffffff78; transform: translate(-50%, -50%); }
+.tower-preview { border-style: dashed; opacity: .72; z-index: 2; }
+.tower-drop-line { top: 13%; border-left: 1px dashed #8b6368; }
+.tower-fallen { transform: translate(13%, 22%) rotate(17deg); }
+.tower-board.is-fallen .tower-landscape { transform: rotate(-4deg); transform-origin: center 90%; }
+.tower-stability { flex: none; color: #3a6042; background: #e2ead9; border-radius: 20px; padding: 5px 9px; font-size: .75rem; font-weight: 740; }
+.tower-stability.is-wobbly { color: #815530; background: #f4e2ba; }
+.tower-hints { display: flex; gap: 6px 15px; flex-wrap: wrap; font-size: .83rem; font-weight: 650; color: #654b46; }
+.tower-hints span { display: inline-flex; align-items: center; gap: 4px; }
+.tower-position { display: grid; gap: 1px; font-size: .83rem; color: #594a44; }
+.tower-position input[type="range"] { accent-color: #9e5d50; }
+.tower-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.tower-actions .game-primary { flex: 1; white-space: nowrap; }
+.tower-actions .game-quiet { min-height: 44px; }

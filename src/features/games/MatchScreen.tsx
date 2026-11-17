@@ -25,7 +25,8 @@ export type Act = (action: Record<string, unknown>) => Promise<boolean>;
 export type ScreenProps<State = unknown> = { match: MatchView<State>; language: Language; userId: string; partnerName: string; opponent: Opponent; act: Act; onRematch: () => void; visible?: boolean };
 
 // Games played in rounds end with their own button at the bottom (their rounds count); the header doesn't repeat it.
-const OWN_END = new Set(["draw", "truths", "rps", "doodle", "jigsaw", "detective", "sokoban", "kitchen", "timeline", "photo-relay", "song"]);
+const OWN_END = new Set(["draw", "truths", "rps", "doodle", "jigsaw", "detective", "sokoban", "kitchen", "timeline", "photo-relay", "song",
+  "escape-room", "spot-difference", "memory-pairs", "date-budget", "forbidden-words"]);
 
 // Each game's own screen, by game id (server/matches/index.mjs GAMES). Adding a game adds one line here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,6 +39,14 @@ const SCREENS: Record<string, ComponentType<ScreenProps<any>>> = {
   timeline: lazy(() => import("./MemoryTimeline").then(({ MemoryTimeline }) => ({ default: MemoryTimeline }))),
   "photo-relay": lazy(() => import("./PhotoRelay").then(({ PhotoRelay }) => ({ default: PhotoRelay }))),
   song: lazy(() => import("./SongRelay").then(({ SongRelay }) => ({ default: SongRelay }))),
+  "escape-room": lazy(() => import("./EscapeRoom").then(({ EscapeRoom }) => ({ default: EscapeRoom }))),
+  "spot-difference": lazy(() => import("./SpotDifference").then(({ SpotDifference }) => ({ default: SpotDifference }))),
+  "memory-pairs": lazy(() => import("./MemoryPairs").then(({ MemoryPairs }) => ({ default: MemoryPairs }))),
+  "date-budget": lazy(() => import("./DateBudget").then(({ DateBudget }) => ({ default: DateBudget }))),
+  "liar-dice": lazy(() => import("./LiarDice").then(({ LiarDice }) => ({ default: LiarDice }))),
+  "mini-golf": lazy(() => import("./MiniGolf").then(({ MiniGolf }) => ({ default: MiniGolf }))),
+  "stack-tower": lazy(() => import("./StackTower").then(({ StackTower }) => ({ default: StackTower }))),
+  "forbidden-words": lazy(() => import("./ForbiddenWords").then(({ ForbiddenWords }) => ({ default: ForbiddenWords }))),
 };
 
 /** One game's own screen. Loads the match, reloads when the other one moves (`changed`), and sends this player's moves. */

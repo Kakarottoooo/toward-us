@@ -4,11 +4,13 @@ export const PET = "pet";
 export const BOTH = "both";
 export const HOST = "host";
 
-const chatGames = ["truths", "hunt", "doodle", "jigsaw", "detective", "sokoban", "kitchen", "timeline", "photo-relay", "song"] as const;
+const chatGames = ["truths", "hunt", "doodle", "jigsaw", "detective", "sokoban", "kitchen", "timeline", "photo-relay", "song",
+  "escape-room", "spot-difference", "memory-pairs", "date-budget", "forbidden-words"] as const;
 export type ChatGame = typeof chatGames[number];
 const chatGameSet = new Set<string>(chatGames);
 export const playsInChat = (game: string): game is ChatGame => chatGameSet.has(game);
-const replayGames = new Set(["sokoban", "battleship", "kitchen", "timeline", "photo-relay", "song"]);
+const replayGames = new Set(["sokoban", "battleship", "kitchen", "timeline", "photo-relay", "song", "escape-room", "spot-difference",
+  "memory-pairs", "date-budget", "liar-dice", "mini-golf", "stack-tower", "forbidden-words"]);
 export const hasReplay = (game: string) => replayGames.has(game);
 
 // What /api/matches sends (server/matches/index.mjs viewMatch); `state` is each game's own view of itself.

@@ -1,0 +1,114 @@
+.date-budget {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 420px);
+  margin-inline: auto;
+  --date-ink: #2e4b3e;
+  --date-soft: #edf4e8;
+  --date-edge: #cfd9c9;
+}
+.date-budget :is(h3, h4, p) { margin: 0; }
+.date-budget-hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #d4dfcf;
+  border-radius: 15px;
+  background: linear-gradient(110deg, #e3efdf, #f3f5e8 86%);
+  color: var(--date-ink);
+}
+.date-budget-hero h3 { font-size: clamp(18px, 4.8vw, 23px); line-height: 1.2; }
+.date-budget-hero p { margin-top: 4px; font-size: 13px; line-height: 1.4; }
+.date-budget-balance { display: grid; justify-items: center; gap: 1px; min-width: 58px; padding: 5px 6px; border-radius: 10px; background: #fafff8; color: #2e5740; }
+.date-budget-balance strong { font-size: 28px; font-variant-numeric: tabular-nums; line-height: 1; }
+.date-budget-balance small { max-width: 74px; font-size: 10px; font-weight: 700; text-align: center; }
+.date-budget-balance.is-over { background: #fdf1ef; color: #983c39; }
+.date-budget-meter { grid-column: 1 / -1; display: flex; gap: 4px; }
+.date-budget-meter span { flex: 1; height: 5px; border-radius: 999px; background: #8caf91; }
+.date-budget-meter span.is-spent { background: #d8e3d4; }
+.date-budget-hero .date-budget-over { grid-column: 1 / -1; margin-top: 0; color: #983c39; }
+.date-budget-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.date-budget-groups button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-width: 0;
+  min-height: 47px;
+  padding: 5px 3px;
+  border: 1px solid var(--date-edge);
+  border-radius: 9px;
+  background: #fefcf9;
+  color: #455a4e;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.date-budget-groups button[aria-pressed="true"] { background: var(--date-soft); color: var(--date-ink); border-color: #8caf91; }
+.date-budget-groups button[aria-pressed="true"] span { color: #294c39; }
+.date-budget-choices { display: grid; gap: 5px; }
+.date-budget-choices button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 8px;
+  border: 1px solid var(--date-edge);
+  border-radius: 9px;
+  background: #fefcf9;
+  color: var(--date-ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.date-budget-choices button[aria-pressed="true"] { background: #e7f2e7; border-color: #76a280; box-shadow: inset 0 0 0 1px #76a280; }
+.date-budget-choices button:disabled { opacity: .68; }
+.date-budget :is(button, input, select, a):focus-visible { outline: 2px solid #497c62; outline-offset: 1px; }
+.date-budget-choice-icon { flex: 0 0 21px; text-align: center; }
+.date-budget-choices strong { flex: 1; font-size: 13px; }
+.date-budget-star { flex-shrink: 0; color: #8d641b; }
+.date-budget-cost { display: grid; place-items: center; flex: 0 0 23px; height: 23px; border-radius: 999px; background: #eaf0e9; color: #345242; font-size: 12px; font-weight: 800; }
+.date-budget-ticket {
+  display: grid;
+  gap: 7px;
+  padding: 9px 11px;
+  border: 1px solid #e5d7ba;
+  border-radius: 11px;
+  background: #fff9ed;
+  color: #5b4c33;
+}
+.date-budget-ticket h4 { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.date-budget-ticket ul { display: grid; gap: 3px; list-style: none; padding: 0; margin: 0; }
+.date-budget-ticket li { display: flex; align-items: center; gap: 7px; min-height: 22px; font-size: 13px; }
+.date-budget-ticket li > span { flex: 1; }
+.date-budget-ticket li > svg { flex-shrink: 0; }
+.date-budget-ticket li > small { color: #725f41; font-size: 11px; }
+.date-budget-time-summary { display: flex; align-items: center; gap: 8px; padding-top: 7px; border-top: 1px dashed #d6c4a1; font-size: 13px; font-weight: 700; }
+.date-budget-time-summary div { display: grid; gap: 2px; }
+.date-budget-time-summary small { font-weight: 500; overflow-wrap: anywhere; }
+.date-budget-status { color: #60533c; font-size: 13px; line-height: 1.4; }
+.date-budget-actions { display: flex; align-items: stretch; flex-wrap: wrap; gap: 7px; }
+.date-budget :is(.game-primary, .game-quiet) { display: inline-flex; align-items: center; min-height: 44px; gap: 5px; font-size: 13px; text-decoration: none; }
+.date-budget-schedule { display: grid; gap: 9px; padding: 10px; border: 1px solid var(--date-edge); border-radius: 10px; background: #fefcf9; }
+.date-budget-date-fields { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 7px; }
+.date-budget-schedule label { display: grid; min-width: 0; gap: 4px; color: var(--date-ink); font-size: 13px; font-weight: 700; }
+.date-budget-schedule :is(input, select) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  padding: 5px 7px;
+  border: 1px solid var(--date-edge);
+  border-radius: 8px;
+  color: var(--date-ink);
+  background: white;
+  font: inherit;
+  font-size: 16px;
+}
+.date-budget-unschedule { justify-self: start; }
+.date-budget-end { display: flex; justify-content: end; }
+.date-budget-end .is-confirm { border-color: #a22940; background: #a22940; color: #fff; }

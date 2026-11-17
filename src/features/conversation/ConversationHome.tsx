@@ -73,6 +73,11 @@ const chatGameNames: Record<ChatGame, [string, string, string]> = {
   timeline: ["回忆时间线", "Memory Timeline", "Línea de recuerdos"],
   "photo-relay": ["拍照接力", "Photo Relay", "Reto de fotos"],
   song: ["一起做首歌", "Make a Song Together", "Hagamos una canción"],
+  "escape-room": ["双人密室", "Room for Two", "Escape en pareja"],
+  "spot-difference": ["合作找不同", "Spot the Difference Together", "Encuentren las diferencias"],
+  "memory-pairs": ["翻牌搭档", "Memory Match Together", "Parejas de memoria"],
+  "date-budget": ["约会拼预算", "Budget a Date", "Una cita con presupuesto"],
+  "forbidden-words": ["禁词猜词", "Forbidden Words", "Palabras prohibidas"],
 };
 type QuestionTarget = { kind: "deck" | "daily" | ChatGame; id: string };
 type QuestionFocus = QuestionTarget & { expanded: boolean; order: QuestionTarget[] | null; index: number };
