@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, CaretLeft, CaretRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
@@ -950,7 +951,6 @@ ${text}` : text, target);
           {stage === "dating" && channel !== "us" ? <button type="button" onClick={() => open("/?view=people")} data-testid="tab-people"><UsersThree size={17} />{t("在了解的人", "People", "Personas")}</button> : <button role="tab" aria-selected={channel === "us"} className={channel === "us" ? "active" : ""} onClick={() => switchChannel("us")}><UsersThree size={17} />{t("我们俩", "Us", "Nosotros")}{stage === "chosen" && peopleState.chosen && <small className="tab-sub">{t(` · 邀请${plainName(peopleState.chosen.name)}`, ` · invite ${plainName(peopleState.chosen.name)}`, ` · invitar`)}</small>}{unreadUs && <i className="tab-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}</button>}
         </div>}
         {channel === "us" && paired && <button className="conversation-call conversation-heart" onClick={() => void missYou()} aria-label={t("想你了", "Thinking of you", "Pienso en ti")} data-testid="miss-you"><Heart size={22} weight="fill" /></button>}
-        {recall.dateButton}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky")} data-testid="start-call"><Phone size={22} /></button>
       </div>
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
@@ -1072,7 +1072,10 @@ ${text}` : text, target);
             ? t("去聊天 · 等 TA 答", "Go to chat · Waiting for them", "Ir al chat · Falta tu pareja")
             : t("去聊天答题", "Answer in chat", "Responder en el chat")}<ArrowRight size={18} /></span>
       </button> : null} />}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData}
+      onFindChat={!recall.busy && (channel === "us" ? paired : Boolean(session?.id)) ? () => { setDrawer(false); recall.openPicker(); } : undefined}
+      onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {recall.dateSheet}
   </div>;
 }
 
@@ -1095,7 +1098,7 @@ async function loadDrawerData(paired: boolean): Promise<DrawerData> {
   return { home, spaces, chats, alerts };
 }
 /** Left drawer: only places to look at what Pinky has done. Doing things happens in the conversation. */
-function ConversationDrawer({ user, paired, language, data, onData, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; data: DrawerData; onData: (data: DrawerData) => void; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
+function ConversationDrawer({ user, paired, language, data, onData, onFindChat, onPet, onClose, onOpen, onInvite, onPrivacy, onProfile, onGame, onShare, onFeedback }: { user: { id: string; name: string }; paired: boolean; language: Language; data: DrawerData; onData: (data: DrawerData) => void; onFindChat?: () => void; onPet?: () => void; onClose: () => void; onOpen: (url: string) => void; onInvite: () => void; onPrivacy: () => void; onProfile: () => void; onGame: () => void; onShare: () => void; onFeedback: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   // Shown at once from what was fetched with the conversation; refreshed quietly while the drawer is open.
   const { home, spaces, chats } = data;
@@ -1109,6 +1112,7 @@ function ConversationDrawer({ user, paired, language, data, onData, onPet, onClo
     { key: "invite", icon: <UserPlus size={22} />, label: t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja"), onClick: onInvite },
     { key: "upcoming", icon: <CalendarBlank size={22} />, label: t("即将到来", "Coming up", "Próximamente"), onClick: () => onOpen("/?view=reminders") },
   ];
+  if (onFindChat) fixed.push({ key: "find-chat", icon: <MagnifyingGlass size={22} />, label: t("查找对话", "Find conversation", "Buscar conversación"), onClick: onFindChat });
   const games: DrawerItem = { key: "games", icon: <GameController size={22} />, label: t("小游戏", "Little games", "Juegos"), onClick: onGame };
   if (!paired) fixed.push(games);
   const fixedSpaces: DrawerItem[] = [

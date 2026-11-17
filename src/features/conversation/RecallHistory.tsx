@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CalendarBlank, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
-import { KeyboardInput, useKeyboard } from "../../mobile";
+import { CalendarBlank, ArrowLeft, ArrowRight, X } from "@phosphor-icons/react";
+import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { languageTag, localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
@@ -27,7 +27,7 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
   const target = useRef<HTMLElement>(null);
   const request = useRef(0);
   const close = () => { keyboard.hide(); request.current++; setPage(null); setPicker(false); setBusy(false); setError(""); setHighlight(""); };
-  useEffect(() => { close(); }, [channel, sessionId, userId]);
+  useEffect(() => { close(); setDate(""); }, [channel, sessionId, userId]);
   useEffect(() => () => { request.current++; }, []);
   useEffect(() => {
     if (!page) return;
@@ -50,18 +50,35 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
       const result = await relationshipApi<HistoryPage>(`${scope === "me" ? `/api/assistant/sessions/${encodeURIComponent(id!)}/locate` : "/api/together/locate"}?${params}`);
       if (ticket !== request.current) return;
       setPage(result); setHighlight(result.messageId); setPicker(false);
-    } catch {
-      if (ticket === request.current) setError(t("没有找到可查看的对话，请检查日期或稍后重试。", "No available conversation found. Check the date or try again later.", "No se encontró una conversación disponible. Revisa la fecha o inténtalo más tarde."));
+    } catch (error) {
+      if (ticket !== request.current) return;
+      const noMessages = !source && (error as { status?: number }).status === 404;
+      setError(noMessages
+        ? t("那天没有消息，试试其他日期。", "There are no messages that day. Try another date.", "No hay mensajes ese día. Prueba otra fecha.")
+        : t("暂时无法打开对话，请稍后重试。", "Couldn't open the conversation. Try again in a moment.", "No se pudo abrir la conversación. Inténtalo de nuevo en un momento."));
     } finally { if (ticket === request.current) setBusy(false); }
   };
   const browse = (messageId: string, direction: "before" | "after") => { if (page) void jump({ channel: page.channel, conversationId: page.conversationId, messageId, date: "" }, direction); };
+  const title = t("查找对话", "Find conversation", "Buscar conversación");
+  const openPicker = () => { keyboard.hide(); setError(""); setPicker(true); };
+  const closePicker = () => { keyboard.hide(); request.current++; setPicker(false); setBusy(false); setError(""); };
+  const dateSheet = <BottomSheet open={picker} onOpenChange={(open) => { if (!open) closePicker(); }} title={title}
+    description={channel === "us" ? t("我们俩的对话", "Your shared chat", "Su chat compartido") : t("当前私人对话", "Your current private chat", "Tu chat privado actual")} snap={0.46}>
+    <form className="recall-date-picker" onSubmit={(event) => { event.preventDefault(); if (date && !busy) void jump(); }}>
+      <button className="recall-picker-close" type="button" onClick={closePicker} aria-label={t("关闭", "Close", "Cerrar")}><X size={22} /></button>
+      <label>{t("选择日期", "Choose a date", "Elige una fecha")}
+        <KeyboardInput type="date" value={date} disabled={busy} onFocus={() => keyboard.hide()}
+          onChange={(event) => { setDate(event.target.value); setError(""); }} data-testid="recall-date" />
+      </label>
+      {picker && error && <p className="recall-error" role="alert">{error}</p>}
+      <button className="recall-date-submit" type="submit" disabled={!date || busy} data-testid="recall-date-go">
+        {busy ? t("正在查找…", "Looking up…", "Buscando…") : t("查看那天的对话", "View chat from that day", "Ver el chat de ese día")}
+      </button>
+    </form>
+  </BottomSheet>;
   const controls = <>
-    {picker && <form className="recall-date-picker" onSubmit={(event) => { event.preventDefault(); void jump(); }}>
-      <label>{t("跳到日期", "Jump to date", "Ir a una fecha")}<KeyboardInput type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label={t("对话日期", "Conversation date", "Fecha de conversación")} data-testid="recall-date" /></label>
-      <button type="submit" disabled={!date || busy} data-testid="recall-date-go">{t("跳转", "Go", "Ir")}</button>
-    </form>}
     {page && <div className="recall-toolbar"><span>{page.channel === "us" ? t("我们俩 · 历史对话", "Us · Earlier conversation", "Nosotros · Conversación anterior") : t("只有我 · 历史对话", "Just me · Earlier conversation", "Solo yo · Conversación anterior")}</span><button type="button" onClick={close} data-testid="recall-latest">{t("回到最新", "Back to latest", "Volver al presente")}</button></div>}
-    {error && <p className="recall-error" role="alert">{error}</p>}
+    {!picker && error && <p className="recall-error" role="alert">{error}</p>}
   </>;
   const history = page && <>
     {page.before && <button type="button" className="conversation-earlier" disabled={busy} onClick={() => browse(page.before!, "before")}><ArrowLeft size={16} />{t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
@@ -77,5 +94,5 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
     })}
     {page.after && <button type="button" className="conversation-earlier" disabled={busy} onClick={() => browse(page.after!, "after")}>{t("较新的消息", "Newer messages", "Mensajes más recientes")}<ArrowRight size={16} /></button>}
   </>;
-  return { active: Boolean(page), busy, jump, close, controls, history, dateButton: <button type="button" className="conversation-call" disabled={busy || channel === "me" && !sessionId} onClick={() => { keyboard.hide(); setPicker(!picker); setError(""); }} aria-expanded={picker} aria-label={t("按日期查找对话", "Find conversation by date", "Buscar conversación por fecha")} data-testid="recall-calendar"><CalendarBlank size={21} /></button> };
+  return { active: Boolean(page), busy, jump, close, controls, history, dateSheet, openPicker };
 }
