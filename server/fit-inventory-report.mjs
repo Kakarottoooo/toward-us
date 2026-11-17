@@ -2,6 +2,15 @@ import { inventoryQuestions } from "./fit-inventory.mjs";
 
 const words = (zh, en, es) => ({ zh, en, es });
 const mixed = words("两种都有", "A bit of both", "Un poco de ambos");
+// First-person phrases combine into a short description of two recurring choices.
+const voices = {
+  rhythm: [words("我喜欢先约好", "I like a plan", "Me gusta hacer planes"), words("我喜欢随兴出发", "I like to improvise", "Me gusta improvisar")],
+  support: [words("烦心时想有人听我讲", "I want a listening ear", "me gusta que me escuchen"), words("遇事想并肩找办法", "I like solving things together", "me gusta buscar soluciones en pareja")],
+  care: [words("在乎就说出来", "I put care into words", "expreso el cariño con palabras"), words("在乎就动手去做", "I show care in small gestures", "expreso el cariño con gestos")],
+  repair: [words("有分歧想当下谈开", "I like to clear the air early", "prefiero hablar cuanto antes"), words("想缓一缓再谈", "I need a pause before we talk", "prefiero darme un momento antes de hablar")],
+  space: [words("累了想一起待着", "I recharge in company", "recargo en compañía"), words("累了想一个人待会儿", "I recharge on my own", "recargo a solas")],
+  resources: [words("想给以后留一份", "I save for what's ahead", "guardo algo para más adelante"), words("想一起攒些回忆", "I like making memories together", "me gusta crear recuerdos en pareja")],
+};
 const axes = {
   rhythm: {
     name: words("约会节奏", "Making plans", "Hacer planes"),
@@ -91,7 +100,9 @@ export function inventoryReport(profile, language) {
     .sort((a, b) => b.margin - a.margin || b.responses.length - a.responses.length).slice(0, 2);
   const patterns = leading.map(row => label(row.axis, row.side, language));
   const partner = leading.map(({ axis, side }) => (side === "a" ? axis.partnerA : axis.partnerB)[language]);
-  const title = patterns.length ? patterns.join(" · ") : words("看情境切换", "Different moments, different needs", "Cada momento pide algo distinto")[language];
+  const phrases = leading.map(row => voices[row.id][row.side === "a" ? 0 : 1][language]);
+  const name = phrases.join(words("，", " and ", " y ")[language]);
+  const title = name ? name[0].toLocaleUpperCase(language) + name.slice(1) : words("看情境切换", "Different moments, different needs", "Cada momento pide algo distinto")[language];
   const summary = partner.length
     ? words(`在你回想的场景里，「${patterns.join("」和「")}」反复出现。想了解怎样的伴侣适合你，可以先看一个具体问题：对方${partner.join("，也")}时，你是否更自在？`,
       `“${patterns.join("” and “")}” came up repeatedly in the situations you recalled. One question to explore: do you feel at ease with someone who ${partner.join(" and ")}?`,
@@ -111,7 +122,8 @@ export function inventoryReport(profile, language) {
       : words(`在作了具体选择的 ${count} 个场景中，有 ${preferred} 次更接近「${pattern}」。`,
         `In ${preferred} of the ${count} situations you answered, you leaned toward “${pattern}”.`,
         `En ${preferred} de las ${count} situaciones que respondiste, te acercaste a «${pattern}».`)[language];
-    return { id, title: axis.name[language], summary, suggestion: axis.prompt[language], evidence, answered: count, total };
+    const limited = count === 2 ? words("这里仅有两次具体选择，可以先当作线索。", "There are only two concrete choices here. Treat them as an initial clue.", "Aquí solo hay dos respuestas concretas. Tómalas como una primera pista.")[language] : "";
+    return { id, title: axis.name[language], summary: [summary, limited].filter(Boolean).join(language === "zh" ? "" : " "), suggestion: axis.prompt[language], evidence, answered: count, total };
   });
   const answered = rows.reduce((n, row) => n + row.responses.length, 0);
   return { title, summary, sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
@@ -148,7 +160,12 @@ export function inventoryPairReport(mine, theirs, partnerName, language) {
     : different ? words("节奏需要商量", "Finding a rhythm together", "Encontrar un ritmo en pareja")
     : shared ? words("偏好同频", "On a similar wavelength", "Preferencias en sintonía")
     : words("看当下，一起定", "Deciding in the moment", "Decidir juntos en el momento");
-  const phrases = [];
+  const same = sections.filter(section => section.status === "same").length;
+  const apart = sections.filter(section => section.status === "different").length;
+  const open = sections.length - same - apart;
+  const phrases = [words(`六个方面里，${same} 项你们偏向同一种做法，${apart} 项你们各有所好，${open} 项至少一人会随情境选择。`,
+    `Across six areas, you lean the same way in ${same}, lean in different directions in ${apart}, and at least one of you uses both approaches in ${open}.`,
+    `De seis aspectos, en ${same} se inclinan por lo mismo, en ${apart} prefieren cosas distintas y en ${open} al menos una persona elige según la situación.`)[language]];
   if (shared) phrases.push(words(`在「${shared.title}」上，你们都倾向「${label(axes[shared.id], own.find(row => row.id === shared.id).side, language)}」。`,
     `For ${shared.title.toLowerCase()}, you both lean toward “${label(axes[shared.id], own.find(row => row.id === shared.id).side, language)}”.`,
     `En «${shared.title}», ambos se inclinan por «${label(axes[shared.id], own.find(row => row.id === shared.id).side, language)}».`)[language]);
