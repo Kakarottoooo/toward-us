@@ -5,7 +5,7 @@ import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { categories, gameCatalog, type CategoryId, type GameEntry } from "./catalog";
 import { MatchScreen } from "./MatchScreen";
-import { BOTH, PET, playsInChat, type ChatGame, type Hall, type MatchView } from "./types";
+import { BOTH, PET, hasReplay, playsInChat, type ChatGame, type Hall, type MatchView } from "./types";
 import "./games.css";
 
 /** 游戏大厅: every game by category with how to play it, games still going at the top, and each game's own screen. */
@@ -37,6 +37,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     else setOpen(match.id);
   };
   const going = (hall?.matches || []).filter((match) => match.status === "active");
+  const recent = (hall?.matches || []).filter((match) => match.status === "finished" && hasReplay(match.game) && !vsPet(match));
   // A game nobody has touched for a week stops asking: it folds away under "很久没动的" (founder 11-06).
   const daysIdle = (match: MatchView) => Math.floor((Date.now() - Date.parse(match.updatedAt)) / 86_400_000);
   const fresh = going.filter((match) => daysIdle(match) < 7), stale = going.filter((match) => daysIdle(match) >= 7);
@@ -75,7 +76,8 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     if (stat.guessed !== undefined) return t(`${zh}一起猜中 ${stat.guessed}/${stat.played} 幅`, `${en}Guessed ${stat.guessed} of ${stat.played} together`, `${es}Acertaron ${stat.guessed} de ${stat.played}`);
     if (stat.caught) return t(`${zh}你识破 ${stat.caught[userId] || 0} 次 · ${otherName} ${stat.caught[other] || 0} 次`, `${en}You caught ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`, `${es}Atrapaste ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`);
     if (stat.found !== undefined) return t(`一起找到 ${stat.found}/${stat.played} 张地图的宝物`, `Found ${stat.found}/${stat.played} treasures together`, `Encontraron ${stat.found}/${stat.played} tesoros juntos`);
-    if (stat.assembled !== undefined) return t(`${zh}拼好 ${stat.assembled}/${stat.played} 张`, `${en}Completed ${stat.assembled} of ${stat.played} puzzles`, `${es}Completaron ${stat.assembled} de ${stat.played} rompecabezas`); return t(`${zh}解开 ${stat.solved}/${stat.played} 碗`, `${en}Solved ${stat.solved} of ${stat.played}`, `${es}Resueltos ${stat.solved} de ${stat.played}`);
+    if (stat.assembled !== undefined) return t(`${zh}拼好 ${stat.assembled}/${stat.played} 张`, `${en}Completed ${stat.assembled} of ${stat.played} puzzles`, `${es}Completaron ${stat.assembled} de ${stat.played} rompecabezas`);
+    if (stat.solved !== undefined) return t(`${zh}解开 ${stat.solved}/${stat.played} 碗`, `${en}Solved ${stat.solved} of ${stat.played}`, `${es}Resueltos ${stat.solved} de ${stat.played}`);
     return "";
   };
   const stats = (hall?.stats || {}) as Record<string, Stat>, petStats = (hall?.petStats || {}) as Record<string, Stat>;
@@ -103,6 +105,19 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
         <summary>{t(`很久没动的（${stale.length}）`, `Not touched in a while (${stale.length})`, `Sin tocar hace tiempo (${stale.length})`)}</summary>
         <div className="game-going">{stale.map((match) => row(match, true))}</div>
         <button type="button" className={`game-quiet ${ending === "stale" ? "is-confirm" : ""}`} onClick={() => confirmEnd("stale", stale.map((match) => match.id))} onBlur={() => setEnding((value) => value === "stale" ? null : value)} data-testid="game-stale-end">{ending === "stale" ? t(`确定结束这 ${stale.length} 局？`, `End all ${stale.length}?`, `¿Terminar las ${stale.length}?`) : t("全部结束", "End them all", "Terminarlas todas")}</button>
+      </details>}
+      {recent.length > 0 && <details className="game-stale">
+        <summary>{t("最近玩过", "Recently played", "Partidas recientes")}</summary>
+        <div className="game-going">
+          {recent.map((match) => <div className="game-going-row" key={match.id}>
+            <button type="button" className="game-going-open" onClick={() => openMatch(match)}>
+              <span aria-hidden="true">{catalog.find((game) => game.id === match.game)?.icon}</span>
+              <b>{nameOf(match.game)}</b>
+              <small>{new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : language, { month: "short", day: "numeric" }).format(new Date(match.finishedAt || match.updatedAt))}</small>
+              <CaretRight size={16} aria-hidden="true" />
+            </button>
+          </div>)}
+        </div>
       </details>}
       {sections.length > 1 && <div className="game-tabs" role="tablist" aria-label={t("分类", "Categories", "Categorías")}>
         {[{ id: "all" as const, name: t("全部", "All", "Todos") }, ...sections].map((item) => <button key={item.id} type="button" role="tab" aria-selected={category === item.id} className={category === item.id ? "is-on" : ""} onClick={() => setCategory(item.id)} data-testid={`game-tab-${item.id}`}>{item.name}</button>)}

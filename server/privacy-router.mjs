@@ -6,6 +6,7 @@ import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
 import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { createEmailSender } from "./email.mjs";
+import { viewMatch } from "./matches/index.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
@@ -239,7 +240,21 @@ export function createPrivacyRouter({ store, production = false, closeConnection
 }
 
 export function privacyExport(snapshot, user) {
-  const graph = Object.fromEntries(Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection)).map(([collection, records]) => [collection, records.filter((record) => record.ownerUserId === user.id || ["shared", "jointly_confirmed", "revealed"].includes(record.visibility) || (record.visibility === "shareable_summary" && record.status === "confirmed")).map((record) => { if (record.ownerUserId === user.id) return hideUnrevealedAnswers(structuredClone(record), user.id); const projected = projectRecord({ ...record, archivedAt: null, status: record.status === "archived" ? "active" : record.status }, user.id); return projected ? { ...projected, status: record.status, archivedAt: record.archivedAt } : null; }).filter(Boolean)]));
+  const graph = Object.fromEntries(Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection)).map(([collection, records]) => {
+    const visible = records.filter((record) => record.ownerUserId === user.id ||
+      ["shared", "jointly_confirmed", "revealed"].includes(record.visibility) ||
+      (record.visibility === "shareable_summary" && record.status === "confirmed"));
+    return [collection, visible.map((record) => {
+      // Match data includes hidden moves, answers and photo references. Use the player's view even in their own export.
+      if (collection === "matches") {
+        if (!record.players?.includes(user.id)) return null;
+        return { ...record, state: viewMatch(record, user.id).state };
+      }
+      if (record.ownerUserId === user.id) return hideUnrevealedAnswers(structuredClone(record), user.id);
+      const projected = projectRecord({ ...record, archivedAt: null, status: record.status === "archived" ? "active" : record.status }, user.id);
+      return projected ? { ...projected, status: record.status, archivedAt: record.archivedAt } : null;
+    }).filter(Boolean)];
+  }));
   const rooms = snapshot.rooms.map((room) => {
     const ownIds = new Set(room.participants.filter((person) => person.userId === user.id).map((person) => person.id));
     return { code: room.code, relationshipId: room.relationshipId, status: room.status, messages: room.messages.filter((message) => ownIds.has(message.participantId)), sharedAnalysis: room.status === "archived" ? room.analysis?.shared || null : null, createdAt: room.createdAt, archivedAt: room.archivedAt || null };

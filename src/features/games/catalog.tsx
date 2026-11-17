@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AirplaneTilt, ArrowsSplit, BowlSteam, ChatsCircle, CircleHalf, GridNine, HandFist, Horse, MaskHappy, PaintBrush, Target, TreasureChest, PuzzlePiece, Images, PencilSimple, GridFour } from "@phosphor-icons/react";
+import { Camera, ClockCounterClockwise, CookingPot, MusicNotes, Package, Sailboat } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
 // 游戏大厅 (founder 11-06): the hall lists every game by category, and more of both are coming (棋类、解谜、文字、各种小游戏).
@@ -91,6 +92,42 @@ export function gameCatalog(language: Language): GameEntry[] {
       icon: <Images size={26} weight="duotone" />, name: t("照片侦探", "Photo Detective", "Detective de fotos"),
       tagline: t("只给 TA 看一小角，猜猜照片背后的故事。", "Show one small crop and guess the story behind the photo.", "Muestra solo un recorte y adivinen la historia detrás de la foto."),
       rules: [t("出题的人选一张共享照片和一小块，写下谜底。", "Choose a shared photo, pick the crop and write the answer.", "Elige una foto compartida, recorta una parte y escribe la respuesta."), t("TA 猜完一起翻开完整照片，再换人。", "Reveal the whole photo after your partner guesses, then swap roles.", "Tras la respuesta se revela la foto completa y cambian turnos.")],
+    },
+    {
+      id: "sokoban", category: "puzzle", kind: "match", partnerOnly: true, icon: <Package size={26} weight="duotone" />,
+      name: t("双人推箱子", "Together We Move", "Mudanza en pareja"),
+      tagline: t("帮 TA 开门，两个人把家具推到位。", "Hold the door for each other and move the furniture into place.", "Mantengan abiertas las puertas y coloquen juntos los muebles."),
+      rules: [t("各控制一个人，轮流走路和推家具。", "Each of you controls a mover. Take turns walking and pushing furniture.", "Cada uno controla a un personaje. Túrnense para caminar y empujar muebles."), t("一个人踩住开关，另一个人就能通过对应的门。", "Stand on a switch to hold the matching door open for your partner.", "Pisa un interruptor para que tu pareja pueda pasar por la puerta correspondiente."), t("家具都推到标记处就过关。", "Place all the furniture on its marked spots to finish the level.", "Coloquen todos los muebles en sus lugares marcados para superar el nivel.")],
+    },
+    {
+      id: "battleship", category: "board", kind: "match", partnerOnly: true, icon: <Sailboat size={26} weight="duotone" />,
+      name: t("海战棋", "Battleship", "Batalla naval"),
+      tagline: t("各藏三艘船，轮流猜 TA 的坐标。", "Hide three ships each, then take turns firing at the other's grid.", "Escondan tres barcos cada uno y túrnense para disparar a la cuadrícula rival."),
+      rules: [t("先在自己的海域里摆好三艘船，确认后对方也看不到。", "Place three ships in your waters. Lock them in to keep them hidden from your partner.", "Coloca tres barcos en tu tablero y confirma. Tu pareja no verá dónde están."), t("轮到你时，点对方海域的一格。谁先击沉对方三艘船谁赢。", "Tap one square in your partner's waters on your turn. Sink all three ships first to win.", "En tu turno, toca una casilla del tablero rival. Gana quien hunda primero los tres barcos.")],
+    },
+    {
+      id: "kitchen", category: "casual", kind: "match", partnerOnly: true, icon: <CookingPot size={26} weight="duotone" />,
+      name: t("两人开餐厅", "Two-Person Kitchen", "Cocina en pareja"),
+      tagline: t("一个备料，一个做菜。两分钟内一起出餐。", "One preps, one cooks. Serve as many orders as you can in two minutes.", "Uno prepara y el otro cocina. Sirvan todos los pedidos que puedan en dos minutos."),
+      rules: [t("两个人都准备好才开张。", "The kitchen opens when both of you are ready.", "La cocina abre cuando los dos estén listos."), t("看订单配合，在时间结束前尽量多上菜。", "Work through the orders and serve as many dishes as you can before time runs out.", "Sigan los pedidos y sirvan todos los platos posibles antes de que se acabe el tiempo.")],
+    },
+    {
+      id: "timeline", category: "puzzle", kind: "match", partnerOnly: true, icon: <ClockCounterClockwise size={26} weight="duotone" />,
+      name: t("回忆时间线", "Memory Timeline", "Línea de recuerdos"),
+      tagline: t("挑几张共同回忆里的照片，猜猜哪张最早。", "Pick photos from Shared memories and put them in chronological order.", "Elijan fotos de sus Recuerdos compartidos y pónganlas en orden cronológico."),
+      rules: [t("两人各挑共享照片，也可以用示例卡开局。", "Each of you picks shared photos, or use the sample cards to start.", "Cada uno elige fotos compartidas, o pueden jugar con las cartas de ejemplo."), t("一起从最早排到最近，双方确认同一顺序才揭晓。", "Sort them from earliest to latest. When you both confirm the same order, the dates are revealed.", "Ordénenlas de la más antigua a la más reciente. Las fechas se revelan cuando ambos confirman el mismo orden.")],
+    },
+    {
+      id: "photo-relay", category: "casual", kind: "match", partnerOnly: true, icon: <Camera size={26} weight="duotone" />,
+      name: t("拍照接力", "Photo Relay", "Reto de fotos"),
+      tagline: t("为同一个主题各拍一张，交齐后拼成一张。", "Take one photo each on the same theme. See them side by side once both are in.", "Tomen una foto cada uno sobre el mismo tema. Véanlas juntas cuando ambos las envíen."),
+      rules: [t("按主题拍照或从手机里选，确认后交给这局游戏。", "Take or pick a photo for the prompt, then confirm to submit it to this game.", "Toma o elige una foto para el reto y confirma para enviarla a esta partida."), t("两人都交了才揭晓拼图，可以把合照存下来。", "The collage is revealed after both submit. You can save it to keep.", "El collage se revela cuando ambos envían su foto. Pueden guardarlo como recuerdo.")],
+    },
+    {
+      id: "song", category: "casual", kind: "match", partnerOnly: true, icon: <MusicNotes size={26} weight="duotone" />,
+      name: t("一起做首歌", "Make a Song Together", "Hagamos una canción"),
+      tagline: t("一个写八拍鼓点，一个加旋律，合起来听。", "Make an eight-beat drum pattern, then let your partner add a melody.", "Crea ocho tiempos de percusión y deja que tu pareja añada una melodía."),
+      rules: [t("前一个人做鼓点，后一个人可以先试听，再加旋律。", "One makes the rhythm. The other listens and adds a melody.", "Una persona crea el ritmo. La otra lo escucha y añade una melodía."), t("合成后，两人都可以回到这局随时播放。", "Once it's done, both of you can come back and play your track anytime.", "Cuando esté lista, ambos pueden volver a esta partida y escuchar su canción.")],
     },
     {
       id: "hunt", category: "puzzle", kind: "match", partnerOnly: true, icon: <TreasureChest size={26} weight="duotone" />, name: t("双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"),

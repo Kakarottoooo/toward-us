@@ -27,7 +27,8 @@ import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
 import { availableNewCards, PlayTogether, type PlayBoard } from "../games/PlayTogether";
 import { MatchScreen } from "../games/MatchScreen";
-import { playsInChat, type ChatGame, type MatchView } from "../games/types";
+import { hasReplay, playsInChat, type ChatGame, type MatchView } from "../games/types";
+import { shrink } from "../moments/photoJpeg";
 import { useQuestionSwipe } from "./useQuestionSwipe";
 import { PlayDistance } from "../games/PlayDistance";
 import { PlayPlans } from "../games/PlayPlans";
@@ -67,6 +68,11 @@ const chatGameNames: Record<ChatGame, [string, string, string]> = {
   doodle: ["接力涂鸦", "Doodle Relay", "Dibujo por turnos"],
   jigsaw: ["双人拼图", "Jigsaw Together", "Rompecabezas en pareja"],
   detective: ["照片侦探", "Photo Detective", "Detective de fotos"],
+  sokoban: ["双人推箱子", "Together We Move", "Mudanza en pareja"],
+  kitchen: ["两人开餐厅", "Two-Person Kitchen", "Cocina en pareja"],
+  timeline: ["回忆时间线", "Memory Timeline", "Línea de recuerdos"],
+  "photo-relay": ["拍照接力", "Photo Relay", "Reto de fotos"],
+  song: ["一起做首歌", "Make a Song Together", "Hagamos una canción"],
 };
 type QuestionTarget = { kind: "deck" | "daily" | ChatGame; id: string };
 type QuestionFocus = QuestionTarget & { expanded: boolean; order: QuestionTarget[] | null; index: number };
@@ -888,6 +894,7 @@ ${text}` : text, target);
   const conversationVisible = shown.current;
   const currentThread = channel === "me" ? thread : null;
   const visibleQuestion = channel === "us" && paired && !recall.active && !call ? playFocus : null;
+  const visibleGame = Boolean(visibleQuestion && hasReplay(visibleQuestion.kind));
   const activeMatchId = visibleQuestion && playsInChat(visibleQuestion.kind) ? visibleQuestion.id : "";
   useEffect(() => {
     if (!activeMatchId) return;
@@ -947,9 +954,9 @@ ${text}` : text, target);
       {recall.controls}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
-    {visibleQuestion && <section className={`conversation-question-focus${playsInChat(visibleQuestion.kind) && visibleQuestion.kind !== "truths" ? " is-tall-game" : ""}`} aria-label={t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
+    {visibleQuestion && <section className={`conversation-question-focus${playsInChat(visibleQuestion.kind) && visibleQuestion.kind !== "truths" ? " is-tall-game" : ""}`} aria-label={visibleGame ? t("对话中的小游戏", "Game in Us", "Juego en Nosotros") : t("对话中的双人题卡", "Question card in Us", "Carta de pregunta en Nosotros")} data-testid="chat-question-focus">
       <div className="conversation-question-tools">
-        <button type="button" className="conversation-question-library" onClick={() => { keyboard.hide(); collapseQuestion(); setPlayTogether({ fromFocus: true }); }}><GameController size={17} />{t("题库", "Library", "Catálogo")}</button>
+        <button type="button" className="conversation-question-library" onClick={() => { keyboard.hide(); collapseQuestion(); if (visibleGame) openGames(); else setPlayTogether({ fromFocus: true }); }}><GameController size={17} />{visibleGame ? t("小游戏", "Games", "Juegos") : t("题库", "Library", "Catálogo")}</button>
         {visibleQuestion.expanded && !playsInChat(visibleQuestion.kind) && <div className="conversation-question-arrows"
           role="group" aria-label={t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}>
           <button type="button" aria-label={t("上一题", "Previous card", "Carta anterior")} disabled={fetchingNext || visibleQuestion.index === 0} onClick={() => moveQuestion(-1)}><CaretLeft size={19} /></button>
@@ -958,9 +965,11 @@ ${text}` : text, target);
         </div>}
         <button type="button" aria-expanded={visibleQuestion.expanded} aria-controls="conversation-question-body"
           onClick={() => { keyboard.hide(); if (visibleQuestion.expanded) collapseQuestion(); else setPlayFocus({ ...visibleQuestion, expanded: true }); }}>
-          {visibleQuestion.expanded ? t("收起题卡", "Minimize card", "Minimizar carta") : t("展开题卡", "Expand card", "Expandir carta")}
+          {visibleGame
+            ? visibleQuestion.expanded ? t("收起游戏", "Minimize game", "Minimizar juego") : t("展开游戏", "Expand game", "Expandir juego")
+            : visibleQuestion.expanded ? t("收起题卡", "Minimize card", "Minimizar carta") : t("展开题卡", "Expand card", "Expandir carta")}
         </button>
-        <button type="button" className="conversation-question-dismiss" aria-label={t("关闭题卡", "Close card", "Cerrar carta")} onClick={() => { keyboard.hide(); leavePlayDaily(); setPlayFocus(null); }}><X size={19} /></button>
+        <button type="button" className="conversation-question-dismiss" aria-label={visibleGame ? t("关闭游戏卡", "Close game card", "Cerrar tarjeta del juego") : t("关闭题卡", "Close card", "Cerrar carta")} onClick={() => { keyboard.hide(); leavePlayDaily(); setPlayFocus(null); }}><X size={19} /></button>
       </div>
       {visibleQuestion.expanded && !playsInChat(visibleQuestion.kind) && <p className="conversation-question-swipe-hint">{t("左右滑动换题", "Swipe to change cards", "Desliza para cambiar de carta")}</p>}
       <div className="conversation-question-body" id="conversation-question-body" hidden={!visibleQuestion.expanded} {...questionSwipe}>
@@ -972,7 +981,7 @@ ${text}` : text, target);
               onClose={collapseQuestion} onInvite={collapseQuestion} onLeaveDaily={leavePlayDaily} onContinueChat={chatAfterQuestion}
               onOpenPlan={(id) => { keyboard.hide(); setPlanQuestionId(id); }}
               onAskPinky={askForCardPlan} />
-            : playsInChat(visibleQuestion.kind) ? <MatchScreen embedded key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
+            : playsInChat(visibleQuestion.kind) ? <MatchScreen embedded visible={visibleQuestion.expanded} key={visibleQuestion.id} matchId={visibleQuestion.id} language={language}
               userId={user.id} members={together?.members || []} pet={{ name: "", picture: null }}
               changed={matchFocusUpdate?.id === visibleQuestion.id ? matchFocusUpdate.at : 0}
               name={(game) => playsInChat(game) ? t(...chatGameNames[game]) : game}
@@ -1163,17 +1172,7 @@ function Photos({ ids }: { ids: string[] }) {
   return <div className={`message-photos count-${Math.min(ids.length, 3)}`}>{ids.map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
 }
 
-/** Shrinks a picked photo to at most 1600px on its long side as JPEG, so uploads stay small on mobile data. */
-export async function shrink(file: File): Promise<Blob> {
-  const url = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => { const element = new Image(); element.onload = () => resolve(element); element.onerror = () => reject(new Error("This photo could not be read.")); element.src = url; });
-    const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement("canvas"); canvas.width = Math.round(image.naturalWidth * scale); canvas.height = Math.round(image.naturalHeight * scale);
-    canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("This photo could not be read.")), "image/jpeg", 0.82));
-  } finally { URL.revokeObjectURL(url); }
-}
+export { shrink };
 
 /** Plain text with its web addresses turned into links that open outside the app; nothing else is interpreted. */
 function Linked({ text }: { text: string }) {

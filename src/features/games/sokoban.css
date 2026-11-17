@@ -1,0 +1,130 @@
+.sokoban {
+  display: grid;
+  gap: 11px;
+  justify-items: center;
+  width: min(100%, 370px);
+  margin-inline: auto;
+  color: #43342e;
+}
+.sokoban-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font-size: 16px;
+}
+.sokoban-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #66461b;
+  background: #f5e8ce;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sokoban-board {
+  display: grid;
+  grid-template-columns: repeat(var(--move-columns), minmax(0, 1fr));
+  gap: 1px;
+  width: min(100%, 280px);
+  padding: 5px;
+  background: #815f50;
+  border: 1px solid #634639;
+  border-radius: 14px;
+  box-shadow: 0 6px 14px #64412d23;
+}
+.sokoban-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: #f6dec6;
+  color: #684132;
+}
+.sokoban-tile[data-wall] {
+  background: repeating-linear-gradient(20deg, #754d3e 0 7px, #7f5847 8px 14px);
+  box-shadow: inset 0 1px #ffffff1c;
+}
+.sokoban-tile[data-door="open"] { background: #cbe0c9; color: #345c3d; }
+.sokoban-tile[data-door="closed"] { background: #d4a589; }
+.sokoban-tile .sokoban-goal { position: absolute; width: 72%; aspect-ratio: 1; }
+.sokoban-goal { box-sizing: border-box; border: 2px dashed #825c41; border-radius: 4px; }
+.sokoban-plate {
+  border-radius: 50%;
+  border: 2px solid #476f4d;
+  background: #c5dfb4;
+}
+.sokoban-tile .sokoban-plate { position: absolute; width: 67%; aspect-ratio: 1; }
+.sokoban-chair {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 83%;
+  height: 83%;
+  border-radius: 6px;
+  color: #fdf0d4;
+  background: #976728;
+}
+.sokoban-tile[data-goal] .sokoban-chair { background: #47754e; }
+.sokoban-chair svg + svg {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  color: #fff;
+  background: #224a2a;
+  border-radius: 100%;
+}
+.sokoban-person, .sokoban-token {
+  display: grid;
+  position: relative;
+  place-items: center;
+  color: #fff;
+  background: #9e3970;
+  border-radius: 50%;
+}
+.sokoban-person { width: 78%; height: 78%; }
+.sokoban-person[data-mover="1"], .sokoban-token[data-mover="1"] { background: #38617c; border-radius: 5px; }
+.sokoban-person[data-mine] { box-shadow: 0 0 0 2px #fff; }
+.sokoban-legend {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  color: #584137;
+  font-size: 12px;
+}
+.sokoban-legend > span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow-wrap: anywhere; }
+.sokoban-legend i { flex: none; width: 15px; height: 15px; font-style: normal; }
+.sokoban-message { display: grid; gap: 2px; margin: 0; text-align: center; }
+.sokoban-message strong { font-size: 16px; }
+.sokoban-message span, .sokoban-help { color: #695449; font-size: 13px; line-height: 1.4; text-align: center; }
+.sokoban-help { margin: 0; }
+.sokoban-turn-controls { display: flex; align-items: end; justify-content: center; flex-wrap: wrap; gap: 8px 13px; width: 100%; }
+.sokoban-arrows { display: grid; grid-template-columns: repeat(4, 44px); grid-template-rows: 44px; gap: 3px; }
+.sokoban-direction {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #503a34;
+  border-radius: 10px;
+  color: #fff;
+  background: #503a34;
+  cursor: pointer;
+}
+.sokoban-direction[data-direction="up"] { grid-area: 1 / 2; }
+.sokoban-direction[data-direction="left"] { grid-area: 1 / 1; }
+.sokoban-direction[data-direction="down"] { grid-area: 1 / 3; }
+.sokoban-direction[data-direction="right"] { grid-area: 1 / 4; }
+.sokoban-direction:disabled { color: #7c6f63; background: #eee6db; border-color: #ded4c6; cursor: default; }
+.sokoban-direction:focus-visible, .sokoban-tools summary:focus-visible { outline: 2px solid #123f83; outline-offset: 2px; }
+.sokoban-tools { width: 100%; text-align: center; font-size: 14px; }
+.sokoban-tools summary { min-height: 44px; padding: 12px 0 5px; color: #634d41; cursor: pointer; }
+.sokoban-confirm { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.sokoban-confirm .game-quiet { padding-inline: 13px; }

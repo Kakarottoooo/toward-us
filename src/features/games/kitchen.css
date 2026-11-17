@@ -1,0 +1,44 @@
+.kitchen { display: grid; gap: 13px; width: min(100%, 420px); margin-inline: auto; }
+.kitchen h3, .kitchen p { margin: 0; }
+.kitchen-score { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; border: 1px solid #dacbbd; border-radius: 13px; background: #fffaf3; padding: 8px 10px; color: #4b352b; }
+.kitchen-score > div { display: flex; align-items: center; gap: 5px; line-height: 1.2; font-size: 13px; }
+.kitchen-score strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.kitchen-score ol { margin: 0; list-style: none; display: flex; align-items: center; gap: 2px; padding: 0; }
+.kitchen-score li { display: grid; place-items: center; width: 21px; aspect-ratio: 1; font-size: 12px; border-radius: 50%; background: #eee4d6; }
+.kitchen-score li.is-served { color: #204d3c; background: #dceedd; }
+.kitchen-clock.is-low, .kitchen-heat-alert { color: #a22239; }
+.kitchen-note, .kitchen-offline, .kitchen-heat-alert { font-size: 14px; line-height: 1.42; }
+.kitchen-note { color: #5c534c; }
+.kitchen-offline, .kitchen-heat-alert { padding: 6px 10px; border-radius: 9px; background: #fff0e4; color: #9b2636; }
+.kitchen-lobby, .kitchen-finish, .kitchen-countdown { display: grid; gap: 12px; padding: 16px 12px; border-radius: 16px; border: 1px solid #e1ccb7; background: #f7eadb; }
+.kitchen-finish, .kitchen-countdown { display: grid; place-items: center; text-align: center; }
+.kitchen-finish > svg, .kitchen-countdown { color: #8c3c24; }
+.kitchen h3 { line-height: 1.15; font-size: clamp(19px, 4.8vw, 23px); }
+.kitchen-roles { display: grid; gap: 5px; }
+.kitchen-roles p { display: grid; gap: 3px; padding: 9px 10px; background: #fffaf3; border-radius: 10px; overflow-wrap: anywhere; }
+.kitchen-roles span { color: #5c534c; font-size: 14px; }
+.kitchen-lobby .game-actions { justify-content: start; }
+.kitchen-countdown strong { font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; }
+.kitchen-ticket { background: #fffaf3; border: 1px solid #dacbbd; border-radius: 13px; padding: 10px; }
+.kitchen-ticket-dish { display: flex; align-items: center; gap: 10px; }
+.kitchen-ticket-dish > span { border-radius: 9px; background: #f2e3cb; padding: 6px; font-size: 27px; }
+.kitchen-ticket-dish small { color: #625046; font-size: 13px; }
+.kitchen-ticket ul { list-style: none; display: flex; flex-wrap: wrap; gap: 4px; margin: 9px 0 0; padding: 0; }
+.kitchen-ticket li { display: flex; align-items: center; gap: 3px; padding: 4px 7px; border-radius: 7px; background: #f0e6d8; color: #514239; font-size: 13px; }
+.kitchen-ticket li.is-picked { background: #dfefdf; color: #224d3b; }
+.kitchen-pantry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.kitchen-pantry button { display: grid; grid-template-rows: auto 1fr; justify-items: center; align-items: center; gap: 2px; min-height: 55px; padding: 6px 3px; border: 1px solid #dacbbd; border-radius: 10px; background: #fffaf3; color: #4b392d; font: inherit; font-size: 12px; font-weight: 650; overflow-wrap: anywhere; cursor: pointer; }
+.kitchen-pantry button:active { filter: brightness(.91); }
+.kitchen-pantry button:focus-visible { outline: 2px solid #9f394a; outline-offset: 1px; }
+.kitchen-pantry button[aria-pressed="true"] { background: #dfefdf; color: #284d37; }
+.kitchen-pantry button:disabled:not([aria-pressed="true"]) { opacity: .55; }
+.kitchen-pantry button span { font-size: 20px; line-height: 1; }
+.kitchen-pan { display: grid; gap: 8px; }
+.kitchen-pan .game-actions { flex-direction: column; align-items: stretch; }
+.kitchen-heat { display: flex; align-items: center; gap: 6px; color: #7f341b; }
+.kitchen-heat > span { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+.kitchen-pan progress { display: block; width: 100%; height: 12px; accent-color: #bd512c; }
+.kitchen-footer { display: flex; justify-content: end; flex-wrap: wrap; gap: 6px; }
+.kitchen-footer .game-quiet { min-height: 44px; font-size: 13px; }
+.kitchen-footer .game-quiet.is-confirm { color: #fff; background: #a22940; border-color: #a22940; }
+@media (max-width: 340px) { .kitchen-score ol { order: 3; width: 100%; } }

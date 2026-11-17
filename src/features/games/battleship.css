@@ -1,0 +1,97 @@
+.sea-game {
+  --sea-dark: #174255;
+  --sea-light: #e1eff0;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: min(100%, 370px);
+  margin-inline: auto;
+  padding-block: 8px;
+  color: var(--sea-dark);
+}
+.sea-game .game-primary { background: var(--sea-dark); }
+.sea-game .game-primary:disabled { background: #d6e3e4; color: #536e78; }
+.sea-game .game-quiet { color: var(--sea-dark); }
+.sea-status { display: grid; gap: 3px; text-align: center; }
+.sea-status strong { font-size: 21px; line-height: 1.25; }
+.sea-status span, .sea-help { color: #4e6470; font-size: 14px; line-height: 1.4; }
+.sea-help { margin: 0; text-align: center; }
+.sea-help[role="alert"] { color: #943942; }
+.sea-choice {
+  display: grid;
+  width: 100%;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 15px;
+  background: #dce9e9;
+}
+.sea-duel-choice { grid-template-columns: repeat(2, 1fr); }
+.sea-ship-choice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sea-choice button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 3px;
+  border: 0;
+  border-radius: 12px;
+  color: #2d5365;
+  background: transparent;
+  text-align: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.sea-choice button:disabled { opacity: .6; cursor: default; }
+.sea-choice button[aria-pressed="true"] { background: #fff; box-shadow: 0 1px 4px #19384c23; }
+.sea-choice i { width: 8px; height: 8px; border-radius: 50%; aspect-ratio: 1; flex: none; background: #665087; }
+.sea-choice button[data-ship="1"] i { background: #286987; }
+.sea-choice button[data-ship="2"] i { background: #ad6b1d; }
+.sea-choice b { color: #536c76; }
+.sea-orientation { display: flex; }
+.sea-board {
+  display: grid;
+  grid-template-columns: 21px repeat(var(--sea-size), minmax(0, 1fr));
+  width: min(100%, 340px);
+  padding: 5px 6px 7px 1px;
+  border-radius: 16px;
+  background: #cbdedf;
+  box-shadow: 0 4px 12px #33526622;
+}
+.sea-row { display: contents; }
+.sea-axis { display: grid; place-items: center; min-height: 20px; font-size: 13px; font-weight: 700; color: #325768; }
+.sea-cell {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid #b2cfcf;
+  color: var(--sea-dark);
+  background: var(--sea-light);
+  font: inherit;
+  font-weight: 800;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.sea-cell:enabled:hover { background: #c2dddd; }
+.sea-cell:disabled { cursor: default; }
+.sea-cell[data-ship] { background: #e4dcef; color: #665087; }
+.sea-cell[data-ship="1"] { background: #c8e1ed; color: #286987; }
+.sea-cell[data-ship="2"] { background: #fce4c5; color: #93550b; }
+.sea-cell[data-ship] i { width: 59%; height: 68%; display: block; border-radius: 9px; background: currentColor; box-shadow: inset 0 3px #ffffff36; }
+.sea-cell[data-shot="hit"] { background: #f1a986; color: #712811; }
+.sea-cell[data-shot="miss"] { color: #336576; }
+.sea-cell[data-target] { outline: 3px solid #174255; outline-offset: -3px; background: #fff6d8; }
+.sea-cell:focus-visible { outline: 3px solid #123f83; outline-offset: -3px; }
+.sea-cell span { line-height: 1; font-size: 23px; }
+.sea-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.sea-actions .game-quiet, .sea-actions .game-primary { padding-inline: 15px; }
+.sea-key { margin: 0; display: flex; gap: 14px; color: #4e6470; font-size: 13px; }
+.sea-key span { display: flex; align-items: center; gap: 4px; }
+.sea-key i { font-style: normal; font-weight: 800; }
+.sea-key i[data-shot="hit"] { color: #9c3c25; }
+.sea-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.sea-scores span { display: flex; justify-content: space-between; gap: 8px; border-radius: 12px; background: #e2eeee; padding: 7px 11px; font-size: 14px; overflow-wrap: anywhere; }

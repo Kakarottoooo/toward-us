@@ -17,6 +17,12 @@ import { requireGamePhoto, readGamePhoto } from "./photo-game-media.mjs";
 import { dotsBoxes } from "./dots-boxes.mjs";
 import { doodleRelay } from "./doodle-relay.mjs";
 import { jigsaw } from "./jigsaw.mjs";
+import { sokoban } from "./sokoban.mjs";
+import { battleship } from "./battleship.mjs";
+import { kitchen } from "./kitchen.mjs";
+import { timeline } from "./timeline.mjs";
+import { photoRelay } from "./photo-relay.mjs";
+import { song } from "./song.mjs";
 
 // 游戏大厅 (founder 11-06): games with a screen of their own, played by the two of them in turns. Each game is a module with
 // the same shape, so adding one is adding a module here and its screen in src/features/games:
@@ -37,9 +43,14 @@ import { jigsaw } from "./jigsaw.mjs";
 // turn(state) may be BOTH when either player may act.
 // A match is a shared record of the couple (collection "matches"); its invitation is a card in Us. A match with 小家伙 (their
 // pet, player id PET) is private to the one playing: no card, no push, and it doesn't count in the couple's stats.
-export const GAMES = Object.freeze({ gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps, xiangqi, ludo, soup, hunt: treasureHunt, dots: dotsBoxes, doodle: doodleRelay, jigsaw, detective: photoDetective });
+export const GAMES = Object.freeze({ gomoku, draw: drawGuess, reversi, connect4: connectFour, truths: twoTruths, rps, xiangqi, ludo, soup, hunt: treasureHunt, dots: dotsBoxes, doodle: doodleRelay, jigsaw, detective: photoDetective, sokoban, battleship, kitchen, timeline, "photo-relay": photoRelay, song });
 export const COLLECTION = "matches";
 const NAMES = { gomoku: ["五子棋", "Gomoku", "Gomoku"], draw: ["你画我猜", "Draw & guess", "Dibuja y adivina"], reversi: ["黑白棋", "Reversi", "Reversi"], connect4: ["四子棋", "Four in a row", "Cuatro en raya"], truths: ["两个真相一个谎言", "Two truths and a lie", "Dos verdades y una mentira"], rps: ["石头剪刀布", "Rock paper scissors", "Piedra, papel o tijera"], xiangqi: ["象棋", "Chinese chess", "Ajedrez chino"], ludo: ["情侣飞行棋", "Couples' ludo", "Parchís de pareja"], soup: ["海龟汤", "Lateral puzzles", "Acertijos laterales"], hunt: ["双人寻宝", "Treasure Hunt", "Búsqueda del tesoro"], dots: ["连点占格", "Dots and Boxes", "Puntos y cajas"], doodle: ["接力涂鸦", "Doodle Relay", "Dibujo por turnos"], jigsaw: ["双人拼图", "Jigsaw Together", "Rompecabezas en pareja"], detective: ["照片侦探", "Photo Detective", "Detective de fotos"] };
+Object.assign(NAMES, {
+  sokoban: ["双人推箱子", "Together We Move", "Mudanza en pareja"], battleship: ["海战棋", "Battleship", "Batalla naval"],
+  kitchen: ["两人开餐厅", "Two-Person Kitchen", "Cocina en pareja"], timeline: ["回忆时间线", "Memory Timeline", "Línea de recuerdos"],
+  "photo-relay": ["拍照接力", "Photo Relay", "Reto de fotos"], song: ["一起做首歌", "Make a Song Together", "Hagamos una canción"],
+});
 export const gameName = (game, language) => { const names = NAMES[game] || [game, game, game]; return language === "en" ? names[1] : language === "es" ? names[2] : names[0]; };
 
 export const withPet = (match) => match.players.includes(PET);
@@ -50,11 +61,55 @@ export function viewMatch(match, userId) {
   return { id: match.id, game: match.game, status: match.status, players: match.players, turn: match.turn, createdByUserId: match.createdByUserId, createdAt: match.createdAt, updatedAt: match.updatedAt, finishedAt: match.finishedAt || null, endedBy: match.endedBy || null, version: match.version, state: module ? module.view(match.state, userId) : null };
 }
 
-export async function listMatches(store, userId) {
+export async function listMatches(store, userId, onSettled) {
   const context = await store.getRelationshipContext(userId);
   if (!context) return [];
   // The store hands every record of the couple to either member; a game with 小家伙 is only for the one playing it.
-  return (await store.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === context.relationship.id && GAMES[match.game] && match.players.includes(userId));
+  const matches = (await store.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === context.relationship.id && GAMES[match.game] && match.players.includes(userId));
+  const now = Date.now();
+  const index = matches.findIndex((match) => kitchenResult(match, now));
+  if (index < 0 || !activePair(context)) return matches;
+  const id = matches[index].id;
+  const result = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
+    const current = await tx.getRelationshipContext(userId);
+    if (!activePair(current) || current.relationship.id !== context.relationship.id) return null;
+    const match = await tx.getRelationshipRecordForUser(COLLECTION, id, userId);
+    if (!match) return null;
+    const state = kitchenResult(match, now);
+    if (!state) return { match, settled: false };
+    const updated = await saveMove(tx, match, userId, kitchen, state, true);
+    const conversation = await announceFinish(tx, updated, userId, current);
+    return { match: updated, settled: true, conversation };
+  });
+  if (result) {
+    matches[index] = result.match;
+    if (result.settled) onSettled?.(result.match, result.conversation, userId);
+  }
+  return matches;
+}
+
+// Apply the result on the next read or move if both players closed Pinky before the kitchen clock reached zero.
+function kitchenResult(match, now) {
+  if (match.game !== "kitchen" || match.status !== "active") return null;
+  const state = kitchen.settle(match.state, now);
+  return state === match.state ? null : state;
+}
+
+function saveMove(tx, match, userId, module, state, finished) {
+  return tx.updateRelationshipRecordForUser(COLLECTION, match.id, userId, (draft) => {
+    draft.state = state;
+    draft.turn = module.turn(state);
+    draft.version += 1;
+    if (finished) { draft.status = "finished"; draft.finishedAt = new Date().toISOString(); }
+  });
+}
+
+async function announceFinish(tx, match, userId, context) {
+  const name = (id) => context.members.find((member) => member.userId === id)?.user?.name || "";
+  const said = !withPet(match) && GAMES[match.game].announce?.(match.state, { name });
+  if (!said?.zh || !said.en || !said.es) return null;
+  const posted = await appendTogetherMessage(tx, { relationshipId: match.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: said.zh, i18n: said, handle: `match-end:${match.id}` });
+  return posted.duplicate ? null : posted.conversation;
 }
 
 /** Starts a game of `game` with the partner (announced in Us) or with 小家伙, or returns the one of those still being played. */
@@ -69,8 +124,15 @@ export async function createMatch({ store, userId, game, pet = false }) {
     if (!activePair(context) || context.relationship.id !== relationshipId) throw matchError(409, "pairing_required");
     const mine = (await tx.listRelationshipRecordsForUser(COLLECTION, userId)).filter((match) => match.relationshipId === relationshipId && match.game === game && withPet(match) === pet && match.players.includes(userId));
     const open = mine.find((match) => match.status === "active");
-    if (open) return { match: open, created: false };
-    const previous = mine.filter((match) => match.status === "finished").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const previous = mine.filter((match) => match.status === "finished");
+    if (open) {
+      const result = kitchenResult(open, Date.now());
+      if (!result) return { match: open, created: false };
+      const finished = await saveMove(tx, open, userId, kitchen, result, true);
+      await announceFinish(tx, finished, userId, context);
+      previous.push(finished);
+    }
+    previous.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const players = pet ? [userId, PET] : context.members.map((member) => member.userId);
     const record = createRelationshipRecord({ relationshipId, userId, visibility: pet ? "private" : "shared", aiAccessScope: "none", approvalPolicy: "both", status: "active", game, players, state: null, turn: null, finishedAt: null });
     record.state = module.start({ players, inviterUserId: userId, matchId: record.id, previous });
@@ -87,35 +149,35 @@ export async function createMatch({ store, userId, game, pet = false }) {
 
 /** One move (or resign, end, ...) by a player. Returns the match and whose turn it was before. `as` is PET for 小家伙's moves,
  * made in the name of the member playing with it. */
-export async function actOnMatch({ store, userId, matchId, action, as = userId }) {
+export async function actOnMatch({ store, userId, matchId, action, as = userId, expectedGame }) {
   const initial = await store.getRelationshipContext(userId);
   if (!initial) throw matchError(409, "pairing_required");
   return store.transaction(`relationship:${initial.relationship.id}`, async (tx) => {
     const match = await tx.getRelationshipRecordForUser(COLLECTION, matchId, userId);
     const module = match && GAMES[match.game];
-    if (!match || !module || match.relationshipId !== initial.relationship.id || !match.players.includes(userId) || !(match.players.includes(as) || (as === HOST && module.hostActions))) throw matchError(404, "not_found");
-    if (match.status !== "active") throw matchError(409, "match_over");
+    if (!match || !module || (expectedGame && match.game !== expectedGame) || match.relationshipId !== initial.relationship.id || !match.players.includes(userId) || !(match.players.includes(as) || (as === HOST && module.hostActions))) throw matchError(404, "not_found");
     const context = await tx.getRelationshipContext(userId);
     if (!activePair(context)) throw matchError(409, "pairing_required");
+    if (match.status !== "active") {
+      const repeated = (match.game === "kitchen" && action?.type === "settle") || (match.game === "photo-relay" && action?.type === "submit");
+      if (match.status === "finished" && repeated) return { match, unchanged: true };
+      throw matchError(409, "match_over");
+    }
     // "abandon", not "end": 你画我猜, 两个真相 and 石头剪刀布 finish normally with their own "end".
-    if (action?.type === "abandon") return endMatch(tx, { match, userId, as, context });
-    const state = module.act(match.state, { userId: as, action });
+    const now = Date.now();
+    const timedResult = kitchenResult(match, now);
+    if (action?.type === "abandon" && !timedResult) return endMatch(tx, { match, userId, as, context });
+    const move = module.prepareAction ? await module.prepareAction({ tx, match, userId, action }) : action;
+    const state = timedResult || module.act(match.state, { userId: as, action: move, now });
+    if (match.game === "photo-relay" && state === match.state) return { match, unchanged: true };
     if ((match.game === "detective" && action?.type === "create_clue") || (match.game === "jigsaw" && action?.type === "photo")) {
       const photo = await requireGamePhoto(tx, { userId, relationshipId: match.relationshipId, photoId: action.photoId });
       if (match.game === "detective") await readGamePhoto(photo, { crop: action.crop });
     }
     const finished = module.finished(state);
-    const updated = await tx.updateRelationshipRecordForUser(COLLECTION, match.id, userId, (draft) => {
-      draft.state = state; draft.turn = module.turn(state); draft.version += 1;
-      if (finished) { draft.status = "finished"; draft.finishedAt = new Date().toISOString(); }
-    });
+    const updated = await saveMove(tx, match, userId, module, state, finished);
     // A game between the two of them may end with a line in Us (石头剪刀布: who lost the bet).
-    let conversation = null;
-    const said = finished && !withPet(updated) && module.announce?.(state, { name: (id) => context.members.find((member) => member.userId === id)?.user?.name || "" });
-    if (said?.zh && said.en && said.es) {
-      const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: said.zh, i18n: said, handle: `match-end:${updated.id}` });
-      if (!posted.duplicate) conversation = posted.conversation;
-    }
+    let conversation = finished ? await announceFinish(tx, updated, userId, context) : null;
     // And lines a move itself asks for (飞行棋: a rent paid with a little promise).
     const lines = withPet(updated) ? [] : module.said?.(match.state, state, { name: (id) => context.members.find((member) => member.userId === id)?.user?.name || "" }) || [];
     for (const [index, line] of lines.entries()) {

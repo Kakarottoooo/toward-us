@@ -4,8 +4,9 @@ import { recordUsage } from "./usage.mjs";
 import { actOnMatch, autoPending, createMatch, gameName, GAMES, listMatches, matchStats, petPlays, viewMatch, withPet } from "./matches/index.mjs";
 import { BOTH, MATCH_ERRORS, matchError } from "./matches/errors.mjs";
 import { listGamePhotos, readGamePhoto, requireGamePhoto } from "./matches/photo-game-media.mjs";
+import { readPhotoRelayMedia } from "./matches/photo-relay.mjs";
 
-const invitePush = new Set(["hunt", "dots", "doodle", "jigsaw", "detective"]);
+const invitePush = new Set(["hunt", "dots", "doodle", "jigsaw", "detective", "sokoban", "battleship", "kitchen", "timeline", "photo-relay", "song"]);
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
@@ -13,12 +14,16 @@ const say = (language, zh, en, es) => language === "en" ? en : language === "es"
 // looking (see reminder-service notifyMember); `online(userId)` is true while they have the App open.
 export function createMatchRouter({ store, mediator = null, emit = () => {}, notify = async () => {}, online = () => false, petDelay = 1200 }) {
   const router = express.Router();
+  const onSettled = (match, conversation, userId) => {
+    emit(match, "match.updated");
+    if (conversation) emit(conversation, "together.updated", null, userId);
+  };
   router.use("/matches", (req, res, next) => req.auth ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") }));
 
   router.get("/matches", async (req, res) => {
     const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);
     if (!context) throw matchError(409, "pairing_required");
-    const matches = await listMatches(store, userId);
+    const matches = await listMatches(store, userId, onSettled);
     const shown = [...matches.filter((match) => match.status === "active"), ...matches.filter((match) => match.status !== "active").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10)];
     res.json({ games: Object.keys(GAMES), matches: shown.map((match) => viewMatch(match, userId)), stats: matchStats(matches.filter((match) => !withPet(match))), petStats: matchStats(matches.filter(withPet)), members: context.members.map((member) => ({ id: member.userId, name: member.user.name })), readOnly: context.relationship.status !== "active" || context.members.length !== 2 });
   });
@@ -44,8 +49,19 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     res.set({ "cache-control": "private, no-store", "x-content-type-options": "nosniff" }).type("image/jpeg").send(bytes);
   });
 
+  router.get("/matches/:id/relay-photo/:part", async (req, res) => {
+    const { id, part } = req.params;
+    const bytes = await readPhotoRelayMedia({ store, matchId: id, userId: req.auth.user.id, part });
+    res.set({ "cache-control": "private, no-store", "x-content-type-options": "nosniff" }).type("image/jpeg").send(bytes);
+  });
+
+  router.post("/matches/:id/relay-photo", express.raw({ type: "image/jpeg", limit: "6mb" }), async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw matchError(400, "photo_relay_unreadable");
+    return performMove(req, res, { type: "submit", bytes: req.body }, "photo-relay");
+  });
+
   router.get("/matches/:id", async (req, res) => {
-    const userId = req.auth.user.id, match = (await listMatches(store, userId)).find((item) => item.id === req.params.id);
+    const userId = req.auth.user.id, match = (await listMatches(store, userId, onSettled)).find((item) => item.id === req.params.id);
     if (!match) throw matchError(404, "not_found");
     res.json({ match: viewMatch(match, userId) });
   });
@@ -87,8 +103,14 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
   });
 
   router.post("/matches/:id/actions", async (req, res) => {
-    const userId = req.auth.user.id, action = req.body && typeof req.body === "object" ? req.body : {};
-    const { match, before, conversation } = await actOnMatch({ store, userId, matchId: req.params.id, action });
+    const action = req.body && typeof req.body === "object" ? req.body : {};
+    return performMove(req, res, action);
+  });
+
+  async function performMove(req, res, action, expectedGame) {
+    const userId = req.auth.user.id;
+    const { match, before, conversation, unchanged } = await actOnMatch({ store, userId, matchId: req.params.id, action, expectedGame });
+    if (unchanged) return res.json({ match: viewMatch(match, userId) });
     if (conversation) emit(conversation, "together.updated", null, userId);
     if (withPet(match)) { const after = await autoTurn(req, match); return res.json({ match: viewMatch(after, userId) }); }
     emit(match, "match.updated");
@@ -96,12 +118,14 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     const partner = match.players.find((id) => id !== userId);
     // The partner hears about it when it becomes their move, or when the game ends, unless they are looking at the App.
     const theirs = (turn) => turn === partner || turn === BOTH;
-    if (partner && !online(partner) && match.status !== "ended" && (match.status !== "active" || (theirs(match.turn) && !theirs(before)))) {
+    const relayWaiting = match.game === "photo-relay" && action.type === "submit" && match.turn === partner;
+    if (partner && !online(partner) && match.status !== "ended" && (relayWaiting || match.status !== "active" || (theirs(match.turn) && !theirs(before)))) {
       const context = await store.getRelationshipContext(userId), me = context?.members.find((member) => member.userId === userId)?.user?.name || "";
       const drawn = match.game === "draw" && match.state.rounds.at(-1)?.strokes && match.status === "active";
       const body = (language) => {
         const game = gameName(match.game, language);
         if (match.status !== "active") return say(language, `${me} 结束了这局${game}，去看看结果`, `${me} finished your game of ${game}. See how it went`, `${me} terminó su partida de ${game}. Mira el resultado`);
+        if (relayWaiting) return say(language, `${me} 已经拍好了，轮到你拍一张`, `${me} sent a photo for your relay. Add yours to reveal the collage.`, `${me} ya envió su foto. Envía la tuya para revelar el collage.`);
         if (drawn) return say(language, `${me} 画好了，来猜猜是什么`, `${me} finished a drawing. Can you guess it?`, `${me} terminó un dibujo. ¿Adivinas qué es?`);
         return say(language, `轮到你了 · ${game}`, `Your turn · ${game}`, `Te toca · ${game}`);
       };
@@ -109,7 +133,7 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     }
     if (match.status !== "active") void recordUsage(store, { userId, relationshipId: match.relationshipId, action: "match_finished" });
     res.json({ match: viewMatch(match, userId) });
-  });
+  }
 
   // 小家伙 moves when it is its turn (a board move right away: the reply carries it; a drawing or a guess a moment later) and
   // Pinky hosts (海龟汤: the puzzle, each answer). A game with 小家伙 is told to this member's open App only.
@@ -122,6 +146,7 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
   }
 
   router.use((error, req, res, next) => {
+    if (error?.type === "entity.too.large" && req.path.endsWith("/relay-photo")) error = matchError(413, "photo_relay_too_large");
     if (!error?.matchCode) return next(error);
     const language = req.body?.language || req.query?.language || req.auth?.user?.language || "zh";
     const copy = MATCH_ERRORS[error.matchCode] || MATCH_ERRORS.invalid_action;

@@ -30,14 +30,21 @@ export async function listGamePhotos(store, { userId, relationshipId, after }) {
   return { photos: photosPage, next: start + photosPage.length < options.length ? photosPage.at(-1).id : null };
 }
 
-export async function requireGamePhoto(store, { userId, relationshipId, photoId }) {
+export async function requireGameMoment(store, { userId, relationshipId, photoId }) {
   if (typeof photoId !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(photoId)) throw unavailable();
   const [record, items] = await Promise.all([
     store.getRelationshipRecordForUser("photos", photoId, userId),
     albumItems(store, userId, relationshipId),
   ]);
-  if (!sharedActive(record, relationshipId, userId) || !items.some((item) => item.photoId === photoId)) throw unavailable();
-  return record;
+  if (!sharedActive(record, relationshipId, userId)) throw unavailable();
+  const item = items.filter((entry) => entry.photoId === photoId)
+    .sort((a, b) => (b.date || b.createdAt).localeCompare(a.date || a.createdAt) || a.id.localeCompare(b.id))[0];
+  if (!item) throw unavailable();
+  return { record, item };
+}
+
+export async function requireGamePhoto(store, input) {
+  return (await requireGameMoment(store, input)).record;
 }
 
 export async function readGamePhoto(record, { full = false, crop = 0 } = {}) {
