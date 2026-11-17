@@ -25,7 +25,7 @@ import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking
 import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 import { GameHall } from "../games/GameHall";
-import { PlayTogether, type PlayTab } from "../games/PlayTogether";
+import { PlayTogether } from "../games/PlayTogether";
 import { PlayDistance } from "../games/PlayDistance";
 import { PlayPlans } from "../games/PlayPlans";
 import { MatchInviteCard } from "../games/MatchInviteCard";
@@ -114,9 +114,9 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [petRoom, setPetRoom] = useState(false);
   // 游戏大厅 (11-06): opened from the drawer, from a game card in Us, or from a "轮到你了" notice (?game=<id>).
   const [gameHall, setGameHall] = useState<{ match: string | null } | null>(() => { const game = new URLSearchParams(location.search).get("game"); return game ? { match: game === "hall" ? null : game } : null; });
-  const [playTogether, setPlayTogether] = useState<{ cardId?: string; tab: PlayTab; fromGames?: boolean } | null>(() => {
+  const [playTogether, setPlayTogether] = useState<{ cardId?: string; fromGames?: boolean } | null>(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("play") === "today" ? { tab: "today" } : null;
+    return params.get("play") === "today" ? {} : null;
   });
   const [interaction, setInteraction] = useState<"touch" | "cards" | null>(() =>
     paired && !usHidden && new URLSearchParams(location.search).get("distance") === "1" ? "cards" : null);
@@ -124,7 +124,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const openGames = (match: string | null = null) => {
     keyboard.hide();
     if (paired) setGameHall({ match });
-    else setPlayTogether({ tab: "cards" });
+    else setPlayTogether({});
   };
   const closeGames = () => { setGameHall(null); const params = new URLSearchParams(location.search); if (params.has("game")) { params.delete("game"); history.replaceState(history.state, "", `${location.pathname}${params.toString() ? `?${params}` : ""}`); } };
   const [petHidden, setPetHidden] = useState(() => { try { return localStorage.getItem(petHiddenKey(user.id)) === "1"; } catch { return false; } });
@@ -724,7 +724,7 @@ ${text}` : text, target);
     if (message.kind === "match_invite" && message.match) return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
     if (message.kind === "game" && message.game) {
       const deckId = message.game.deckId;
-      return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} onOpenDeck={deckId ? () => { keyboard.hide(); setPlayTogether({ tab: "cards", cardId: deckId }); } : undefined} />;
+      return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} onOpenDeck={deckId ? () => { keyboard.hide(); setPlayTogether({ cardId: deckId }); } : undefined} />;
     }
     if (message.kind === "watch_check") return <WatchCheckCard key={message.id} language={language} text={text} answer={message.watchAnswer} members={together?.members || []} onAnswer={(finished) => void answerWatch(message.id, finished)} />;
     if (message.kind === "daily_question") return playTogether && message.id === todayQuestion?.id ? null : renderDaily(message);
@@ -902,7 +902,7 @@ ${text}` : text, target);
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
     {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image && mascot.visible ? mascot.image.still : null} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }}
-      onQuestions={(tab) => { closeGames(); keyboard.hide(); setPlayTogether({ tab, fromGames: true }); }} />}
+      onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} />}
     {interaction && paired && <BottomSheet open onOpenChange={(open) => { if (!open) closeInteraction(); }}
       title={t("互动", "Connect", "Conectar")} description={t("碰一下，或者留张小卡。", "Touch together or leave a little card.", "Tóquense o deja una tarjetita.")} snap={0.76}>
       <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
@@ -916,7 +916,7 @@ ${text}` : text, target);
     </BottomSheet>}
     {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
-      initialCardId={playTogether.cardId} initialTab={playTogether.tab} fromGames={playTogether.fromGames}
+      initialCardId={playTogether.cardId} fromGames={playTogether.fromGames} onLeaveDaily={leavePlayDaily}
       onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) void shareInvite(); else switchChannel("us"); }}
       renderPlans={(questionId) => paired && !planQuestionId ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /> : null}
