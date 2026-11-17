@@ -120,6 +120,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   });
   const [interaction, setInteraction] = useState<"touch" | "cards" | null>(() =>
     paired && !usHidden && new URLSearchParams(location.search).get("distance") === "1" ? "cards" : null);
+  const [planQuestionId, setPlanQuestionId] = useState<string | null>(null);
   const openGames = (match: string | null = null) => {
     keyboard.hide();
     if (paired) setGameHall({ match });
@@ -650,7 +651,7 @@ ${text}` : text, target);
       members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000}
       askedAt={message.createdAt} listening={dictating === voiceId && voiceActive} onVoice={(append) => dictate(voiceId, append)}
       dailyPlay={message.dailyPlay} onAnswer={(answer) => answerDaily(message.id, answer)}
-      onOpenPlan={!inPlay && paired && !together?.readOnly && message.id === todayQuestion?.id ? () => { keyboard.hide(); setPlayTogether({ tab: "today" }); } : undefined}
+      onOpenPlan={paired && !together?.readOnly ? () => { keyboard.hide(); setPlanQuestionId(message.id); } : undefined}
       onContinue={inPlay && !usHidden ? (followup) => {
         closePlayTogether(); switchChannel("us");
         const prompt = followup || t(`刚才这道题「${text}」，我想和你接着聊聊。`, `I'd like to talk a little more about “${text}”.`, `Me gustaría seguir hablando de «${text}».`);
@@ -907,12 +908,17 @@ ${text}` : text, target);
       <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} conversationId={together?.conversation.id} incomingCard={interaction === "cards"} onClose={closeInteraction} />
     </BottomSheet>}
+    {planQuestionId && paired && <BottomSheet open onOpenChange={(open) => { if (!open) { keyboard.hide(); setPlanQuestionId(null); } }}
+      title={t("约会点子", "Date ideas", "Ideas para una cita")} snap={0.84}>
+      <PlayPlans key={planQuestionId} exactQuestion questionId={planQuestionId} language={language} userId={user.id}
+        revision={together?.conversation.version || 0} readOnly={together?.readOnly}
+        onOpenCalendar={(url) => { setPlanQuestionId(null); closePlayTogether(); open(url); }} />
+    </BottomSheet>}
     {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
       initialCardId={playTogether.cardId} initialTab={playTogether.tab} fromGames={playTogether.fromGames}
       onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) void shareInvite(); else switchChannel("us"); }}
-      dailyPlanId={todayQuestion && Object.keys(todayQuestion.answers || {}).length === 2 ? todayQuestion.id : undefined}
-      renderPlans={(questionId) => paired ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
+      renderPlans={(questionId) => paired && !planQuestionId ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /> : null}
       onRefreshDaily={() => void loadTogether()} renderDaily={(offline) => todayQuestion ? renderDaily(todayQuestion, true, offline) : null}
       onAskPinky={usHidden ? undefined : ({ question, own, partner: theirChoice }) => {
