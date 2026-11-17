@@ -26,3 +26,15 @@
 .sheet-overlay:has(+ .bottom-sheet .play-plans) { z-index: 66; }
 .bottom-sheet:has(.play-plans) { z-index: 67; }
 @media (prefers-reduced-motion: reduce) { .question-page * { scroll-behavior: auto; } }
+
+.question-page-stream { overflow: hidden; }
+.question-page-face { touch-action: pan-y; transform-origin: center 80%; }
+@media (prefers-reduced-motion: no-preference) {
+  .question-page-face[data-dealt] :is(.play-card, .daily-card, .game-card) {
+    animation: question-deal-in 250ms cubic-bezier(.16,.82,.26,1) both;
+  }
+  @keyframes question-deal-in {
+    from { transform: translate3d(var(--deal-from),0,0); opacity: .35; }
+    to { transform: none; opacity: 1; }
+  }
+}

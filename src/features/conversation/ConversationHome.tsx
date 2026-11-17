@@ -724,7 +724,7 @@ ${text}` : text, target);
     };
     if (focus.order) { openFrom(focus.order); return; }
     nextLoading.current = true; setFetchingNext(true);
-    void relationshipApi<PlayBoard>(`/api/together/play?language=${language}`).then((board) => {
+    return relationshipApi<PlayBoard>(`/api/together/play?language=${language}`).then((board) => {
       const order = questionOrder(focus, availableNewCards(board.cards, board.rounds).map((card) => card.id));
       if (order.length > 1) openFrom(order);
       else setPlayFocus((current) => current === focus ? { ...focus, order } : current);
@@ -1118,15 +1118,14 @@ ${text}` : text, target);
               : t("今日双人题，来玩一张", "Your daily question. Try a card.", "Su pregunta diaria. Jueguen una carta.")}</strong><CaretRight size={18} />
       </button>}
     {!questionPage && composer}
-    {questionPage && visibleQuestion && <QuestionPage key={visibleQuestion.id} language={language}
+    {questionPage && visibleQuestion && <QuestionPage cardId={visibleQuestion.id} language={language}
       onBack={() => { keyboard.hide(); collapseQuestion(); }}
       onLibrary={() => { keyboard.hide(); collapseQuestion(); setPlayTogether({ fromFocus: true }); }}
-      onPrevious={() => moveQuestion(-1)} onNext={() => moveQuestion(1)}
+      onMove={moveQuestion}
       canPrevious={!fetchingNext && visibleQuestion.index > 0}
       canNext={!fetchingNext && !(visibleQuestion.order && visibleQuestion.index >= visibleQuestion.order.length - 1)}
-      messageCount={questionMessages.length} swipe={questionSwipe}
+      messageCount={questionMessages.length} card={questionContent}
       footer={questionMessageId ? composer : <p className="question-page-hint">{t("先留下一个选择，就能在这里聊这题。", "Make your first pick to start this conversation.", "Haz tu primera elección para empezar esta conversación.")}</p>}>
-      {questionContent}
       {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()}>
         {loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("查看更早的讨论", "Earlier discussion", "Conversación anterior")}
       </button>}
