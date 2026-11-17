@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, CaretLeft, CaretRight, ChatCircleDots, ClockCounterClockwise, Heart, LockKey, Shuffle, Sparkle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
-import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
+import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./play-together.css";
 
 type Mode = "choice" | "guess" | "truth";
+type Collection = "questions" | "classic";
 type Answer = { choice?: number; text?: string };
 type AnswerInput = Answer & { aboutUserId?: string };
 type Reply = { id: string; userId: string; text: string; createdAt: string };
-type Card = { id: string; type: Mode; title: string; prompt: string; options: string[]; followup: string };
+type Card = { id: string; collection: Collection; type: Mode; title: string; prompt: string; options: string[]; followup: string };
 type Round = { id: string; cardId: string; aboutUserId: string | null; answers: Record<string, Answer>; revealed: boolean; replies: Reply[] };
 type Board = { version: number; readOnly?: boolean; cards: Card[]; rounds: Round[] };
 type Translate = (zh: string, en: string, es: string) => string;
@@ -21,33 +22,38 @@ type Props = {
   onAskPinky?: (choices: SharedChoices) => void;
   renderDaily: (offline: boolean) => ReactNode; onRefreshDaily: () => void;
   initialTab: PlayTab; fromGames?: boolean;
-  dailyPlanId?: string; renderPlans?: (questionId?: string) => ReactNode;
+  renderPlans?: (questionId?: string) => ReactNode;
 };
 
 const playPath = "/api/together/play";
 const modes: Mode[] = ["choice", "guess", "truth"];
+const collections: Collection[] = ["questions", "classic"];
+const browsePageSize = 18;
 const modeName = (t: Translate, mode: Mode) => mode === "choice" ? t("轻松二选一", "A quick pick", "Elige una") :
   mode === "guess" ? t("猜 TA 怎么选", "Guess their pick", "Adivina su elección") : t("认真聊一件事", "Talk it out", "Hablemos");
 const modeNote = (t: Translate, mode: Mode) => mode === "choice" ? t("两种答案，你选一个", "Two answers, pick one", "Dos opciones, elige una") :
   mode === "guess" ? t("看看你有多懂这件小事", "See how well you know this little thing", "Descubre cuánto sabes de ese detalle") :
     t("各说一句，慢慢聊", "A sentence each to start a conversation", "Una frase cada uno para abrir la charla");
 const incoming = (round: Round | undefined, me: string) => Boolean(round && !round.revealed && !round.answers[me]);
-const firstCard = (board: Board, me: string) => board.cards.find((card) => incoming(board.rounds.find((r) => r.cardId === card.id), me)) ??
-  board.cards.find((card) => !board.rounds.some((round) => round.cardId === card.id)) ?? board.cards[0];
+const searchKey = (text: string) => text.normalize("NFD").replace(/\p{Mark}/gu, "").toLowerCase();
 const draftSuffix = (userId: string, conversationId = "") => `pinky:play:v1:${userId}:${conversationId}`;
 const readLocal = (key: string) => { try { return sessionStorage.getItem(key) || ""; } catch { return ""; } };
 const writeLocal = (key: string, value: string) => {
   try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch { /* Play still works without storage. */ }
 };
 
-export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, initialTab, fromGames, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, dailyPlanId, renderPlans }: Props) {
+export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, initialTab, fromGames, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, renderPlans }: Props) {
   const t: Translate = (zh, en, es) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const storage = draftSuffix(userId, conversationId);
   const [board, setBoard] = useState<Board | null>(null);
   const [activeId, setActiveId] = useState(() => initialCardId || readLocal(`${storage}:card`));
+  const [collection, setCollection] = useState<Collection | null>(null);
   const [mode, setMode] = useState<Mode | null>(null);
   const [history, setHistory] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const [query, setQuery] = useState("");
+  const [visibleQuestions, setVisibleQuestions] = useState(browsePageSize);
   const today = paired && initialTab === "today";
   const deck = !today;
   const title = today ? t("今日双人题", "Today’s question", "Pregunta de hoy") : t("题卡库", "Card deck", "Cartas");
@@ -98,17 +104,27 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
 
   const all = board?.cards || [];
   const byCard = new Map(board?.rounds.map((round) => [round.cardId, round]));
-  const available = mode ? all.filter((card) => card.type === mode) : all;
-  const initial = board ? (mode ? available.find((card) => incoming(byCard.get(card.id), userId)) ?? available.find((card) => !byCard.has(card.id)) ?? available[0] : firstCard(board, userId)) : undefined;
+  const openedCard = all.find((card) => card.id === activeId);
+  const selectedCollection = collection ?? openedCard?.collection ?? "questions";
+  const collectionCards = all.filter((card) => card.collection === selectedCollection);
+  const available = mode ? collectionCards.filter((card) => card.type === mode) : collectionCards;
+  const first = (cards: Card[]) => cards.find((card) => incoming(byCard.get(card.id), userId)) ??
+    cards.find((card) => !byCard.has(card.id)) ?? cards[0];
+  const initial = first(available);
   const card = available.find((item) => item.id === activeId) ?? initial;
   const round = card && byCard.get(card.id);
   const subject = card?.type === "guess" ? round?.aboutUserId || userId : "";
   const inbox = all.filter((item) => incoming(byCard.get(item.id), userId));
-  const complete = all.filter((item) => byCard.get(item.id)?.revealed);
   const historyCards = all.filter((item) => byCard.has(item.id));
-  const allPlayed = Boolean(all.length && complete.length === all.length);
+  const allPlayed = collectionCards.length > 0 && collectionCards.every((item) => byCard.get(item.id)?.revealed);
   const frozen = readOnly || (board?.readOnly === true && (paired || historyCards.length > 0));
   const disabled = offline || frozen || busy;
+  const narrowed = browsing && query.trim()
+    ? available.filter((item) => searchKey(`${item.title} ${item.prompt}`).includes(searchKey(query.trim())))
+    : available;
+  const collectionLabel = (value: Collection) => value === "questions"
+    ? t("双人问答", "Questions for two", "Preguntas para dos")
+    : t("经典玩法", "Classic cards", "Cartas clásicas");
 
   function pin(next: Card) {
     if (activeId === next.id) return;
@@ -117,9 +133,25 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
   }
   function select(next: Card, keepMode = false) {
     keyboard.hide(); setError(""); setHistory(false); setEditRound(""); setPaused(false);
+    setCollection(next.collection);
+    setBrowsing(false);
     if (!keepMode) setMode(null);
     pin(next);
     writeLocal(`${storage}:paused`, "");
+  }
+  function chooseCollection(next: Collection) {
+    if (next === selectedCollection) return;
+    keyboard.hide();
+    setCollection(next);
+    setMode(null);
+    setQuery("");
+    setVisibleQuestions(browsePageSize);
+    setError("");
+    setEditRound("");
+    setPaused(false);
+    writeLocal(`${storage}:paused`, "");
+    const nextCard = first(all.filter((item) => item.collection === next));
+    if (nextCard) pin(nextCard);
   }
   function step(direction: 1 | -1, fresh = false) {
     if (!card) return;
@@ -130,7 +162,7 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
     if (next) select(next, true);
   }
   function chooseMode(next: Mode) {
-    const group = all.filter((item) => item.type === next);
+    const group = collectionCards.filter((item) => item.type === next);
     const nextCard = group.find((item) => incoming(byCard.get(item.id), userId))
       ?? group.find((item) => !byCard.get(item.id)?.revealed) ?? group[0];
     if (nextCard) { select(nextCard, true); setMode(next); }
@@ -174,7 +206,7 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
       {today ? <div className="play-today">{renderDaily(offline) ?? <div className="play-status" role="status">
         {t("新题准备好就会显示在这里。", "The new question will show up here when it's ready.", "La pregunta nueva aparecerá aquí cuando esté lista.")}
         <button type="button" className="play-link" disabled={offline || readOnly} onClick={onRefreshDaily}>{t("刷新", "Refresh", "Actualizar")}</button>
-      </div>}{renderPlans?.(dailyPlanId)}</div>
+      </div>}{renderPlans?.()}</div>
       : board && (history ? <section className="play-history" aria-label={t("玩过的题", "Played cards", "Cartas jugadas")}>
         <h2>{t("玩过的题", "Played cards", "Cartas jugadas")}</h2>
         {historyCards.length ? historyCards.map((item) => {
@@ -185,6 +217,30 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
         }) : <p>{t("还没有玩过的题。回去翻一张，看看 TA 会怎么选。", "No played cards yet. Pick one to see what your partner chooses.", "Aún no hay cartas jugadas. Elige una y descubre qué prefiere tu pareja.")}</p>}
         <button type="button" className="play-link" onClick={() => setHistory(false)}>{t("回到题卡", "Back to cards", "Volver a las cartas")}</button>
       </section> : <>
+        <div className="play-collections" role="group" aria-label={t("题卡系列", "Card collections", "Colecciones de cartas")}>
+          {collections.map((item) => <button type="button" key={item} disabled={busy} aria-pressed={selectedCollection === item} onClick={() => chooseCollection(item)}>
+            <strong>{collectionLabel(item)}</strong><span>{all.filter((entry) => entry.collection === item).length}</span>
+          </button>)}
+        </div>
+        <button type="button" className="play-link play-browse-link" aria-expanded={browsing} disabled={busy} onClick={() => { keyboard.hide(); setBrowsing(!browsing); }}>
+          {browsing ? t("返回当前题卡", "Back to current card", "Volver a la carta actual") : t("浏览题目", "Browse cards", "Explorar cartas")}
+        </button>
+        {browsing ? <section className="play-browse" aria-label={t("浏览题目", "Browse cards", "Explorar cartas")}>
+          <KeyboardInput type="search" value={query} maxLength={90} aria-label={t("搜索题目", "Search cards", "Buscar cartas")}
+            placeholder={t("搜题目或编号", "Search by question or number", "Busca por pregunta o número")}
+            onChange={(event) => { setQuery(event.target.value); setVisibleQuestions(browsePageSize); }} />
+          <ul>
+            {narrowed.slice(0, visibleQuestions).map((item) => <li key={item.id}>
+              <button type="button" className="play-list-row" onClick={() => select(item)}>
+                <span><small>{item.title}</small><strong>{item.prompt}</strong></span><CaretRight size={17} aria-hidden="true" />
+              </button>
+            </li>)}
+          </ul>
+          {!narrowed.length && <p className="play-status" role="status">{t("没找到符合的题目。", "No cards found.", "No encontramos cartas.")}</p>}
+          {narrowed.length > visibleQuestions && <button type="button" className="play-quiet" onClick={() => { keyboard.hide(); setVisibleQuestions((current) => current + browsePageSize); }}>
+            {t("显示更多题目", "Show more cards", "Mostrar más cartas")}
+          </button>}
+        </section> : <>
         {inbox.length > 0 && !incoming(round, userId) && <button type="button" className="play-inbox" onClick={() => select(inbox[0])}><Heart size={18} weight="fill" />{t("TA 答过一题，等你来翻牌", "Your partner answered a card. Your turn!", "Tu pareja ya respondió. ¡Te toca!")}</button>}
         {card ? paused ? <section className="play-card is-paused"><p className="play-kicker">{modeName(t, card.type)}</p><h2>{t("下次接着玩", "Pick up where you left off", "Sigue donde lo dejaste")}</h2>
           <p>{t("你停在", "You paused at", "Pausaste en")} 「{card.title}」</p><button type="button" className="play-main" onClick={() => pause(false)}>{t("接着玩", "Keep playing", "Seguir jugando")}</button>
@@ -201,12 +257,13 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
           {!paused && <button type="button" className="play-link" disabled={busy} onClick={() => pause(true)}>{t("稍后玩", "Later", "Más tarde")}</button>}
         </div>}
         {allPlayed && <p className="play-status">{t("这副牌已经玩完了。你们可以回看答案、继续聊天。", "You've played this deck. Revisit your answers and keep talking.", "Ya jugaron todas las cartas. Pueden releer sus respuestas y seguir hablando.")}</p>}
-        <div className="play-modes" aria-label={t("选一种玩法", "Choose a game", "Elige un juego")}>
+        {selectedCollection === "classic" && <div className="play-modes" aria-label={t("选一种玩法", "Choose a game", "Elige un juego")}>
           {modes.map((item) => <button type="button" key={item} aria-pressed={mode === item} disabled={busy} onClick={() => chooseMode(item)}>
             <span>{item === "choice" ? <Sparkle size={20} /> : item === "guess" ? <Heart size={20} /> : <ChatCircleDots size={20} />}</span>
             <strong>{modeName(t, item)}</strong><small>{modeNote(t, item)}</small>
           </button>)}
-        </div>
+        </div>}
+        </>}
       </>)}
     </div></MobileScroll></div>
   </div>;
@@ -252,7 +309,7 @@ function RoundCard({ t, card, round, userId, partnerName, paired, frozen, disabl
     if (await reply(retryReply.current)) { retryReply.current = null; setMessage(""); setComposing(false); writeLocal(replyKey, ""); }
   };
   return <section className={`play-card play-card-${card.type}${revealed ? " is-revealed" : ""}`} data-testid="play-card">
-    <p className="play-kicker"><span>{modeName(t, card.type)}</span> · {card.title}</p>
+    <p className="play-kicker"><span>{card.collection === "questions" ? t("双人问答", "Questions for two", "Preguntas para dos") : modeName(t, card.type)}</span> · {card.title}</p>
     <h2>{card.prompt}</h2>
     {revealed ? <>
       <p className="play-reveal-title" role="status">{revealTitle}</p>

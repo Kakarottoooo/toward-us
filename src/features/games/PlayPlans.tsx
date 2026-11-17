@@ -17,7 +17,7 @@ type Plan = {
 };
 type Props = {
   language: Language; userId: string; questionId?: string;
-  revision: string | number; readOnly?: boolean; onOpenCalendar?: (url: string) => void;
+  revision: string | number; readOnly?: boolean; exactQuestion?: boolean; onOpenCalendar?: (url: string) => void;
 };
 
 const path = "/api/play-plans";
@@ -25,7 +25,7 @@ const ended = (offer: Offer) => offer.dueAt ? Date.parse(offer.dueAt) < Date.now
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const dayIn = (zone: string) => new Date().toLocaleDateString("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
 
-export function PlayPlans({ language, userId, questionId, revision, readOnly = false, onOpenCalendar }: Props) {
+export function PlayPlans({ language, userId, questionId, revision, readOnly = false, exactQuestion = false, onOpenCalendar }: Props) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -44,7 +44,7 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
   const load = useCallback(async (signal?: AbortSignal) => {
     if (writing.current) { refreshWhenReady.current = true; return; }
     const stamp = ++requests.current;
-    const source = opened.current;
+    const source = exactQuestion ? questionId : opened.current;
     try {
       const result = await relationshipApi<{ plan: Plan | null }>(
         source ? path + "/" + encodeURIComponent(source) + "?language=" + language
@@ -58,7 +58,7 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
     } catch (caught) {
       if (!signal?.aborted && stamp === requests.current) setError((caught as Error).message);
     } finally { if (!signal?.aborted && stamp === requests.current) setLoading(false); }
-  }, [language, questionId]);
+  }, [language, questionId, exactQuestion]);
   useEffect(() => {
     requests.current += 1;
     opened.current = "";
@@ -67,7 +67,7 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
     setDraft(null);
     setSelection(null);
     setLoading(true);
-  }, [questionId, userId]);
+  }, [questionId, userId, exactQuestion]);
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
@@ -78,7 +78,8 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
     const changed = (event: Event) => {
       try {
         const { eventType, objectId } = JSON.parse((event as MessageEvent).data);
-        if (eventType === "play.plans.updated" && (!opened.current || objectId === opened.current)) void load();
+        const selectedQuestion = exactQuestion ? questionId : opened.current;
+        if (eventType === "play.plans.updated" && (!selectedQuestion || objectId === selectedQuestion)) void load();
       } catch { /* Existing visibility also refreshes state. */ }
     };
     const online = () => { setOffline(false); void load(); };
@@ -94,7 +95,7 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
       window.removeEventListener("offline", disconnected);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [load, questionId]);
+  }, [load, questionId, exactQuestion]);
 
   const send = async (action: string, data: Record<string, unknown> = {}) => {
     if (!plan || writing.current || readOnly || offline) return false;
@@ -154,8 +155,9 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
     void load();
   };
 
-  return <section className="play-plans" aria-label={t("选个约会", "Make a date", "Planeen una cita")} data-testid="play-plans">
-    <p className="play-plans-label"><CalendarBlank size={17} aria-hidden="true" />{t("答完就约一个", "Make a date", "Planeen una cita")}</p>
+  return <section className={`play-plans${exactQuestion ? " is-exact" : ""}`} aria-label={t("约会点子", "Date ideas", "Ideas para una cita")} data-testid="play-plans">
+    {!exactQuestion && <p className="play-plans-label"><CalendarBlank size={17} aria-hidden="true" />{t("约会计划", "Date plan", "Plan para una cita")}</p>}
+    {exactQuestion && plan && <p className="play-plans-question">{plan.questionTitle}</p>}
     {!plan && loading && <p role="status">{t("正在找你们的点子…", "Getting your ideas…", "Buscando sus ideas…")}</p>}
     {offline && <p className="play-plans-status" role="status">{t("你现在离线，联网后继续。", "You're offline. Reconnect to continue.", "Estás sin conexión. Conéctate para seguir.")}</p>}
     {error && <div className="play-plans-status" role="alert">{error} <button type="button" className="play-link" disabled={unavailable} onClick={() => void load()}>{t("刷新", "Refresh", "Actualizar")}</button></div>}
@@ -190,20 +192,23 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
         offer.status === "removed" ? t("日历里的计划已移除，可以另选时间。", "The calendar entry was removed. You can choose another time.", "Se eliminó del calendario. Pueden elegir otra hora.") :
           t("上一个时间已撤回。", "The previous time was withdrawn.", "Se retiró la hora anterior.")}</p>}
       {activeDraft ? <form className="play-plans-form" onSubmit={(event) => { event.preventDefault(); void schedule(); }}>
-        <h2>{plan.ideas.find((idea) => idea.id === activeDraft.ideaId)?.title}</h2>
+        <h2>{t("约个时间", "Pick a time", "Elijan una hora")}</h2>
+        <p>{plan.ideas.find((idea) => idea.id === activeDraft.ideaId)?.title}</p>
         <label><span>{t("约在哪一天", "Pick a date", "Elige una fecha")}</span><KeyboardInput type="date" value={activeDraft.date} min={dayIn(timezone)} required disabled={unavailable} onChange={(event) => setDraft({ ...activeDraft, date: event.target.value })} /></label>
         <label><span>{t("几点（可选）", "Time (optional)", "Hora (opcional)")}</span><KeyboardInput type="time" value={activeDraft.time} disabled={unavailable} onChange={(event) => setDraft({ ...activeDraft, time: event.target.value })} /></label>
         <small>{timezone}</small>
         <div className="play-actions"><button type="submit" className="play-main" disabled={unavailable || !activeDraft.date}>{t("把时间发给 TA", "Send the time to your partner", "Enviar la hora a tu pareja")}</button>
           <button type="button" className="play-quiet" disabled={busy} onClick={() => { keyboard.hide(); setDraft(null); }}>{t("返回点子", "Back to ideas", "Volver a las ideas")}</button></div>
       </form> : <>
-        <h2>{matching.length ? t("你们俩都想试试", "You both want to try", "A los dos les apetece") : t("今天约点什么？", "What would you like to do?", "¿Qué les apetece hacer?")}</h2>
+        <h2>{matching.length ? t("你们俩都想试试", "You both want to try", "A los dos les apetece") : t("想一起做点什么？", "What would you like to do together?", "¿Qué les apetece hacer juntos?")}</h2>
         {plan.saved && !plan.partnerReady ? <p className="play-plans-status" role="status"><LockKey size={16} aria-hidden="true" />{t("你的选择已保存。等 TA 也选完才一起看。", "Your picks are saved. You'll see what matches after your partner chooses.", "Guardamos tus elecciones. Verán las coincidencias cuando tu pareja elija.")}</p> :
           plan.saved && plan.partnerReady && !matching.length ? <p role="status">{t("这次暂时没选到一起，可以改一改或加自己的点子。", "No matches this time. Change your picks or add an idea.", "Esta vez no coincidieron. Pueden cambiar sus elecciones o añadir una idea.")}</p> :
             !plan.saved && <p>{t("各选几个想做的。双方都选完才看共同选中的。", "Pick anything you'd like. Only shared picks appear once both of you choose.", "Elijan lo que les apetezca. Las coincidencias se muestran cuando ambos eligen.")}</p>}
 
         {matching.length > 0 && <div className="play-plans-matches">
-          {matching.map((idea) => <button className="play-quiet" type="button" key={idea.id} disabled={unavailable || editing} onClick={() => beginSchedule(idea.id)}><CalendarBlank size={18} aria-hidden="true" />{idea.title}</button>)}
+          {matching.map((idea) => <button className="play-quiet" type="button" key={idea.id} disabled={unavailable || editing} onClick={() => beginSchedule(idea.id)}>
+            <CalendarBlank size={18} aria-hidden="true" /><span>{idea.title}<small>{t("约个时间", "Pick a time", "Elegir una hora")}</small></span>
+          </button>)}
         </div>}
         <div className="play-plans-ideas" role="group" aria-label={t("我的选择", "My picks", "Mis elecciones")}>
           {plan.ideas.map((idea) => <button type="button" className="play-plans-idea" key={idea.id} aria-pressed={picks.includes(idea.id)} disabled={unavailable}
@@ -227,6 +232,6 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
         </form>}
       </>}
     </>}
-    {plan && questionId && plan.questionId !== questionId && offer?.status !== "pending" && <button type="button" className="play-link" disabled={unavailable} onClick={openCurrent}>{t("看看今天的点子", "See today's ideas", "Ver las ideas de hoy")}</button>}
+    {!exactQuestion && plan && questionId && plan.questionId !== questionId && offer?.status !== "pending" && <button type="button" className="play-link" disabled={unavailable} onClick={openCurrent}>{t("看看这题的点子", "See ideas for this card", "Ver ideas para esta carta")}</button>}
   </section>;
 }

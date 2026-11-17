@@ -1,0 +1,69 @@
+.arrival-backdrop, .arrival-screen { position: absolute; inset: 0; }
+.arrival-backdrop { z-index: 85; background: #2b1722; }
+.arrival-screen {
+  z-index: 86;
+  display: flex;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(48px + env(safe-area-inset-top, 0px)) 20px calc(22px + env(safe-area-inset-bottom, 0px));
+  background: radial-gradient(ellipse at 50% 30%, #703a50 0%, #432539 52%, #2b1722 100%);
+  color: #fff6ed;
+}
+.arrival-center {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(410px, 100%);
+  margin: auto;
+  text-align: center;
+  animation: pinky-card-arrives .72s cubic-bezier(.2,.75,.22,1) both;
+}
+.arrival-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  aspect-ratio: 1;
+  border: 1px solid #ffffff45;
+  border-radius: 50%;
+  color: #ffe1ce;
+  background: #fff1eb18;
+}
+.arrival-mark svg + svg { position: absolute; top: -4px; right: -3px; color: #ffdc9f; }
+.arrival-screen h2 { margin: 0; font-family: var(--jian-font-serif, Georgia, serif); font-size: clamp(20px, 5.5vw, 30px); font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
+.arrival-card {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #f5ded0;
+  border-radius: 20px;
+  background: #fff7ef;
+  color: #3f2534;
+  box-shadow: 0 14px 40px #1f101a65;
+}
+.arrival-card p { margin: 0; padding: 27px 22px; font-size: clamp(19px, 5vw, 25px); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.arrival-card img { display: block; width: 100%; max-height: min(45vh, 410px); object-fit: contain; background: #f2ded6; }
+.arrival-card .play-sketch { display: block; margin: 0; width: 100%; border: 0; }
+.arrival-center time { font-size: .8rem; color: #ebd2ca; }
+.arrival-center .arrival-error { font-size: .86rem; color: #ffe0cb; margin: 0; }
+.arrival-screen button { font: inherit; cursor: pointer; }
+.arrival-screen button:focus-visible { outline: 2px solid #ffde9f; outline-offset: 3px; }
+.arrival-screen button:disabled { opacity: .6; }
+.arrival-later {
+  position: absolute;
+  top: calc(7px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff1eb14;
+  color: #fff1eb;
+}
+.arrival-screen .arrival-accept { min-height: 48px; min-width: 145px; padding: 8px 20px; border: 0; border-radius: 100px; background: #ffe7d9; color: #51293e; font-weight: 700; }
+@keyframes pinky-card-arrives {
+  0% { opacity: 0; transform: translateY(24px) rotate(-2deg) scale(.95); }
+  100% { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .arrival-center { animation: none; } }
