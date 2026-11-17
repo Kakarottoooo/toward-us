@@ -1,8 +1,11 @@
-import { fitModules, overviewQuestionIds, zodiacNames } from "./fit-questions.mjs";
+import { legacyFitModules, overviewQuestionIds, zodiacNames } from "./fit-questions.mjs";
+
+import { supportPersonalSection } from "./fit-support.mjs";
+export { supportReady, supportSharingPreview, coupleSupportReport } from "./fit-support.mjs";
 
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const selected = (profile, question) => question.options.find((option) => option.id === profile.answers?.[question.id]);
-export const fitOverviewComplete = (profile) => overviewQuestionIds.every((id) => typeof profile?.answers?.[id] === "string") && fitModules.some(module => module.questions.some(q => selected(profile, q)));
+export const fitOverviewComplete = (profile) => overviewQuestionIds.every((id) => typeof profile?.answers?.[id] === "string") && legacyFitModules.some(module => module.questions.some(q => selected(profile, q)));
 
 // Preference definitions follow the Myers & Briggs Foundation's preference and
 // relationship guides. Practical prompts below are Pinky's suggested experiments.
@@ -84,9 +87,8 @@ function zodiacNote(mine, partner, language) {
 }
 
 export function personalFitReport(profile, language) {
-  const answered = Object.values(profile.answers || {}).filter(value => value !== "skip").length;
-  if (!answered && !profile.mbti && !profile.zodiac) return null;
-  const sections = fitModules.flatMap((module) => {
+  const support = supportPersonalSection(profile, language);
+  const sections = legacyFitModules.flatMap((module) => {
     const evidence = module.questions.flatMap((question) => {
       const choice = selected(profile, question);
       return choice ? [{ questionId: question.id, question: question.text[language], answer: choice.text[language], topic: question.topic[language] }] : [];
@@ -103,6 +105,8 @@ export function personalFitReport(profile, language) {
       suggestion: firstQuestion.followup[language], answered: evidence.length, total: module.questions.length,
     }];
   });
+  const previousCount = sections.reduce((count, section) => count + section.answered, 0);
+  if (support) sections.unshift(support);
   if (profile.mbti) sections.push({
     id: "mbti", title: say(language, "我的 MBTI", "My MBTI", "Mi MBTI"), summary: mbtiNote(profile, language),
     evidence: [], suggestion: say(language, "来源：你自己填写的 MBTI 类型。可以随时修改。", "Source: your self-reported MBTI type. You can update it anytime.", "Fuente: tu tipo MBTI indicado por ti. Puedes cambiarlo cuando quieras."), answered: 1, total: 1,
@@ -115,16 +119,17 @@ export function personalFitReport(profile, language) {
       evidence: [], suggestion: say(language, "来源：你填写的星座。这段趣味内容可以拿来聊天，相处解析采用你的情景回答。", "Source: your chosen zodiac sign. Enjoy this conversation prompt; your relationship insights use your situation answers.", "Fuente: el signo que elegiste. Disfruta esta idea para conversar; el análisis usa tus respuestas a las situaciones."), answered: 1, total: 1,
     });
   }
+  if (!sections.length) return null;
   return {
-    title: say(language, "我的关系说明书", "My relationship guide", "Mi guía en pareja"),
-    summary: say(language, `从你亲自选择的 ${answered} 个场景，看看怎样的相处让你舒服。你的选择会随时间和情境变化，可以回来修改。`, `Explore what feels good in a relationship through ${answered} situations you answered yourself. Preferences can shift with time and context; you can come back and edit.`, `Explora qué te hace sentir bien en pareja a partir de ${answered} situaciones que respondiste. Las preferencias cambian con el tiempo y el contexto; puedes volver y editar.`),
+    title: say(language, "我的相处发现", "What I'm discovering", "Lo que voy descubriendo"),
+    summary: support ? support.summary : say(language, "这里保留着你在具体场景里的回答。", "Here are your answers to past situations.", "Aquí se guardan tus respuestas a situaciones anteriores."),
     sections,
-    coverage: say(language, `已答 ${answered}/18。每个方面先答一道可得到初步理解，继续补充经历会更具体。`, `${answered}/18 answered. One situation per area offers an initial view; more context adds detail.`, `${answered}/18 respuestas. Una situación por área da una primera idea; más contexto aporta detalle.`),
+    coverage: previousCount ? say(language, `以往情景已答 ${previousCount} 题。`, `${previousCount} earlier situation answers saved.`, `${previousCount} respuestas anteriores guardadas.`) : "",
   };
 }
 
 export function coupleFitReport(mine, partner, partnerName, language) {
-  const sections = fitModules.map((module) => {
+  const sections = legacyFitModules.map((module) => {
     const evidence = module.questions.flatMap((question) => {
       const own = selected(mine, question), theirs = selected(partner, question);
       return own && theirs ? [{ questionId: question.id, question: question.text[language], mine: own.text[language], partner: theirs.text[language] }] : [];

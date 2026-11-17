@@ -1,11 +1,13 @@
+import { supportModule } from "./fit-support.mjs";
+
 const tr = (zh, en, es) => ({ zh, en, es });
 const question = (id, topic, text, followup, choices) => ({
   id, topic: tr(...topic), text: tr(...text), followup: tr(...followup),
   options: choices.map((words, index) => ({ id: String(index), text: tr(...words) })),
 });
 
-// The first item of each chapter is part of the short introduction.
-export const fitModules = [
+// Keep the original topics and IDs for people revisiting a previous guide.
+export const legacyFitModules = [
   {
     id: "personality", title: tr("相处节奏", "Time together", "Ritmos compartidos"),
     description: tr("遇到新鲜事和空闲时间，你怎样进入状态？", "How you approach new experiences and free time.", "Cómo te acercas a lo nuevo y al tiempo libre."),
@@ -186,8 +188,9 @@ export const fitModules = [
   },
 ];
 
+export const fitModules = [supportModule, ...legacyFitModules];
 export const fitQuestions = fitModules.flatMap((module) => module.questions);
-export const overviewQuestionIds = fitModules.map((module) => module.questions[0].id);
+export const overviewQuestionIds = legacyFitModules.map((module) => module.questions[0].id);
 export const mbtiTypes = new Set(["ISTJ", "ISFJ", "INFJ", "INTJ", "ISTP", "ISFP", "INFP", "INTP", "ESTP", "ESFP", "ENFP", "ENTP", "ESTJ", "ESFJ", "ENFJ", "ENTJ"]);
 export const zodiacNames = {
   aries: tr("白羊座", "Aries", "Aries"), taurus: tr("金牛座", "Taurus", "Tauro"),
