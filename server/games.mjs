@@ -160,17 +160,20 @@ function deckCard(cardId, language) {
 }
 
 /** Read only the known round locations. The chat archive remains the source of truth. */
-export async function playTogetherView(store, { relationshipId, userId, language, readOnly = false, conversation, requestedCardId }) {
+export async function playTogetherView(store, { relationshipId, userId, language, readOnly = false, conversation, requestedCardId, singleCard = false }) {
   const current = relationshipId
     ? conversation ?? await store.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId)
     : null;
   const index = current?.playRoundIndex || {};
   // Existing rounds and local drafts can still open the original text-only format.
   const ids = new Set([...Object.keys(index), requestedCardId]);
-  const retired = [...ids].map((id) => localizedPlayCard(id, language)).filter((card) => card?.retired);
-  const cards = [...localizedPlayLibrary(language), ...retired];
+  const requested = localizedPlayCard(requestedCardId, language);
+  const cards = singleCard ? (requested ? [requested] : []) : [
+    ...localizedPlayLibrary(language),
+    ...[...ids].map((id) => localizedPlayCard(id, language)).filter((card) => card?.retired),
+  ];
   if (!relationshipId) return { cards, rounds: [], version: 0, readOnly: true };
-  const archiveSeqs = [...new Set(Object.values(index).map((pointer) => pointer.archiveSeq).filter(Boolean))];
+  const archiveSeqs = [...new Set(cards.map((card) => index[card.id]?.archiveSeq).filter(Boolean))];
   const archives = new Map(await Promise.all(archiveSeqs.map(async (seq) => [
     seq, await store.getRelationshipRecordForUser("togetherArchives", archiveId(current, seq), userId),
   ])));
