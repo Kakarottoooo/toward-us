@@ -8,6 +8,7 @@ import { readPlayDrawing } from "./play-drawing.mjs";
 
 const PATH = "/play-distance";
 const CARD_LIMIT = 20;
+const DELIVERY_LIMIT = 60;
 const TOUCH_MS = 10_000;
 const TOUCH_RESULT_MS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,6 +19,7 @@ const copy = {
   pairing_required: ["和 TA 配对后就能使用。", "Link with your partner to use this.", "Vincúlate con tu pareja para usarlo."],
   relationship_changed: ["共同空间已更新，请刷新。", "Your shared space changed. Refresh to continue.", "El espacio compartido cambió. Actualiza para continuar."],
   invalid_card: ["这张卡没能发送，请检查内容。", "Couldn’t send this card. Check its content.", "No se pudo enviar esta tarjeta. Revisa su contenido."],
+  cards_waiting: ["还有很多小卡等 TA 收下。等 TA 看过几张再送新的。", "Your partner has several cards waiting. Send another after they open some.", "Tu pareja tiene varias tarjetas pendientes. Envía otra cuando abra algunas."],
   invalid_photo: ["这张照片没能读取，请重新挑一张。", "Couldn’t open this photo. Pick it again.", "No se pudo abrir esta foto. Elígela de nuevo."],
   invalid_touch: ["没能一起碰一下，请重试。", "Couldn’t tap together. Try again.", "No se pudo tocar juntos. Inténtalo de nuevo."],
 };
@@ -26,16 +28,33 @@ function activeTouch(touch, now) {
   return touch && touch.expiresAt > now ? touch : null;
 }
 
+function recentAndWaiting(cards) {
+  return cards.filter((card, index) => card.showOnOpen || index >= cards.length - CARD_LIMIT);
+}
+
+function publicCard({ showOnOpen, ...card }) {
+  return card;
+}
+
+function partnerName(context) {
+  return context.members.find((member) => member.userId !== context.viewerId)?.user?.name || "";
+}
+
+function deliveries(conversation, context) {
+  const cards = (conversation?.playDistance?.cards || []).filter((card) => card.showOnOpen && card.userId !== context.viewerId);
+  return { cards: cards.slice(0, CARD_LIMIT).map(publicCard), remaining: cards.length, partner: partnerName(context) };
+}
+
 function view(conversation, context, now = Date.now()) {
   const distance = conversation?.playDistance;
   const touch = activeTouch(distance?.touch, now);
   return {
     version: conversation?.version || 0,
     now,
-    cards: distance?.cards || [],
+    cards: (distance?.cards || []).slice(-CARD_LIMIT).map(publicCard),
     touch: touch?.matched ? { id: touch.id, expiresAt: touch.expiresAt, matched: true, joinId: touch.joins[context.viewerId] } :
       touch ? { id: touch.id, userId: touch.userId, expiresAt: touch.expiresAt, matched: false } : null,
-    partner: context.members.find((member) => member.userId !== context.viewerId)?.user?.name || "",
+    partner: partnerName(context),
     readOnly: !writable(context),
   };
 }
@@ -77,6 +96,25 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
     res.set("Cache-Control", "private, no-store").json(view(conversation, context));
   });
 
+  router.get(`${PATH}/deliveries`, async (req, res) => {
+    const userId = req.auth.user.id, context = await contextFor(userId);
+    if (!writable(context)) throw err(409, "pairing_required");
+    const conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${context.relationship.id}`, userId);
+    res.set("Cache-Control", "private, no-store").json(deliveries(conversation, context));
+  });
+
+  router.post(`${PATH}/deliveries/:id/open`, async (req, res) => {
+    const { id } = req.params;
+    if (!UUID.test(id)) throw err(400, "invalid_card");
+    const result = await change(req, async ({ userId, current }) => {
+      const cards = current.cards || [];
+      const wanted = cards.findIndex((card) => card.id === id && card.showOnOpen && card.userId !== userId);
+      if (wanted < 0) return null;
+      return { cards: recentAndWaiting(cards.map((card, index) => index === wanted ? { ...card, showOnOpen: false } : card)) };
+    });
+    res.set("Cache-Control", "private, no-store").json(deliveries(result.conversation, result.context));
+  });
+
   router.post(`${PATH}/cards`, async (req, res) => {
     const { id, kind, photoId, strokes } = req.body || {};
     const text = typeof req.body?.text === "string" ? clean(req.body.text, 180) : "";
@@ -85,7 +123,9 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
     if (kind === "doodle" && !shape) throw err(400, "invalid_card");
     const result = await change(req, async ({ tx, userId, relationshipId, conversation, current }) => {
       if (current.cards?.some((card) => card.id === id && card.userId === userId)) return null;
-      const card = { id, userId, kind, at: new Date().toISOString() };
+      const cards = current.cards || [];
+      if (cards.filter((card) => card.userId === userId && card.showOnOpen).length >= DELIVERY_LIMIT) throw err(409, "cards_waiting");
+      const card = { id, userId, kind, at: new Date().toISOString(), showOnOpen: true };
       if (kind === "note") card.text = text;
       if (kind === "doodle") card.strokes = shape;
       if (kind === "photo") {
@@ -98,13 +138,13 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
         card.photoId = shared.id;
       }
       await markShowedUp(tx, { relationshipId, userId, zone: conversation.zones?.[userId] });
-      return { cards: [...(current.cards || []), card].slice(-CARD_LIMIT), lastSentAt: { ...current.lastSentAt, [userId]: card.at } };
+      return { cards: recentAndWaiting([...cards, card]), lastSentAt: { ...current.lastSentAt, [userId]: card.at } };
     });
     if (result.changed) {
       const partner = result.context.members.find((member) => member.userId !== req.auth.user.id)?.userId;
       if (partner && !online(partner)) void Promise.resolve().then(() => notify(partner, {
         body: { zh: "TA 给你留了一张小卡，打开 Pinky 看看。", en: "Your partner left you a little card. Open Pinky to see it.", es: "Tu pareja te dejó una tarjetita. Abre Pinky para verla." },
-        url: "/?channel=us&distance=1",
+        url: "/?channel=us",
         tag: "pinky-distance-card",
       })).catch(() => console.error("Distance card push failed."));
     }
