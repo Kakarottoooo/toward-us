@@ -36,14 +36,18 @@
   display: inline-grid; place-items: center; background: transparent;
 }
 .play-together .play-icon.is-selected { background: var(--play-peach); color: var(--play-berry); }
-.play-collections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.play-collections button {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px;
-  min-height: 48px; padding: 8px 11px; border-radius: 13px;
-  border: 1px solid #e4d3d4; background: var(--play-cream);
+.play-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.play-filters button {
+  min-height: 44px; padding: 6px 10px; border-radius: 12px;
+  border: 1px solid #e4d3d4; background: var(--play-cream); font-size: 14px;
 }
-.play-collections button[aria-pressed="true"] { border-color: var(--play-berry); background: var(--play-peach); }
-.play-collections button span { color: #704d5b; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.play-filters button[aria-pressed="true"] {
+  border-color: var(--play-berry); background: var(--play-peach); font-weight: 650;
+}
+.play-format { font-weight: 700; }
+.play-format.is-choice { color: #873b2e; }
+.play-format.is-guess { color: #604489; }
+.play-format.is-truth { color: #38634f; }
 .play-browse-link { justify-self: start; }
 .play-browse { display: grid; gap: 8px; }
 .play-browse input {
@@ -122,15 +126,6 @@
 }
 .play-reply-form label { font-size: 14px; font-weight: 620; }
 .play-navigation > span { font-variant-numeric: tabular-nums; }
-.play-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(98px, 100%), 1fr)); gap: 7px; }
-.play-modes button {
-  display: grid; align-content: start; gap: 4px; min-height: 76px;
-  background: var(--play-cream); border: 1px solid #e4d3d4; border-radius: 14px; padding: 8px;
-}
-.play-modes button[aria-pressed="true"] { border-color: var(--play-berry); }
-.play-modes span { color: var(--play-berry); display: flex; }
-.play-modes strong { line-height: 1.25; font-size: 14px; }
-.play-modes small { color: #5d4a54; line-height: 1.3; }
 .play-list-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 54px;
   padding: 8px 11px; border: 1px solid #e4d3d4; border-radius: 13px; background: var(--play-cream);

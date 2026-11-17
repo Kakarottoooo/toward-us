@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
 import { clean, decisionError } from "./agreement-actions.mjs";
 import { hideUnrevealedAnswers } from "./relationship-domain.mjs";
-import { localizedPlayLibrary } from "./play-cards.mjs";
+import { localizedPlayCard, localizedPlayLibrary } from "./play-cards.mjs";
 
 // 小游戏 (founder 11-06): games are cards in Us, never a separate page. Pinky starts one when they ask ("Pinky，来玩个游戏")
 // or from "再来一局"; each partner answers on the card, the answers stay hidden until both have answered (the same rule as
@@ -154,17 +154,22 @@ export async function answerGame({ store, relationshipId, userId, messageId, cho
 }
 
 function deckCard(cardId, language) {
-  const card = localizedPlayLibrary(language).find((item) => item.id === cardId);
+  const card = localizedPlayCard(cardId, language);
   if (!card) throw decisionError(404, "not_found");
   return card;
 }
 
 /** Read only the known round locations. The chat archive remains the source of truth. */
-export async function playTogetherView(store, { relationshipId, userId, language, readOnly = false, conversation }) {
-  const cards = localizedPlayLibrary(language);
-  if (!relationshipId) return { cards, rounds: [], version: 0, readOnly: true };
-  const current = conversation ?? await store.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId);
+export async function playTogetherView(store, { relationshipId, userId, language, readOnly = false, conversation, requestedCardId }) {
+  const current = relationshipId
+    ? conversation ?? await store.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId)
+    : null;
   const index = current?.playRoundIndex || {};
+  // Existing rounds and local drafts can still open the original text-only format.
+  const ids = new Set([...Object.keys(index), requestedCardId]);
+  const retired = [...ids].map((id) => localizedPlayCard(id, language)).filter((card) => card?.retired);
+  const cards = [...localizedPlayLibrary(language), ...retired];
+  if (!relationshipId) return { cards, rounds: [], version: 0, readOnly: true };
   const archiveSeqs = [...new Set(Object.values(index).map((pointer) => pointer.archiveSeq).filter(Boolean))];
   const archives = new Map(await Promise.all(archiveSeqs.map(async (seq) => [
     seq, await store.getRelationshipRecordForUser("togetherArchives", archiveId(current, seq), userId),

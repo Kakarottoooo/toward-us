@@ -235,7 +235,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id;
     const context = await store.getRelationshipContext(userId);
     const relationshipId = context?.members.length === 2 ? context.relationship.id : null;
-    res.json(await playTogetherView(store, { relationshipId, userId, language: language(req), readOnly: !context || !writable(context) }));
+    res.json(await playTogetherView(store, { relationshipId, userId, language: language(req),
+      readOnly: !context || !writable(context), requestedCardId: typeof req.query.card === "string" ? req.query.card : undefined }));
   });
   router.post("/together/play/:cardId/answer", async (req, res) => {
     const userId = req.auth.user.id, initial = await pairing(req);

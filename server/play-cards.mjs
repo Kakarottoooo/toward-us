@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { dailyQuestionPool } from "./daily-question-pool.mjs";
+import { playQuestionVariants } from "./play-question-variants.mjs";
 
 // [title, prompt, options, follow-up]. Option order is shared by all locales:
 // the saved choice is an index, even when partners use different languages.
@@ -160,7 +161,7 @@ export function localizedPlayCards(language) {
 
 const promptEntries = dailyQuestionPool.map((question, index) => ({
   // Keep the ID tied to the authored question across locales and catalog reordering.
-  id: `question-v1-${createHash("sha256").update(question.zh.normalize("NFC").trim()).digest("hex").slice(0, 24)}`,
+  hash: createHash("sha256").update(question.zh.normalize("NFC").trim()).digest("hex").slice(0, 24),
   number: index + 1,
   question,
 }));
@@ -170,22 +171,37 @@ const questionFollowups = {
   en: "Which part of your partner’s answer would you like to talk about?",
   es: "¿Qué parte de la respuesta de tu pareja te gustaría seguir conversando?",
 };
-const libraryByLocale = Object.fromEntries(Object.keys(questionTitles).map((locale) => [
-  locale,
-  [
-    ...promptEntries.map(({ id, number, question }) => ({
-      id,
-      collection: "questions",
-      type: "truth",
+const formats = ["choice", "guess", "truth"];
+
+function makeLibrary(locale) {
+  const previous = new Map();
+  const authored = promptEntries.map(({ hash, number, question }) => {
+    const original = {
+      id: `question-v1-${hash}`, collection: "questions", type: "truth",
       title: questionTitles[locale].replace("{number}", String(number)),
-      prompt: question[locale],
-      options: [],
-      followup: questionFollowups[locale],
-    })),
-    ...localizedPlayCards(locale).map((card) => ({ ...card, collection: "classic" })),
-  ],
-]));
+      prompt: question[locale], options: [], followup: questionFollowups[locale],
+    };
+    const variant = playQuestionVariants[hash];
+    if (!variant) return original;
+    previous.set(original.id, { ...original, retired: true });
+    return { ...original, id: `question-v2-${hash}`, type: variant.type, options: variant[locale] };
+  });
+  const classic = localizedPlayCards(locale).map((card) => ({ ...card, collection: "classic" }));
+  // Spread each format across the library instead of leaving the smallest formats
+  // at the beginning and the older cards at the end.
+  const groups = [authored, classic].flatMap((deck) => formats.map((type) => deck.filter((card) => card.type === type)));
+  const ranked = groups.flatMap((group) => group.map((card, index) => ({ card, position: index / group.length })));
+  const ordered = ranked.sort((a, b) => a.position - b.position).map(({ card }) => card);
+  return { ordered, byId: new Map([...previous, ...ordered.map((card) => [card.id, card])]) };
+}
+
+const libraryByLocale = Object.fromEntries(Object.keys(questionTitles).map((locale) => [locale, makeLibrary(locale)]));
+const library = (language) => libraryByLocale[language === "en" || language === "es" ? language : "zh"];
 
 export function localizedPlayLibrary(language) {
-  return libraryByLocale[language === "en" || language === "es" ? language : "zh"];
+  return library(language).ordered;
+}
+
+export function localizedPlayCard(cardId, language) {
+  return library(language).byId.get(cardId);
 }
