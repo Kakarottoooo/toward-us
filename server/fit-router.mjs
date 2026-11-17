@@ -5,6 +5,7 @@ import { appendTogetherMessage } from "./together-domain.mjs";
 import { fitModules, fitQuestions, localizedFitModules, mbtiTypes, zodiacNames } from "./fit-questions.mjs";
 import { coupleFitReport, coupleSupportReport, fitOverviewComplete, personalFitReport, supportReady, supportSharingPreview } from "./fit-report.mjs";
 
+import { reviewedWording } from "./fit-support.mjs";
 import { previousFitQuestions } from "./fit-previous-questions.mjs";
 
 const KIND = "relationship_guide";
@@ -69,7 +70,7 @@ async function view(db, userId, language) {
     modules: localizedFitModules(language),
     profile: {
       version: own.version, answers: own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
-      sharing, shareMode: shareMode(own), canShare: shareMode(own) !== "none", supportReview: own.supportReview || null,
+      sharing, shareMode: shareMode(own), canShare: shareMode(own) !== "none", supportReview: own.supportReview ? { kind: own.supportReview.kind, text: own.supportReview.text } : null,
       answeredCount: Object.values(own.answers || {}).filter(value => value !== "skip").length, totalQuestions: fitQuestions.length,
     },
     supportSharePreview: shareMode(own) === "support" ? supportSharingPreview(own, language) : [],
@@ -139,7 +140,10 @@ async function change(db, userId, context, mutation) {
     }
   } else if (action === "support-review") {
     if (!supportReady(profile)) throw fail(400, "overview_required");
-    next.supportReview = values;
+    next.supportReview = { ...values };
+    if (values.kind !== "edit") {
+      next.supportReview.wording = Object.fromEntries([...supported].map(language => [language, reviewedWording(next, language)]));
+    }
   } else if (action === "profile") Object.assign(next, values);
   if (action === "delete") {
     next.answers = {};

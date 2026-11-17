@@ -207,7 +207,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
                 </button>)}
               {data.profile.sharing && <p className="fit-fine">{t("改动后，要再确认一次，TA 才能看到更新。", "After an edit, share again for your partner to see the update.", "Si haces cambios, vuelve a compartir para que tu pareja vea la actualización.")}</p>}
             </fieldset>}
-          </> : <p>{support.description}</p>}
+          </> : <p>{supportDone ? t("这次四题都跳过了。想继续时，回看你有印象的场景就好。", "You skipped all four scenes. If you come back, start with one you remember.", "Omitiste las cuatro situaciones. Si vuelves, empieza por una que recuerdes.") : support.description}</p>}
           <button className={discovery?.reviewable ? "fit-copy" : "fit-primary"} type="button" disabled={busy || !online}
             onClick={openSupport} data-testid="fit-start">{supportDone
               ? t("回看这组回答", "Revisit my answers", "Volver a mis respuestas")
@@ -257,7 +257,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
         <button type="button" className="fit-sheet-close" onClick={closeSheet} aria-label={t("关闭", "Close", "Cerrar")}><X size={22} /></button>
         {data?.profile.shareMode === "support" && <section className="fit-report"><h2>{support?.title}</h2>
           {data.supportSharePreview.map((line, i) => <p key={i}>{line}</p>)}
-          <p className="fit-fine">{t("双方确认后，会用上面的话一起看彼此需要怎样的陪伴。这组题里的逐题回答只对自己可见。", "After both of you agree, these words will help you explore how to support each other. Your individual answers to this topic stay private.", "Cuando ambos acepten, estas palabras les ayudarán a ver cómo acompañarse. Tus respuestas individuales a este tema son privadas.")}</p>
+          <p className="fit-fine">{t("双方确认后，TA 会看到上面的说法和据此整理的双人解析。完整答题记录留在你的个人页。", "Once you both agree, your partner can see the statements above and the insights drawn from them. The full answer history stays on your own page.", "Cuando ambos acepten, tu pareja verá las frases de arriba y las reflexiones que surjan de ellas. El historial completo de respuestas se queda en tu página personal.")}</p>
         </section>}
         {data?.profile.shareMode === "legacy" && <>
           <p>{t("双方确认后，你们共同答过的旧主题会显示各自选择，也会对照双方都填过的类型资料。", "Once both of you agree, shared legacy topics can show both answers. Type information can be compared when both of you have added it.", "Cuando ambos acepten, los temas anteriores en común podrán mostrar las dos respuestas. Los tipos que ambos indicaron también se podrán comparar.")}</p>
