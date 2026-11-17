@@ -22,7 +22,7 @@ type Props = {
   onAskPinky?: (choices: SharedChoices) => void;
   renderDaily: (offline: boolean) => ReactNode; onRefreshDaily: () => void;
   initialTab: PlayTab; fromGames?: boolean;
-  dailyPlanId?: string; renderPlans?: (questionId?: string) => ReactNode;
+  renderPlans?: (questionId?: string) => ReactNode;
 };
 
 const playPath = "/api/together/play";
@@ -42,7 +42,7 @@ const writeLocal = (key: string, value: string) => {
   try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch { /* Play still works without storage. */ }
 };
 
-export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, initialTab, fromGames, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, dailyPlanId, renderPlans }: Props) {
+export function PlayTogether({ language, userId, partnerName, paired, readOnly = false, revision, conversationId, initialCardId, initialTab, fromGames, onClose, onInvite, onAskPinky, renderDaily, onRefreshDaily, renderPlans }: Props) {
   const t: Translate = (zh, en, es) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const storage = draftSuffix(userId, conversationId);
@@ -206,7 +206,7 @@ export function PlayTogether({ language, userId, partnerName, paired, readOnly =
       {today ? <div className="play-today">{renderDaily(offline) ?? <div className="play-status" role="status">
         {t("新题准备好就会显示在这里。", "The new question will show up here when it's ready.", "La pregunta nueva aparecerá aquí cuando esté lista.")}
         <button type="button" className="play-link" disabled={offline || readOnly} onClick={onRefreshDaily}>{t("刷新", "Refresh", "Actualizar")}</button>
-      </div>}{renderPlans?.(dailyPlanId)}</div>
+      </div>}{renderPlans?.()}</div>
       : board && (history ? <section className="play-history" aria-label={t("玩过的题", "Played cards", "Cartas jugadas")}>
         <h2>{t("玩过的题", "Played cards", "Cartas jugadas")}</h2>
         {historyCards.length ? historyCards.map((item) => {
