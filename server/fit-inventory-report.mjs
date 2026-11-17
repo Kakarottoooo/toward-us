@@ -32,8 +32,8 @@ const axes = {
     name: words("爱意的表达", "Expressing care", "Expresar cariño"),
     a: words("把爱说出来", "Care in words", "Cariño en palabras"),
     b: words("把爱做出来", "Care in action", "Cariño con hechos"),
-    partnerA: words("愿意把欣赏你的具体理由说出口", "puts appreciation into specific words", "te dice qué es lo que aprecia de ti"),
-    partnerB: words("留意生活里的小事，用行动回应你", "notices everyday needs and follows through", "se fija en los detalles cotidianos y actúa"),
+    partnerA: words("愿意听你说完那句感谢，也明白你为什么专门提起这件小事", "enjoys hearing what you noticed and why you appreciated it", "disfruta al escuchar qué detalle notaste y por qué lo apreciaste"),
+    partnerB: words("能认出你顺手做的那些小事里藏着的心意", "recognizes affection in the little things you do", "reconoce el cariño en las pequeñas cosas que haces"),
     prompt: words("最近哪句话、哪件小事让你感觉被放在心上？那天我注意到了吗？", "What words or small gesture made you feel cared for lately? Did I notice at the time?", "¿Qué palabras o detalle te hicieron sentir cariño hace poco? ¿Me di cuenta entonces?"),
   },
   repair: {
