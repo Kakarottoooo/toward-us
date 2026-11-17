@@ -86,7 +86,7 @@
 .fit-question progress::-webkit-progress-bar { background: #e6d9d1; }
 .fit-question progress::-webkit-progress-value { background: #883858; border-radius: 10px; }
 .fit-question progress::-moz-progress-bar { background: #883858; }
-.fit-question h2 { font-size: clamp(25px, 7vw, 30px); line-height: 1.35; letter-spacing: -.02em; }
+.fit-question h2 { text-wrap: wrap; font-size: clamp(25px, 7vw, 30px); line-height: 1.35; letter-spacing: -.02em; }
 .fit-options { display: grid; gap: 10px; margin-block: 25px 17px; }
 .fit-options button { display: flex; justify-content: space-between; align-items: center; gap: 13px; min-height: 66px; width: 100%; padding: 15px 16px; border: 1px solid #d7c9c2; border-radius: 17px; background: #fffaf4; color: #3e3037; text-align: start; font-size: 16px; line-height: 1.5; }
 .fit-options button > i { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1px solid #bbaba6; border-radius: 50%; }
