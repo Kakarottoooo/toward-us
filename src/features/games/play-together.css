@@ -59,7 +59,8 @@
   border-color: var(--play-peach-line);
   background: var(--play-peach);
 }
-.play-today { display: grid; gap: 14px; }
+.play-today { display: grid; gap: 10px; }
+.play-together :is(.play-today, .play-browse) > h2 { font-size: 17px; font-weight: 700; }
 .play-today .daily-card > strong {
   font-size: clamp(20px, 6vw, 28px);
   line-height: 1.25;
