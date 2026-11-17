@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChatCircleDots, LockKey, Microphone, StopCircle } from "@phosphor-icons/react";
+import { CalendarBlank, ChatCircleDots, LockKey, Microphone, StopCircle } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, useKeyboard } from "../../mobile";
 import { Drawing, Sketch, type Stroke } from "../games/PlayDrawing";
@@ -108,23 +108,30 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
       {revealText && <small role="status">{revealText}</small>}
       <ul className="daily-answers">{[userId, partner?.id || ""].map((id) => answers[id] &&
         <li key={id}><small>{id === userId ? t("你", "You", "Tú") : partnerName}</small>{renderAnswer(answers[id])}</li>)}</ul>
-      {onContinue && !readOnly && <div className="card-actions">
-        <button className="card-primary" type="button" onClick={() => onContinue(variant?.followup)}>{t("接着聊这题", "Keep talking", "Seguir hablando")}</button>
-      </div>}
-      {onOpenPlan && !readOnly && <div className="card-actions">
-        <button type="button" onClick={onOpenPlan}>{t("看看约会点子", "See date ideas", "Ver ideas para una cita")}</button>
+      {(onOpenPlan || onContinue) && !readOnly && <div className="card-actions">
+        {onOpenPlan && <button className="card-primary" type="button" onClick={onOpenPlan}>
+          <CalendarBlank size={17} aria-hidden="true" />{t("看看约会点子", "See date ideas", "Ver ideas para una cita")}
+        </button>}
+        {onContinue && <button className={onOpenPlan ? undefined : "card-primary"} type="button" onClick={() => onContinue(variant?.followup)}>
+          {t("接着聊这题", "Keep talking", "Seguir hablando")}
+        </button>}
       </div>}
     </> : mine && !editing ? <>
       <div className="daily-mine">{renderAnswer(mine)}</div>
-      <small><LockKey size={14} />{t(`等 ${partnerName} 也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partnerName} answers too`, `Sus respuestas aparecen juntas cuando ${partnerName} también responda`)}</small>
+      <small><LockKey size={14} />{onOpenPlan && !readOnly
+        ? t(`等 ${partnerName} 也回答，就能一起翻牌、看约会点子。`, `Once ${partnerName} answers, reveal the card and see date ideas.`, `Cuando ${partnerName} responda, podrán revelar la carta y ver ideas para una cita.`)
+        : t(`等 ${partnerName} 也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partnerName} answers too`, `Sus respuestas aparecen juntas cuando ${partnerName} también responda`)}</small>
       {!readOnly && <div className="card-actions"><button type="button" onClick={() => {
         setDraft(mine.choice === undefined && !mine.drawing ? mine.text : "");
         setChoice(mine.choice); setSketch(mine.drawing || []); setUseWords(drawing && !mine.drawing); setEditing(true);
       }}>{t("改一下", "Edit", "Editar")}</button></div>}
-    </> : readOnly ? null : !editing ? <div className="card-actions">
-      <button type="button" className="card-primary" onClick={() => setEditing(true)}>{current ? t("回答", "Answer", "Responder") : t("回答这题", "Answer this question", "Responder esta pregunta")}</button>
-      <button type="button" onClick={() => defer(true)} data-testid="daily-defer">{t("暂时不答", "Not now", "Ahora no")}</button>
-    </div> : <>
+    </> : readOnly ? null : !editing ? <>
+      {onOpenPlan && <small><LockKey size={14} />{t("两个人都回答后，就能翻牌、看约会点子。", "Answer together to reveal the card and see date ideas.", "Respondan ambos para revelar la carta y ver ideas para una cita.")}</small>}
+      <div className="card-actions">
+        <button type="button" className="card-primary" onClick={() => setEditing(true)}>{current ? t("回答", "Answer", "Responder") : t("回答这题", "Answer this question", "Responder esta pregunta")}</button>
+        <button type="button" onClick={() => defer(true)} data-testid="daily-defer">{t("暂时不答", "Not now", "Ahora no")}</button>
+      </div>
+    </> : <>
       {options ? <div className="card-actions daily-options" role="group" aria-label={t("答案选项", "Answer options", "Opciones")}>
         {options.map((option, index) => <button type="button" key={index} aria-pressed={choice === index} disabled={busy} onClick={() => setChoice(index)}>{option}</button>)}
       </div> : drawing && !useWords ? <Drawing strokes={sketch} onChange={setSketch} language={language} disabled={busy} />
@@ -143,7 +150,9 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
           {useWords ? t("改用画布", "Use the canvas", "Usar el lienzo") : t("用一句话描述", "Describe it in words", "Describirlo con palabras")}
         </button>
       </div>}
-      <small><LockKey size={14} />{t("提交后，两个人都回答了才互相揭晓", "Submit when ready. Answers appear once you both answer.", "Envía cuando quieras. Las respuestas se revelan cuando ambos respondan.")}</small>
+      <small><LockKey size={14} />{onOpenPlan
+        ? t("两个人都回答后，才会揭晓答案和约会点子。", "Once you both answer, reveal your answers and see date ideas.", "Cuando ambos respondan, verán sus respuestas e ideas para una cita.")
+        : t("两个人都回答后才揭晓。", "Answers appear once you both answer.", "Las respuestas se revelan cuando ambos respondan.")}</small>
       {inPlay && failed && <small role="alert">{t("答案没发出去，草稿还在。", "Your answer wasn't sent. Your draft is still here.", "No se envió tu respuesta. Tu borrador sigue aquí.")}</small>}
       <div className="card-actions">
         <button className="card-primary" type="button" disabled={busy || offline || !answered} onClick={() => void submit()}>{dailyPlay ? t("锁好我的答案", "Seal my answer", "Sellar mi respuesta") : t("回答", "Answer", "Responder")}</button>
