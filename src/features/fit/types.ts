@@ -9,17 +9,19 @@ export type FitPairSection = {
   id: string; title: string; status: "same" | "mixed" | "different" | "unknown"; summary: string; suggestion: string;
   evidence: Array<{ questionId: string; question: string; mine: string; partner: string }>;
 };
+export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; coverage: string };
 export type FitState = {
+  inventory: { questions: FitQuestion[]; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
   previousAnswers: Array<{ question: string; answer: string }>;
   modules: FitModule[];
   supportSharePreview: string[];
   profile: {
     version: number; answers: Record<string, string>; mbti: string | null; zodiac: string | null;
-    sharing: boolean; canShare: boolean; shareMode: "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
+    sharing: boolean; canShare: boolean; shareMode: "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
   };
-  personal: { title: string; summary: string; sections: FitSection[]; coverage: string } | null;
+  personal: PersonalFitReport | null;
   couple: {
-    status: "unpaired" | "need-your-share" | "waiting" | "different-guides" | "ready"; partnerName: string;
+    status: "unpaired" | "need-your-share" | "waiting" | "different-guides" | "ready"; partnerName: string; title?: string;
     summary: string; sections: FitPairSection[];
     mbti?: { title: string; summary: string }; zodiac?: { title: string; summary: string };
   };

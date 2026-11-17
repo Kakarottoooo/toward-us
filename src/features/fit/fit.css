@@ -128,3 +128,8 @@
 .fit-other > summary { justify-content: space-between; min-height: 54px; color: var(--fit-ink); font-size: 16px; }
 .fit-other .fit-chapters { padding-top: 0; }
 .fit-sheet textarea { box-sizing: border-box; width: 100%; padding: 12px 14px; font: inherit; font-size: 16px; line-height: 1.5; color: #342632; background: #fffaf4; border: 1px solid #c9bcb8; border-radius: 14px; resize: vertical; }
+.fit-position { display: block; margin: 0 0 14px; height: 44px; width: 100%; accent-color: var(--fit-berry); cursor: pointer; touch-action: pan-y; }
+.fit-position:focus-visible { outline: 2px solid var(--fit-berry); outline-offset: 2px; }
+.fit-portrait > p, .fit-couple-intro > p { white-space: pre-line; }
+.fit-other > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.fit-other[open] > summary > svg { transform: rotate(90deg); }
