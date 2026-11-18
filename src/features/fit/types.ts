@@ -9,15 +9,15 @@ export type FitPairSection = {
   id: string; title: string; status: "same" | "mixed" | "different" | "unknown"; summary: string; suggestion: string;
   evidence: Array<{ questionId: string; question: string; mine: string; partner: string }>;
 };
-export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; coverage: string };
+export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; markers?: string[]; coverage: string };
 export type FitState = {
-  inventory: { questions: FitQuestion[]; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
+  inventory: { questions: FitQuestion[]; pairQuestions: FitQuestion[]; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
   previousAnswers: Array<{ question: string; answer: string }>;
   modules: FitModule[];
   supportSharePreview: string[];
   profile: {
     version: number; answers: Record<string, string>; mbti: string | null; zodiac: string | null;
-    sharing: boolean; canShare: boolean; shareMode: "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
+    sharing: boolean; canShare: boolean; shareMode: "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
   };
   personal: PersonalFitReport | null;
   couple: {
