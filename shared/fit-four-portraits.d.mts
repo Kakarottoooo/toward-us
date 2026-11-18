@@ -1,9 +1,9 @@
 type Text = Record<"zh" | "en" | "es", string>;
 export type Family = "TR" | "TC" | "SR" | "SC";
 export type Axis = "distance" | "reassurance" | "language" | "conflict";
-export const families: Record<Family, Text>;
+export function preferenceLabel(code: string, language: keyof Text): string;
 export const familyLines: Record<Family, Text>;
-export const portraits: Record<string, { name: Text; lines: Text[] }>;
+export const portraits: Record<string, { lines: Text[] }>;
 export const axes: Record<Axis, { name: Text; pair: string }>;
 export const poles: Record<string, Text>;
 export const headings: Text[];

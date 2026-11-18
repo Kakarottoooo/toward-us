@@ -171,6 +171,7 @@
 .atlas-family-nav { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 12px 0 22px; }
 .atlas-family-nav button { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--fit-paper); color: var(--fit-ink); border: 1px solid var(--fit-line); border-radius: 10px; text-align: start; }
 .atlas-family-nav button[aria-pressed="true"] { background: var(--fit-berry); color: white; border-color: var(--fit-berry); }
+.atlas-group-label { display: grid; gap: 2px; min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
 .atlas-family-nav b, .atlas-word small { letter-spacing: .07em; }
 .atlas-family-list h4 { font-size: 23px; }
 .atlas-family-list h4 span { font-size: .7em; }
