@@ -95,25 +95,17 @@ export function portablePreview(profile, lang) {
   ];
 }
 
-export function portablePersonalSections(profile, lang) {
-  const sections = domains.map(d => {
-    const axis = d.id === "support" ? d.give : d.receive;
-    const questions = questionsFor.get(axis);
-    const evidence = questions.flatMap(q => {
-      const answer = chosen(q, profile);
-      return answer ? [{ questionId: q.id, question: q.text[lang], answer: answer.text[lang], topic: d.personal[lang] }] : [];
-    });
-    return { id: axis, title: d.personal[lang], summary: label(d, preference(profile, axis), lang),
-      evidence, answered: evidence.length, total: questions.length, suggestion: d.suggestion[lang] };
-  });
-  for (const plan of fitFuturePlans) {
-    const q = portableQuestions.find(item => item.id === idFor(plan.id));
-    const answer = chosen(q, profile);
-    if (answer) sections.push({ id: q.id, title: plan.title[lang], summary: answer.text[lang],
-      evidence: [{ questionId: q.id, question: q.text[lang], answer: answer.text[lang], topic: plan.title[lang] }],
-      answered: 1, total: 1, suggestion: plan.prompt[lang] });
-  }
-  return sections;
+export function portableSupportChapter(profile, lang) {
+  const give = preference(profile, "give-support");
+  const receive = preference(profile, "support");
+  const stories = {
+    aa: tr("烦心的时候，有人听你把来龙去脉说完，你才容易理清自己最在意什么。别人找你诉苦，你也常把这份耐心给回去。如果对方讲了三遍同一个难处，可以在听完后轻轻问一句：「还有哪一段你想说，还是我们一起想想明天怎么办？」", "Talking a hard day through can help you discover which part really hurt. You often offer the same patience in return. If someone circles back to the same problem, let them finish, then ask whether there is more to tell or whether a plan for tomorrow would help.", "Contar un mal día de principio a fin puede ayudarte a descubrir qué te dolió. Sueles ofrecer esa misma paciencia. Si tu pareja vuelve al mismo problema, deja que termine y pregúntale si quiere contar algo más o pensar en qué hacer mañana."),
+    ab: tr("伴侣遇到麻烦时，你愿意先把话听完。可轮到自己被一件事卡住，有人坐到身边一起找个开头，可能更让你松一口气。两个人都很体贴，也可能在这里猜错。你可以直接说：「这次我已经讲得差不多了，能陪我想想第一步吗？」", "You often let your partner finish the story when something goes wrong. In the same moment yourself, you may feel more relieved when someone helps find a first step. Make that difference easy to notice: “I think I’ve said what I needed to say. Could you help me work out where to start?”", "Cuando algo le sale mal a tu pareja, sueles dejar que termine de contarlo. Si el problema es tuyo, quizá te alivie más encontrar juntos un primer paso. Puedes hacer visible esa diferencia diciendo: «Creo que ya lo conté todo. ¿Me ayudas a pensar por dónde empezar?»."),
+    ba: tr("听到伴侣犯难，你容易想到可以先替对方做什么。可你自己委屈的时候，也许最想要的是把经过讲完，中途有人点点头。这给你一个很好的提醒：有办法的时候也可以先把办法放一放，问一句「你想先说说，还是要我一起想？」", "When someone you love is stuck, a practical next step may come to mind quickly. When you are upset, what feels best may be a chance to finish the story and see the other person nod. Remembering that difference gives you a useful opening before offering advice: “Shall I listen a little longer, or think it through with you?”", "Cuando tu pareja tiene un problema, quizá se te ocurra pronto una solución. Cuando te pasa a ti, puede ayudarte más contar lo ocurrido sin interrupciones. Recordar esa diferencia te permite preguntar antes de aconsejar: «¿Quieres que siga escuchando o lo pensamos juntos?»."),
+    bb: tr("事情卡住时，一起找到一个能动手的小步骤，会让你感觉有人和你站在同一边。你也容易用同样的方式帮助伴侣。一次有分寸的帮忙，可以是先问「要我陪你写第一句吗？」让对方自己决定接下来怎么做，也给只是想诉苦的那一天留个余地。", "A manageable first step can make a problem feel shared. You often offer that kind of help to a partner too. “Would it help if we drafted the first line together?” gives them something concrete while leaving them room to choose, including on a day when they just want to vent.", "Encontrar un primer paso manejable puede hacerte sentir en compañía. Sueles ofrecer esa misma ayuda. «¿Te serviría que escribiéramos juntos la primera frase?» propone algo concreto y deja margen para elegir, incluso cuando tu pareja solo necesita desahogarse."),
+  };
+  const body = stories[give + receive];
+  return body ? { title: tr("遇上难事时，怎样陪你", "What helps on a hard day", "Qué te ayuda en un día difícil")[lang], body: body[lang] } : null;
 }
 
 function compare(give, receive) {

@@ -11,14 +11,17 @@ import { inventoryReady, inventoryReport, inventoryPairReport } from "./fit-inve
 
 import { pairQuestions, pairReport } from "./fit-pair-pattern.mjs";
 
-import { portableQuestions, portablePreview, portablePairReport, portablePersonalSections } from "./fit-portable.mjs";
+import { portableQuestions, portablePreview, portablePairReport, portableSupportChapter } from "./fit-portable.mjs";
 
 // Each new item follows three familiar situations; returning users resume at their first missing item.
 const portraitQuestions = inventoryQuestions.flatMap((question, index) =>
   (index + 1) % 3 === 0 ? [question, portableQuestions[(index + 1) / 3 - 1]] : [question]);
+function portraitSubmitted(profile) {
+  return portraitQuestions.every(q => profile.answers?.[q.id]);
+}
 function portraitReady(profile) {
   const answers = profile.answers || {};
-  return portraitQuestions.every(q => answers[q.id]) && portraitQuestions.some(q => q.options.some(o => o.id === answers[q.id]));
+  return portraitSubmitted(profile) && portraitQuestions.some(q => q.options.some(o => o.id === answers[q.id]));
 }
 
 const KIND = "relationship_guide";
@@ -75,20 +78,22 @@ async function view(db, userId, language) {
     id: q.id, text: q.text[language], options: q.options.map(o => ({ id: o.id, text: o.text[language] })),
   }));
   const ready = portraitReady(own);
-  const extraSections = ready ? portablePersonalSections(own, language) : [];
+  const submitted = portraitSubmitted(own);
+  const supportChapter = ready ? portableSupportChapter(own, language) : null;
   const report = ready ? {
     ...(inventoryPersonal || {
       title: say(language, "我的相处线索", "My relationship clues", "Mis pistas de relación"),
       summary: say(language, "已记录你的选择；三个个人风格维度还需要更多具体经历。", "Your choices are saved. More examples are needed to describe your personal style.", "Tus respuestas están guardadas. Faltan ejemplos para describir tu estilo personal."),
     }),
-    sections: [...(inventoryPersonal?.sections || []), ...extraSections],
+    chapters: [...(inventoryPersonal?.chapters || []), ...(supportChapter ? [supportChapter] : [])],
+    sections: [],
     coverage: say(language, "依据你在这份问卷里回忆的经历与选择。", "Based on the experiences and choices you recalled.", "Basado en las experiencias y decisiones que recuerdas."),
   } : null;
   const inventory = {
-    relationshipId, questions: localQuestions(portraitQuestions), pairQuestions: [],
+    relationshipId, submitted, questions: submitted ? [] : localQuestions(portraitQuestions), pairQuestions: [],
     report, previousPortrait: report ? null : inventoryPersonal,
     preview: mode === "portrait-v3" ? portablePreview(own, language) : [],
-    revisitIds: portraitQuestions.filter(q => own.answers[q.id] === "skip").map(q => q.id),
+    revisitIds: submitted ? [] : portraitQuestions.filter(q => own.answers[q.id] === "skip").map(q => q.id),
   };
   let couple = {
     status: partner ? sharing ? "waiting" : "need-your-share" : "unpaired",
@@ -113,15 +118,15 @@ async function view(db, userId, language) {
   return {
     inventory, modules: localizedFitModules(language),
     profile: {
-      version: own.version, answers: own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
+      version: own.version, answers: submitted ? {} : own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
       sharing, shareMode: mode, canShare: mode !== "none", supportReview: own.supportReview ? { kind: own.supportReview.kind, text: own.supportReview.text } : null,
       answeredCount: fitQuestions.filter(q => own.answers[q.id] && own.answers[q.id] !== "skip").length, totalQuestions: fitQuestions.length,
     },
     supportSharePreview: mode === "support" ? supportSharingPreview(own, language) : [],
-    previousAnswers: [...previousAnswers, ...pairQuestions.flatMap(q => {
+    previousAnswers: submitted ? [] : [...previousAnswers, ...pairQuestions.flatMap(q => {
       const option = q.options.find(o => o.id === own.answers[q.id]);
       return option ? [{ question: q.text[language], answer: option.text[language] }] : [];
-    })], personal: personalFitReport(own, language), couple,
+    })], personal: submitted ? null : personalFitReport(own, language), couple,
   };
 }
 
@@ -130,6 +135,7 @@ const errors = {
   invalid_input: ["内容无法保存，请检查选项后重试。", "Check your choices and try saving again.", "Revisa tus elecciones e intenta guardarlas de nuevo."],
   stale_version: ["你的说明书刚更新过，请刷新后再保存。", "Your guide changed. Refresh it before saving again.", "Tu guía cambió. Actualízala antes de volver a guardar."],
   pairing_required: ["先邀请 TA 加入，再确认分享。", "Invite your partner to join before sharing.", "Invita a tu pareja antes de compartir."],
+  portrait_closed: ["这份问卷已经完成，已保存你的画像。", "This questionnaire is complete. Your portrait is saved.", "El cuestionario está cerrado y tu retrato está guardado."],
   overview_required: ["请先完成问卷，再预览要分享的内容。", "Finish your questionnaire to preview what you can share.", "Termina el cuestionario para revisar lo que compartirás."],
   unavailable: ["说明书暂时无法打开，请稍后重试。", "Couldn't open your guide. Try again in a moment.", "No se pudo abrir tu guía. Inténtalo de nuevo en un momento."],
 };
@@ -187,6 +193,7 @@ async function change(db, userId, context, mutation) {
   if (action === "sharing" && values.on && values.mode !== shareMode(profile, relationshipId)) throw fail(409, "stale_version");
   const next = { ...profile, answers: { ...(profile.answers || {}) } };
   if (action === "answers") {
+    if (portraitSubmitted(profile)) throw fail(409, "portrait_closed");
     if (mutation.pairRelationshipId && profile.pairRelationshipId !== relationshipId) {
       for (const id of pairIds) delete next.answers[id];
       next.pairRelationshipId = relationshipId;

@@ -135,3 +135,10 @@
 .fit-other[open] > summary > svg { transform: rotate(90deg); }
 .fit-markers { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 14px; margin: 0; padding: 0; list-style: none; }
 .fit-markers li { color: var(--fit-berry); font-size: 14px; font-weight: 650; line-height: 1.5; }
+
+.fit-type-code { color: var(--fit-berry); font-weight: 750; font-size: 26px; letter-spacing: .1em; line-height: 1.1; }
+.fit-reading { display: grid; gap: 6px; padding-top: 12px; }
+.fit-reading h3 { font-size: 18px; line-height: 1.4; color: var(--fit-ink); }
+.fit-reading p { line-height: 1.8; }
+.fit-method { width: 100%; }
+.fit-method p + p { margin-top: 8px; }

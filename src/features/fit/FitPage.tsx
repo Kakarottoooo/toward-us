@@ -29,7 +29,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   const flowKey = `pinky:fit-inventory-v1:${userId}`;
   const [data, setData] = useState<FitState | null>(null);
   const [view, setView] = useState<"mine" | "couple">(initialView);
-  const [flow, setFlow] = useState(() => initialView === "mine" && rememberedFlow(flowKey) === "open");
+  const [resumeFlow, setFlow] = useState(() => initialView === "mine" && rememberedFlow(flowKey) === "open");
   const [index, setIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -81,10 +81,11 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   const questions = data?.inventory.questions || [];
   const relationshipId = data?.inventory.relationshipId;
   const report = data?.inventory.report;
+  const submitted = data?.inventory.submitted || !!report;
+  const flow = resumeFlow && !submitted;
   const firstMissing = questions.findIndex(q => !data?.profile.answers[q.id]);
-  const revisit = questions.findIndex(q => data?.inventory.revisitIds.includes(q.id));
   const seen = questions.filter(q => data?.profile.answers[q.id]).length;
-  const currentIndex = index ?? (firstMissing >= 0 ? firstMissing : Math.max(0, revisit));
+  const currentIndex = index ?? Math.max(0, firstMissing);
   const question = flow && questions[currentIndex];
   const selected = question ? data?.profile.answers[question.id] : undefined;
   const canShare = data?.profile.shareMode === "portrait-v3" && data.inventory.preview.length > 0 && !!data.inventory.relationshipId;
@@ -117,13 +118,11 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
       answers: { [question.id]: answer },
     });
     if (!updated) return;
+    if (updated.inventory.submitted) { finish(); return; }
     const pending = questions.filter(q => !updated.profile.answers[q.id]);
     if (pending.length) {
       const nextMissing = questions.findIndex((q, i) => i > currentIndex && !updated.profile.answers[q.id]);
       setIndex(nextMissing >= 0 ? nextMissing : questions.indexOf(pending[0]));
-    } else if (seen === questions.length && !updated.inventory.report && updated.inventory.revisitIds.some(id => id !== question.id)) {
-      const nextRevisit = questions.findIndex((q, i) => i > currentIndex && updated.inventory.revisitIds.includes(q.id));
-      setIndex(nextRevisit >= 0 ? nextRevisit : questions.findIndex(q => q.id !== question.id && updated.inventory.revisitIds.includes(q.id)));
     } else finish();
   };
   const closeSheet = () => { keyboard.hide(); setSheet(null); };
@@ -144,7 +143,10 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
     const summary = couple ? data.couple.summary : report?.summary || "";
     const reportTitle = couple ? data.couple.title || title : report?.title || t("我的关系说明书", "My relationship guide", "Mi guía de relación");
     const text = couple ? [reportTitle, summary, ...sections.map((section) => `${section.title}\n${section.summary}\n${section.suggestion}`),
-      t("根据本人选择的情景回答整理 · Pinky", "Based on self-reported situation answers · Pinky", "Basado en respuestas personales a situaciones · Pinky")].join("\n\n") : [reportTitle, summary].join("\n\n");
+      t("根据本人选择的情景回答整理 · Pinky", "Based on self-reported situation answers · Pinky", "Basado en respuestas personales a situaciones · Pinky")].join("\n\n") : [
+      [report?.typeCode, reportTitle].filter(Boolean).join(" · "), ...(report?.legend || []), summary,
+      ...(report?.chapters || []).map(chapter => chapter.title + "\n" + chapter.body),
+    ].join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
       setCopyStatus(t("解析已复制，可以保存或分享。", "Guide copied. You can save or share it.", "Guía copiada. Puedes guardarla o compartirla."));
@@ -170,6 +172,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
         <input id="fit-position" data-scroll-drag="ignore" className="fit-position" type="range" min={1} max={questions.length} value={currentIndex + 1} disabled={busy}
           aria-label={t("跳到第几题", "Jump to question", "Ir a la pregunta")} onChange={e => setIndex(Number(e.target.value) - 1)} />
         <h2>{question.text}</h2>
+        {seen === questions.length - 1 && !selected && <p className="fit-fine">{t("这是最后一个未答场景。选择或跳过后，本次作答即完成并锁定。", "This is the last unanswered situation. Choosing or skipping finishes and locks your answers.", "Esta es la última situación pendiente. Al responderla u omitirla se cierra el cuestionario.")}</p>}
         <div className="fit-options" role="group" aria-label={t("选择最接近你的反应", "Choose what sounds most like you", "Elige lo que más se parezca a ti")}>
           {question.options.map((option) => <button type="button" key={option.id} aria-pressed={selected === option.id} disabled={busy || !online} onClick={() => void nextQuestion(option.id)} data-testid="fit-option">
             <span>{option.text}</span><i aria-hidden="true">{selected === option.id && <Check size={15} weight="bold" />}</i>
@@ -180,13 +183,21 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
         {currentIndex > 0 && <div className="fit-actions"><button type="button" className="fit-secondary" disabled={busy} onClick={() => setIndex(currentIndex - 1)}>{t("上一题", "Previous question", "Pregunta anterior")}</button></div>}
       </div> : data && view === "mine" ? <>
         <section className="fit-intro fit-portrait">
-          <h2>{report?.title || t("恋爱里的我，是什么样？", "What am I like in a relationship?", "¿Cómo soy en pareja?")}</h2>
-          <p>{report?.summary || (seen === questions.length ? t("有些方面还缺少线索。可以从跳过的场景补答，也可以以后再来。", "A few areas need more detail. Revisit a skipped situation now or come back later.", "Faltan pistas en algunos aspectos. Puedes retomar una situación omitida ahora o volver después.")
-            : t("按自己的经历选择，想不起来可以跳过。答完就能看个人画像。以后和 TA 连接画像，就能看你们的合拍组合。", "Choose what fits your experience, or skip a question. Your portrait appears when you finish. Connect it with your partner’s portrait to see your relationship pattern.", "Elige lo que más se acerque a tu experiencia o salta la pregunta. Al terminar verás tu retrato. Conéctalo con el de tu pareja para descubrir cómo encajan."))}</p>
-          {!report && <p className="fit-fine">{seen ? t(`已记录 ${seen} / ${questions.length} 题`, `${seen} of ${questions.length} saved`, `${seen} de ${questions.length} guardadas`) : t(`${questions.length} 道情境题 · 可以分几次答`, `${questions.length} situations · Pause anytime`, `${questions.length} situaciones · A tu ritmo`)}</p>}
-          <button className={report ? "fit-secondary" : "fit-primary"} type="button" disabled={busy || !questions.length} onClick={() => setQuestionFlow(true)} data-testid="fit-start">
-            {report ? t("回看或修改答案", "Review or edit answers", "Revisar o editar respuestas") : seen === questions.length ? t("补答跳过的场景", "Revisit skipped situations", "Retomar situaciones omitidas") : seen ? t("继续答题", "Continue", "Continuar") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
-          </button>
+          {report?.typeCode && <div className="fit-type-code">{report.typeCode}</div>}
+          <h2>{report?.title || (submitted ? t("这次没有形成画像", "No portrait this time", "Esta vez no hay retrato") : t("恋爱里的我，是什么样？", "What am I like in a relationship?", "¿Cómo soy en pareja?"))}</h2>
+          {!!report?.legend?.length && <ul className="fit-markers">{report.legend.map(line => <li key={line}>{line}</li>)}</ul>}
+          <p>{report?.summary || (submitted
+            ? t("这次跳过了全部场景，现有信息不足以判断你的相处风格。", "You skipped every situation, so there is too little information to describe your style.", "Omitiste todas las situaciones. Falta información para describir tu estilo.")
+            : t("按自己的经历选择，想不起来可以跳过。完成最后一题后，这次作答就会锁定，直接生成个人画像。", "Choose what fits your experience or skip. Once you finish the last question, your answers are final and your portrait appears.", "Elige lo que se acerque a tu experiencia o salta la pregunta. Al terminar la última, tus respuestas quedan cerradas y aparece tu retrato."))}</p>
+          {!submitted && <><p className="fit-fine">{seen ? t(`已记录 ${seen} / ${questions.length} 题`, `${seen} of ${questions.length} saved`, `${seen} de ${questions.length} guardadas`) : t(`${questions.length} 道情境题 · 可以分几次答`, `${questions.length} situations · Pause anytime`, `${questions.length} situaciones · A tu ritmo`)}</p>
+            <button className="fit-primary" type="button" disabled={busy || !questions.length} onClick={() => setQuestionFlow(true)} data-testid="fit-start">
+              {seen ? t("继续答题", "Continue", "Continuar") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
+            </button></>}
+          {report?.chapters?.map(chapter => <section key={chapter.title} className="fit-reading"><h3>{chapter.title}</h3><p>{chapter.body}</p></section>)}
+          {report && <details className="fit-method fit-basis"><summary>{t("这个类型怎么读", "How to read this type", "Cómo leer este tipo")}<CaretRight size={15}/></summary>
+            <p>{t("三个字母依次表示：共处或独处恢复精力（T / S），用语言或行动表达在乎（W / A），分歧后尽早接话或先缓一缓（R / P）。三个位置各有两种偏好，共八种组合。", "The three positions describe recharging together or solo (T / S), expressing affection through words or actions (W / A), and reconnecting soon or pausing after conflict (R / P). The three pairs form eight combinations.", "Las tres posiciones describen si recuperas energía en compañía o a solas (T / S), expresas cariño con palabras o gestos (W / A) y prefieres retomar pronto una conversación o hacer una pausa (R / P). Las tres parejas forman ocho combinaciones.")}</p>
+            <p>{t("32 题中有 12 题用于确定类型，每个字母参考四个不同情境。至少有三个具体选择，且同一方向比另一方向多两次，才确定这个字母。三个方向都清楚才给完整类型。Pinky 用这套自编问卷描述相处偏好，目前还没有用于预测关系成败的验证数据。", "Twelve of the 32 situations determine the type, four per letter. At least three concrete choices and a lead of two are needed to assign a letter. All three letters must be clear for a full type. Pinky developed this questionnaire to describe preferences. Its ability to predict relationship outcomes has yet to be validated.", "Doce de las 32 situaciones definen el tipo, cuatro por letra. Se necesitan al menos tres respuestas concretas y una diferencia de dos para asignarla. El tipo completo requiere tres letras claras. Pinky creó este cuestionario para describir preferencias. Su capacidad para predecir el futuro de una relación aún no se ha validado.")}</p>
+          </details>}
         </section>
         {report && <><section className="fit-sharing">
           {canShare && !data.profile.sharing && <button type="button" className="fit-primary" disabled={busy || !online} onClick={openShare}>{t("连接画像", "Connect portraits", "Conectar retratos")}<ArrowRight size={18}/></button>}
@@ -196,7 +207,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
           <button type="button" className="fit-copy" onClick={() => void copyReport()}>{t("复制我的画像", "Copy my portrait", "Copiar mi retrato")}</button></>}
         {data.profile.sharing && <button type="button" className="fit-secondary" disabled={busy || !online} onClick={() => void mutate("sharing", { on: false })}>{t("撤回我的分享", "Withdraw sharing", "Retirar mi permiso")}</button>}
         <details className="fit-other">
-          <summary>{t("我的历史记录与类型资料", "My past notes and type information", "Mis notas anteriores y datos de tipo")}<CaretRight size={17}/></summary>
+          <summary>{submitted ? t("我的类型资料", "My type information", "Mis datos de tipo") : t("我的历史记录与类型资料", "My past notes and type information", "Mis notas anteriores y datos de tipo")}<CaretRight size={17}/></summary>
           {data.inventory.previousPortrait && <details className="fit-basis">
             <summary>{t("之前的 24 题画像", "Earlier 24-question portrait", "Retrato anterior de 24 preguntas")}<CaretRight size={15} /></summary>
             <h3>{data.inventory.previousPortrait.title}</h3><p>{data.inventory.previousPortrait.summary}</p>
@@ -205,11 +216,12 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
           {!!data.previousAnswers?.length && <div className="fit-evidence">{data.previousAnswers.map(item => <div key={item.question}><p>{item.question}</p><blockquote>{item.answer}</blockquote></div>)}</div>}
           <button type="button" className="fit-profile-link" onClick={startProfile} disabled={busy}><strong>{profileTitle}</strong><CaretRight size={20} /></button>
         </details>
-        {(Object.keys(data.profile.answers).length > 0 || !!data.previousAnswers?.length || !!data.profile.mbti || !!data.profile.zodiac) && <button type="button" className="fit-delete" disabled={busy || !online} onClick={() => { keyboard.hide(); setSheet("delete"); }}>{t("删除我的答案与说明书", "Delete my answers and guide", "Eliminar mis respuestas y mi guía")}</button>}
+        {(submitted || Object.keys(data.profile.answers).length > 0 || !!data.previousAnswers?.length || !!data.profile.mbti || !!data.profile.zodiac) && <button type="button" className="fit-delete" disabled={busy || !online} onClick={() => { keyboard.hide(); setSheet("delete"); }}>{t("删除我的答案与说明书", "Delete my answers and guide", "Eliminar mis respuestas y mi guía")}</button>}
       </> : data && <>
         <div className="fit-intro fit-couple-intro"><h2>{data.couple.status === "ready" ? data.couple.title || (data.profile.shareMode === "support" ? t("我们可以怎么陪对方", "How we can be there for each other", "Cómo podemos acompañarnos") : t("我们俩的相处记录", "Our relationship notes", "Nuestras notas en pareja")) : t("从我，到我们俩", "From me to us", "De mí a nosotros")}</h2><p>{data.couple.summary}</p>
           {data.couple.status === "unpaired" ? <button type="button" className="fit-primary" onClick={() => { keyboard.hide(); onInvite(); }}>{t("邀请 TA 一起了解", "Invite your partner", "Invitar a tu pareja")}<ArrowRight size={18} /></button>
             : data.couple.status === "need-your-share" && canShare ? <button type="button" className="fit-primary" disabled={busy || !online} onClick={openShare}>{t("连接画像", "Connect portraits", "Conectar retratos")}<ArrowRight size={18}/></button>
+              : data.couple.status === "need-your-share" && submitted && !report ? <p className="fit-wait">{t("这次作答缺少可连接的个人画像。", "This submission did not produce a portrait to connect.", "Esta vez no se generó un retrato para conectar.")}</p>
               : data.couple.status === "need-your-share" && !report ? <p className="fit-wait">{t("在「我的画像」完成个人问卷后，就可以连接两份画像。", "Finish your questionnaire in My portrait to connect your portraits.", "Completa tu cuestionario en Mi retrato para conectar ambos retratos.")}</p>
               : data.couple.status === "waiting" ? <p className="fit-wait" role="status">{t(`等 ${data.couple.partnerName || "TA"} 连接画像，完成后这里会自动显示结果。`, `Your result will appear here when ${data.couple.partnerName || "your partner"} connects their portrait.`, `El resultado aparecerá aquí cuando ${data.couple.partnerName || "tu pareja"} conecte su retrato.`)}</p> : null}
         </div>
