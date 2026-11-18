@@ -135,10 +135,10 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const [fitOpen, setFitOpen] = useState(() => new URLSearchParams(location.search).get("fit") === "1");
+  const [fitLanding, setFitLanding] = useState<"mine" | "couple" | null>(() => new URLSearchParams(location.search).get("fit") === "1" ? "couple" : null);
   const closeFit = () => {
     keyboard.hide();
-    setFitOpen(false);
+    setFitLanding(null);
     const params = new URLSearchParams(location.search);
     if (!params.has("fit")) return;
     params.delete("fit");
@@ -880,7 +880,7 @@ ${text}` : text, target);
       {videoPlan && !readOnly && !(visibleQuestion?.expanded && visibleQuestion.kind === "daily" && visibleQuestion.id === videoPlan.id) &&
         <div className="message-links"><button type="button" onClick={() => openQuestionPlan(videoPlan.id, true)}><CalendarBlank size={16} />{t("查看视频时间", "Review video call time", "Ver hora de la videollamada")}<ArrowRight size={15} /></button></div>}
       {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} onOpen={open} />)}</div>}
-      {fitInvite && <div className="message-links"><button type="button" onClick={() => { keyboard.hide(); setFitOpen(true); }}><Heart size={16} />{t("看看我们有多合拍", "Explore how we connect", "Ver cómo conectamos")}<ArrowRight size={15} /></button></div>}
+      {fitInvite && <div className="message-links"><button type="button" onClick={() => { keyboard.hide(); setFitLanding("couple"); }}><Heart size={16} />{t("看看我们有多合拍", "Explore how we connect", "Ver cómo conectamos")}<ArrowRight size={15} /></button></div>}
       {chatRequest && <div className="card-actions">{approvedImports.has(chatRequest.id) ? <small className="card-state"><CheckCircle size={16} weight="fill" />{t("已同意一起看", "Agreed to look together", "Aceptado para verlo juntos")}</small> : mine ? <small className="card-state">{t("等 TA 同意", "Waiting for your partner", "Esperando a tu pareja")}</small> : <button className="card-primary" disabled={busy} onClick={() => void approveImport(chatRequest.id)}><CheckCircle size={18} weight="fill" />{t("同意一起看", "Agree to look together", "Aceptar verlo juntos")}</button>}</div>}
       {chatShared && <div className="message-links"><button onClick={() => open(`/?view=import&import=${encodeURIComponent(chatShared.id)}`)}><ChatsCircle size={16} />{t("查看聊天记录分析", "See the chat history analysis", "Ver el análisis del historial")}<ArrowRight size={15} /></button></div>}
     </article>;
@@ -1167,12 +1167,12 @@ ${text}` : text, target);
             ? t("去聊天 · 等 TA 答", "Go to chat · Waiting for them", "Ir al chat · Falta tu pareja")
             : t("去聊天答题", "Answer in chat", "Responder en el chat")}<ArrowRight size={18} /></span>
       </button> : null} />}
-    {fitOpen && <FitPage language={language} userId={user.id} paired={paired}
+    {fitLanding && <FitPage initialView={fitLanding} language={language} userId={user.id} paired={paired}
       onBack={closeFit}
       onInvite={() => { closeFit(); void shareInvite(); }}
       onDiscuss={(text) => { closeFit(); switchChannel("us"); setDraft(text, "us"); }} />}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData}
-      onFit={() => { keyboard.hide(); setDrawer(false); setFitOpen(true); }}
+      onFit={() => { keyboard.hide(); setDrawer(false); setFitLanding("mine"); }}
       onFindChat={!recall.busy && (channel === "us" ? paired : Boolean(session?.id)) ? () => { setDrawer(false); recall.openPicker(); } : undefined}
       onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
     {recall.dateSheet}

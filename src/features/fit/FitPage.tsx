@@ -7,6 +7,7 @@ import type { FitPairSection, FitSection, FitState } from "./types";
 import "./fit.css";
 
 type Props = {
+  initialView: "mine" | "couple";
   language: Language; userId: string; paired: boolean; onBack: () => void;
   onInvite: () => void; onDiscuss: (text: string) => void;
 };
@@ -22,13 +23,13 @@ const zodiacNames = [
 ];
 const rememberedFlow = (key: string) => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
 
-export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss }: Props) {
+export function FitPage({ initialView, language, userId, paired, onBack, onInvite, onDiscuss }: Props) {
   const t: Translate = (zh, en, es) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const flowKey = `pinky:fit-inventory-v1:${userId}`;
   const [data, setData] = useState<FitState | null>(null);
-  const [view, setView] = useState<"mine" | "couple">("mine");
-  const [flow, setFlow] = useState(() => rememberedFlow(flowKey) === "open");
+  const [view, setView] = useState<"mine" | "couple">(initialView);
+  const [flow, setFlow] = useState(() => initialView === "mine" && rememberedFlow(flowKey) === "open");
   const [index, setIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -58,7 +59,7 @@ export function FitPage({ language, userId, paired, onBack, onInvite, onDiscuss 
     setLoading(true);
     void load(controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, paired]);
   useEffect(() => {
     const refresh = () => { if (!document.hidden && navigator.onLine) void load(); };
     const connected = () => { setOnline(true); refresh(); };

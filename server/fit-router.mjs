@@ -7,9 +7,19 @@ import { coupleFitReport, coupleSupportReport, fitOverviewComplete, personalFitR
 import { reviewedWording } from "./fit-support.mjs";
 import { previousFitQuestions } from "./fit-previous-questions.mjs";
 import { inventoryQuestions } from "./fit-inventory.mjs";
-import { inventoryReady, inventoryReport, inventoryPairReport, inventoryRevisitIds } from "./fit-inventory-report.mjs";
+import { inventoryReady, inventoryReport, inventoryPairReport } from "./fit-inventory-report.mjs";
 
-import { pairQuestions, pairPreview, pairReport } from "./fit-pair-pattern.mjs";
+import { pairQuestions, pairReport } from "./fit-pair-pattern.mjs";
+
+import { portableQuestions, portablePreview, portablePairReport, portablePersonalSections } from "./fit-portable.mjs";
+
+// Each new item follows three familiar situations; returning users resume at their first missing item.
+const portraitQuestions = inventoryQuestions.flatMap((question, index) =>
+  (index + 1) % 3 === 0 ? [question, portableQuestions[(index + 1) / 3 - 1]] : [question]);
+function portraitReady(profile) {
+  const answers = profile.answers || {};
+  return portraitQuestions.every(q => answers[q.id]) && portraitQuestions.some(q => q.options.some(o => o.id === answers[q.id]));
+}
 
 const KIND = "relationship_guide";
 const collection = "checkins";
@@ -19,11 +29,12 @@ const activePair = (context) => context?.relationship.status === "active" && con
 const languageOf = (req) => supported.has(req.body?.language || req.query?.language) ? req.body?.language || req.query.language : "zh";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const fail = (statusCode, code) => Object.assign(new Error(code), { statusCode, code });
-const questionById = new Map([...fitQuestions, ...inventoryQuestions, ...pairQuestions].map((question) => [question.id, question]));
+const questionById = new Map([...fitQuestions, ...portraitQuestions, ...pairQuestions].map((question) => [question.id, question]));
 const supportIds = new Set(fitModules.find(module => module.id === "support").questions.map(q => q.id));
 const pairIds = new Set(pairQuestions.map(q => q.id));
 function shareMode(profile, relationshipId) {
   if (!profile) return "none";
+  if (portableQuestions.some(q => profile.answers?.[q.id])) return portraitReady(profile) ? "portrait-v3" : "none";
   if (relationshipId && profile.pairRelationshipId === relationshipId && pairQuestions.some(q => profile.answers?.[q.id])) {
     const finished = pairQuestions.every(q => profile.answers[q.id]);
     const concrete = pairQuestions.some(q => q.options.some(o => o.id === profile.answers[q.id]));
@@ -63,12 +74,21 @@ async function view(db, userId, language) {
   const localQuestions = questions => questions.map(q => ({
     id: q.id, text: q.text[language], options: q.options.map(o => ({ id: o.id, text: o.text[language] })),
   }));
+  const ready = portraitReady(own);
+  const extraSections = ready ? portablePersonalSections(own, language) : [];
+  const report = ready ? {
+    ...(inventoryPersonal || {
+      title: say(language, "我的相处线索", "My relationship clues", "Mis pistas de relación"),
+      summary: say(language, "已记录你的选择；三个个人风格维度还需要更多具体经历。", "Your choices are saved. More examples are needed to describe your personal style.", "Tus respuestas están guardadas. Faltan ejemplos para describir tu estilo personal."),
+    }),
+    sections: [...(inventoryPersonal?.sections || []), ...extraSections],
+    coverage: say(language, "依据你在这份问卷里回忆的经历与选择。", "Based on the experiences and choices you recalled.", "Basado en las experiencias y decisiones que recuerdas."),
+  } : null;
   const inventory = {
-    relationshipId, questions: localQuestions(inventoryQuestions),
-    pairQuestions: partner ? localQuestions(pairQuestions) : [],
-    report: inventoryPersonal,
-    preview: mode === "pattern-v2" ? pairPreview(own, language) : [],
-    revisitIds: inventoryRevisitIds(own),
+    relationshipId, questions: localQuestions(portraitQuestions), pairQuestions: [],
+    report, previousPortrait: report ? null : inventoryPersonal,
+    preview: mode === "portrait-v3" ? portablePreview(own, language) : [],
+    revisitIds: portraitQuestions.filter(q => own.answers[q.id] === "skip").map(q => q.id),
   };
   let couple = {
     status: partner ? sharing ? "waiting" : "need-your-share" : "unpaired",
@@ -82,7 +102,7 @@ async function view(db, userId, language) {
     const theirs = await readOwn(db, partner.userId);
     if (sharedIn(theirs, context)) {
       if (mode === shareMode(theirs, relationshipId)) {
-        const reportFor = { "pattern-v2": pairReport, inventory: inventoryPairReport, support: coupleSupportReport, legacy: coupleFitReport };
+        const reportFor = { "portrait-v3": portablePairReport, "pattern-v2": pairReport, inventory: inventoryPairReport, support: coupleSupportReport, legacy: coupleFitReport };
         couple = reportFor[mode](own, theirs, partnerName, language);
       } else {
         couple.status = "different-guides";
@@ -98,7 +118,10 @@ async function view(db, userId, language) {
       answeredCount: fitQuestions.filter(q => own.answers[q.id] && own.answers[q.id] !== "skip").length, totalQuestions: fitQuestions.length,
     },
     supportSharePreview: mode === "support" ? supportSharingPreview(own, language) : [],
-    previousAnswers, personal: personalFitReport(own, language), couple,
+    previousAnswers: [...previousAnswers, ...pairQuestions.flatMap(q => {
+      const option = q.options.find(o => o.id === own.answers[q.id]);
+      return option ? [{ question: q.text[language], answer: option.text[language] }] : [];
+    })], personal: personalFitReport(own, language), couple,
   };
 }
 
@@ -134,9 +157,9 @@ function readMutation(req, action) {
   } else if (action === "sharing") {
     if (typeof req.body?.on !== "boolean") throw fail(400, "invalid_input");
     const mode = req.body.mode ?? "legacy";
-    if (req.body.on && !["pattern-v2", "inventory", "support", "legacy"].includes(mode)) throw fail(400, "invalid_input");
+    if (req.body.on && !["portrait-v3", "pattern-v2", "inventory", "support", "legacy"].includes(mode)) throw fail(400, "invalid_input");
     values = req.body.on ? { on: true, mode } : { on: false };
-    if (values.on && ["inventory", "pattern-v2"].includes(mode)) {
+    if (values.on && ["portrait-v3", "inventory", "pattern-v2"].includes(mode)) {
       if (typeof req.body.relationshipId !== "string" || !req.body.relationshipId) throw fail(400, "invalid_input");
       values.relationshipId = req.body.relationshipId;
     }
