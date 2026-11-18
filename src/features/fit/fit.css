@@ -166,6 +166,8 @@
 .atlas-explainer dl, .atlas-reading dl { display: grid; gap: 12px; padding: 4px 0 14px; }
 .atlas-explainer dt, .atlas-reading dt { font-weight: 700; }
 .atlas-overview dd { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.atlas-overview .atlas-case { margin-top: 4px; }
+.atlas-overview details + details { border-top: 0; }
 .atlas-overview dd b, .atlas-family-list h4 span { color: var(--fit-berry); }
 .atlas-overview details p { padding-bottom: 14px; }
 .atlas-family-nav { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 12px 0 22px; }
