@@ -140,11 +140,11 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   const goBack = () => { keyboard.hide(); if (flow) finish(); else onBack(); };
   const copyReport = async (couple = false) => {
     if (!data) return;
-    const sections = couple ? data.couple.sections : report?.sections || [];
+    const sections = data.couple.sections;
     const summary = couple ? data.couple.summary : report?.summary || "";
     const reportTitle = couple ? data.couple.title || title : report?.title || t("我的关系说明书", "My relationship guide", "Mi guía de relación");
-    const text = [reportTitle, summary, ...sections.map((section) => `${section.title}\n${section.summary}\n${section.suggestion}`),
-      t("根据本人选择的情景回答整理 · Pinky", "Based on self-reported situation answers · Pinky", "Basado en respuestas personales a situaciones · Pinky")].join("\n\n");
+    const text = couple ? [reportTitle, summary, ...sections.map((section) => `${section.title}\n${section.summary}\n${section.suggestion}`),
+      t("根据本人选择的情景回答整理 · Pinky", "Based on self-reported situation answers · Pinky", "Basado en respuestas personales a situaciones · Pinky")].join("\n\n") : [reportTitle, summary].join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
       setCopyStatus(t("解析已复制，可以保存或分享。", "Guide copied. You can save or share it.", "Guía copiada. Puedes guardarla o compartirla."));
@@ -181,10 +181,9 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
       </div> : data && view === "mine" ? <>
         <section className="fit-intro fit-portrait">
           <h2>{report?.title || t("恋爱里的我，是什么样？", "What am I like in a relationship?", "¿Cómo soy en pareja?")}</h2>
-          {!!report?.markers?.length && <ul className="fit-markers">{report.markers.map(marker => <li key={marker}>{marker}</li>)}</ul>}
           <p>{report?.summary || (seen === questions.length ? t("有些方面还缺少线索。可以从跳过的场景补答，也可以以后再来。", "A few areas need more detail. Revisit a skipped situation now or come back later.", "Faltan pistas en algunos aspectos. Puedes retomar una situación omitida ahora o volver después.")
             : t("按自己的经历选择，想不起来可以跳过。答完就能看个人画像。以后和 TA 连接画像，就能看你们的合拍组合。", "Choose what fits your experience, or skip a question. Your portrait appears when you finish. Connect it with your partner’s portrait to see your relationship pattern.", "Elige lo que más se acerque a tu experiencia o salta la pregunta. Al terminar verás tu retrato. Conéctalo con el de tu pareja para descubrir cómo encajan."))}</p>
-          {report ? <p className="fit-fine">{report.coverage}</p> : <p className="fit-fine">{seen ? t(`已记录 ${seen} / ${questions.length} 题`, `${seen} of ${questions.length} saved`, `${seen} de ${questions.length} guardadas`) : t(`${questions.length} 道情境题 · 可以分几次答`, `${questions.length} situations · Pause anytime`, `${questions.length} situaciones · A tu ritmo`)}</p>}
+          {!report && <p className="fit-fine">{seen ? t(`已记录 ${seen} / ${questions.length} 题`, `${seen} of ${questions.length} saved`, `${seen} de ${questions.length} guardadas`) : t(`${questions.length} 道情境题 · 可以分几次答`, `${questions.length} situations · Pause anytime`, `${questions.length} situaciones · A tu ritmo`)}</p>}
           <button className={report ? "fit-secondary" : "fit-primary"} type="button" disabled={busy || !questions.length} onClick={() => setQuestionFlow(true)} data-testid="fit-start">
             {report ? t("回看或修改答案", "Review or edit answers", "Revisar o editar respuestas") : seen === questions.length ? t("补答跳过的场景", "Revisit skipped situations", "Retomar situaciones omitidas") : seen ? t("继续答题", "Continue", "Continuar") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
           </button>
@@ -193,7 +192,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
           {canShare && !data.profile.sharing && <button type="button" className="fit-primary" disabled={busy || !online} onClick={openShare}>{t("连接画像", "Connect portraits", "Conectar retratos")}<ArrowRight size={18}/></button>}
           {data.profile.sharing && <button type="button" className="fit-secondary" onClick={() => setView("couple")}>{t("查看我们俩的解析", "View our connection", "Ver nuestra conexión")}<ArrowRight size={18}/></button>}
           {!relationshipId && <button type="button" className="fit-secondary" onClick={onInvite}>{t("邀请 TA 连接画像", "Invite your partner to connect", "Invitar a mi pareja a conectar")}</button>}
-        </section>{report.sections.map(section => <PersonalSection key={section.id} section={section} t={t} />)}
+        </section>
           <button type="button" className="fit-copy" onClick={() => void copyReport()}>{t("复制我的画像", "Copy my portrait", "Copiar mi retrato")}</button></>}
         {data.profile.sharing && <button type="button" className="fit-secondary" disabled={busy || !online} onClick={() => void mutate("sharing", { on: false })}>{t("撤回我的分享", "Withdraw sharing", "Retirar mi permiso")}</button>}
         <details className="fit-other">
@@ -201,7 +200,6 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
           {data.inventory.previousPortrait && <details className="fit-basis">
             <summary>{t("之前的 24 题画像", "Earlier 24-question portrait", "Retrato anterior de 24 preguntas")}<CaretRight size={15} /></summary>
             <h3>{data.inventory.previousPortrait.title}</h3><p>{data.inventory.previousPortrait.summary}</p>
-            {data.inventory.previousPortrait.sections.map(section => <PersonalSection key={section.id} section={section} t={t}/>)}
           </details>}
           {archive.map(section => <PersonalSection key={section.id} section={section} t={t} />)}
           {!!data.previousAnswers?.length && <div className="fit-evidence">{data.previousAnswers.map(item => <div key={item.question}><p>{item.question}</p><blockquote>{item.answer}</blockquote></div>)}</div>}

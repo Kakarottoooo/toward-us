@@ -8,6 +8,40 @@ const styleNames = {
   ba: words("自在言语", "Space and words", "Con espacio y palabras"),
   bb: words("自在行动", "Space and action", "Con espacio y gestos"),
 };
+const stylePortraits = {
+  aaa: words(
+    "你喜欢两个人待在一起，哪怕各忙各的，也觉得亲近。想念对方时，你多半会直接说出来。闹了别扭，你也愿意先开口。哪怕一句「我还在生气，但晚饭想跟你一起吃」，对你来说也算是和好的开头。",
+    "You can feel close doing separate things in the same room. When you miss someone, you tend to say so. After a disagreement, even “I’m still upset, but I’d like to have dinner together” can feel like a first step back.",
+    "Puedes sentir cercanía aunque cada quien esté a lo suyo en la misma habitación. Cuando extrañas a tu pareja, sueles decírselo. Tras un roce, quizá des el primer paso con algo tan sencillo como «Sigo de mal humor, pero me gustaría cenar contigo»."),
+  aab: words(
+    "你喜欢有人陪，也乐意把喜欢说出口。唯独在气头上，平时顺口的心里话可能反而难说。对你来说，亲近也可以是坐在同一张沙发上安静一会儿，等情绪过去，再把刚才没说好的话讲给对方听。",
+    "You enjoy company and put affection into words easily. In the heat of an argument those words can be harder to find. Sharing a sofa in silence for a while may feel comfortable, knowing you can talk when you are ready.",
+    "Disfrutas de la compañía y te sale natural expresar cariño. En plena discusión puede costarte encontrar las palabras. Quizá te siente bien compartir el sofá en silencio un rato y volver a hablar cuando sepas cómo decir lo que sientes."),
+  aba: words(
+    "你常常用陪伴和小事表达喜欢。替对方留一份晚饭，再坐下来陪着吃，就是你让人知道「我惦记你」的方式。可要是饭桌上有了别扭，你更愿意趁两个人都在，把心里卡着的那句话说开。",
+    "You show affection by being there and taking care of small things. Saving someone dinner and sitting down with them can say “I’ve been thinking of you.” If something feels awkward over that meal, you’d usually bring it up while you’re together.",
+    "Sueles mostrar cariño con tu compañía y pequeños gestos. Guardarle la cena a tu pareja y sentarte a su lado puede ser tu forma de decir «pensé en ti». Si algo queda en el aire durante esa cena, prefieres hablarlo mientras están juntos."),
+  abb: words(
+    "你喜欢和伴侣一起过日子，在小事上照应对方。闹了矛盾，你可能还是会替对方留灯、留饭，却想晚一点再谈那件事。熟悉你的人会慢慢看懂，那个安静的举动里还有关心，而你也需要一点时间找到合适的话。",
+    "You enjoy sharing ordinary days and looking after each other in small ways. After a disagreement you might still leave a light on or save your partner dinner. Those quiet gestures can carry affection while you gather your thoughts.",
+    "Disfrutas de la vida cotidiana en pareja y cuidas los pequeños detalles. Tras un desacuerdo, quizá dejes una luz encendida o guardes la cena mientras ordenas tus ideas. Esos gestos pueden expresar cariño antes de que te apetezca hablar."),
+  baa: words(
+    "累了一天，你喜欢先有一点自己的时间，想念对方时却愿意明明白白地说。独处能让你恢复精神，悬着的矛盾反倒让你难放松。如果道别时有句话说重了，你可能想先打个电话把它讲开，再安心度过自己的晚上。",
+    "You like time to yourself after a long day and can be direct about missing someone. Time alone helps you unwind, but an unfinished argument can get in the way. If a goodbye came out harshly, you may want to call and clear the air before settling into your evening.",
+    "Después de un día largo te gusta tener tiempo a solas, y cuando extrañas a tu pareja puedes decirlo con claridad. Un desacuerdo pendiente puede impedirte descansar. Si al despedirte dijiste algo brusco, quizá prefieras llamar para aclararlo antes de disfrutar de tu noche."),
+  bab: words(
+    "你需要独处，也重视把喜欢说清楚。心里乱的时候，你往往得先安静下来，才知道自己真正想说什么。一句「我想自己走走，回来再聊」可以同时表达两层心意。你此刻需要空间，也在意回来之后的那场谈话。",
+    "You value time to yourself and like putting affection into words. A quiet moment can help you find what you really want to say. “I’d like to take a walk and talk when I get back” can express both your need for space and how much the conversation matters.",
+    "Valoras tu espacio y te gusta expresar el cariño con palabras. Un momento de calma puede ayudarte a saber qué quieres decir. «Quiero dar un paseo y hablar a la vuelta» puede expresar tanto tu necesidad de espacio como lo que te importa esa conversación."),
+  bba: words(
+    "你喜欢保留自己的节奏，惦记一个人时，常常会先替对方做点什么。即使各过各的下午，你也可能记得顺路带回对方喜欢的东西。遇到分歧，你更想早点讲清楚，这样各自忙起来的时候，心里也踏实。",
+    "You enjoy keeping your own rhythm and tend to show affection by doing something thoughtful. Even on an afternoon apart, you might pick up something your partner likes. When you disagree, you prefer to clear the air soon so you can both get on with your day.",
+    "Te gusta conservar tu propio ritmo y sueles expresar cariño haciendo algo concreto. Hasta en una tarde por separado, quizá recuerdes llevarle a tu pareja algo que le gusta. Si hay un desacuerdo, prefieres aclararlo pronto para seguir el día con tranquilidad."),
+  bbb: words(
+    "亲密对你来说，可以是各自有空间，也记得替对方办一件小事。起争执时，你通常需要先缓一缓。你可能已经把第二天的早餐备好了，心里还在斟酌该怎么开口。告诉对方你想什么时候再聊，会让这份安静里的在乎更容易被看见。",
+    "Closeness can mean having room to yourself while remembering the little things your partner needs. After an argument you may already have breakfast ready for tomorrow while still thinking about what to say. Saying when you’d like to talk can make that quiet care easier to see.",
+    "Para ti, la cercanía admite el espacio propio y se nota en los pequeños gestos. Tras una discusión quizá ya dejaste preparado el desayuno de mañana y aún estás pensando qué decir. Contar cuándo te gustaría retomar la charla puede hacer más visible ese cariño."),
+};
 const styleAxes = {
   space: {
     name: words("亲近", "Closeness", "Cercanía"),
@@ -125,7 +159,9 @@ export function inventoryReport(profile, language) {
   }
 
   let title = words("我的相处线索", "My relationship patterns so far", "Mis primeras pistas en pareja")[language];
+  let portrait;
   if (!unresolved.length) {
+    portrait = stylePortraits[styleSides.space + styleSides.care + styleSides.repair][language];
     const base = styleNames[styleSides.space + styleSides.care][language];
     const repair = styleAxes.repair[styleSides.repair][language];
     title = language === "zh" ? base + "·" + repair + "型" : base + " · " + repair;
@@ -163,7 +199,7 @@ export function inventoryReport(profile, language) {
     return { id, title, summary: [summary, limited].filter(Boolean).join(language === "zh" ? "" : " "), suggestion, evidence, answered: count, total };
   });
   const answered = rows.reduce((n, row) => n + row.responses.length, 0);
-  return { title, markers, summary: story.join(language === "zh" ? "" : " "), sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
+  return { title, markers, summary: portrait || story.join(language === "zh" ? "" : " "), sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
     `A portrait of your preferences based on ${answered} choices in this questionnaire.`,
     `Un retrato de tus preferencias a partir de ${answered} respuestas a este cuestionario.`)[language] };
 }
