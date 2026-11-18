@@ -1,5 +1,5 @@
 import { fourQuestions } from "./fit-four-questions.mjs";
-import { axes, poles, headings, familyLines, portraits } from "../shared/fit-four-portraits.mjs";
+import { axes, poles, headings, familyLines, portraits, preferenceLabel } from "../shared/fit-four-portraits.mjs";
 
 const text = (zh, en, es) => ({ zh, en, es });
 const pending = text("待确认", "Still open", "Por confirmar");
@@ -156,7 +156,7 @@ export function fourSnapshot(profile, lang = "zh") {
   }
   return {
     typeCode,
-    typeName: portraits[typeCode]?.name[lang] || partialTitle[lang],
+    typeName: portraits[typeCode] ? preferenceLabel(typeCode, lang) : partialTitle[lang],
     letters,
     giving: { affection: giving(profile, "giving-affection"), support: giving(profile, "giving-support") },
     pause: details(profile, "pause-followup", lang),
@@ -241,7 +241,7 @@ export function fourReport(profile, lang) {
   const signals = core(profile);
   const { letters, levels, typeCode } = signals;
   const type = portraits[typeCode];
-  const title = type?.name[lang] || partialTitle[lang];
+  const title = type ? preferenceLabel(typeCode, lang) : partialTitle[lang];
   const incomplete = text("部分偏好仍待确认，先看看已经说得清的部分。", "Some preferences are still open. Here is what your answers suggest so far.", "Algunas preferencias siguen abiertas. Esto es lo que indican tus respuestas hasta ahora.")[lang];
   const summary = type ? familyLines[typeCode.slice(0, 2)][lang] : incomplete;
   const legend = [];
@@ -270,7 +270,7 @@ export function fourReport(profile, lang) {
     body: life.join("\n"),
   });
   const introduction = type
-    ? text("我是" + title + " · " + typeCode + "。" + summary + "。",
+    ? text("我的恋爱风格是 " + typeCode + "（" + title + "）。" + summary,
       "My style is " + title + " · " + typeCode + ". " + summary,
       "Mi estilo es " + title + " · " + typeCode + ". " + summary)[lang]
     : "";

@@ -1,15 +1,14 @@
 const text = (zh, en, es) => ({ zh, en, es });
 
 export const familyLines = {
-  TR: text("想黏着，也想被回应", "You want closeness and signs of affection in return.", "Quieres cercanía y también señales de cariño."),
-  TC: text("想黏着，心里踏实", "You want closeness and feel secure in the bond.", "Quieres cercanía y sientes seguridad en el vínculo."),
-  SR: text("要自己的天空，但线要有人拉着", "You want your own sky and someone holding the other end of the string.", "Quieres tu propio cielo y que alguien sostenga el otro extremo del hilo."),
-  SC: text("各自站着，光一直在", "You each stand on your own, with the light always there.", "Cada cual tiene su lugar y la luz sigue encendida."),
+  TR: text("你喜欢多和伴侣待在一起，也希望对方经常让你知道，心里惦记着你。", "You enjoy time together and appreciate regular signs that your partner is thinking of you.", "Disfrutas del tiempo en pareja y valoras las señales frecuentes de que tu pareja piensa en ti."),
+  TC: text("你喜欢两个人一起过日常。各自忙起来、暂时没联系时，你通常也觉得感情安稳。", "You enjoy sharing everyday life. When you are both busy and out of touch, you usually still feel secure about the relationship.", "Disfrutas de la vida cotidiana en pareja. Cuando ambos tienen cosas que hacer y pasan tiempo sin hablar, sueles sentir que el vínculo sigue bien."),
+  SR: text("你希望留出自己安排的时间。即使今天不见面，伴侣主动问一句你过得怎样，也会让你觉得被在乎。", "You like having time of your own. Even on days apart, a message asking how you are can help you feel cared for.", "Te gusta disponer de tiempo propio. Incluso si hoy no se ven, un mensaje preguntándote cómo estás puede hacerte sentir cariño."),
+  SC: text("你喜欢各自有安排。即使一段时间没联系，你通常也相信彼此仍然在乎对方。", "You enjoy making plans of your own. Even when you go a while without checking in, you usually trust that you care about each other.", "Disfrutas de tus propios planes. Aunque pasen un tiempo sin comunicarse, sueles confiar en que el cariño sigue presente."),
 };
 
 export const portraits = {
   TRWN: {
-    name: text("直说藤蔓", "Outspoken Vine", "Enredadera franca"),
     lines: [
       text("爱得最响。想你就说，不高兴也当场说，什么都摆在明面上。", "You love out loud. You say when you miss someone and speak up when something hurts. Everything is out in the open.", "Tu amor se oye. Dices cuándo extrañas a alguien y cuándo algo te duele. Todo queda a la vista."),
       text("常在一起，常听到回应，有事当下谈完。", "Frequent time together, frequent replies, and a chance to talk things through right away.", "Pasar tiempo juntos, recibir señales frecuentes y aclarar las cosas en el momento."),
@@ -18,7 +17,6 @@ export const portraits = {
     ],
   },
   TRWL: {
-    name: text("斟酌藤蔓", "Thoughtful Vine", "Enredadera reflexiva"),
     lines: [
       text("平时话很甜、很黏，一有事反而安静下来。", "Affectionate words and closeness come easily most days. When something troubles you, you grow quiet.", "Te sale estar cerca y decir cosas cariñosas. Cuando algo te preocupa, te quedas en silencio."),
       text("对方主动问一句「你是不是有心事」，给时间，但人别走开。", "Someone who asks, “Is something on your mind?” You need time, with your partner still nearby.", "Que tu pareja pregunte «¿Tienes algo en mente?», te dé tiempo y siga cerca."),
@@ -27,7 +25,6 @@ export const portraits = {
     ],
   },
   TRDN: {
-    name: text("实干藤蔓", "Hands-on Vine", "Enredadera práctica"),
     lines: [
       text("会替你把事情都办了，然后盼着你看见。看不见就当场说。", "You take care of things and hope your partner notices. If they miss it, you speak up right away.", "Resuelves cosas por quien quieres y esperas que se dé cuenta. Si no lo ve, lo dices en el momento."),
       text("被看见，被具体地感谢，比如「谢谢你帮我把票改了」。", "To be noticed and thanked for the particular thing you did, like “Thanks for changing my ticket.”", "Que se fijen y agradezcan algo concreto, como «Gracias por cambiarme el billete»."),
@@ -36,7 +33,6 @@ export const portraits = {
     ],
   },
   TRDL: {
-    name: text("默默藤蔓", "Quiet Vine", "Enredadera callada"),
     lines: [
       text("做了很多不说，盼着对方发现。没被发现就自己难过，也不说。", "You do a great deal quietly and hope your partner notices. When they don’t, you keep the hurt to yourself.", "Haces mucho en silencio y esperas que tu pareja se dé cuenta. Si no lo ve, te guardas la pena."),
       text("对方主动注意、主动问。", "A partner who notices things and asks how you are of their own accord.", "Que tu pareja se fije y pregunte por iniciativa propia."),
@@ -45,7 +41,6 @@ export const portraits = {
     ],
   },
   TCWN: {
-    name: text("直说暖炉", "Outspoken Hearth", "Hogar franco"),
     lines: [
       text("喜欢待在一起，不需要反复确认，有话直说。稳定、热闹、好相处。", "You enjoy being together, feel secure without repeated reassurance, and speak your mind. You bring steadiness and lively company.", "Te gusta estar en compañía, sientes seguridad sin pedir confirmación a menudo y hablas con franqueza. Aportas estabilidad y animas el día a día."),
       text("有人一起过日子，愿意当面把话说开。", "Someone to share ordinary life with who will talk things through face to face.", "Alguien con quien compartir lo cotidiano y hablar las cosas cara a cara."),
@@ -54,7 +49,6 @@ export const portraits = {
     ],
   },
   TCWL: {
-    name: text("斟酌暖炉", "Thoughtful Hearth", "Hogar reflexivo"),
     lines: [
       text("陪伴多，话暖，心里稳，有分歧先想再谈。像一个能聊很久的老朋友。", "You offer company and warm words, feel secure, and like to reflect before discussing a disagreement. Talking to you can feel like talking to an old friend.", "Ofreces compañía y palabras cálidas, sientes seguridad y ante una diferencia prefieres reflexionar. Contigo se puede hablar como con una amistad de toda la vida."),
       text("一起的日常，以及一点整理想法的时间。", "Everyday time together and a little room to collect your thoughts.", "Compartir lo cotidiano y tener tiempo para ordenar tus ideas."),
@@ -63,7 +57,6 @@ export const portraits = {
     ],
   },
   TCDN: {
-    name: text("实干暖炉", "Hands-on Hearth", "Hogar práctico"),
     lines: [
       text("过日子的好手。修东西、订票、做饭，事情来了当场解决。", "You are at home with the practical side of life. You fix things, book tickets, cook, and tackle problems as they arise.", "Se te da bien la vida cotidiana. Arreglas cosas, reservas billetes, cocinas y resuelves lo que surge en el momento."),
       text("一起做事的时间，对方直接说要什么。", "Time to do things together and someone who tells you directly what they need.", "Tiempo para hacer cosas juntos y que tu pareja diga con claridad qué necesita."),
@@ -72,7 +65,6 @@ export const portraits = {
     ],
   },
   TCDL: {
-    name: text("默默暖炉", "Quiet Hearth", "Hogar callado"),
     lines: [
       text("一直在旁边，一直在做，不说，也不慌。最安静的陪伴。", "You stay close and quietly keep things going. You bring a calm, steady kind of company.", "Sigues cerca, haciendo cosas sin ruido ni apuro. Tu manera de acompañar es serena y constante."),
       text("共处，不被逼着立刻表态。", "Time together without pressure to give an immediate answer.", "Compartir espacio sin que te exijan una respuesta inmediata."),
@@ -81,7 +73,6 @@ export const portraits = {
     ],
   },
   SRWN: {
-    name: text("直说风筝", "Outspoken Kite", "Cometa franca"),
     lines: [
       text("各忙各的没关系，但消息要回，话要有。有事立刻说。", "You are happy doing your own thing, as long as messages get a reply and words of affection keep coming. When something happens, you speak up.", "Te parece bien que cada cual siga con lo suyo si hay conversación y los mensajes tienen respuesta. Si ocurre algo, lo dices enseguida."),
       text("独处被尊重，同时话语上保持联系。", "Respect for your time alone and ongoing contact through words.", "Que respeten tu tiempo a solas y mantengan el contacto con palabras."),
@@ -90,7 +81,6 @@ export const portraits = {
     ],
   },
   SRWL: {
-    name: text("斟酌风筝", "Thoughtful Kite", "Cometa reflexiva"),
     lines: [
       text("需要独处，也需要听到在乎的话。有事先退回自己的空间想。", "You need solitude and affectionate words. When something bothers you, you retreat to your own space and think.", "Necesitas estar a solas y oír palabras de cariño. Si algo te inquieta, te retiras a tu espacio para pensarlo."),
       text("一句不带压力的话，比如「我在，你想好了来找我」。", "A few words without pressure, such as “I’m here. Come find me when you’re ready.”", "Una frase sin presión, como «Estoy aquí. Ven a buscarme cuando quieras»."),
@@ -99,7 +89,6 @@ export const portraits = {
     ],
   },
   SRDN: {
-    name: text("实干风筝", "Hands-on Kite", "Cometa práctica"),
     lines: [
       text("独立，不黏人，但很在意对方有没有把自己放在心上的实际举动。有事当场提。", "You value independence and pay close attention to actions that show you are on someone’s mind. You raise issues promptly.", "Valoras tu independencia y te fijas en los gestos concretos que muestran que cuentan contigo. Si algo te molesta, lo dices enseguida."),
       text("对方记得他说过的事，说到做到。", "Someone who remembers what you told them and follows through.", "Que tu pareja recuerde lo que le contaste y cumpla lo que dice."),
@@ -108,7 +97,6 @@ export const portraits = {
     ],
   },
   SRDL: {
-    name: text("默默风筝", "Quiet Kite", "Cometa callada"),
     lines: [
       text("独立，话少，有事不说，心里一直在看对方有没有把自己当回事。", "Independent and quiet, you watch for signs that you matter even when you say little about what bothers you.", "Con independencia y pocas palabras, te fijas en si tu pareja te tiene en cuenta, aunque calles lo que te preocupa."),
       text("持续、具体的小举动。", "Small, concrete gestures that keep coming over time.", "Pequeños gestos concretos y constantes."),
@@ -117,7 +105,6 @@ export const portraits = {
     ],
   },
   SCWN: {
-    name: text("直说灯塔", "Outspoken Lighthouse", "Faro franco"),
     lines: [
       text("独立、踏实、坦率。各过各的很安心，见面时什么都能聊，有事当场讲清。", "Independent, secure and candid, you are comfortable spending time apart. When together, you can talk about anything and clear the air on the spot.", "Tienes independencia, seguridad y franqueza. Te sientes a gusto cuando cada cual hace lo suyo. Al verse, pueden hablar de todo y aclarar lo que pasa en el momento."),
       text("自己的时间和空间，高质量的谈话。", "Time and space of your own, and conversations with substance.", "Tiempo y espacio propios, y conversaciones de calidad."),
@@ -126,7 +113,6 @@ export const portraits = {
     ],
   },
   SCWL: {
-    name: text("斟酌灯塔", "Thoughtful Lighthouse", "Faro reflexivo"),
     lines: [
       text("独立、踏实，爱放在深谈里，有事想透了再说。像隔一阵写来一封长信的人。", "Independent and secure, you put affection into deep conversations and think things through before speaking. You are like someone who writes a long letter every so often.", "Tienes independencia y seguridad. Expresas el cariño en conversaciones profundas y reflexionas antes de hablar, como quien de vez en cuando escribe una carta larga."),
       text("不被催。", "Time without being rushed.", "Que no te apuren."),
@@ -135,7 +121,6 @@ export const portraits = {
     ],
   },
   SCDN: {
-    name: text("实干灯塔", "Hands-on Lighthouse", "Faro práctico"),
     lines: [
       text("不黏、不问、不绕弯，事情来了就处理。", "You give people room, rarely ask for reassurance and get straight to the point. When something needs doing, you handle it.", "Das espacio, pides pocas señales y vas al grano. Cuando aparece un problema, te ocupas."),
       text("各自的空间，直接的沟通，少猜。", "Space for each of you, direct conversation and little guesswork.", "Espacio para cada cual, comunicación directa y poco que adivinar."),
@@ -144,7 +129,6 @@ export const portraits = {
     ],
   },
   SCDL: {
-    name: text("默默灯塔", "Quiet Lighthouse", "Faro callado"),
     lines: [
       text("最独立，最安静。爱是长期地、不出声地在那里。", "You are the most independent and the quietest. Your love is a steady presence that lasts without drawing attention to itself.", "De todos los estilos, el tuyo es el más independiente y silencioso. Tu amor es una presencia discreta y duradera."),
       text("大量自主，被信任。", "A great deal of autonomy and a partner’s trust.", "Mucha autonomía y sentir que confían en ti."),
@@ -162,14 +146,14 @@ export const axes = {
 };
 
 export const poles = {
-  T: text("常伴", "Togetherness", "Compañía"),
-  S: text("留白", "Space", "Espacio"),
-  R: text("要回应", "Regular reassurance", "Señales de cariño"),
-  C: text("默认安好", "Confidence in the bond", "Confianza en el vínculo"),
-  W: text("说", "Words", "Palabras"),
-  D: text("做", "Deeds", "Hechos"),
-  N: text("当场谈", "Talk now", "Hablar ahora"),
-  L: text("缓一缓", "Talk later", "Hacer una pausa"),
+  T: text("共处偏好", "Shared time", "Tiempo en pareja"),
+  S: text("独处偏好", "Personal space", "Espacio propio"),
+  R: text("高确认需求", "More reassurance", "Mayor necesidad de confirmación"),
+  C: text("低确认需求", "Less reassurance", "Menor necesidad de confirmación"),
+  W: text("言语偏好", "Words of affection", "Palabras de afecto"),
+  D: text("行动偏好", "Acts of care", "Gestos de cuidado"),
+  N: text("即时沟通", "Talk right away", "Hablar en el momento"),
+  L: text("延后沟通", "Talk after a pause", "Hablar tras una pausa"),
 };
 
 export const headings = [
@@ -179,12 +163,9 @@ export const headings = [
   text("自在的相处", "What helps you feel at ease", "Qué te ayuda a sentirte a gusto"),
 ];
 
-export const families = {
-  TR: text("藤蔓", "Vine", "Enredadera"),
-  TC: text("暖炉", "Hearth", "Hogar"),
-  SR: text("风筝", "Kite", "Cometa"),
-  SC: text("灯塔", "Lighthouse", "Faro"),
-};
+export function preferenceLabel(code, language) {
+  return Array.from(code, letter => poles[letter][language]).join(" · ");
+}
 
 export const patterns = {
   distance: {
