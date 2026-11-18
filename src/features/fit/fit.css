@@ -142,3 +142,7 @@
 .fit-reading p { line-height: 1.8; }
 .fit-method { width: 100%; }
 .fit-method p + p { margin-top: 8px; }
+
+.fit-pair-overview { margin: 0 0 18px; }
+.fit-pair-overview div { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--fit-line); }
+.fit-pair-overview dd { margin: 0; color: var(--fit-berry); font-weight: 650; }

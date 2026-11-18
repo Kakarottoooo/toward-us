@@ -145,10 +145,9 @@ export function lovePairReport(mine, theirs, partnerName, lang) {
   const partner = partnerName || text("TA", "your partner", "tu pareja")[lang];
   const [daily, care, support, repair] = areaIds.map(area => areaSection(area, own, peer, partner, lang));
   // Everyday time is the anchor. Expressing affection can reveal a second mismatch, but cannot substitute for missing information about time together.
-  if (daily.status === "same" && care.status === "different") {
-    daily.status = "different";
-    daily.suggestion = care.suggestion;
-  }
+  const timeStatus = daily.status;
+  daily.status = bothDirections(timeStatus, care.status);
+  if (timeStatus === "same" && care.status === "different") daily.suggestion = care.suggestion;
   daily.summary += "\n" + situations.care.title[lang] + "\n" + care.summary;
   const main = [daily, support, repair];
   const code = main.map(s => ({ same:"1", different:"0" }[s.status] || "?")).join("");

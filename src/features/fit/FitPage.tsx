@@ -81,6 +81,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   const questions = data?.inventory.questions || [];
   const relationshipId = data?.inventory.relationshipId;
   const report = data?.inventory.report;
+  const upgrading = !!data?.inventory.previousLocked;
   const submitted = data?.inventory.submitted || !!report;
   const flow = resumeFlow && !submitted;
   const firstMissing = questions.findIndex(q => !data?.profile.answers[q.id]);
@@ -88,7 +89,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   const currentIndex = index ?? Math.max(0, firstMissing);
   const question = flow && questions[currentIndex];
   const selected = question ? data?.profile.answers[question.id] : undefined;
-  const canShare = data?.profile.shareMode === "portrait-v3" && data.inventory.preview.length > 0 && !!data.inventory.relationshipId;
+  const canShare = data?.profile.shareMode === "love-v4" && data.inventory.preview.length > 0 && !!data.inventory.relationshipId;
   const setQuestionFlow = (active: boolean) => {
     keyboard.hide(); setFlow(active); setIndex(null); setError(""); setCopyStatus("");
     try { if (active) localStorage.setItem(flowKey, "open"); else localStorage.removeItem(flowKey); } catch { /* Resume from saved answers. */ }
@@ -142,11 +143,11 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
     const sections = data.couple.sections;
     const summary = couple ? data.couple.summary : report?.summary || "";
     const reportTitle = couple ? data.couple.title || title : report?.title || t("我的关系说明书", "My relationship guide", "Mi guía de relación");
-    const text = couple ? [reportTitle, summary, ...sections.map((section) => `${section.title}\n${section.summary}\n${section.suggestion}`),
-      t("根据本人选择的情景回答整理 · Pinky", "Based on self-reported situation answers · Pinky", "Basado en respuestas personales a situaciones · Pinky")].join("\n\n") : [
+    const text = couple ? [reportTitle, summary, data.couple.nextStep, data.couple.introduction, ...sections.map((section) => `${section.title}\n${section.summary}\n${section.suggestion}`),
+      t("根据本人选择的情景回答整理 · Pinky", "Based on self-reported situation answers · Pinky", "Basado en respuestas personales a situaciones · Pinky")].filter(Boolean).join("\n\n") : [
       [report?.typeCode, reportTitle].filter(Boolean).join(" · "), ...(report?.legend || []), summary,
-      ...(report?.chapters || []).map(chapter => chapter.title + "\n" + chapter.body),
-    ].join("\n\n");
+      ...(report?.chapters || []).map(chapter => chapter.title + "\n" + chapter.body), report?.introduction,
+    ].filter(Boolean).join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
       setCopyStatus(t("解析已复制，可以保存或分享。", "Guide copied. You can save or share it.", "Guía copiada. Puedes guardarla o compartirla."));
@@ -167,7 +168,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
       {error && <div className="fit-error" role="alert"><p>{error}</p><button type="button" disabled={busy || !online} onClick={() => { setError(""); void load(); }}>{t("重新加载", "Reload", "Volver a cargar")}</button></div>}
       {loading && !data && <p className="fit-notice" role="status">{t("正在打开说明书…", "Opening your guide…", "Abriendo tu guía…")}</p>}
       {question && data ? <div className="fit-question">
-        <div className="fit-question-progress"><label htmlFor="fit-position">{t("个人场景", "Your portrait", "Mi retrato")} {currentIndex + 1} / {questions.length}</label>
+        <div className="fit-question-progress"><label htmlFor="fit-position">{upgrading ? t("补充场景", "Additional situations", "Situaciones adicionales") : t("个人场景", "Your portrait", "Mi retrato")} {currentIndex + 1} / {questions.length}</label>
           <span aria-live="polite">{busy ? t("保存中…", "Saving…", "Guardando…") : t(`已记录 ${seen} 题`, `${seen} saved`, `${seen} guardadas`)}</span></div>
         <input id="fit-position" data-scroll-drag="ignore" className="fit-position" type="range" min={1} max={questions.length} value={currentIndex + 1} disabled={busy}
           aria-label={t("跳到第几题", "Jump to question", "Ir a la pregunta")} onChange={e => setIndex(Number(e.target.value) - 1)} />
@@ -184,19 +185,21 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
       </div> : data && view === "mine" ? <>
         <section className="fit-intro fit-portrait">
           {report?.typeCode && <div className="fit-type-code">{report.typeCode}</div>}
-          <h2>{report?.title || (submitted ? t("这次没有形成画像", "No portrait this time", "Esta vez no hay retrato") : t("恋爱里的我，是什么样？", "What am I like in a relationship?", "¿Cómo soy en pareja?"))}</h2>
+          <h2>{(report?.typeCode ? t(`你是「${report.title}」`, `Your style: ${report.title}`, `Tu estilo: ${report.title}`) : report?.title) || (submitted ? t("这次没有形成画像", "No portrait this time", "Esta vez no hay retrato") : t("我的恋爱风格", "My romantic style", "Mi estilo en pareja"))}</h2>
           {!!report?.legend?.length && <ul className="fit-markers">{report.legend.map(line => <li key={line}>{line}</li>)}</ul>}
           <p>{report?.summary || (submitted
             ? t("这次跳过了全部场景，现有信息不足以判断你的相处风格。", "You skipped every situation, so there is too little information to describe your style.", "Omitiste todas las situaciones. Falta información para describir tu estilo.")
-            : t("按自己的经历选择，想不起来可以跳过。完成最后一题后，这次作答就会锁定，直接生成个人画像。", "Choose what fits your experience or skip. Once you finish the last question, your answers are final and your portrait appears.", "Elige lo que se acerque a tu experiencia o salta la pregunta. Al terminar la última, tus respuestas quedan cerradas y aparece tu retrato."))}</p>
+            : upgrading ? t("之前的 32 题已经保留。补全 12 个新场景，就能了解自己更接近 16 种恋爱风格中的哪一种。", "Your 32 previous responses are saved. Complete 12 additional situations to discover which of the 16 romantic styles fits you.", "Conservamos tus 32 respuestas anteriores. Completa 12 situaciones más para descubrir cuál de los 16 estilos se acerca al tuyo.")
+            : t("按自己的经历选择，想不起来可以跳过。完成后，看看你在 16 种恋爱风格里更接近哪一种，以及怎样与你相处更舒服。最后一个场景完成后，本次作答将锁定。", "Choose what fits your experience or skip. Finish to discover which of the 16 romantic styles fits you and what helps a partner connect with you. Your answers are then final.", "Elige según tu experiencia o salta la pregunta. Al terminar verás cuál de los 16 estilos se acerca al tuyo y cómo conectar contigo. Tus respuestas quedarán cerradas."))}</p>
           {!submitted && <><p className="fit-fine">{seen ? t(`已记录 ${seen} / ${questions.length} 题`, `${seen} of ${questions.length} saved`, `${seen} de ${questions.length} guardadas`) : t(`${questions.length} 道情境题 · 可以分几次答`, `${questions.length} situations · Pause anytime`, `${questions.length} situaciones · A tu ritmo`)}</p>
             <button className="fit-primary" type="button" disabled={busy || !questions.length} onClick={() => setQuestionFlow(true)} data-testid="fit-start">
-              {seen ? t("继续答题", "Continue", "Continuar") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
+              {seen ? t("继续答题", "Continue", "Continuar") : upgrading ? t("补充 12 个场景", "Complete 12 more situations", "Completar 12 situaciones más") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
             </button></>}
           {report?.chapters?.map(chapter => <section key={chapter.title} className="fit-reading"><h3>{chapter.title}</h3><p>{chapter.body}</p></section>)}
+          {report?.introduction && <section className="fit-reading"><h3>{t("你可以这样介绍自己", "In your own words", "Así puedes presentarte")}</h3><p>{report.introduction}</p></section>}
           {report && <details className="fit-method fit-basis"><summary>{t("这个类型怎么读", "How to read this type", "Cómo leer este tipo")}<CaretRight size={15}/></summary>
-            <p>{t("三个字母依次表示：共处或独处恢复精力（T / S），用语言或行动表达在乎（W / A），分歧后尽早接话或先缓一缓（R / P）。三个位置各有两种偏好，共八种组合。", "The three positions describe recharging together or solo (T / S), expressing affection through words or actions (W / A), and reconnecting soon or pausing after conflict (R / P). The three pairs form eight combinations.", "Las tres posiciones describen si recuperas energía en compañía o a solas (T / S), expresas cariño con palabras o gestos (W / A) y prefieres retomar pronto una conversación o hacer una pausa (R / P). Las tres parejas forman ocho combinaciones.")}</p>
-            <p>{t("32 题中有 12 题用于确定类型，每个字母参考四个不同情境。至少有三个具体选择，且同一方向比另一方向多两次，才确定这个字母。三个方向都清楚才给完整类型。Pinky 用这套自编问卷描述相处偏好，目前还没有用于预测关系成败的验证数据。", "Twelve of the 32 situations determine the type, four per letter. At least three concrete choices and a lead of two are needed to assign a letter. All three letters must be clear for a full type. Pinky developed this questionnaire to describe preferences. Its ability to predict relationship outcomes has yet to be validated.", "Doce de las 32 situaciones definen el tipo, cuatro por letra. Se necesitan al menos tres respuestas concretas y una diferencia de dos para asignarla. El tipo completo requiere tres letras claras. Pinky creó este cuestionario para describir preferencias. Su capacidad para predecir el futuro de una relación aún no se ha validado.")}</p>
+            <p>{t("四个位置依次描述日常亲近（T 常伴／S 留白）、支持伴侣（L 先听／H 先做）、面对分歧（V 边谈／Q 静思）、共同筹划（C 共议／E 摸底）。共议和摸底都会一起决定，区别在于先一起形成方向，还是先查清选项。", "The four positions describe everyday closeness, how you support a partner, how you work through disagreement, and when you bring a partner into planning. Both planning styles decide together; they differ in when they explore the options together.", "Las cuatro posiciones describen la cercanía cotidiana, el apoyo que ofreces, cómo ordenas tus ideas durante un desacuerdo y cuándo empiezas a planear en pareja. Ambos estilos deciden juntos; cambia cuándo empiezan a explorar las opciones.")}</p>
+            <p>{t("每个方向参考多个生活场景，四项偏好都清楚时才取完整类型名。你希望收到的照顾、看重的承诺、分担方式和未来打算，由另外的回答决定。双人组合比较两人各自的偏好，只说明可能的相处模式。", "Each preference draws on several situations. A full style name requires four clear preferences. Support you want, commitments, responsibilities and future plans come from separate responses. A couple’s profile describes a possible pattern from both people’s preferences.", "Cada preferencia se basa en varias situaciones. Para asignar un tipo completo deben estar claras las cuatro. El apoyo que necesitas, los compromisos, las responsabilidades y los planes proceden de otras respuestas. El perfil de pareja describe un patrón posible a partir de ambas perspectivas.")}</p>
           </details>}
         </section>
         {report && <><section className="fit-sharing">
@@ -209,14 +212,15 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
         <details className="fit-other">
           <summary>{submitted ? t("我的类型资料", "My type information", "Mis datos de tipo") : t("我的历史记录与类型资料", "My past notes and type information", "Mis notas anteriores y datos de tipo")}<CaretRight size={17}/></summary>
           {data.inventory.previousPortrait && <details className="fit-basis">
-            <summary>{t("之前的 24 题画像", "Earlier 24-question portrait", "Retrato anterior de 24 preguntas")}<CaretRight size={15} /></summary>
+            <summary>{t("我之前的画像", "My earlier portrait", "Mi retrato anterior")}<CaretRight size={15} /></summary>
             <h3>{data.inventory.previousPortrait.title}</h3><p>{data.inventory.previousPortrait.summary}</p>
+            {data.inventory.previousPortrait.chapters?.map(chapter => <section className="fit-reading" key={chapter.title}><h3>{chapter.title}</h3><p>{chapter.body}</p></section>)}
           </details>}
           {archive.map(section => <PersonalSection key={section.id} section={section} t={t} />)}
           {!!data.previousAnswers?.length && <div className="fit-evidence">{data.previousAnswers.map(item => <div key={item.question}><p>{item.question}</p><blockquote>{item.answer}</blockquote></div>)}</div>}
           <button type="button" className="fit-profile-link" onClick={startProfile} disabled={busy}><strong>{profileTitle}</strong><CaretRight size={20} /></button>
         </details>
-        {(submitted || Object.keys(data.profile.answers).length > 0 || !!data.previousAnswers?.length || !!data.profile.mbti || !!data.profile.zodiac) && <button type="button" className="fit-delete" disabled={busy || !online} onClick={() => { keyboard.hide(); setSheet("delete"); }}>{t("删除我的答案与说明书", "Delete my answers and guide", "Eliminar mis respuestas y mi guía")}</button>}
+        {(submitted || upgrading || Object.keys(data.profile.answers).length > 0 || !!data.previousAnswers?.length || !!data.profile.mbti || !!data.profile.zodiac) && <button type="button" className="fit-delete" disabled={busy || !online} onClick={() => { keyboard.hide(); setSheet("delete"); }}>{t("删除我的答案与说明书", "Delete my answers and guide", "Eliminar mis respuestas y mi guía")}</button>}
       </> : data && <>
         <div className="fit-intro fit-couple-intro"><h2>{data.couple.status === "ready" ? data.couple.title || (data.profile.shareMode === "support" ? t("我们可以怎么陪对方", "How we can be there for each other", "Cómo podemos acompañarnos") : t("我们俩的相处记录", "Our relationship notes", "Nuestras notas en pareja")) : t("从我，到我们俩", "From me to us", "De mí a nosotros")}</h2><p>{data.couple.summary}</p>
           {data.couple.status === "unpaired" ? <button type="button" className="fit-primary" onClick={() => { keyboard.hide(); onInvite(); }}>{t("邀请 TA 一起了解", "Invite your partner", "Invitar a tu pareja")}<ArrowRight size={18} /></button>
@@ -226,7 +230,12 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
               : data.couple.status === "waiting" ? <p className="fit-wait" role="status">{t(`等 ${data.couple.partnerName || "TA"} 连接画像，完成后这里会自动显示结果。`, `Your result will appear here when ${data.couple.partnerName || "your partner"} connects their portrait.`, `El resultado aparecerá aquí cuando ${data.couple.partnerName || "tu pareja"} conecte su retrato.`)}</p> : null}
         </div>
         {data.couple.status === "ready" && <>
-          {data.couple.sections.map((section) => <PairSection key={section.id} section={section} pattern={data.profile.shareMode === "pattern-v2" || data.profile.shareMode === "portrait-v3"} partnerName={data.couple.partnerName} t={t} onDiscuss={() => { keyboard.hide(); onDiscuss(section.id.startsWith("support-") ? section.suggestion : `${section.title}\n${section.summary}\n${section.suggestion}`); }} />)}
+          {data.profile.shareMode === "love-v4" && <dl className="fit-pair-overview">{data.couple.sections.filter(s => ["love-daily", "love-support", "love-repair"].includes(s.id)).map(s =>
+            <div key={s.id}><dt>{s.title}</dt><dd>{s.status === "same" ? t("较顺畅", "Likely aligned", "Parece haber sintonía") : s.status === "different" ? t("需协调", "Worth coordinating", "Conviene acordarlo") : t("待确认", "Still open", "Por confirmar")}</dd></div>
+          )}</dl>}
+          {data.couple.nextStep && <section className="fit-report"><h2>{t("我们最值得先做的一件事", "One thing to do together first", "Lo primero que podemos hacer juntos")}</h2><p>{data.couple.nextStep}</p></section>}
+          {data.couple.sections.map((section) => <PairSection key={section.id} section={section} pattern={data.profile.shareMode === "love-v4" || data.profile.shareMode === "pattern-v2" || data.profile.shareMode === "portrait-v3"} partnerName={data.couple.partnerName} t={t} onDiscuss={() => { keyboard.hide(); onDiscuss(section.id.startsWith("support-") ? section.suggestion : `${section.title}\n${section.summary}\n${section.suggestion}`); }} />)}
+          {data.couple.introduction && <section className="fit-reading"><h3>{t("你们可以这样介绍自己", "In your own words", "Así pueden presentarse")}</h3><p>{data.couple.introduction}</p></section>}
           <button type="button" className="fit-copy" onClick={() => void copyReport(true)}>{t("复制双人摘要", "Copy our summary", "Copiar nuestro resumen")}</button>
           {data.couple.mbti && <section className="fit-report"><h2>{data.couple.mbti.title}</h2><p>{data.couple.mbti.summary}</p><TypeSource t={t} /></section>}
           {data.couple.zodiac && <section className="fit-report fit-zodiac"><h2>{data.couple.zodiac.title}</h2><p className="fit-fine">{t("星座趣味解读", "Zodiac, just for fun", "Los signos, por diversión")}</p><p>{data.couple.zodiac.summary}</p></section>}
@@ -244,7 +253,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
           <p className="fit-fine">{t("双方都分享后，Pinky 会用各自批准的摘要解释组合与方向差异。逐题答案仅自己可见。", "Once both of you share, Pinky uses your approved summaries to explain your pattern in each direction. Individual answers stay private.", "Cuando ambos compartan, Pinky usará los dos resúmenes aprobados para explicar su patrón en ambas direcciones. Las respuestas individuales son privadas.")}</p></section>}
         <p className="fit-fine">{t("确认后，「我们俩」里会出现一条邀请。", "Confirming adds an invitation to your shared chat.", "Al confirmar, se enviará una invitación a su chat.")}</p>
         {sheet === "share" && !previewCurrent && <p role="alert" className="fit-error">{t("内容刚有更新。请关闭后重新预览。", "This has changed. Close and open the preview again.", "El contenido cambió. Cierra y vuelve a abrir la vista previa.")}</p>}
-        <button type="button" className="fit-primary" disabled={busy || !online || !previewCurrent} onClick={async () => { if (previewCurrent && await mutate("sharing", { on: true, mode: "portrait-v3", version: sheetVersion, relationshipId: previewRelationship })) { closeSheet(); setView("couple"); } }} data-testid="fit-confirm-share">{busy ? t("分享中…", "Sharing…", "Compartiendo…") : t("确认连接这版画像", "Connect this portrait", "Conectar esta versión")}</button>
+        <button type="button" className="fit-primary" disabled={busy || !online || !previewCurrent} onClick={async () => { if (previewCurrent && await mutate("sharing", { on: true, mode: "love-v4", version: sheetVersion, relationshipId: previewRelationship })) { closeSheet(); setView("couple"); } }} data-testid="fit-confirm-share">{busy ? t("分享中…", "Sharing…", "Compartiendo…") : t("确认连接这版画像", "Connect this portrait", "Conectar esta versión")}</button>
         <button type="button" className="fit-secondary" disabled={busy} onClick={closeSheet}>{t("先留给自己", "Keep it private for now", "De momento, solo para mí")}</button>
         {error && <p className="fit-error" role="alert">{error}</p>}
       </div>

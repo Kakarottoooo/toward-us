@@ -131,7 +131,7 @@ export function loveStyleReport(profile, lang) {
     const pole = axes[name][signal];
     if (pole) {
       letters[name] = pole[0];
-      legend.push(pole[1][lang]);
+      legend.push(pole[0] + " · " + pole[1][lang]);
     } else {
       unresolved.push(axisNames[name][lang]);
     }
@@ -156,15 +156,19 @@ export function loveStyleReport(profile, lang) {
   const chapters = [];
   const add = (name, body) => { if (body) chapters.push({ title: heading[name][lang], body }); };
   const habitDetail = daily[dailyPair]?.[lang] || voice;
+  const planningDetail = daily[dailyPair] ? [letters.repair, letters.planning]
+    .filter(Boolean).map(letter => firstPerson[letter][lang]).join(lang === "zh" ? "，" : "; ") : "";
+  const inYourWords = planningDetail ? tr("用你的话说：「" + planningDetail + "。」",
+    "As you might put it: “" + planningDetail + ".”", "En tus palabras: «" + planningDetail + "».")[lang] : "";
   const pending = unresolved.join(lang === "zh" ? "、" : ", ");
   add("habits", [
-    habitDetail,
+    habitDetail, inYourWords,
     ...(pending ? [tr("尚未定型的部分：" + pending + "。", "Preferences left open: " + pending + ".", "Preferencias que quedan abiertas: " + pending + ".")[lang]] : []),
   ].filter(Boolean).join(lang === "zh" ? "" : " "));
   const receive = preference(profile, receiving);
   const needs = [wants[receive][lang]];
   if (signals.support === "a" && receive === "b") needs.push(tr(
-    "你习惯给出倾听，自己却更容易被实际分担接住。",
+    "你习惯先听对方说，轮到自己遇事，更希望有人陪你理出下一步。",
     "Listening is what you tend to offer; a practical hand is what you often hope to receive.",
     "Sueles ofrecer escucha y esperar una mano concreta cuando te toca a ti.",
   )[lang]);

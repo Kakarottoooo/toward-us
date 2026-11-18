@@ -9,20 +9,20 @@ export type FitPairSection = {
   id: string; title: string; status: "same" | "mixed" | "different" | "unknown"; summary: string; suggestion: string;
   evidence: Array<{ questionId: string; question: string; mine: string; partner: string }>;
 };
-export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; markers?: string[]; typeCode?: string | null; legend?: string[]; chapters?: Array<{ title: string; body: string }>; coverage: string };
+export type PersonalFitReport = { title: string; summary: string; introduction?: string; sections: FitSection[]; markers?: string[]; typeCode?: string | null; legend?: string[]; chapters?: Array<{ title: string; body: string }>; coverage: string };
 export type FitState = {
-  inventory: { submitted: boolean; questions: FitQuestion[]; previousPortrait?: PersonalFitReport | null; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
+  inventory: { submitted: boolean; previousLocked: boolean; questions: FitQuestion[]; previousPortrait?: PersonalFitReport | null; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
   previousAnswers: Array<{ question: string; answer: string }>;
   modules: FitModule[];
   supportSharePreview: string[];
   profile: {
     version: number; answers: Record<string, string>; mbti: string | null; zodiac: string | null;
-    sharing: boolean; canShare: boolean; shareMode: "portrait-v3" | "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
+    sharing: boolean; canShare: boolean; shareMode: "love-v4" | "portrait-v3" | "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
   };
   personal: PersonalFitReport | null;
   couple: {
     status: "unpaired" | "need-your-share" | "waiting" | "different-guides" | "ready"; partnerName: string; title?: string;
-    summary: string; sections: FitPairSection[];
+    summary: string; nextStep?: string; introduction?: string; sections: FitPairSection[];
     mbti?: { title: string; summary: string }; zodiac?: { title: string; summary: string };
   };
 };
