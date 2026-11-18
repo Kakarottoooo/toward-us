@@ -17,7 +17,7 @@ export type FitState = {
   supportSharePreview: string[];
   profile: {
     version: number; answers: Record<string, string>; mbti: string | null; zodiac: string | null;
-    sharing: boolean; canShare: boolean; shareMode: "love-v4" | "portrait-v3" | "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
+    sharing: boolean; canShare: boolean; shareMode: "four-v5" | "portrait-v3" | "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
   };
   personal: PersonalFitReport | null;
   couple: {

@@ -2,35 +2,53 @@ import { createHash } from "node:crypto";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { appendTogetherMessage } from "./together-domain.mjs";
-import { fitModules, fitQuestions, localizedFitModules, mbtiTypes, zodiacNames } from "./fit-questions.mjs";
-import { coupleFitReport, coupleSupportReport, fitOverviewComplete, personalFitReport, supportReady, supportSharingPreview } from "./fit-report.mjs";
-import { reviewedWording } from "./fit-support.mjs";
-import { previousFitQuestions } from "./fit-previous-questions.mjs";
+import { mbtiTypes, zodiacNames } from "./fit-questions.mjs";
+import { personalFitReport } from "./fit-report.mjs";
+import { fitQuestions } from "./fit-questions.mjs";
 import { inventoryQuestions } from "./fit-inventory.mjs";
-import { inventoryReady, inventoryReport, inventoryPairReport } from "./fit-inventory-report.mjs";
-
-import { pairQuestions, pairReport } from "./fit-pair-pattern.mjs";
-
-import { portableQuestions, portablePreview, portablePairReport, portableSupportChapter } from "./fit-portable.mjs";
-
+import { inventoryReport } from "./fit-inventory-report.mjs";
+import { pairQuestions } from "./fit-pair-pattern.mjs";
+import { portableQuestions, portableSupportChapter } from "./fit-portable.mjs";
 import { loveQuestions } from "./fit-love-questions.mjs";
 import { loveStyleReport } from "./fit-love-style.mjs";
-import { lovePairPreview, lovePairReport } from "./fit-love-pair.mjs";
+import { fourQuestions } from "./fit-four-questions.mjs";
+import { fourReport, fourPreview } from "./fit-four-style.mjs";
+import { fourPairReport } from "./fit-four-pair.mjs";
 
-// Preserve the exact 32-item contract used by already submitted portraits.
-const previousQuestions = inventoryQuestions.flatMap((question, index) =>
-  (index + 1) % 3 === 0 ? [question, portableQuestions[(index + 1) / 3 - 1]] : [question]);
-const loveIds = new Set(loveQuestions.map(q => q.id));
-const portraitQuestions = [...previousQuestions, ...loveQuestions];
-function previousLocked(profile) {
-  return profile.previousPortraitLocked ?? previousQuestions.every(q => profile.answers?.[q.id]);
+const currentMode = "four-v5";
+const old32 = [...inventoryQuestions, ...portableQuestions];
+const old44 = [...old32, ...loveQuestions];
+const complete = (answers, questions) => questions.every(q => !!answers?.[q.id]);
+const previousByText = new Map([...fitQuestions, ...pairQuestions, ...old44].map(q => [q.text.zh, q]));
+const carried = fourQuestions.flatMap(q => {
+  const old = previousByText.get(q.text.zh);
+  if (!old || !Object.keys(q.text).every(lang => q.text[lang] === old.text[lang]) || old.options.length !== q.options.length) return [];
+  const remap = new Map();
+  for (const option of q.options) {
+    const before = old.options.find(o => Object.keys(option.text).every(lang => o.text[lang] === option.text[lang]));
+    if (!before) return [];
+    remap.set(before.id, option.id);
+  }
+  remap.set("skip", "skip");
+  return [{ id: q.id, oldId: old.id, remap }];
+});
+function currentAnswers(profile) {
+  if (profile.fourAnswers) return profile.fourAnswers;
+  const answers = {};
+  for (const { id, oldId, remap } of carried) {
+    const answer = remap.get(profile.answers?.[oldId]);
+    if (answer) answers[id] = answer;
+  }
+  return answers;
 }
-function portraitSubmitted(profile, questions = portraitQuestions) {
-  return questions.every(q => profile.answers?.[q.id]);
-}
-function portraitReady(profile, questions = portraitQuestions) {
-  const answers = profile.answers || {};
-  return portraitSubmitted(profile, questions) && questions.some(q => q.options.some(o => o.id === answers[q.id]));
+function previousPortrait(profile, language) {
+  if (complete(profile.answers, old44)) return loveStyleReport(profile, language);
+  const inventory = inventoryReport(profile, language);
+  if (inventory) {
+    const support = complete(profile.answers, old32) && portableSupportChapter(profile, language);
+    return { ...inventory, chapters: [...(inventory.chapters || []), ...(support ? [support] : [])] };
+  }
+  return personalFitReport(profile, language);
 }
 
 const KIND = "relationship_guide";
@@ -41,29 +59,16 @@ const activePair = (context) => context?.relationship.status === "active" && con
 const languageOf = (req) => supported.has(req.body?.language || req.query?.language) ? req.body?.language || req.query.language : "zh";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const fail = (statusCode, code) => Object.assign(new Error(code), { statusCode, code });
-const questionById = new Map([...fitQuestions, ...portraitQuestions, ...pairQuestions].map((question) => [question.id, question]));
-const supportIds = new Set(fitModules.find(module => module.id === "support").questions.map(q => q.id));
-const pairIds = new Set(pairQuestions.map(q => q.id));
-function shareMode(profile, relationshipId) {
+const questionById = new Map(fourQuestions.map(question => [question.id, question]));
+function shareMode(profile) {
   if (!profile) return "none";
-  if (profile.previousPortraitLocked === false || loveQuestions.some(q => profile.answers?.[q.id])) return portraitReady(profile) ? "love-v4" : "none";
-  if (portableQuestions.some(q => profile.answers?.[q.id])) return portraitReady(profile, previousQuestions) ? "portrait-v3" : "none";
-  if (relationshipId && profile.pairRelationshipId === relationshipId && pairQuestions.some(q => profile.answers?.[q.id])) {
-    const finished = pairQuestions.every(q => profile.answers[q.id]);
-    const concrete = pairQuestions.some(q => q.options.some(o => o.id === profile.answers[q.id]));
-    const personalDone = inventoryQuestions.every(q => profile.answers[q.id]) && inventoryQuestions.some(q => q.options.some(o => o.id === profile.answers[q.id]));
-    return finished && concrete && personalDone ? "pattern-v2" : "none";
-  }
-  if (inventoryQuestions.some(q => profile.answers?.[q.id])) return inventoryReady(profile) ? "inventory" : "none";
-  if (Object.keys(profile.answers || {}).some(id => supportIds.has(id))) {
-    return profile.supportReview && supportReady(profile) ? "support" : "none";
-  }
-  return fitOverviewComplete(profile) ? "legacy" : "none";
+  const answers = currentAnswers(profile);
+  return complete(answers, fourQuestions) && fourQuestions.some(q => q.options.some(o => o.id === answers[q.id])) ? currentMode : "none";
 }
 const validVersion = (value) => Number.isSafeInteger(value) && value >= 0;
 const emptyProfile = () => ({ version: 0, answers: {}, mbti: null, zodiac: null });
 const sharedIn = (profile, context) => activePair(context) && profile?.sharingRelationshipId === context.relationship.id && profile.sharedVersion === profile.version
-  && shareMode(profile, context.relationship.id) !== "none" && (profile.sharedMode || "legacy") === shareMode(profile, context.relationship.id);
+  && shareMode(profile) !== "none" && (profile.sharedMode || "legacy") === shareMode(profile);
 
 async function readOwn(db, userId) {
   const profile = await db.getRelationshipRecordForUser(collection, ownId(userId), userId);
@@ -74,33 +79,24 @@ async function view(db, userId, language) {
   const context = await db.getRelationshipContext(userId);
   const stored = await readOwn(db, userId) || emptyProfile();
   const relationshipId = activePair(context) ? context.relationship.id : null;
-  const own = { ...stored, answers: Object.fromEntries(Object.entries(stored.answers || {}).filter(([id]) => questionById.has(id) && (!pairIds.has(id) || (relationshipId && stored.pairRelationshipId === relationshipId)))) };
-  const previousAnswers = previousFitQuestions.flatMap((q) => {
-    const option = q.options[stored.answers?.[q.id]];
-    return option ? [{ question: q.text[language], answer: option[language] }] : [];
-  });
-  const sharing = sharedIn(own, context);
-  const partner = activePair(context) ? context.members.find((member) => member.userId !== userId) : null;
+  const own = { ...stored, answers: currentAnswers(stored) };
+  const sharing = sharedIn(stored, context);
+  const partner = activePair(context) ? context.members.find(member => member.userId !== userId) : null;
   const partnerName = partner?.user?.name || "";
-  const mode = shareMode(own, relationshipId);
-  const localQuestions = questions => questions.map(q => ({
-    id: q.id, text: q.text[language], options: q.options.map(o => ({ id: o.id, text: o.text[language] })),
-  }));
-  const locked = previousLocked(own);
-  const visibleQuestions = locked ? loveQuestions : portraitQuestions;
-  const submitted = portraitSubmitted(own);
-  const report = submitted && portraitReady(own) ? loveStyleReport(own, language) : null;
-  const inventoryPersonal = !submitted ? inventoryReport(own, language) : null;
-  const oldSupport = locked && inventoryPersonal ? portableSupportChapter(own, language) : null;
-  const historicReport = inventoryPersonal ? {
-    ...inventoryPersonal, chapters: [...(inventoryPersonal.chapters || []), ...(oldSupport ? [oldSupport] : [])],
-    title: inventoryPersonal.title, summary: inventoryPersonal.summary, sections: [], coverage: inventoryPersonal.coverage,
-  } : null;
+  const mode = shareMode(stored);
+  const submitted = complete(own.answers, fourQuestions);
+  const oldData = Object.keys(stored.answers || {}).length > 0;
+  const questions = submitted ? [] : fourQuestions.map(q => {
+    const options = q.options.map(o => ({ id: o.id, text: o.text[language] }));
+    // Order is uniformly keyed to this user and item, stable across sessions and languages.
+    if (createHash("sha256").update(JSON.stringify([currentMode, userId, q.id])).digest()[0] & 1) options.reverse();
+    return { id: q.id, text: q.text[language], options };
+  });
   const inventory = {
-    relationshipId, submitted, previousLocked: locked, questions: submitted ? [] : localQuestions(visibleQuestions), pairQuestions: [],
-    report, previousPortrait: historicReport,
-    preview: mode === "love-v4" ? lovePairPreview(own, language) : mode === "portrait-v3" ? portablePreview(own, language) : [],
-    revisitIds: [],
+    relationshipId, submitted, previousLocked: oldData, questions, pairQuestions: [],
+    report: submitted ? fourReport(own, language) : null,
+    previousPortrait: oldData ? previousPortrait(stored, language) : null,
+    preview: mode === currentMode ? fourPreview(own, language) : [], revisitIds: [],
   };
   let couple = {
     status: partner ? sharing ? "waiting" : "need-your-share" : "unpaired",
@@ -113,27 +109,16 @@ async function view(db, userId, language) {
     // content is exposed exclusively while that peer's exact current version is shared.
     const theirs = await readOwn(db, partner.userId);
     if (sharedIn(theirs, context)) {
-      if (mode === shareMode(theirs, relationshipId)) {
-        const reportFor = { "love-v4": lovePairReport, "portrait-v3": portablePairReport, "pattern-v2": pairReport, inventory: inventoryPairReport, support: coupleSupportReport, legacy: coupleFitReport };
-        couple = reportFor[mode](own, theirs, partnerName, language);
-      } else {
-        couple.status = "different-guides";
-        couple.summary = say(language, "你们分享的是不同版本的问卷。双方完成并分享同一套相处画像后，这里会出现双人解析。", "You shared different questionnaires. Complete and share the same relationship portrait to see your joint report.", "Compartieron cuestionarios distintos. Completen y compartan el mismo perfil para ver su lectura en pareja.");
-      }
+      couple = fourPairReport(own, { ...theirs, answers: currentAnswers(theirs) }, partnerName, language);
     }
   }
   return {
-    inventory, modules: localizedFitModules(language),
+    inventory, modules: [], previousAnswers: [], supportSharePreview: [], personal: null, couple,
     profile: {
-      version: own.version, answers: submitted ? {} : locked ? Object.fromEntries(Object.entries(own.answers).filter(([id]) => loveIds.has(id))) : own.answers, mbti: own.mbti || null, zodiac: own.zodiac || null,
-      sharing, shareMode: mode, canShare: mode !== "none", supportReview: own.supportReview ? { kind: own.supportReview.kind, text: own.supportReview.text } : null,
-      answeredCount: fitQuestions.filter(q => own.answers[q.id] && own.answers[q.id] !== "skip").length, totalQuestions: fitQuestions.length,
+      version: stored.version, answers: submitted ? {} : own.answers, mbti: stored.mbti || null, zodiac: stored.zodiac || null,
+      sharing, shareMode: mode, canShare: mode === currentMode, supportReview: null,
+      answeredCount: Object.keys(own.answers).length, totalQuestions: fourQuestions.length,
     },
-    supportSharePreview: mode === "support" ? supportSharingPreview(own, language) : [],
-    previousAnswers: submitted || locked ? [] : [...previousAnswers, ...pairQuestions.flatMap(q => {
-      const option = q.options.find(o => o.id === own.answers[q.id]);
-      return option ? [{ question: q.text[language], answer: option.text[language] }] : [];
-    })], personal: submitted || locked ? null : personalFitReport(own, language), couple,
   };
 }
 
@@ -152,6 +137,7 @@ function readMutation(req, action) {
   if (!validVersion(version) || (action === "delete" && req.query.version === undefined)) throw fail(400, "invalid_input");
   let values;
   if (action === "answers") {
+    if (req.body?.questionnaire !== currentMode) throw fail(409, "stale_version");
     const answers = req.body?.answers;
     if (!answers || typeof answers !== "object" || Array.isArray(answers) || !Object.keys(answers).length || Object.keys(answers).length > questionById.size) throw fail(400, "invalid_input");
     const entries = Object.entries(answers).sort(([a], [b]) => a.localeCompare(b));
@@ -159,10 +145,6 @@ function readMutation(req, action) {
       if (!questionById.has(id) || answer !== null && answer !== "skip" && !questionById.get(id).options.some((choice) => choice.id === answer)) throw fail(400, "invalid_input");
     }
     values = Object.fromEntries(entries);
-  } else if (action === "support-review") {
-    const { kind, text = "" } = req.body || {};
-    if (!["fits", "sometimes", "edit"].includes(kind) || typeof text !== "string" || text.length > 400 || (kind === "edit" && !text.trim())) throw fail(400, "invalid_input");
-    values = { kind, text: kind === "edit" ? text.trim() : "" };
   } else if (action === "profile") {
     const { mbti, zodiac } = req.body || {};
     if (mbti !== null && !mbtiTypes.has(mbti) || zodiac !== null && !Object.hasOwn(zodiacNames, zodiac)) throw fail(400, "invalid_input");
@@ -170,16 +152,14 @@ function readMutation(req, action) {
   } else if (action === "sharing") {
     if (typeof req.body?.on !== "boolean") throw fail(400, "invalid_input");
     const mode = req.body.mode ?? "legacy";
-    if (req.body.on && !["love-v4", "portrait-v3", "pattern-v2", "inventory", "support", "legacy"].includes(mode)) throw fail(400, "invalid_input");
+    if (req.body.on && mode !== currentMode) throw fail(400, "invalid_input");
     values = req.body.on ? { on: true, mode } : { on: false };
-    if (values.on && ["love-v4", "portrait-v3", "inventory", "pattern-v2"].includes(mode)) {
+    if (values.on) {
       if (typeof req.body.relationshipId !== "string" || !req.body.relationshipId) throw fail(400, "invalid_input");
       values.relationshipId = req.body.relationshipId;
     }
   } else values = {};
-  const pairWrite = action === "answers" && Object.keys(values).some(id => pairIds.has(id));
-  if (pairWrite && (typeof req.body.relationshipId !== "string" || !req.body.relationshipId)) throw fail(400, "invalid_input");
-  return { action, version, values, pairRelationshipId: pairWrite ? req.body.relationshipId : null };
+  return { action, version, values };
 }
 
 async function change(db, userId, context, mutation) {
@@ -189,46 +169,36 @@ async function change(db, userId, context, mutation) {
   const relationshipId = activePair(context) ? context.relationship.id : null;
   // Fingerprints retain no answer text and make a retry of the immediately previous
   // write safe. An older screen can never replay a grant into a new relationship.
-  if ((mutation.pairRelationshipId && mutation.pairRelationshipId !== relationshipId) || (values?.on && values.relationshipId && values.relationshipId !== relationshipId)) throw fail(409, "stale_version");
+  if (values?.on && values.relationshipId && values.relationshipId !== relationshipId) throw fail(409, "stale_version");
   const signature = createHash("sha256").update(JSON.stringify({ action, values, relationshipId })).digest("hex");
   if (profile.version !== version) {
     if (current?.lastMutation?.from === version && current.lastMutation.signature === signature) return false;
     throw fail(409, "stale_version");
   }
   if (action === "sharing" && values.on && !relationshipId) throw fail(409, "pairing_required");
-  if (action === "sharing" && values.on && shareMode(profile, relationshipId) === "none") throw fail(409, "overview_required");
-  if (action === "sharing" && values.on && values.mode !== shareMode(profile, relationshipId)) throw fail(409, "stale_version");
-  const next = { ...profile, answers: { ...(profile.answers || {}) } };
+  if (action === "sharing" && values.on && shareMode(profile) === "none") throw fail(409, "overview_required");
+  if (action === "sharing" && values.on && values.mode !== shareMode(profile)) throw fail(409, "stale_version");
+  const next = { ...profile };
+  const answersBefore = currentAnswers(profile);
   if (action === "answers") {
-    if (portraitSubmitted(profile) || (previousLocked(profile) && Object.keys(values).some(id => !loveIds.has(id)))) throw fail(409, "portrait_closed");
-    next.previousPortraitLocked = previousLocked(profile);
-    if (mutation.pairRelationshipId && profile.pairRelationshipId !== relationshipId) {
-      for (const id of pairIds) delete next.answers[id];
-      next.pairRelationshipId = relationshipId;
-    }
+    if (complete(answersBefore, fourQuestions)) throw fail(409, "portrait_closed");
+    next.fourAnswers = { ...answersBefore };
     for (const [id, answer] of Object.entries(values)) {
-      if (supportIds.has(id) && (next.answers[id] ?? null) !== answer) next.supportReview = null;
-      if (answer === null) delete next.answers[id];
-      else next.answers[id] = answer;
-    }
-  } else if (action === "support-review") {
-    if (!supportReady(profile)) throw fail(400, "overview_required");
-    next.supportReview = { ...values };
-    if (values.kind !== "edit") {
-      next.supportReview.wording = Object.fromEntries([...supported].map(language => [language, reviewedWording(next, language)]));
+      if (answer === null) delete next.fourAnswers[id];
+      else next.fourAnswers[id] = answer;
     }
   } else if (action === "profile") Object.assign(next, values);
   if (action === "delete") {
     next.answers = {};
+    next.fourAnswers = {};
     next.previousPortraitLocked = false;
     next.pairRelationshipId = null;
     next.supportReview = null;
     next.mbti = null;
     next.zodiac = null;
   }
-  const sameAnswers = JSON.stringify(next.answers) === JSON.stringify(profile.answers || {});
-  const contentChanged = (profile.pairRelationshipId ?? null) !== (next.pairRelationshipId ?? null) || !sameAnswers || (profile.supportReview?.kind || null) !== (next.supportReview?.kind || null)
-    || (profile.supportReview?.text || "") !== (next.supportReview?.text || "") || (next.mbti || null) !== (profile.mbti || null) || (next.zodiac || null) !== (profile.zodiac || null);
+  const contentChanged = JSON.stringify(currentAnswers(next)) !== JSON.stringify(answersBefore)
+    || (next.mbti || null) !== (profile.mbti || null) || (next.zodiac || null) !== (profile.zodiac || null);
   const sameSharing = action !== "sharing" || sharedIn(profile, context) === values.on;
   if (!contentChanged && sameSharing && action !== "delete") return false;
   next.version = profile.version + 1;
@@ -238,7 +208,7 @@ async function change(db, userId, context, mutation) {
   if (action === "sharing" && values.on) {
     next.sharingRelationshipId = relationshipId;
     next.sharedVersion = next.version;
-    next.sharedMode = shareMode(profile, relationshipId);
+    next.sharedMode = shareMode(profile);
   }
   next.lastMutation = { from: version, signature };
   if (!current) {
@@ -291,11 +261,6 @@ export function createFitRouter({ store, emit = () => {}, notify = () => {} }) {
             en: "I shared my relationship guide. Let's see how we connect.",
             es: "Compartí mi guía de relación. Veamos cómo conectamos.",
           };
-          if (payload.profile.shareMode === "support") {
-            i18n.zh = "我分享了「心情不好时」的发现。要一起看看怎样陪彼此吗？";
-            i18n.en = "I shared what helps on a hard day. Want to see how we can support each other?";
-            i18n.es = "Compartí lo que me ayuda en un día difícil. ¿Vemos cómo acompañarnos?";
-          }
           ({ conversation } = await appendTogetherMessage(tx, {
             relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: i18n[language],
             refs: [{ type: "fit", id: "fit" }], handle: "fit-invite:" + userId + ":" + payload.profile.version,
@@ -320,7 +285,7 @@ export function createFitRouter({ store, emit = () => {}, notify = () => {} }) {
   };
   router.get("/fit", handle());
   router.post("/fit/answers", handle("answers"));
-  router.post("/fit/support-review", handle("support-review"));
+
   router.post("/fit/profile", handle("profile"));
   router.post("/fit/sharing", handle("sharing"));
   router.delete("/fit", handle("delete"));
