@@ -9,7 +9,7 @@ export type FitPairSection = {
   id: string; title: string; status: "same" | "mixed" | "different" | "unknown"; summary: string; suggestion: string;
   evidence: Array<{ questionId: string; question: string; mine: string; partner: string }>;
 };
-export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; markers?: string[]; typeCode?: string; legend?: string[]; chapters?: Array<{ title: string; body: string }>; coverage: string };
+export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; markers?: string[]; typeCode?: string | null; legend?: string[]; chapters?: Array<{ title: string; body: string }>; coverage: string };
 export type FitState = {
   inventory: { submitted: boolean; questions: FitQuestion[]; previousPortrait?: PersonalFitReport | null; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
   previousAnswers: Array<{ question: string; answer: string }>;

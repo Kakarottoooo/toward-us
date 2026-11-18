@@ -1,4 +1,5 @@
 import { inventoryQuestions } from "./fit-inventory.mjs";
+import { styleReading } from "./fit-style-reading.mjs";
 
 const words = (zh, en, es) => ({ zh, en, es });
 const mixed = words("两种都有", "A bit of both", "Un poco de ambos");
@@ -199,7 +200,7 @@ export function inventoryReport(profile, language) {
     return { id, title, summary: [summary, limited].filter(Boolean).join(language === "zh" ? "" : " "), suggestion, evidence, answered: count, total };
   });
   const answered = rows.reduce((n, row) => n + row.responses.length, 0);
-  return { title, markers, summary: portrait || story.join(language === "zh" ? "" : " "), sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
+  return { ...styleReading(styleSides, language), title, markers, summary: portrait || story.join(language === "zh" ? "" : " "), sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
     `A portrait of your preferences based on ${answered} choices in this questionnaire.`,
     `Un retrato de tus preferencias a partir de ${answered} respuestas a este cuestionario.`)[language] };
 }
