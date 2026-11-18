@@ -11,13 +11,13 @@ export type FitPairSection = {
 };
 export type PersonalFitReport = { title: string; summary: string; sections: FitSection[]; markers?: string[]; coverage: string };
 export type FitState = {
-  inventory: { questions: FitQuestion[]; pairQuestions: FitQuestion[]; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
+  inventory: { questions: FitQuestion[]; previousPortrait?: PersonalFitReport | null; report: PersonalFitReport | null; preview: string[]; relationshipId: string | null; revisitIds: string[] };
   previousAnswers: Array<{ question: string; answer: string }>;
   modules: FitModule[];
   supportSharePreview: string[];
   profile: {
     version: number; answers: Record<string, string>; mbti: string | null; zodiac: string | null;
-    sharing: boolean; canShare: boolean; shareMode: "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
+    sharing: boolean; canShare: boolean; shareMode: "portrait-v3" | "pattern-v2" | "inventory" | "support" | "legacy" | "none"; supportReview: SupportReview | null; answeredCount: number; totalQuestions: number;
   };
   personal: PersonalFitReport | null;
   couple: {
