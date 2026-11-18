@@ -1,0 +1,11 @@
+type Text = Record<"zh" | "en" | "es", string>;
+export type Family = "TR" | "TC" | "SR" | "SC";
+export type Axis = "distance" | "reassurance" | "language" | "conflict";
+export const families: Record<Family, Text>;
+export const familyLines: Record<Family, Text>;
+export const portraits: Record<string, { name: Text; lines: Text[] }>;
+export const axes: Record<Axis, { name: Text; pair: string }>;
+export const poles: Record<string, Text>;
+export const headings: Text[];
+export const headlineOrder: Axis[];
+export const patterns: Record<Axis | "same", { name: Text; body: Text }>;

@@ -153,3 +153,60 @@ export const portraits = {
     ],
   },
 };
+
+export const axes = {
+  distance: { name: text("距离", "Closeness", "Cercanía"), pair: "TS" },
+  reassurance: { name: text("确认", "Reassurance", "Confirmación"), pair: "RC" },
+  language: { name: text("语言", "Receiving love", "Cómo recibes cariño"), pair: "WD" },
+  conflict: { name: text("分歧", "Disagreement", "Desacuerdos"), pair: "NL" },
+};
+
+export const poles = {
+  T: text("常伴", "Togetherness", "Compañía"),
+  S: text("留白", "Space", "Espacio"),
+  R: text("要回应", "Regular reassurance", "Señales de cariño"),
+  C: text("默认安好", "Confidence in the bond", "Confianza en el vínculo"),
+  W: text("说", "Words", "Palabras"),
+  D: text("做", "Deeds", "Hechos"),
+  N: text("当场谈", "Talk now", "Hablar ahora"),
+  L: text("缓一缓", "Talk later", "Hacer una pausa"),
+};
+
+export const headings = [
+  text("样子", "What you are like", "Cómo eres en pareja"),
+  text("需要", "What you need", "Lo que necesitas"),
+  text("容易被误解", "How you can be misread", "Cómo pueden malinterpretarte"),
+  text("自在的相处", "What helps you feel at ease", "Qué te ayuda a sentirte a gusto"),
+];
+
+export const families = {
+  TR: text("藤蔓", "Vine", "Enredadera"),
+  TC: text("暖炉", "Hearth", "Hogar"),
+  SR: text("风筝", "Kite", "Cometa"),
+  SC: text("灯塔", "Lighthouse", "Faro"),
+};
+
+export const patterns = {
+  distance: {
+    name: text("远近差", "Near and far", "Cerca y lejos"),
+    body: text("想多待一会儿的人可能觉得被冷落，想自己待一会儿的人可能觉得被缠着。先约好下一次相聚，各自的时间就更容易安排。", "One of you may feel left out just as the other starts to feel crowded. Agreeing when to meet again can make time apart easier.", "Una persona puede sentirse relegada justo cuando la otra empieza a sentirse agobiada. Acordar cuándo volver a verse puede facilitar ese tiempo a solas."),
+  },
+  reassurance: {
+    name: text("一问一默", "Ask and assume", "Una pregunta y un silencio"),
+    body: text("一个人想听一句「我还在」，另一个人心里却是「我们一直都好好的」。一句没回复的消息，在两个人那里可能有不同的分量。", "One of you longs to hear “I’m here” while the other assumes everything is fine. An unanswered message can carry a different weight for each of you.", "Una persona necesita oír «aquí estoy» y la otra da por hecho que todo va bien. Un mensaje sin respuesta puede pesar de manera distinta para cada cual."),
+  },
+  language: {
+    name: text("说做错位", "Words and deeds", "Palabras y gestos"),
+    body: text("一句喜欢和一件办妥的小事，对你们的分量不同。一方可能一直等那句话，另一方最想看见的是事情真的有人接过去。", "A loving word and a task taken care of carry different weight for you. One of you may be waiting to hear the words while the other looks for a concrete gesture.", "Una palabra cariñosa y una tarea resuelta tienen distinto peso para ustedes. Una persona puede estar esperando escuchar esa frase, y la otra, ver un gesto concreto."),
+  },
+  conflict: {
+    name: text("一追一退", "Pursue and pause", "Insistir y tomar aire"),
+    body: text("一个人越想当场说清，另一个人越需要空间。追问可能让对方更想退开，沉默也可能让想谈的人更着急。", "The more one of you wants to talk now, the more space the other may need. Another question can feel like pressure, while silence can leave the person who wants to talk more anxious.", "Cuanto más quiere hablar una persona, más espacio puede necesitar la otra. Otra pregunta puede sentirse como presión, y el silencio puede inquietar más a quien quiere hablar."),
+  },
+  same: {
+    name: text("同频", "In sync", "En sintonía"),
+    body: text("四项偏好都相同。可以从分歧时的节奏、平时需要的回应谈起。", "All four preferences match. Start with how you handle disagreement and what helps you feel reassured.", "Coinciden en las cuatro preferencias. Pueden empezar por cómo afrontan los desacuerdos y qué les da seguridad."),
+  },
+};
+
+export const headlineOrder = ["conflict", "reassurance", "distance", "language"];
