@@ -2,22 +2,37 @@ import { inventoryQuestions } from "./fit-inventory.mjs";
 
 const words = (zh, en, es) => ({ zh, en, es });
 const mixed = words("两种都有", "A bit of both", "Un poco de ambos");
-// First-person phrases combine into a short description of two recurring choices.
-const voices = {
-  rhythm: [words("我喜欢先约好", "I like a plan", "Me gusta hacer planes"), words("我喜欢随兴出发", "I like to improvise", "Me gusta improvisar")],
-  support: [words("烦心时想有人听我讲", "I want a listening ear", "me gusta que me escuchen"), words("遇事想并肩找办法", "I like solving things together", "me gusta buscar soluciones en pareja")],
-  care: [words("在乎就说出来", "I put care into words", "expreso el cariño con palabras"), words("在乎就动手去做", "I show care in small gestures", "expreso el cariño con gestos")],
-  repair: [words("有分歧想当下谈开", "I like to clear the air early", "prefiero hablar cuanto antes"), words("想缓一缓再谈", "I need a pause before we talk", "prefiero darme un momento antes de hablar")],
-  space: [words("累了想一起待着", "I recharge in company", "recargo en compañía"), words("累了想一个人待会儿", "I recharge on my own", "recargo a solas")],
-  resources: [words("想给以后留一份", "I save for what's ahead", "guardo algo para más adelante"), words("想一起攒些回忆", "I like making memories together", "me gusta crear recuerdos en pareja")],
+const styleNames = {
+  aa: words("相伴言语", "Together in words", "En compañía y con palabras"),
+  ab: words("并肩行动", "Side by side in action", "En compañía y con gestos"),
+  ba: words("自在言语", "Space and words", "Con espacio y palabras"),
+  bb: words("自在行动", "Space and action", "Con espacio y gestos"),
+};
+const styleAxes = {
+  space: {
+    name: words("亲近", "Closeness", "Cercanía"),
+    a: words("共处", "Together", "En compañía"), b: words("留白", "Space", "Espacio propio"),
+    aStory: words("累了，我更想在你身边歇一会儿。", "After a tiring day, I like to unwind beside you.", "Después de un día largo, me gusta descansar a tu lado."),
+    bStory: words("累了，我更想先一个人歇一会儿。", "After a tiring day, I like a little time to myself.", "Después de un día largo, me gusta tener un rato a solas."),
+  },
+  care: {
+    name: words("示爱", "Showing care", "Expresar cariño"),
+    a: words("言语", "Words", "Palabras"), b: words("行动", "Actions", "Gestos"),
+    aStory: words("我惦记你的时候，常会把心里的话说给你听。", "When you are on my mind, I tend to tell you.", "Cuando pienso en ti, suelo decírtelo."),
+    bStory: words("我惦记你的时候，常会替你做点具体的事。", "When you are on my mind, I tend to do something for you.", "Cuando pienso en ti, suelo hacer algo por ti."),
+  },
+  repair: {
+    name: words("重谈", "After conflict", "Retomar el diálogo"),
+    a: words("早谈", "Talk soon", "Hablar pronto"), b: words("缓谈", "Pause first", "Hacer una pausa"),
+    aStory: words("有了分歧，我通常希望早点把话接上。", "After a disagreement, I usually want to talk again soon.", "Después de un desacuerdo, suelo querer retomar pronto la conversación."),
+    bStory: words("有了分歧，我通常想先整理一下，再回来谈。", "After a disagreement, I usually need a pause before talking again.", "Después de un desacuerdo, suelo necesitar una pausa antes de volver a hablar."),
+  },
 };
 const axes = {
   rhythm: {
     name: words("约会节奏", "Making plans", "Hacer planes"),
     a: words("提前有约", "Plans in place", "Planes de antemano"),
     b: words("随兴出发", "Room for spontaneity", "Espacio para improvisar"),
-    partnerA: words("提前和你敲定见面的时间", "makes plans with you ahead of time", "acuerda contigo cuándo van a verse"),
-    partnerB: words("愿意留一段空白，到时候一起决定去哪儿", "leaves room for you to decide together on the day", "deja margen para decidir juntos sobre la marcha"),
     prompt: words("下一次见面，哪一件事要先敲定，哪一件可以当天再说？", "For our next date, what shall we book and what shall we leave open?", "Para la próxima cita, ¿qué dejamos decidido y qué improvisamos?"),
   },
   support: {
@@ -32,32 +47,24 @@ const axes = {
     name: words("爱意的表达", "Expressing care", "Expresar cariño"),
     a: words("把爱说出来", "Care in words", "Cariño en palabras"),
     b: words("把爱做出来", "Care in action", "Cariño con hechos"),
-    partnerA: words("愿意听你说完那句感谢，也明白你为什么专门提起这件小事", "enjoys hearing what you noticed and why you appreciated it", "disfruta al escuchar qué detalle notaste y por qué lo apreciaste"),
-    partnerB: words("能认出你顺手做的那些小事里藏着的心意", "recognizes affection in the little things you do", "reconoce el cariño en las pequeñas cosas que haces"),
     prompt: words("最近哪句话、哪件小事让你感觉被放在心上？那天我注意到了吗？", "What words or small gesture made you feel cared for lately? Did I notice at the time?", "¿Qué palabras o detalle te hicieron sentir cariño hace poco? ¿Me di cuenta entonces?"),
   },
   repair: {
     name: words("分歧后的节奏", "After a disagreement", "Tras un desacuerdo"),
     a: words("当下谈开", "Talking it through now", "Hablar en el momento"),
     b: words("缓一缓再谈", "A pause before talking", "Una pausa para hablar después"),
-    partnerA: words("有分歧时愿意尽快开口，把事情谈清楚", "opens a conversation soon after a disagreement", "abre pronto la conversación tras un desacuerdo"),
-    partnerB: words("允许彼此先缓一缓，再回来把话说完", "allows a pause and returns to the conversation", "da espacio para una pausa y luego retoma la conversación"),
     prompt: words("如果我们之中有一个想先静一静，怎么让另一个知道什么时候会回来谈？", "If one of us needs a pause, how will the other know when we'll talk again?", "Si alguien necesita una pausa, ¿cómo sabremos cuándo retomaremos la conversación?"),
   },
   space: {
     name: words("恢复精力的方式", "Recharging", "Recuperar energía"),
     a: words("一起充电", "Recharging together", "Recargar en compañía"),
     b: words("独处充电", "Recharging alone", "Recargar a solas"),
-    partnerA: words("在累了一天后也愿意和你安静地待一会儿", "enjoys quiet company with you after a long day", "disfruta de tu compañía tranquila después de un día largo"),
-    partnerB: words("给你留出独处的时间，也乐意之后再聚", "gives you time alone and looks forward to reconnecting", "te deja tiempo a solas y disfruta del reencuentro"),
     prompt: words("这一周最累的那天，你想我留在旁边，还是约好晚些时候再见？", "On the hardest day this week, would you like company or a time to meet later?", "El día más duro de esta semana, ¿te apetece compañía o prefieres que nos veamos más tarde?"),
   },
   resources: {
     name: words("共同预算的取舍", "Shared spending choices", "Prioridades de gasto en pareja"),
     a: words("为以后预留", "Saving for later", "Reservar para después"),
     b: words("优先一起体验", "Making memories now", "Vivir experiencias juntos"),
-    partnerA: words("愿意一起商量先为将来的计划留多少", "talks with you about what to set aside for future plans", "habla contigo de cuánto reservar para sus planes futuros"),
-    partnerB: words("愿意在负担得起时为一段共同经历花钱", "makes room for shared experiences you can afford", "hace sitio en el presupuesto para una experiencia compartida"),
     prompt: words("如果这月多出一笔可以自由安排的钱，留多少给以后，拿多少一起做件开心的事？", "If we have money left over this month, how much shall we save and how much shall we enjoy together?", "Si este mes nos sobra dinero, ¿cuánto guardamos y cuánto dedicamos a disfrutar juntos?"),
   },
 };
@@ -95,38 +102,68 @@ export function inventoryRevisitIds(profile) {
 
 export function inventoryReport(profile, language) {
   const rows = readings(profile);
-  if (!enough(rows)) return null;
-  const leading = rows.filter(row => row.side !== "mixed")
-    .sort((a, b) => b.margin - a.margin || b.responses.length - a.responses.length).slice(0, 2);
-  const patterns = leading.map(row => label(row.axis, row.side, language));
-  const partner = leading.map(({ axis, side }) => (side === "a" ? axis.partnerA : axis.partnerB)[language]);
-  const phrases = leading.map(row => voices[row.id][row.side === "a" ? 0 : 1][language]);
-  const name = phrases.join(words("，", " and ", " y ")[language]);
-  const title = name ? name[0].toLocaleUpperCase(language) + name.slice(1) : words("看情境切换", "Different moments, different needs", "Cada momento pide algo distinto")[language];
-  const summary = partner.length
-    ? words(`在你回想的场景里，「${patterns.join("」和「")}」反复出现。想了解怎样的伴侣适合你，可以先看一个具体问题：对方${partner.join("，也")}时，你是否更自在？`,
-      `“${patterns.join("” and “")}” came up repeatedly in the situations you recalled. One question to explore: do you feel at ease with someone who ${partner.join(" and ")}?`,
-      `«${patterns.join("» y «")}» aparecen varias veces en las situaciones que recuerdas. Algo que puedes explorar: ¿te sientes a gusto cuando tu pareja ${partner.join(" y ")}?`)[language]
-    : words("你的答案里，两种做法都有位置。相处起来可能更舒服的，是愿意在事情发生时问你「这一次想怎么来」的人。",
-      "Both approaches show up in your answers. You may feel at ease with someone who asks what feels right this time.",
-      "En tus respuestas aparecen ambas opciones. Quizá estés a gusto con alguien que te pregunte qué te apetece esta vez.")[language];
-  const sections = rows.map(({ id, axis, responses, side, total }) => {
+  if (!rows.every(row => row.complete) || !rows.some(row => row.responses.length)) return null;
+
+  const byId = new Map(rows.map(row => [row.id, row]));
+  const styleSides = {};
+  const markers = [];
+  const story = [];
+  const unresolved = [];
+  for (const [id, axis] of Object.entries(styleAxes)) {
+    const row = byId.get(id);
+    // Prefer a descriptive partial result to a type based on only two examples.
+    if (row.responses.length >= 3 && row.side !== "mixed") {
+      styleSides[id] = row.side;
+      markers.push(axis.name[language] + " · " + axis[row.side][language]);
+      story.push(axis[row.side + "Story"][language]);
+    } else {
+      unresolved.push(axis.name[language]);
+      const status = row.responses.length < 3
+        ? words("待补充", "More examples needed", "Faltan ejemplos") : mixed;
+      markers.push(axis.name[language] + " · " + status[language]);
+    }
+  }
+
+  let title = words("我的相处线索", "My relationship patterns so far", "Mis primeras pistas en pareja")[language];
+  if (!unresolved.length) {
+    const base = styleNames[styleSides.space + styleSides.care][language];
+    const repair = styleAxes.repair[styleSides.repair][language];
+    title = language === "zh" ? base + "·" + repair + "型" : base + " · " + repair;
+  } else {
+    const pending = unresolved.join(language === "zh" ? "、" : ", ");
+    story.push(words(`关于「${pending}」，目前的回答还不足以确定一种做法。`,
+      `My answers about ${pending.toLowerCase()} leave the pattern open.`,
+      `Mis respuestas sobre ${pending.toLowerCase()} todavía dejan abierta la conclusión.`)[language]);
+  }
+
+  const sections = ["space", "care", "repair", "support", "rhythm", "resources"].map(id => {
+    const { axis, responses, side, total } = byId.get(id);
     const evidence = responses.map(({ question, option }) => ({
       questionId: question.id, question: question.text[language], answer: option.text[language], topic: axis.name[language],
     }));
     const preferred = responses.filter(response => response.option.id === side).length;
     const count = responses.length;
     const pattern = label(axis, side, language);
-    const summary = side === "mixed"
+    const summary = count < 2
+      ? words("这个方面还缺少具体经历。", "This area needs more concrete examples.", "Faltan experiencias concretas en este aspecto.")[language]
+      : side === "mixed"
       ? words("你的回答里两种做法都出现了，暂时看不出稳定偏向。", "Both approaches appear in your answers, with no clear tilt.", "En tus respuestas aparecen ambas opciones sin una tendencia clara.")[language]
       : words(`在作了具体选择的 ${count} 个场景中，有 ${preferred} 次更接近「${pattern}」。`,
         `In ${preferred} of the ${count} situations you answered, you leaned toward “${pattern}”.`,
         `En ${preferred} de las ${count} situaciones que respondiste, te acercaste a «${pattern}».`)[language];
     const limited = count === 2 ? words("这里仅有两次具体选择，可以先当作线索。", "There are only two concrete choices here. Treat them as an initial clue.", "Aquí solo hay dos respuestas concretas. Tómalas como una primera pista.")[language] : "";
-    return { id, title: axis.name[language], summary: [summary, limited].filter(Boolean).join(language === "zh" ? "" : " "), suggestion: axis.prompt[language], evidence, answered: count, total };
+    const title = id === "support" ? words("我想收到的支持", "Support I look for", "El apoyo que busco")[language] : axis.name[language];
+    let suggestion = axis.prompt[language];
+    if (id === "support" && count >= 3 && side !== "mixed") {
+      const support = (side === "a" ? axis.partnerA : axis.partnerB)[language];
+      suggestion = words(`当伴侣${support}，你会更自在吗？`,
+        `Do you feel more at ease with someone who ${support}?`,
+        `¿Te sientes más a gusto cuando tu pareja ${support}?`)[language];
+    }
+    return { id, title, summary: [summary, limited].filter(Boolean).join(language === "zh" ? "" : " "), suggestion, evidence, answered: count, total };
   });
   const answered = rows.reduce((n, row) => n + row.responses.length, 0);
-  return { title, summary, sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
+  return { title, markers, summary: story.join(language === "zh" ? "" : " "), sections, coverage: words(`依据你在 ${answered} 个场景中的选择。这是本次问卷的相处偏好画像。`,
     `A portrait of your preferences based on ${answered} choices in this questionnaire.`,
     `Un retrato de tus preferencias a partir de ${answered} respuestas a este cuestionario.`)[language] };
 }
