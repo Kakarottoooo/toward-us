@@ -111,6 +111,12 @@ const patterns = {
   "000": [tr("磨合探索型", "Finding your rhythm", "Pareja en búsqueda de su ritmo"), tr("三个方面都有人提到反复没收到需要的回应。可以先从一件最近的小事说起。", "In all three areas, at least one of you recalls repeatedly missing something important. Start with one recent moment.", "En los tres ámbitos al menos una persona recuerda necesidades que quedaron sin respuesta. Empiecen por un momento reciente.")],
 };
 
+export { plans as fitFuturePlans };
+
+export function fitPairPatternName(code, language) {
+  return patterns[code]?.[0][language];
+}
+
 function domainResult(a, b) {
   if ([a, b].some(person => person.outcome === "gap")) return "gap";
   // The receiver's account takes precedence over a giver's guess. Explicit conflicting
