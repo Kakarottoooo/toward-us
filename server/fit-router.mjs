@@ -7,7 +7,9 @@ import { coupleFitReport, coupleSupportReport, fitOverviewComplete, personalFitR
 import { reviewedWording } from "./fit-support.mjs";
 import { previousFitQuestions } from "./fit-previous-questions.mjs";
 import { inventoryQuestions } from "./fit-inventory.mjs";
-import { inventoryReady, inventoryReport, inventoryPairReport, inventoryPreview, inventoryRevisitIds } from "./fit-inventory-report.mjs";
+import { inventoryReady, inventoryReport, inventoryPairReport, inventoryRevisitIds } from "./fit-inventory-report.mjs";
+
+import { pairQuestions, pairPreview, pairReport } from "./fit-pair-pattern.mjs";
 
 const KIND = "relationship_guide";
 const collection = "checkins";
@@ -17,10 +19,17 @@ const activePair = (context) => context?.relationship.status === "active" && con
 const languageOf = (req) => supported.has(req.body?.language || req.query?.language) ? req.body?.language || req.query.language : "zh";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const fail = (statusCode, code) => Object.assign(new Error(code), { statusCode, code });
-const questionById = new Map([...fitQuestions, ...inventoryQuestions].map((question) => [question.id, question]));
+const questionById = new Map([...fitQuestions, ...inventoryQuestions, ...pairQuestions].map((question) => [question.id, question]));
 const supportIds = new Set(fitModules.find(module => module.id === "support").questions.map(q => q.id));
-function shareMode(profile) {
+const pairIds = new Set(pairQuestions.map(q => q.id));
+function shareMode(profile, relationshipId) {
   if (!profile) return "none";
+  if (relationshipId && profile.pairRelationshipId === relationshipId && pairQuestions.some(q => profile.answers?.[q.id])) {
+    const finished = pairQuestions.every(q => profile.answers[q.id]);
+    const concrete = pairQuestions.some(q => q.options.some(o => o.id === profile.answers[q.id]));
+    const personalDone = inventoryQuestions.every(q => profile.answers[q.id]) && inventoryQuestions.some(q => q.options.some(o => o.id === profile.answers[q.id]));
+    return finished && concrete && personalDone ? "pattern-v2" : "none";
+  }
   if (inventoryQuestions.some(q => profile.answers?.[q.id])) return inventoryReady(profile) ? "inventory" : "none";
   if (Object.keys(profile.answers || {}).some(id => supportIds.has(id))) {
     return profile.supportReview && supportReady(profile) ? "support" : "none";
@@ -30,7 +39,7 @@ function shareMode(profile) {
 const validVersion = (value) => Number.isSafeInteger(value) && value >= 0;
 const emptyProfile = () => ({ version: 0, answers: {}, mbti: null, zodiac: null });
 const sharedIn = (profile, context) => activePair(context) && profile?.sharingRelationshipId === context.relationship.id && profile.sharedVersion === profile.version
-  && shareMode(profile) !== "none" && (profile.sharedMode || "legacy") === shareMode(profile);
+  && shareMode(profile, context.relationship.id) !== "none" && (profile.sharedMode || "legacy") === shareMode(profile, context.relationship.id);
 
 async function readOwn(db, userId) {
   const profile = await db.getRelationshipRecordForUser(collection, ownId(userId), userId);
@@ -40,7 +49,8 @@ async function readOwn(db, userId) {
 async function view(db, userId, language) {
   const context = await db.getRelationshipContext(userId);
   const stored = await readOwn(db, userId) || emptyProfile();
-  const own = { ...stored, answers: Object.fromEntries(Object.entries(stored.answers || {}).filter(([id]) => questionById.has(id))) };
+  const relationshipId = activePair(context) ? context.relationship.id : null;
+  const own = { ...stored, answers: Object.fromEntries(Object.entries(stored.answers || {}).filter(([id]) => questionById.has(id) && (!pairIds.has(id) || (relationshipId && stored.pairRelationshipId === relationshipId)))) };
   const previousAnswers = previousFitQuestions.flatMap((q) => {
     const option = q.options[stored.answers?.[q.id]];
     return option ? [{ question: q.text[language], answer: option[language] }] : [];
@@ -49,13 +59,15 @@ async function view(db, userId, language) {
   const partner = activePair(context) ? context.members.find((member) => member.userId !== userId) : null;
   const partnerName = partner?.user?.name || "";
   const inventoryPersonal = inventoryReport(own, language);
+  const mode = shareMode(own, relationshipId);
+  const localQuestions = questions => questions.map(q => ({
+    id: q.id, text: q.text[language], options: q.options.map(o => ({ id: o.id, text: o.text[language] })),
+  }));
   const inventory = {
-    relationshipId: partner ? context.relationship.id : null,
-    questions: inventoryQuestions.map(q => ({
-      id: q.id, text: q.text[language], options: q.options.map(o => ({ id: o.id, text: o.text[language] })),
-    })),
+    relationshipId, questions: localQuestions(inventoryQuestions),
+    pairQuestions: partner ? localQuestions(pairQuestions) : [],
     report: inventoryPersonal,
-    preview: inventoryPersonal ? inventoryPreview(own, language) : [],
+    preview: mode === "pattern-v2" ? pairPreview(own, language) : [],
     revisitIds: inventoryRevisitIds(own),
   };
   let couple = {
@@ -69,9 +81,8 @@ async function view(db, userId, language) {
     // content is exposed exclusively while that peer's exact current version is shared.
     const theirs = await readOwn(db, partner.userId);
     if (sharedIn(theirs, context)) {
-      const mode = shareMode(own);
-      if (mode === shareMode(theirs)) {
-        const reportFor = { inventory: inventoryPairReport, support: coupleSupportReport, legacy: coupleFitReport };
+      if (mode === shareMode(theirs, relationshipId)) {
+        const reportFor = { "pattern-v2": pairReport, inventory: inventoryPairReport, support: coupleSupportReport, legacy: coupleFitReport };
         couple = reportFor[mode](own, theirs, partnerName, language);
       } else {
         couple.status = "different-guides";
@@ -83,10 +94,10 @@ async function view(db, userId, language) {
     inventory, modules: localizedFitModules(language),
     profile: {
       version: own.version, answers: own.answers || {}, mbti: own.mbti || null, zodiac: own.zodiac || null,
-      sharing, shareMode: shareMode(own), canShare: shareMode(own) !== "none", supportReview: own.supportReview ? { kind: own.supportReview.kind, text: own.supportReview.text } : null,
+      sharing, shareMode: mode, canShare: mode !== "none", supportReview: own.supportReview ? { kind: own.supportReview.kind, text: own.supportReview.text } : null,
       answeredCount: fitQuestions.filter(q => own.answers[q.id] && own.answers[q.id] !== "skip").length, totalQuestions: fitQuestions.length,
     },
-    supportSharePreview: shareMode(own) === "support" ? supportSharingPreview(own, language) : [],
+    supportSharePreview: mode === "support" ? supportSharingPreview(own, language) : [],
     previousAnswers, personal: personalFitReport(own, language), couple,
   };
 }
@@ -123,14 +134,16 @@ function readMutation(req, action) {
   } else if (action === "sharing") {
     if (typeof req.body?.on !== "boolean") throw fail(400, "invalid_input");
     const mode = req.body.mode ?? "legacy";
-    if (req.body.on && !["inventory", "support", "legacy"].includes(mode)) throw fail(400, "invalid_input");
+    if (req.body.on && !["pattern-v2", "inventory", "support", "legacy"].includes(mode)) throw fail(400, "invalid_input");
     values = req.body.on ? { on: true, mode } : { on: false };
-    if (values.on && mode === "inventory") {
+    if (values.on && ["inventory", "pattern-v2"].includes(mode)) {
       if (typeof req.body.relationshipId !== "string" || !req.body.relationshipId) throw fail(400, "invalid_input");
       values.relationshipId = req.body.relationshipId;
     }
   } else values = {};
-  return { action, version, values };
+  const pairWrite = action === "answers" && Object.keys(values).some(id => pairIds.has(id));
+  if (pairWrite && (typeof req.body.relationshipId !== "string" || !req.body.relationshipId)) throw fail(400, "invalid_input");
+  return { action, version, values, pairRelationshipId: pairWrite ? req.body.relationshipId : null };
 }
 
 async function change(db, userId, context, mutation) {
@@ -140,17 +153,21 @@ async function change(db, userId, context, mutation) {
   const relationshipId = activePair(context) ? context.relationship.id : null;
   // Fingerprints retain no answer text and make a retry of the immediately previous
   // write safe. An older screen can never replay a grant into a new relationship.
-  if (values?.on && values.mode === "inventory" && values.relationshipId !== relationshipId) throw fail(409, "stale_version");
+  if ((mutation.pairRelationshipId && mutation.pairRelationshipId !== relationshipId) || (values?.on && values.relationshipId && values.relationshipId !== relationshipId)) throw fail(409, "stale_version");
   const signature = createHash("sha256").update(JSON.stringify({ action, values, relationshipId })).digest("hex");
   if (profile.version !== version) {
     if (current?.lastMutation?.from === version && current.lastMutation.signature === signature) return false;
     throw fail(409, "stale_version");
   }
   if (action === "sharing" && values.on && !relationshipId) throw fail(409, "pairing_required");
-  if (action === "sharing" && values.on && shareMode(profile) === "none") throw fail(409, "overview_required");
-  if (action === "sharing" && values.on && values.mode !== shareMode(profile)) throw fail(409, "stale_version");
+  if (action === "sharing" && values.on && shareMode(profile, relationshipId) === "none") throw fail(409, "overview_required");
+  if (action === "sharing" && values.on && values.mode !== shareMode(profile, relationshipId)) throw fail(409, "stale_version");
   const next = { ...profile, answers: { ...(profile.answers || {}) } };
   if (action === "answers") {
+    if (mutation.pairRelationshipId && profile.pairRelationshipId !== relationshipId) {
+      for (const id of pairIds) delete next.answers[id];
+      next.pairRelationshipId = relationshipId;
+    }
     for (const [id, answer] of Object.entries(values)) {
       if (supportIds.has(id) && (next.answers[id] ?? null) !== answer) next.supportReview = null;
       if (answer === null) delete next.answers[id];
@@ -165,12 +182,13 @@ async function change(db, userId, context, mutation) {
   } else if (action === "profile") Object.assign(next, values);
   if (action === "delete") {
     next.answers = {};
+    next.pairRelationshipId = null;
     next.supportReview = null;
     next.mbti = null;
     next.zodiac = null;
   }
   const sameAnswers = JSON.stringify(next.answers) === JSON.stringify(profile.answers || {});
-  const contentChanged = !sameAnswers || (profile.supportReview?.kind || null) !== (next.supportReview?.kind || null)
+  const contentChanged = (profile.pairRelationshipId ?? null) !== (next.pairRelationshipId ?? null) || !sameAnswers || (profile.supportReview?.kind || null) !== (next.supportReview?.kind || null)
     || (profile.supportReview?.text || "") !== (next.supportReview?.text || "") || (next.mbti || null) !== (profile.mbti || null) || (next.zodiac || null) !== (profile.zodiac || null);
   const sameSharing = action !== "sharing" || sharedIn(profile, context) === values.on;
   if (!contentChanged && sameSharing && action !== "delete") return false;
@@ -181,7 +199,7 @@ async function change(db, userId, context, mutation) {
   if (action === "sharing" && values.on) {
     next.sharingRelationshipId = relationshipId;
     next.sharedVersion = next.version;
-    next.sharedMode = shareMode(profile);
+    next.sharedMode = shareMode(profile, relationshipId);
   }
   next.lastMutation = { from: version, signature };
   if (!current) {
