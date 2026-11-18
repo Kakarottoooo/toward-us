@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, CaretRight, LockKey, UsersThree, X } from "@phosphor-icons/react";
+import { BookOpen, ArrowLeft, ArrowRight, Check, CaretRight, LockKey, UsersThree, X } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { BottomSheet, MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import type { FitPairSection, FitSection, FitState } from "./types";
+import { FitAtlas } from "./FitAtlas";
 import "./fit.css";
 
 type Props = {
@@ -27,6 +28,8 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   const t: Translate = (zh, en, es) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const flowKey = `pinky:fit-four-v5:${userId}`;
+  const [atlasOpen, setAtlasOpen] = useState(false);
+  const atlasTrigger = useRef<HTMLButtonElement>(null);
   const [data, setData] = useState<FitState | null>(null);
   const [view, setView] = useState<"mine" | "couple">(initialView);
   const [resumeFlow, setFlow] = useState(() => initialView === "mine" && rememberedFlow(flowKey) === "open");
@@ -137,7 +140,18 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
   };
   const previewCurrent = !!canShare && sheetVersion === data?.profile.version && previewRelationship === data?.inventory.relationshipId;
   const startProfile = () => { keyboard.hide(); setProfileDraft({ mbti: data?.profile.mbti || "", zodiac: data?.profile.zodiac || "" }); setSheet("profile"); };
-  const goBack = () => { keyboard.hide(); if (flow) finish(); else onBack(); };
+  const goBack = () => {
+    keyboard.hide();
+    if (atlasOpen) {
+      setAtlasOpen(false);
+      requestAnimationFrame(() => atlasTrigger.current?.focus({ preventScroll: true }));
+    } else if (flow) finish();
+    else onBack();
+  };
+  const atlasTitle = t("恋爱四问类型图鉴", "Four Questions type guide", "Guía de tipos de las Cuatro Preguntas");
+  const atlasEntry = <button ref={atlasTrigger} type="button" className="fit-atlas-entry" data-testid="fit-open-atlas" onClick={() => { keyboard.hide(); setAtlasOpen(true); }}>
+    <BookOpen size={20} aria-hidden="true"/><span>{atlasTitle}</span><CaretRight size={16} aria-hidden="true"/>
+  </button>;
   const copyReport = async (couple = false) => {
     if (!data) return;
     const sections = data.couple.sections;
@@ -156,14 +170,16 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
 
   return <section className="fit-page paper-screen" data-testid="fit-page">
     <header className="fit-header">
-      <button type="button" disabled={busy} onClick={goBack} aria-label={flow ? t("回到说明书", "Back to your guide", "Volver a tu guía") : t("回到对话", "Back to chat", "Volver al chat")} data-testid="fit-back"><ArrowLeft size={22} /></button>
-      <h1>{title}</h1><span aria-hidden="true" />
+      <button type="button" disabled={busy} onClick={goBack} aria-label={atlasOpen ? t("返回", "Back", "Volver") : flow ? t("回到说明书", "Back to your guide", "Volver a tu guía") : t("回到对话", "Back to chat", "Volver al chat")} data-testid="fit-back"><ArrowLeft size={22} /></button>
+      <h1>{atlasOpen ? atlasTitle : title}</h1><span aria-hidden="true" />
     </header>
-    {!flow && <div className="fit-tabs" role="tablist" aria-label={title}>
+    {!atlasOpen && !flow && <div className="fit-tabs" role="tablist" aria-label={title}>
       <button type="button" role="tab" aria-selected={view === "mine"} onClick={() => { keyboard.hide(); setView("mine"); }}><LockKey size={17} />{t("我的画像", "My portrait", "Mi retrato")}</button>
       <button type="button" role="tab" aria-selected={view === "couple"} onClick={() => { keyboard.hide(); setView("couple"); }}><UsersThree size={18} />{t("我们俩的解析", "Our connection", "Nuestra conexión")}</button>
     </div>}
-    <div className="fit-scroll"><MobileScroll><div className="fit-content" ref={contentRef}>
+    {atlasOpen && <div className="fit-scroll"><MobileScroll><div className="fit-content"><FitAtlas language={language} myCode={report?.typeCode}/></div></MobileScroll></div>}
+    <div className="fit-scroll" style={atlasOpen ? { display: "none" } : undefined}><MobileScroll><div className="fit-content" ref={contentRef}>
+      {!data && !flow && atlasEntry}
       {!online && <p className="fit-notice" role="status">{t("你现在离线，已打开的说明书可以继续看。联网后再保存。", "You're offline. You can read this guide; reconnect to save changes.", "Estás sin conexión. Puedes leer tu guía; vuelve a conectarte para guardar cambios.")}</p>}
       {error && <div className="fit-error" role="alert"><p>{error}</p><button type="button" disabled={busy || !online} onClick={() => { setError(""); void load(); }}>{t("重新加载", "Reload", "Volver a cargar")}</button></div>}
       {loading && !data && <p className="fit-notice" role="status">{t("正在打开说明书…", "Opening your guide…", "Abriendo tu guía…")}</p>}
@@ -194,6 +210,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
             <button className="fit-primary" type="button" disabled={busy || !questions.length} onClick={() => setQuestionFlow(true)} data-testid="fit-start">
               {seen ? t("继续答题", "Continue", "Continuar") : t("开始答题", "Start", "Empezar")}<ArrowRight size={17} />
             </button></>}
+          {atlasEntry}
           {report?.chapters?.map(chapter => <section key={chapter.title} className="fit-reading"><h3>{chapter.title}</h3><p>{chapter.body}</p></section>)}
           {report?.introduction && <section className="fit-reading"><h3>{t("你可以这样介绍自己", "In your own words", "Así puedes presentarte")}</h3><p>{report.introduction}</p></section>}
           {report && <details className="fit-method fit-basis"><summary>{t("这个类型怎么读", "How to read this type", "Cómo leer este tipo")}<CaretRight size={15}/></summary>
@@ -231,6 +248,7 @@ export function FitPage({ initialView, language, userId, paired, onBack, onInvit
               : data.couple.status === "need-your-share" && !report ? <p className="fit-wait">{t("在「我的画像」完成个人问卷后，就可以连接两份画像。", "Finish your questionnaire in My portrait to connect your portraits.", "Completa tu cuestionario en Mi retrato para conectar ambos retratos.")}</p>
               : data.couple.status === "waiting" ? <p className="fit-wait" role="status">{t(`等 ${data.couple.partnerName || "TA"} 连接画像，完成后这里会自动显示结果。`, `Your result will appear here when ${data.couple.partnerName || "your partner"} connects their portrait.`, `El resultado aparecerá aquí cuando ${data.couple.partnerName || "tu pareja"} conecte su retrato.`)}</p> : null}
         </div>
+        {atlasEntry}
         {data.couple.status === "ready" && <>
           {data.couple.sections.map((section) => <PairSection key={section.id} section={section} pattern={data.profile.shareMode === "four-v5"} partnerName={data.couple.partnerName} t={t} onDiscuss={() => { keyboard.hide(); onDiscuss(section.id.startsWith("support-") ? section.suggestion : `${section.title}\n${section.summary}\n${section.suggestion}`); }} />)}
           {data.couple.introduction && <section className="fit-reading"><h3>{t("你们可以这样介绍自己", "In your own words", "Así pueden presentarse")}</h3><p>{data.couple.introduction}</p></section>}

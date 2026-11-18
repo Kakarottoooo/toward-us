@@ -1,25 +1,10 @@
 import { fourQuestions } from "./fit-four-questions.mjs";
-import { familyLines, portraits } from "./fit-four-portraits.mjs";
+import { axes, poles, headings, familyLines, portraits } from "../shared/fit-four-portraits.mjs";
 
 const text = (zh, en, es) => ({ zh, en, es });
 const pending = text("待确认", "Still open", "Por confirmar");
 const partialTitle = text("我的恋爱四问线索", "My four relationship preferences so far", "Mis cuatro preferencias en pareja hasta ahora");
-const axes = {
-  distance: { name: text("距离", "Closeness", "Cercanía"), pair: "TS" },
-  reassurance: { name: text("确认", "Reassurance", "Confirmación"), pair: "RC" },
-  language: { name: text("语言", "Receiving love", "Cómo recibes cariño"), pair: "WD" },
-  conflict: { name: text("分歧", "Disagreement", "Desacuerdos"), pair: "NL" },
-};
-const poles = {
-  T: text("常伴", "Togetherness", "Compañía"),
-  S: text("留白", "Space", "Espacio"),
-  R: text("要回应", "Regular reassurance", "Señales de cariño"),
-  C: text("默认安好", "Confidence in the bond", "Confianza en el vínculo"),
-  W: text("说", "Words", "Palabras"),
-  D: text("做", "Deeds", "Hechos"),
-  N: text("当场谈", "Talk now", "Hablar ahora"),
-  L: text("缓一缓", "Talk later", "Hacer una pausa"),
-};
+
 const otherSide = {
   T: text("也有些时候，即使各自忙自己的事，你仍感觉亲近。", "At times you feel close even while doing things separately.", "A veces sientes cercanía aunque cada cual haga lo suyo."),
   S: text("也有些时候，和对方待在一起比一个人更能让你放松。", "At times you relax more easily in your partner’s company.", "A veces te relajas más en compañía de tu pareja."),
@@ -35,12 +20,6 @@ const strengths = {
   leaning: text("偏向", "Leaning", "Tendencia"),
   middle: text("接近中间", "Near the middle", "Cerca del punto medio"),
 };
-const headings = [
-  text("样子", "What you are like", "Cómo eres en pareja"),
-  text("需要", "What you need", "Lo que necesitas"),
-  text("容易被误解", "How you can be misread", "Cómo pueden malinterpretarte"),
-  text("自在的相处", "What helps you feel at ease", "Qué te ayuda a sentirte a gusto"),
-];
 
 const questionsByAxis = Object.groupBy(fourQuestions, q => q.axis);
 
