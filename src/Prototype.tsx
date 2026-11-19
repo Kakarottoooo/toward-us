@@ -26,6 +26,7 @@ import "./relationship.css";
 import "./controls.css";
 
 type Screen = "booting" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
+type AuthMode = "login" | "register";
 type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null } | null };
@@ -34,7 +35,7 @@ type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" 
 const copy = {
   zh: {
     homeLine: "不知道怎么回 TA，先问问 Ourever。", start: "开始", homeFooter: "看懂 · 回应 · 靠近", back: "返回",
-    welcome: "欢迎回来", authHint: "它属于你们两个人，但任何一方都不能单独控制它。", email: "邮箱", password: "密码",
+    welcome: "欢迎回来", registerHint: "你可以先和 Ourever 私聊，想一起使用时再邀请伴侣。", email: "邮箱", password: "密码",
     displayName: "你的称呼", login: "登录", register: "创建账号", switchRegister: "还没有账号？创建一个",
     switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
@@ -44,7 +45,7 @@ const copy = {
   },
   en: {
     homeLine: "Not sure how to reply to them? Ask Ourever first.", start: "Begin", homeFooter: "Understand · Reply · Get closer", back: "Back",
-    welcome: "Welcome back", authHint: "It belongs to both of you, but neither person controls it alone.", email: "Email", password: "Password",
+    welcome: "Welcome back", registerHint: "Start with a private chat. You can invite your partner whenever you’re ready.", email: "Email", password: "Password",
     displayName: "Your name", login: "Sign in", register: "Create account", switchRegister: "New here? Create an account",
     switchLogin: "Already registered? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
     createInvite: "Create partner invite", copyInvite: "Copy invite link", copied: "Copied", waitingPartner: "Waiting for your partner",
@@ -54,7 +55,7 @@ const copy = {
   },
   es: {
     homeLine: "¿No sabes qué responderle? Pregúntale a Ourever.", start: "Comenzar", homeFooter: "Entender · Responder · Acercarse", back: "Volver",
-    welcome: "Bienvenido de nuevo", authHint: "Les pertenece a ambos, pero ninguno lo controla por sí solo.", email: "Correo electrónico", password: "Contraseña",
+    welcome: "Bienvenido de nuevo", registerHint: "Empieza con un chat privado. Puedes invitar a tu pareja cuando quieras.", email: "Correo electrónico", password: "Contraseña",
     displayName: "Tu nombre", login: "Iniciar sesión", register: "Crear cuenta", switchRegister: "¿Eres nuevo? Crea una cuenta",
     switchLogin: "¿Ya tienes cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
     createInvite: "Crear invitación", copyInvite: "Copiar enlace", copied: "Copiado", waitingPartner: "Esperando a tu pareja",
@@ -83,8 +84,7 @@ function AccountPrototype() {
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  // From the invite landing page, "I already have an account" opens sign-in instead of sign-up.
-  const [authMode, setAuthMode] = useState<"login" | "register" | undefined>();
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const keyboard = useKeyboard();
   const t = copy[language];
 
@@ -129,6 +129,12 @@ function AccountPrototype() {
     void api("/api/usage/push-opened", { method: "POST" }).catch(() => {});
   }, [user?.id]);
 
+  const openAuth = (mode: AuthMode) => {
+    keyboard.hide();
+    setNotice("");
+    setAuthMode(mode);
+    setScreen("auth");
+  };
   const selectLanguage = (value: Language) => setLanguage(value);
   const acceptAuth = async (state: { user: User; pairing: Pairing | null }) => {
     const next = new URLSearchParams(location.search).get("next");
@@ -178,9 +184,9 @@ function AccountPrototype() {
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
     if (screen === "feedback" && user) return <FeedbackPage language={language} from={feedbackFrom} onBack={backToConversation} />;
     if (screen === "privacy" && user) return <SettingsPage initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={reloadIdentity} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
-    if (screen === "invite") return <InviteLanding code={inviteCode()} language={language} onLanguage={selectLanguage} onJoin={() => { setAuthMode("register"); setScreen("auth"); }} onSignIn={() => { setAuthMode("login"); setScreen("auth"); }} />;
-    if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => setScreen(user ? landing(pairing) : "auth")} t={t} />;
-    if (screen === "auth") return <AuthScreen key={authMode} initialMode={authMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(inviteCode() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+    if (screen === "invite") return <InviteLanding code={inviteCode()} language={language} onLanguage={selectLanguage} onJoin={() => openAuth("register")} onSignIn={() => openAuth("login")} />;
+    if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
+    if (screen === "auth") return <AuthScreen mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(inviteCode() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
     if (screen === "pairing" && user) return <PairingScreen pairing={pairing} language={language} onLanguage={selectLanguage} onRefresh={refreshPairing} onBack={() => setScreen("conversation")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
     if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
     return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
@@ -190,17 +196,17 @@ function AccountPrototype() {
   return <>{renderScreen()}{showArrivals && <PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} />}</>;
 }
 
-function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; t: typeof copy.zh }) {
+function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; onSignIn: () => void; t: typeof copy.zh }) {
   return <div className="home-screen" data-testid="home-screen">
     <div className="mobile-home-composition">
       <img className="home-art" src="/assets/brand/editorial-columns-background.png" alt="" aria-hidden="true" draggable={false} />
       <LanguageSwitch language={language} onLanguage={onLanguage} />
       <div className={`home-statement ${language === "zh" ? "chinese" : "english"}`}><h1>{t.homeLine}</h1><PauseMark /></div>
       <Wordmark language={language} />
-      <div className="home-actions"><SplitButton label={t.start} onClick={onStart} testId="start-button" /><p>{t.homeFooter}</p></div>
+      <div className="home-actions"><SplitButton label={t.start} onClick={onStart} testId="start-button" /><button type="button" className="home-sign-in" onClick={onSignIn}>{t.login}</button><p>{t.homeFooter}</p></div>
     </div>
     <div className="desktop-home-composition" data-testid="desktop-home">
-      <DesktopBrandHeader language={language} onLanguage={onLanguage} onLogin={onStart} />
+      <DesktopBrandHeader language={language} onLanguage={onLanguage} onLogin={onSignIn} />
       <div className="desktop-color-field desktop-color-field-red" aria-hidden="true" />
       <div className="desktop-color-field desktop-color-field-blue" aria-hidden="true" />
       <main className="desktop-home-hero">
@@ -218,18 +224,15 @@ function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; 
   </div>;
 }
 
-function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
-  initialMode?: "login" | "register"; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
+function AuthScreen({ mode, onModeChange, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
+  mode: AuthMode; onModeChange: (mode: AuthMode) => void; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
-  // Someone arriving from an invite link is almost always new: they start on sign-up, with sign-in one tap away.
-  const [mode, setMode] = useState<"login" | "register">(() => initialMode || (new URLSearchParams(location.search).has("invite") ? "register" : "login"));
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [adultConfirmed, setAdultConfirmed] = useState(false);
   const keyboard = useKeyboard();
   const submit = async () => {
     keyboard.hide(); setBusy(true); setNotice("");
-    // Creating an account right under the AI disclosure is the explicit consent to third-party AI (recorded by the server).
     try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed }) })); }
     catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); }
   };
@@ -237,7 +240,7 @@ function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecov
     <header className="editorial-top"><button onClick={onBack} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="auth-art red-column" aria-hidden="true" />
     <main className="auth-content"><div className="vertical-title"><h1>{mode === "login" ? t.welcome : t.register}</h1><PauseMark /></div><Wordmark language={language} />
-      <p className="auth-hint">{t.authHint}</p>
+      {mode === "register" && <p className="auth-hint">{t.registerHint}</p>}
       {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput value={name} onChange={(event) => setName(event.target.value)} maxLength={24} data-testid="register-name" /></label>}
       <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" /><small>{t.passwordHint}</small></label>
@@ -245,7 +248,7 @@ function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecov
       {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
       {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
       <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} testId="auth-submit" />
-      <button className="auth-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
+      <button className="auth-switch" type="button" onClick={() => { keyboard.hide(); onModeChange(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
       {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
     </main>
   </MobileScroll>;
