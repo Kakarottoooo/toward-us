@@ -65,7 +65,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), earlierPages: session.earlier?.length || 0, messages: session.messages.map((message, index) => ({
       ...(message.sources?.length ? { sources: message.sources.filter((source) => validSources.get(`${source.channel}:${source.conversationId}`)?.has(source.messageId)) } : {}),
-      id: message.id, role: message.role, text: visibleAssistantText(message, session.messages[index - 1]), ...(screenshotPending(message) ? { screenshotPending: true } : {}), createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+      id: message.id, role: message.role, text: visibleAssistantText(message, session.messages[index - 1]), ...(message.copyableReply ? { copyableReply: message.copyableReply } : {}), ...(screenshotPending(message) ? { screenshotPending: true } : {}), createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
@@ -669,7 +669,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
   });
   // Background work (a finished chat import) reports into the member's App conversation: the one it started from if it
   // still exists, else their latest, else a new one.
-  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null, kind = null, personId = null, replacesScreenshotReplyTo = null, screenshotOutcome = "answered" }) {
+  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null, kind = null, personId = null, replacesScreenshotReplyTo = null, screenshotOutcome = "answered", copyableReply = null }) {
     let session = sessionId ? await owned(store, sessionId, userId).catch(() => null) : null;
     if (replacesScreenshotReplyTo && !session) return null;
     if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -680,6 +680,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
         const pending = turns.find((line) => line.role === "assistant" && (line.screenshotReplyTo === replacesScreenshotReplyTo || line.screenshotAnswerTo === replacesScreenshotReplyTo)) ||
           (card?.kind === "chat_import" && turns.find((line) => line.role === "assistant" && line.cards?.some((item) => item.kind === "chat_import" && item.id === card.id)));
         const additions = cards || (card ? [card] : []);
+        const draftText = copyableReply && clean(text, 2000).includes(copyableReply) ? copyableReply : null;
         if (pending) {
           if (pending.screenshotOutcome === "answered" || pending.screenshotOutcome === "error" && screenshotOutcome === "error") return;
           pending.text = [clean(text, 2000), pending.screenshotToolReceipt].filter(Boolean).join("\n");
@@ -688,9 +689,10 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
           delete pending.screenshotStartedAt;
           pending.screenshotAnswerTo = replacesScreenshotReplyTo;
           pending.screenshotOutcome = screenshotOutcome;
+          if (draftText) pending.copyableReply = draftText;
         } else {
           if (!turns.some((line) => line.role === "user" && line.id === replacesScreenshotReplyTo)) return;
-          keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), cards: additions, screenshotAnswerTo: replacesScreenshotReplyTo, screenshotOutcome, createdAt: new Date().toISOString() }]);
+          keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), cards: additions, ...(draftText ? { copyableReply: draftText } : {}), screenshotAnswerTo: replacesScreenshotReplyTo, screenshotOutcome, createdAt: new Date().toISOString() }]);
         }
         draft.version += 1;
         return;

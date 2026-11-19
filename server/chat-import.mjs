@@ -1,7 +1,7 @@
 import { withoutScreenshotPreamble, screenshotTurnMessages } from "./screenshot-turn.mjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
-import { finishReply, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
+import { activityDraft, finishReply, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
@@ -347,7 +347,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       const request = turns.find((message) => message.id === record.screenshotMessageId && message.role === "user");
       answeredScreenshot = turns.some((message) => message.screenshotAnswerTo === record.screenshotMessageId && message.screenshotOutcome === "answered");
       if (request?.text && !answeredScreenshot) {
-        let text, screenshotOutcome = "answered";
+        let text, copyableReply, screenshotOutcome = "answered";
         try {
           const usable = (answer) => typeof answer?.reply === "string" && (withoutScreenshotPreamble(answer.reply).trim() || answer.sendableDraft?.trim());
           const answer = screenshotAdvice?.language === record.language && usable(screenshotAdvice) ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
@@ -356,11 +356,13 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
           text = finishReply(reply, { request: request.text, language: record.language });
+          const draft = activityDraft(answer)?.trim();
+          if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
         } catch (error) {
           screenshotOutcome = "error";
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
         }
-        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, screenshotOutcome, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
+        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, copyableReply, replacesScreenshotReplyTo: record.screenshotMessageId, screenshotOutcome, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
         // No filing notes ("已为…建档", "已记进…档案") under an answer to someone who is upset (11-15: under a comfort answer
         // they read as paperwork). The person's file is still kept and shows in their people list.
