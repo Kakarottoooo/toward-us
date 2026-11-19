@@ -9,7 +9,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { CharacterMaker } from "../character/CharacterMaker";
 import { characterError, setCharacterVisible, useCoupleCharacter } from "../character/character";
-import { MembershipPage, type Membership } from "../membership/MembershipPage";
+import { inIosApp, MembershipPage, type Membership } from "../membership/MembershipPage";
 import { FounderBeta } from "../membership/FounderBeta";
 import { AiAccess } from "./AiAccess";
 import { aiDisclosure } from "./AiConsent";
@@ -39,7 +39,7 @@ const Group = ({ title, note, children }: { title?: string; note?: string; child
 export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
-  const [page, setPage] = useState<Page>(initialPage || "main");
+  const [page, setPage] = useState<Page>(initialPage === "membership" && inIosApp() ? "main" : initialPage || "main");
   // The couple's character: made by either of them, shown to both; showing it on this screen is each member's own choice.
   const { character, setCharacter } = useCoupleCharacter(Boolean(relationshipId));
   const [characterNotice, setCharacterNotice] = useState("");
@@ -53,8 +53,8 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
   const [data, setData] = useState<PrivacyData | null>(null);
   const [plan, setPlan] = useState<Membership["plan"] | null>(null);
   const [founder, setFounder] = useState(false);
-  useEffect(() => { void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
-  useEffect(() => { void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
+  useEffect(() => { if (inIosApp()) return; void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
+  useEffect(() => { if (inIosApp()) return; void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [password, setPassword] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState(""); const [showCode, setShowCode] = useState(false);
@@ -114,7 +114,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
       <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${partnerName} 连接`, `Connected with ${partnerName}`, `Conectado con ${partnerName}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
     <Group>
-      <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />
+      {!inIosApp() && <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />}
       {founder && <Row icon={<ListChecks size={18} weight="bold" />} tone="green" label={titles.founder} onClick={() => open("founder")} testId="settings-founder" />}
       <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
     </Group>

@@ -40,9 +40,8 @@ PRIVACIDAD QUE PUEDES COMPROBAR
 
 Las sugerencias de Pinky las genera una IA y pueden equivocarse. Pinky no es terapia ni consejo médico. Para mayores de 18 años.
 
-Membresía Pinky (opcional): más IA cada día, llamadas más largas, más chats importados y todos los atuendos para su pequeño. Uno paga y los dos la tienen. El pago se carga a tu cuenta de Apple; la suscripción se renueva sola salvo que la canceles al menos 24 horas antes del final del periodo. Gestiónala o cancélala en los ajustes de tu cuenta de Apple.
-Condiciones de uso: https://<dominio-de-producción>/terms?lang=es
-Política de privacidad: https://<dominio-de-producción>/privacy?lang=es
+Condiciones de uso: https://toward-us-private-beta.onrender.com/terms?lang=es
+Política de privacidad: https://toward-us-private-beta.onrender.com/privacy?lang=es
 
 ## Novedades (1.0)
 La primera versión de Pinky en el App Store: un coach privado para ti, un asistente compartido para los dos, acuerdos que ambos aprueban, recordatorios y recuerdos.

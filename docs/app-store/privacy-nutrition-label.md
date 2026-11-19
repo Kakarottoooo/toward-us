@@ -26,12 +26,15 @@ App Store Connect → App 隐私。答案要和 `mobile/ios/App/App/PrivacyInfo.
 | 用户内容 → 其他用户内容 | `NSPrivacyCollectedDataTypeOtherUserContent` | App 功能 | 对话、约定、提醒、记忆 |
 | 用户内容 → 客户支持 | `NSPrivacyCollectedDataTypeCustomerSupport` | App 功能 | 反馈和举报 |
 | 标识符 → 用户 ID | `NSPrivacyCollectedDataTypeUserID` | App 功能 | 账号 ID |
-| 购买 → 购买记录 | `NSPrivacyCollectedDataTypePurchaseHistory` | App 功能 | 会员和装扮（首版不带内购也可以先保留） |
-| 使用数据 → 产品交互 | `NSPrivacyCollectedDataTypeProductInteraction` | 分析、App 功能 | 功能使用次数、每天 AI 次数，不含内容 |
+| 使用数据 → 产品交互 | `NSPrivacyCollectedDataTypeProductInteraction` | 分析、App 功能 | 前台与后台切换、打开次数、使用时长；已登录使用计入日活，不含内容 |
+
+## 未关联到个人的诊断数据
+
+崩溃数据（Crash Data）。通过 Apple MetricKit 上报至 Pinky，仅用于诊断；不附带账号、聊天文本、录音或完整诊断载荷。
 
 ## 不收集
 
-精确/粗略设备定位、通讯录、浏览记录、搜索记录、设备 ID / 广告标识符、崩溃数据、性能数据、财务信息（卡号由 Apple / Stripe 处理）、敏感信息（人脸特征只在手机上，不上传）、其他诊断数据。
+精确/粗略设备定位、通讯录、浏览记录、搜索记录、设备 ID / 广告标识符、性能数据、财务信息（卡号由 Apple / Stripe 处理）、敏感信息（人脸特征只在手机上，不上传）、其他诊断数据。
 
 ## 第三方 AI
 

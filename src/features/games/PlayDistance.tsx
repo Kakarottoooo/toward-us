@@ -247,7 +247,6 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
           {preview && <img src={preview} alt={t("待发送的照片", "Photo preview", "Vista previa de la foto")} />}
           <button type="button" className="distance-text" disabled={sending || readOnly || board?.readOnly} onClick={() => picker.current?.click()}>{photo ? t("换一张", "Choose another", "Elegir otra") : t("选择照片", "Choose photo", "Elegir foto")}</button>
           {photo && <button type="button" className="distance-text" disabled={sending || readOnly || board?.readOnly} onClick={() => setPhoto(null)}>{t("移除", "Remove", "Quitar")}</button>}
-          <small>{t("内测期间，照片可能在服务器更新后失效。", "During beta, photos may expire after a server update.", "Durante la beta, las fotos pueden caducar al actualizar el servidor.")}</small>
         </div>}
       <button className="distance-action" type="button" disabled={locked || sending || !canSend} onClick={() => void sendCard()}><PaperPlaneTilt size={19} />
         {sending ? t("发送中…", "Sending…", "Enviando…") : t("送给 TA", "Send to your partner", "Enviar a tu pareja")}

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Bell, ChatsCircle, Clock, MoonStars, Sparkle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
-import { enableNativePush, nativePushPlugin, nativePushRegistered } from "../reminders/nativePush";
+import { enableNativePush, iosPushUnavailable, nativePushPlugin, nativePushRegistered } from "../reminders/nativePush";
 import { enableWebPush, thisBrowserConnected, webPushSupport } from "../reminders/webPush";
 
 type Notify = { messages: boolean; pinky: boolean; reminders: boolean; quiet: boolean };
@@ -16,8 +16,8 @@ export function NotificationSettings({ language }: { language: Language }) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const load = () => relationshipApi<Settings>("/api/reminder-settings").then(setSettings).catch((error) => setNotice((error as Error).message));
   useEffect(() => { void load(); }, []);
-  const nativeApp = Boolean(nativePushPlugin());
-  const ready = nativeApp ? settings?.nativeConfigured : settings?.configured;
+  const nativeApp = iosPushUnavailable() || Boolean(nativePushPlugin());
+  const ready = nativeApp ? !iosPushUnavailable() && settings?.nativeConfigured : settings?.configured;
   // In a browser or installed web app, "on" means this browser itself receives the pushes.
   const on = nativeApp ? Boolean(settings?.nativeEnabled && nativePushRegistered()) : Boolean(settings?.enabled && thisBrowserConnected(settings?.devices));
   const web = nativeApp ? null : webPushSupport();
@@ -45,7 +45,7 @@ export function NotificationSettings({ language }: { language: Language }) {
       {settings && ready && !on && (nativeApp || web === "ready") && <button type="button" className="settings-row settings-action" disabled={busy} onClick={() => void connect()}>{t("打开通知", "Turn on notifications", "Activar notificaciones")}</button>}
     </div>
     {settings && ready && !on && web === "install" && <p className="settings-note">{t("在 iPhone 上，先用 Safari 的“分享 → 添加到主屏幕”把 Pinky 放到主屏幕，再从主屏幕打开它，就能在这里打开通知（需要 iOS 16.4 或更新）。", "On iPhone, first add Pinky to your Home Screen (Safari's Share → Add to Home Screen), open it from there, and turn notifications on here (iOS 16.4 or later).", "En iPhone, primero añade Pinky a la pantalla de inicio (Compartir → Añadir a pantalla de inicio en Safari), ábrela desde allí y activa aquí las notificaciones (iOS 16.4 o posterior).")}</p>}
-    {settings && !ready && <p className="settings-note">{t("推送服务正式上线后就能用；这里的选择现在就会记住。", "Push notifications arrive once the service is live; your choices here are saved now.", "Las notificaciones llegarán cuando el servicio esté activo; tus preferencias ya se guardan.")}</p>}
+    {settings && !ready && <p className="settings-note">{t("当前无法向这台设备推送。提醒仍会保存在 Pinky 中。", "Push delivery is unavailable on this device. Your reminders are saved in Pinky.", "Las notificaciones no están disponibles en este dispositivo. Pinky guarda tus recordatorios.")}</p>}
     </section>
     <section className="settings-group"><h2>{t("通知我", "Tell me about", "Avísame de")}</h2><div className="settings-card">
       {row("messages", <ChatsCircle size={18} weight="bold" />, t("共同消息和问题", "Shared messages and questions", "Mensajes y preguntas compartidos"), t("TA 的新消息、每日一问、看完了吗", "Partner messages, daily questions, watched-it check-ins", "Mensajes de tu pareja, preguntas diarias y sobre lo que vieron"))}
