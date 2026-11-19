@@ -39,12 +39,12 @@ export function shellFiles(raw, { release = false } = {}) {
     // a blank screen; it retries by itself and returns to the app once the server answers.
     server: { url: url.origin, errorPath: 'offline.html', ...(cleartext ? { cleartext: true } : {}) },
     ios: { contentInset: 'automatic', allowsLinkPreview: false },
-    plugins: { CapacitorHttp: { enabled: false } },
+    plugins: { CapacitorHttp: { enabled: false }, PinkyWelcome: { productionOrigin: CLOUD_URL } },
   };
   return { url, cleartext, config, index: '<!doctype html><meta charset="utf-8"><title>Pinky</title><p>Loading ' + url.origin + '</p>\n', offline: offlinePage(url.origin) };
 }
 
-/** The page shown when Pinky's server cannot be reached: in the phone's language (zh / es / en), with a retry button,
+/** The page shown when Pinky's server cannot be reached: in the saved language (English by default), with a retry button,
  * and an automatic return as soon as the server answers again. Self-contained: no network needed to draw it. */
 export function offlinePage(origin) {
   return `<!doctype html>
@@ -74,14 +74,18 @@ export function offlinePage(origin) {
     es: { title: "No podemos conectar con Pinky", body: "Revisa tu conexión. Volverás solo en cuanto haya red; todo lo tuyo sigue ahí.", retry: "Reintentar", trying: "Reconectando…", still: "Sigue sin conexión; lo intentaremos de nuevo." },
     en: { title: "Can't reach Pinky right now", body: "Check your connection. You'll be back automatically once you're online; everything you saved is still there.", retry: "Try again", trying: "Reconnecting…", still: "Still offline. We'll keep trying." }
   };
-  var tag = ((navigator.languages && navigator.languages[0]) || navigator.language || "en").toLowerCase();
-  var lang = tag.indexOf("zh") === 0 ? "zh" : tag.indexOf("es") === 0 ? "es" : "en";
-  var text = COPY[lang];
-  document.documentElement.lang = lang === "zh" ? "zh-Hans" : lang;
-  document.getElementById("title").textContent = text.title;
-  document.getElementById("body").textContent = text.body;
-  var button = document.getElementById("retry"), status = document.getElementById("status");
-  button.textContent = text.retry;
+  var text, button = document.getElementById("retry"), status = document.getElementById("status");
+  function readLanguage() {
+    var saved; try { saved = localStorage.getItem("toward-us.language"); } catch {}
+    var lang = ["zh", "en", "es"].includes(saved) ? saved : "en";
+    text = COPY[lang];
+    document.documentElement.lang = lang === "zh" ? "zh-Hans" : lang;
+    document.getElementById("title").textContent = text.title;
+    document.getElementById("body").textContent = text.body;
+    button.textContent = text.retry;
+  }
+  readLanguage();
+  document.addEventListener("pinky-language-ready", readLanguage);
   var busy = false;
   // An opaque no-cors request settles only when the server is reachable; a network failure rejects.
   function retry(manual) {

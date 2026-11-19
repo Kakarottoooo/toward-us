@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Microphone, MicrophoneSlash, PhoneDisconnect, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { ReportReply } from "../feedback/ReportReply";
+import { inIosApp } from "../membership/MembershipPage";
 import { LiveCall, type CallState, type CaptionRow } from "./liveCall";
 import "./call.css";
 
@@ -34,8 +36,10 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
   useEffect(() => {
     // Unmounting (or React's dev double-run of effects) hangs up quietly instead of reporting the call as ended.
     let disposed = false;
+    const reviewed = inIosApp();
     const live = new LiveCall({
-      start: async (body) => { const result = await relationshipApi<{ id: string; sdp: string; secondsLeft: number; interview?: boolean }>(`/api/voice/start`, jsonBody({ ...body, channel: started.channel, sessionId: started.sessionId, language })); if (result.interview) setInterview(true); return result; },
+      reviewed, language,
+      start: async (body) => { const result = await relationshipApi<{ id: string; sdp: string; secondsLeft: number; interview?: boolean }>(`/api/voice/start`, jsonBody({ ...body, reviewed, channel: started.channel, sessionId: started.sessionId, language })); if (result.interview && !reviewed) setInterview(true); return result; },
       post: (path, body) => relationshipApi(path, jsonBody(body)),
       onState: (next, detail) => { setState(next); if (detail === "playback_blocked") setBlocked(true); else if (detail) reason.current = detail; },
       onCaptions: setRows, onTask: setPending,
@@ -57,7 +61,7 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
     <header><span className={`call-dot is-${state}`} aria-hidden="true" /><strong>{started.channel === "us" ? t("你们和 Pinky 通话中", "On a call with Pinky", "En llamada con Pinky") : t("和 Pinky 私下通话", "Private call with Pinky", "Llamada privada con Pinky")}</strong><span>{status}</span></header>
     {interview && state === "connected" && !rows.length && <p className="call-hint">{t("Pinky 还不太认识你，会先问你几个问题。哪题不想答就说“跳过”；有别的事想聊，直接说就行。", "Pinky doesn't know you well yet, so it will start with a few questions. Say “skip” for any you'd rather not answer, or just say what you called about.", "Pinky aún no te conoce bien, así que empezará con unas preguntas. Di «saltar» si no quieres responder, o di de qué querías hablar.")}</p>}
     {started.channel === "us" && state === "connected" && !rows.length && <p className="call-hint">{t(`把手机放在你们中间。Pinky 会先问每个人的名字，之后谁说话它都能听到。旁边有第三个人也可以一起说。`, `Put the phone between you. Pinky will ask everyone's name first; after that it hears whoever speaks. A third person can join in too.`, `Pon el teléfono entre ustedes. Pinky preguntará primero el nombre de cada uno; después oye a quien hable. Una tercera persona también puede participar.`)}</p>}
-    {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}</li>)}</ol>}
+    {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}{row.conversationId && row.messageId && <ReportReply language={language} channel={started.channel} conversationId={row.conversationId} messageId={row.messageId} />}</li>)}</ol>}
     {blocked && <p className="call-hint">{t("点一下扬声器按钮，打开 Pinky 的声音。", "Tap the speaker button to hear Pinky.", "Toca el altavoz para oír a Pinky.")}</p>}
     <div className="call-controls">
       <button type="button" className={muted ? "on" : ""} aria-pressed={muted} onClick={() => setMuted(call.current?.mute() ?? false)}>{muted ? <MicrophoneSlash size={24} /> : <Microphone size={24} />}<span>{muted ? t("已静音", "Muted", "Silenciado") : t("静音", "Mute", "Silenciar")}</span></button>

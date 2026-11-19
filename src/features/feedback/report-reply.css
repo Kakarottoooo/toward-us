@@ -1,0 +1,3 @@
+.reply-report { display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; color: #635850; font: inherit; font-size: 13px; }
+.reply-report button { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 3px 4px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.reply-report button:focus-visible { outline: 2px solid currentColor; }

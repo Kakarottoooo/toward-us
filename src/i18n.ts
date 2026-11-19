@@ -7,8 +7,12 @@ export function isLanguage(value: string | null): value is Language {
 }
 
 export function initialLanguage(): Language {
-  const stored = localStorage.getItem("toward-us.language");
-  return isLanguage(stored) ? stored : "zh";
+  try {
+    const stored = localStorage.getItem("toward-us.language");
+    return isLanguage(stored) ? stored : "en";
+  } catch {
+    return "en";
+  }
 }
 
 export function languageTag(language: Language) {
@@ -57,5 +61,5 @@ export function inInterfaceLanguage(message: string, language: Language) {
 
 /** The interface language saved on this device, for code outside React state (API helpers, hooks). */
 export function currentLanguage(): Language {
-  try { return initialLanguage(); } catch { return "zh"; }
+  return initialLanguage();
 }

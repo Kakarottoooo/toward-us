@@ -1,3 +1,4 @@
+import { screenText, isAiPolicyError } from "./ai-screening.mjs";
 import { keepMessages } from "./thread-pages.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
@@ -214,6 +215,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
     return action(tx);
   });
+  await screenText(text);
   const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, answersCheckIn: true }));
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
@@ -295,6 +297,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     // claim it saved a memory merely because related context was retrieved.
     const ownReply = made.length || outcome.draftAgreement ? outcome.reply : finishReply(outcome.reply, { request: text, language });
     const cited = citedReply([ownReply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+    await screenText(cited.reply, "output");
     const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: cited.reply, i18n: outcome.i18n || null, awaiting, refs: [...made, ...cited.sources.map((item) => ({ type: "conversation", id: item.messageId, ...item })), ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
     if (webTurn.results.length) result.conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.webFailures = webTurn.failures; draft.version += 1; });
     if (!outcome.draftAgreement) return result;
@@ -307,7 +310,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   let replied;
   try { replied = await reply(turn); }
   catch (error) {
-    if (!turn.actions?.length) throw error;
+    if (isAiPolicyError(error) || !turn.actions?.length) throw error;
     asked.length = 0;
     const failed = { zh: "抱歉，这件事我没能办成，什么都没有改动。可以换个说法再试一次。", en: "Sorry, I couldn't do that, and nothing was changed. Try saying it another way.", es: "Lo siento, no pude hacerlo y no se cambió nada. Prueba a decirlo de otra forma." };
     replied = await reply({ reply: failed[language] || failed.zh, i18n: failed, actions: [], draftAgreement: null, source: "local" });

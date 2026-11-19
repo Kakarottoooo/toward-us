@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
+import { migrateAppMetrics, postgresAppMetrics } from "./app-metrics-store.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
@@ -43,9 +44,11 @@ export async function createPostgresStore(databaseUrl) {
   };
   const mapCollections = async (operation) => { if (!transactions.getStore()) return Promise.all(GRAPH_COLLECTIONS.map(operation)); const results = []; for (const collection of GRAPH_COLLECTIONS) results.push(await operation(collection)); return results; };
   await migrate(pool);
+  await migrateAppMetrics(pool);
 
   const store = {
     kind: "postgres",
+    ...postgresAppMetrics(pool),
     async close() { await rawPool.end(); },
     async transaction(key, callback) {
       if (transactions.getStore()) return callback(store);
@@ -129,11 +132,12 @@ export async function createPostgresStore(databaseUrl) {
       const ids = rows.map((row) => row.id);
       const graph = Object.fromEntries(await mapCollections(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)]));
       const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
-      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId) };
+      const activity = await pool.query("select date::text from app_metric_activity where user_id=$1 order by date", [userId]);
+      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId), appActivityDates: activity.rows.map((row) => row.date) };
     },
     async deletePrivateData(userId) {
       return store.transaction(`user:${userId}`, async () => {
-        let deleted = 0;
+        let deleted = (await pool.query("delete from app_metric_activity where user_id=$1", [userId])).rowCount;
         for (const collection of GRAPH_COLLECTIONS) {
           if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
@@ -243,6 +247,7 @@ export async function createPostgresStore(databaseUrl) {
       await pool.query("insert into demo_rooms (code,status,payload,expires_at,created_at,updated_at) values ($1,$2,$3,$4,$5,$6)", [room.code, room.status, room, room.expiresAt, room.createdAt, room.updatedAt]);
       return structuredClone(room);
     },
+    async createDemoReplyReport(report) { await pool.query("insert into demo_reply_reports (id, created_at, data) values ($1,$2,$3) on conflict (id) do nothing", [report.id, report.createdAt, report]); },
     async getDemoRoom(code) { return (await pool.query("select payload from demo_rooms where code=$1", [code])).rows[0]?.payload || null; },
     async updateDemoRoom(code, updater) {
       const client = await pool.connect();
@@ -350,6 +355,7 @@ async function migrate(pool) {
     create table if not exists invitations (code text primary key, relationship_id text not null references relationships(id) on delete cascade, created_by_user_id text not null references users(id), created_at timestamptz not null, expires_at timestamptz not null, accepted_at timestamptz, accepted_by_user_id text references users(id));
     create table if not exists rooms (code text primary key, relationship_id text not null references relationships(id) on delete cascade, status text not null, payload jsonb not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists rooms_relationship_status_idx on rooms(relationship_id,status,updated_at desc);
+    create table if not exists demo_reply_reports (id text primary key, created_at timestamptz not null, data jsonb not null);
     create table if not exists demo_rooms (code text primary key, status text not null, payload jsonb not null, expires_at timestamptz not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists demo_rooms_expiry_idx on demo_rooms(expires_at);
   `);

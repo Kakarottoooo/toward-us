@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { requireAiPermission } from "./ai-permission.mjs";
+import { screenText } from "./ai-screening.mjs";
+import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import { appendTogetherMessage, buildTogetherContext, continueTogetherTurn, togetherI18n } from "./together-domain.mjs";
 import { gettingToKnow, profileContext, scanCall } from "./profile.mjs";
@@ -97,24 +99,28 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     const seconds = Math.min(MAX_SECONDS, Math.max(15, Math.round((clock() - call.startedAt) / 1000)));
     usage.set(call.usageKey, [...(usage.get(call.usageKey) || []).filter((entry) => entry.id !== call.id), { id: call.id, at: call.startedAt, seconds }]);
     // The minutes OpenAI bills for (per second); turns delegated during the call are recorded by the mediator as usual.
-    recordAiCall({ userId: call.userId, spaceId: call.relationshipId, feature: "voice_call", provider: "openai", model: MODEL, audioSeconds: Math.max(0, (clock() - call.startedAt) / 1000), outcome: "ok" });
+    if (!call.reviewed) recordAiCall({ userId: call.userId, spaceId: call.relationshipId, feature: "voice_call", provider: "openai", model: MODEL, audioSeconds: Math.max(0, (clock() - call.startedAt) / 1000), outcome: "ok" });
     call.endedReason = reason;
-    await provider.hangup(call.providerId).catch(() => {});
+    if (call.providerId) await provider.hangup(call.providerId).catch(() => {});
   };
 
   router.get("/voice/status", (_req, res) => res.json({ configured: provider.configured, maxMinutes: MAX_SECONDS / 60 }));
 
   router.post("/voice/start", async (req, res) => {
     const user = req.auth.user, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    await requireAiPermission(store, user.id, language);
+    const reviewed = req.body?.reviewed === true;
     const sdp = req.body?.sdp, channel = req.body?.channel === "us" ? "us" : "me", requestId = clean(req.body?.requestId, 100);
     if (typeof sdp !== "string" || sdp.length > 64_000 || !sdp.startsWith("v=0")) throw fail(400, "voice_invalid_offer");
     if (!ID.test(requestId)) throw fail(400, "voice_invalid_request");
     const repeat = [...calls.values()].find((call) => call.requestId === requestId && call.userId === user.id);
     if (repeat) { if (repeat.status !== "active") throw fail(409, "voice_start_already_attempted"); return res.json({ id: repeat.id, sdp: repeat.answer, secondsLeft: Math.max(0, Math.round((repeat.deadline - clock()) / 1000)) }); }
-    let instructions, input, usageKey, relationshipId = null, sessionId = null, mode = "call";
+    let instructions, input, usageKey, relationshipId = null, sessionId = null, mode = "call", members = [user.id];
     if (channel === "us") {
       const pairing = await store.getRelationshipContext(user.id);
       if (!(pairing?.relationship.status === "active" && pairing.members.length === 2)) throw fail(409, "pairing_required");
+      members = pairing.members.map((m) => m.userId);
+      for (const member of pairing.members) await requireAiPermission(store, member.userId, language);
       relationshipId = pairing.relationship.id; usageKey = `relationship:${relationshipId}`;
       const names = pairing.members.map((member) => member.user?.name || "");
       const context = buildTogetherContext(await store.relationshipSnapshotForUser(user.id), relationshipId, { userId: user.id });
@@ -142,8 +148,16 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     // The call screen shows its own wording for these codes (CallPanel).
     if (provider.configured) await runAiFeature({ feature: "voice_call", channel: "metered", userId: user.id, language }, async () => {})
       .catch((error) => { throw error?.cost ? fail(429, error.scope === "monthly" ? "voice_monthly_limit" : error.scope === "kill_switch" ? "voice_paused" : "voice_daily_limit") : error; });
-    const started = await provider.start({ sdp, instructions, input, voice: process.env.OPENAI_LIVE_VOICE || "" });
-    const call = { id: randomUUID().replace(/-/g, ""), requestId, userId: user.id, userName: user.name, channel, mode, language, relationshipId, sessionId, usageKey, providerId: started.providerId, answer: started.sdp, startedAt: clock(), status: "active", turns: new Map(), saved: false };
+    let started;
+    if (reviewed) {
+      const sdpAnswer = await mediator.createRealtimeSession({ sdp, language, transcriptionOnly: true, safetyIdentifier: createHash("sha256").update(user.id).digest("hex") });
+      started = { providerId: null, sdp: sdpAnswer };
+    } else {
+      await screenText(JSON.stringify(input));
+      await requireAiPermission(store, user.id, language);
+      started = await provider.start({ sdp, instructions, input, voice: process.env.OPENAI_LIVE_VOICE || "" });
+    }
+    const call = { id: randomUUID().replace(/-/g, ""), requestId, members, userId: user.id, userName: user.name, channel, mode, language, relationshipId, sessionId, usageKey, providerId: started.providerId, reviewed, answer: started.sdp, startedAt: clock(), status: "active", turns: new Map(), saved: false };
     call.deadline = call.startedAt + Math.min(MAX_SECONDS, DAILY_SECONDS - usedToday(usageKey)) * 1000;
     call.timer = setTimeout(() => void close(call, "time_limit"), call.deadline - clock()); call.timer.unref?.();
     calls.set(call.id, call);
@@ -161,17 +175,19 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     if (call.status !== "active" || call.deadline <= clock()) throw fail(409, "voice_session_ended");
     if (call.turns.size >= TURN_LIMIT) throw fail(429, "voice_turn_limit");
     const run = async () => {
+      await requireAiPermission(store, call.userId, call.language);
       if (call.channel === "me") {
         const { session } = await assistant.appendTurn(call.userId, call.sessionId, { text, itemId: `voice-${call.id}-${turnId}` }, { channel: "voice" });
-        const reply = session.messages.at(-1)?.role === "assistant" ? session.messages.at(-1).text : "";
-        return { reply, spoken: reply.slice(0, 450) };
+        const turnIndex = session.messages.findIndex((m) => m.itemId === `voice-${call.id}-${turnId}`);
+        const answer = turnIndex >= 0 ? session.messages[turnIndex + 1] : null, reply = answer?.role === "assistant" ? answer.text : "";
+        return { reply, spoken: reply.slice(0, 450), ...(reply ? { conversationId: session.id, messageId: answer.id } : {}) };
       }
       // Pinky speaks in Us only when called, so the request is addressed to it; it is marked as recorded on this phone.
       // Both of them see the step in Us while Pinky prepares the spoken answer, as for a typed one (the founder, 11-03).
       const progress = activity ? activity.forCouple(call.relationshipId) : () => {};
       const result = await continueTogetherTurn({ store, mediator, relationshipId: call.relationshipId, actorUserId: call.userId, recordedByUserId: null, text: `Pinky, ${text}`, source: "voice", handle: `voice:${call.id}:${turnId}`, language: call.language, emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
       const reply = result.reply?.text || "";
-      return { reply, spoken: reply.slice(0, 450) };
+      return { reply, spoken: reply.slice(0, 450), ...(reply ? { conversationId: result.conversation.id, messageId: result.reply.id } : {}) };
     };
     const entry = { text, result: run() }; call.turns.set(turnId, entry);
     try { res.json(await entry.result); } catch (error) { call.turns.delete(turnId); throw error; }
@@ -182,6 +198,7 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
     const call = own(req);
     if (call.saved) return res.json({ saved: true });
     const rows = (Array.isArray(req.body?.rows) ? req.body.rows : []).map((row) => ({ role: row?.role === "agent" ? "agent" : "user", text: clean(row?.text, 2000) })).filter((row) => row.text).slice(0, 300);
+    if (rows.length) await screenText(rows.map((row) => row.text).join("\n"), "output");
     call.saved = true;
     if (!rows.length) return res.json({ saved: false });
     const minutes = Math.max(1, Math.round((clock() - call.startedAt) / 60_000));
@@ -208,5 +225,12 @@ export function createVoiceCallRouter({ store, mediator, assistant, provider = o
   });
 
   router.use((error, _req, res, next) => error.statusCode ? res.status(error.statusCode).json({ error: error.message, code: error.message }) : next(error));
+  router.withdrawPermission = async (userId) => {
+    const affected = [...calls.values()].filter((c) => c.status === "active" && c.members.includes(userId));
+    await Promise.all([mediator.endRealtimeFor?.(userId), ...affected.map(async (c) => {
+      await close(c, "ai_consent_required");
+      if (c.reviewed && c.userId !== userId) await mediator.endRealtimeFor?.(c.userId);
+    })]);
+  };
   return router;
 }

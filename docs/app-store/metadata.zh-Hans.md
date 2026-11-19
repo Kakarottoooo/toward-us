@@ -40,9 +40,8 @@ Pinky 是你的私人恋爱教练；你和另一半连接以后，它也是你�
 
 Pinky 的建议由 AI 生成，可能出错；Pinky 不是心理咨询或医疗建议。仅限 18 岁及以上使用。
 
-Pinky 会员（可选）：每天更多 AI 次数、更长通话、导入更多聊天记录、小家伙的全部装扮。一个人开通，两个人都能用。费用从你的 Apple 账户扣除；订阅在当期结束前 24 小时内未取消会自动续费，可在 Apple 账户设置里管理或取消。
-使用条款：https://<正式域名>/terms?lang=zh
-隐私政策：https://<正式域名>/privacy?lang=zh
+使用条款：https://toward-us-private-beta.onrender.com/terms?lang=zh
+隐私政策：https://toward-us-private-beta.onrender.com/privacy?lang=zh
 
 ## 新内容（1.0）
 Pinky 第一次上架 App Store：你的私人教练、你们俩的共同助手、两个人都同意才算数的约定、提醒和回忆。

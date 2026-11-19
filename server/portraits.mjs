@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { listPeople, personSubject } from "./people.mjs";
-import { activePair, isPartner, isProfileFact, visibleTo } from "./profile.mjs";
+import { activePair, isProfileFact, visibleTo } from "./profile.mjs";
 
 // 画像层 (memory plan, founder 11-09: "接着做画像层"). Pinky's context lists only the newest notes (80 lasting facts, 60
 // history lines), so after a year or two the oldest ones (an allergy said once, how they met) stop reaching an answer. For
@@ -37,18 +36,17 @@ async function subjects(store, userId) {
   const name = (member) => member?.user?.name || "";
   const list = [
     { key: "me", who: `the member (${name(context?.members?.find((member) => member.userId === userId)) || "the member"})`, test: (item) => item.subjectUserId === userId },
-    { key: "partner", who: `the member's partner${partner ? ` (${name(partner)})` : ""}`, test: (item) => isPartner(item.subjectUserId, userId, partner?.userId || null) },
+    { key: "partner", subjectUserId: partner?.userId, who: `the member's partner${partner ? ` (${name(partner)})` : ""}`, test: (item) => Boolean(partner) && item.subjectUserId === partner.userId },
     { key: "us", who: "the member and their partner as a couple", test: (item) => !item.subjectUserId },
-    ...(await listPeople(store, userId)).map((person) => ({ key: personSubject(person.id), who: `${person.name}, someone the member is getting to know`, test: (item) => item.subjectUserId === personSubject(person.id) })),
   ].map((subject) => ({ ...subject, facts: facts.filter(subject.test) }));
   return list.filter((subject) => subject.facts.length);
 }
 
 const fingerprint = (facts) => createHash("sha256").update(JSON.stringify(facts.map((item) => [item.id, item.version]).sort())).digest("base64url");
 
-/** This member's portraits, by subject key ("me", "partner", "us", "person:<id>"). */
-export async function readPortraits(store, userId) {
-  const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => item.kind === PORTRAIT_KIND && item.ownerUserId === userId && !item.archivedAt);
+/** This member's portraits, by subject key ("me", "partner", "us"). */
+export async function readPortraits(store, userId, partnerId) {
+  const records = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => item.kind === PORTRAIT_KIND && (item.subjectKey === "me" || item.subjectKey === "us" || (item.subjectKey === "partner" && partnerId && item.subjectUserId === partnerId)) && item.ownerUserId === userId && !item.archivedAt);
   return Object.fromEntries(records.map((item) => [item.subjectKey, { portrait: item.text, timeline: item.timeline || [], builtAt: item.builtAt }]));
 }
 
@@ -69,7 +67,8 @@ async function rebuild({ store, mediator, userId, language = "zh", now = Date.no
   const said = (item) => String(item.evidence?.saidAt || item.createdAt || "").slice(0, 10);
   const built = [];
   for (const subject of await subjects(store, userId)) {
-    const before = existing.get(subject.key);
+    const prior = existing.get(subject.key);
+    const before = subject.key === "partner" && prior?.subjectUserId !== subject.subjectUserId ? null : prior;
     const basis = fingerprint(subject.facts);
     if (subject.facts.length < MIN_FACTS || before?.basis === basis) continue;
     // Not on every new note: when enough is new, or when it has been a while.
@@ -96,7 +95,7 @@ async function rebuild({ store, mediator, userId, language = "zh", now = Date.no
       previous = { portrait, timeline: (Array.isArray(result?.timeline) ? result.timeline : []).map((entry) => ({ period: squash(entry?.period, 10), text: squash(entry?.text, 120) })).filter((entry) => entry.text).slice(0, 12) };
     }
     if (!previous || !ordered.length) continue;
-    const change = { text: previous.portrait, timeline: previous.timeline, basis, drawn: subject.facts.map(key).join(" "), factCount: subject.facts.length, builtAt: new Date(now).toISOString() };
+    const change = { ...(subject.subjectUserId ? { subjectUserId: subject.subjectUserId } : {}), text: previous.portrait, timeline: previous.timeline, basis, drawn: subject.facts.map(key).join(" "), factCount: subject.facts.length, builtAt: new Date(now).toISOString() };
     built.push(await store.transaction(`user:${userId}`, async (tx) => {
       const current = (await tx.listRelationshipRecordsForUser("memories", userId)).find((item) => item.kind === PORTRAIT_KIND && item.ownerUserId === userId && item.subjectKey === subject.key);
       if (current) return tx.updateRelationshipRecordForUser("memories", current.id, userId, (draft) => { Object.assign(draft, change); draft.version += 1; });

@@ -14,11 +14,12 @@ const ASKED_KEY = "toward-us-native-push-asked";
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string | null) => { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch { /* storage may be unavailable */ } };
 const capacitor = () => { try { return (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor; } catch { return undefined; } };
+export const iosPushUnavailable = () => capacitor()?.isNativePlatform?.() === true && capacitor()?.getPlatform?.() === "ios";
 const platform = () => capacitor()?.getPlatform?.() === "ios" ? "ios" : "android";
 // Normalizes both listener shapes and any synchronous throw into a Promise.
 const listen = (plugin: PushPlugin, event: string, callback: (data: any) => void) => Promise.resolve().then(() => plugin.addListener(event, callback));
 const drop = (handle: Promise<Listener>) => { void handle.then((listener) => listener?.remove?.()).catch(() => {}); };
-export function nativePushPlugin() { try { const cap = capacitor(); return cap?.isNativePlatform?.() ? cap.Plugins?.PushNotifications || null : null; } catch { return null; } }
+export function nativePushPlugin() { try { const cap = capacitor(); return cap?.isNativePlatform?.() && !iosPushUnavailable() ? cap.Plugins?.PushNotifications || null : null; } catch { return null; } }
 export const nativePushRegistered = () => Boolean(nativePushPlugin() && read(TOKEN_KEY));
 const nativeConfigured = async () => Boolean((await fetch("/api/reminder-settings", { credentials: "same-origin" }).then((response) => response.ok ? response.json() : null).catch(() => null))?.nativeConfigured);
 

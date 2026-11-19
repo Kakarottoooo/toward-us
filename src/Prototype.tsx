@@ -4,8 +4,8 @@ import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { SettingsPage } from "./features/privacy/SettingsPage";
-import { AiConsentScreen, LegalLinks, OfflineBanner, aiDisclosure } from "./features/privacy/AiConsent";
-import { BETA_KEY, listenAppleTransactions } from "./features/membership/MembershipPage";
+import { AiConsentScreen, LegalLinks, OfflineBanner } from "./features/privacy/AiConsent";
+import { BETA_KEY, inIosApp } from "./features/membership/MembershipPage";
 import { FeedbackPage } from "./features/feedback/FeedbackPage";
 import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
@@ -20,7 +20,7 @@ import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeW
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
 import { PlayCardArrival } from "./features/games/PlayCardArrival";
-import { brandLabel, inInterfaceLanguage, initialLanguage, isLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
+import { brandLabel, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
@@ -70,14 +70,14 @@ export default function Prototype() {
 
 function AccountPrototype() {
   // A partner opening an invite link on a new device sees it in their phone's language, not the default Chinese.
-  const [language, setLanguage] = useState<Language>(() => { try { if (!isLanguage(localStorage.getItem("toward-us.language")) && inviteCode()) { const tag = navigator.language.toLowerCase(); return tag.startsWith("zh") ? "zh" : tag.startsWith("es") ? "es" : "en"; } } catch { /* private mode */ } return initialLanguage(); });
+  const [language, setLanguage] = useState<Language>(initialLanguage);
   // Until the server says who this is, show only the plain paper background (founder 11-08: opening Pinky flashed the
   // signed-out landing page, then an empty chat, before the real conversation).
   const [screen, setScreen] = useState<Screen>("booting");
   // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
   const [feedbackFrom, setFeedbackFrom] = useState("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
-  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "membership" ? "membership" : undefined; });
+  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return !inIosApp() && params.get("view") === "membership" ? "membership" : undefined; });
   const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -88,7 +88,7 @@ function AccountPrototype() {
   const keyboard = useKeyboard();
   const t = copy[language];
 
-  useEffect(() => { localStorage.setItem("toward-us.language", language); document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
+  useEffect(() => { try { localStorage.setItem("toward-us.language", language); } catch { /* keep the selection for this visit */ } document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
@@ -97,7 +97,6 @@ function AccountPrototype() {
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen("home"));
     listenNativePushTaps();
-    listenAppleTransactions();
     registerAppWorker();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
@@ -167,7 +166,7 @@ function AccountPrototype() {
   // No AI work for anyone who hasn't agreed to third-party AI yet: they see the consent screen first (accounts made before
   // sign-up asked for it). Declining signs them out; Settings can withdraw it later, which brings this screen back.
   const renderScreen = () => {
-    if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => void logout()} />;
+    if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery", "privacy"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
     if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
@@ -226,11 +225,12 @@ function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecov
   // Someone arriving from an invite link is almost always new: they start on sign-up, with sign-in one tap away.
   const [mode, setMode] = useState<"login" | "register">(() => initialMode || (new URLSearchParams(location.search).has("invite") ? "register" : "login"));
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
+  const [adultConfirmed, setAdultConfirmed] = useState(false);
   const keyboard = useKeyboard();
   const submit = async () => {
     keyboard.hide(); setBusy(true); setNotice("");
     // Creating an account right under the AI disclosure is the explicit consent to third-party AI (recorded by the server).
-    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, aiConsent: true }) })); }
+    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed }) })); }
     catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); }
   };
   return <MobileScroll className="paper-screen auth-screen" data-testid="auth-screen">
@@ -242,8 +242,9 @@ function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecov
       <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" /><small>{t.passwordHint}</small></label>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
-      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{aiDisclosure(language)} {localized(language, "点“创建账号”即表示你同意这一点，以及", "By tapping Create account you agree to this and to the", "Al tocar Crear cuenta aceptas esto y la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
-      <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && !name.trim())} testId="auth-submit" />
+      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
+      {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
+      <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} testId="auth-submit" />
       <button className="auth-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
       {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
     </main>

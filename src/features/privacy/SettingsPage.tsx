@@ -9,7 +9,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { CharacterMaker } from "../character/CharacterMaker";
 import { characterError, setCharacterVisible, useCoupleCharacter } from "../character/character";
-import { MembershipPage, type Membership } from "../membership/MembershipPage";
+import { inIosApp, MembershipPage, type Membership } from "../membership/MembershipPage";
 import { FounderBeta } from "../membership/FounderBeta";
 import { AiAccess } from "./AiAccess";
 import { aiDisclosure } from "./AiConsent";
@@ -39,7 +39,7 @@ const Group = ({ title, note, children }: { title?: string; note?: string; child
 export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
-  const [page, setPage] = useState<Page>(initialPage || "main");
+  const [page, setPage] = useState<Page>(initialPage === "membership" && inIosApp() ? "main" : initialPage || "main");
   // The couple's character: made by either of them, shown to both; showing it on this screen is each member's own choice.
   const { character, setCharacter } = useCoupleCharacter(Boolean(relationshipId));
   const [characterNotice, setCharacterNotice] = useState("");
@@ -53,8 +53,8 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
   const [data, setData] = useState<PrivacyData | null>(null);
   const [plan, setPlan] = useState<Membership["plan"] | null>(null);
   const [founder, setFounder] = useState(false);
-  useEffect(() => { void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
-  useEffect(() => { void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
+  useEffect(() => { if (inIosApp()) return; void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
+  useEffect(() => { if (inIosApp()) return; void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [password, setPassword] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState(""); const [showCode, setShowCode] = useState(false);
@@ -81,7 +81,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
     if (action.kind === "delete-private") return t("永久删除你的私人对话、记忆、日常记录、私人提醒、照片和导入的聊天记录。账号、共同内容和同意记录保留。无法撤销，也不能让对方忘记已经看过的内容。", "Permanently deletes your private conversations, memories, check-ins, private reminders, photos and imported chats. Your account, shared content and consent records stay. This cannot be undone or erase what your partner already read.", "Borra para siempre tus conversaciones privadas, recuerdos, registros, recordatorios privados, fotos y chats importados. Tu cuenta, lo compartido y los registros de consentimiento se conservan. Es irreversible y no borra lo que tu pareja ya leyó.");
     if (action.kind === "leave") return t("不需要对方同意。你们的连接会结束，“我们俩”会关闭；以前的共同记录可以在数据下载里找到。你的私人内容留在你自己的空间。", "Your partner's approval is not needed. Your connection ends and Us closes; earlier shared records stay available in your data download. Your private content stays in your own space.", "No necesitas la aprobación de tu pareja. La conexión termina y Nosotros se cierra; el historial compartido sigue en la descarga de datos. Tu contenido privado queda en tu espacio.");
     if (action.kind === "account") return t("会结束你们的连接、退出所有设备、删除你的私人内容，并匿名化你的账号。你在“我们俩”里说过的话和已经确认的约定会保留给对方。删除后无法找回，建议先下载数据。", "This ends your connection, signs out every device, deletes your private content and anonymizes your account. What you wrote in Us and confirmed agreements stay for your partner. It cannot be recovered; consider downloading your data first.", "Termina la conexión, cierra todas las sesiones, borra tu contenido privado y anonimiza tu cuenta. Lo que escribiste en Nosotros y los acuerdos confirmados se conservan para tu pareja. No se puede recuperar; considera descargar tus datos antes.");
-    if (action.kind === "ai") return t("撤回后，Pinky 不再把你的内容发给 OpenAI 和 Anthropic，AI 功能会停下，直到你重新同意。已经处理过的内容不受影响。", "Pinky will stop sending your content to OpenAI and Anthropic, and AI features pause until you agree again. Content already processed is not affected.", "Pinky dejará de enviar tu contenido a OpenAI y Anthropic, y las funciones de IA se pausan hasta que vuelvas a aceptar. Lo ya procesado no cambia.");
+    if (action.kind === "ai") return t("撤回后，Pinky 不再把你的内容发给第三方 AI 处理方，AI 功能会停下，直到你重新同意。已经处理过的内容不受影响。", "Pinky will stop sending your content to third-party AI processors, and AI features pause until you agree again. Content already processed is not affected.", "Pinky dejará de enviar tu contenido a proveedores de IA, y las funciones de IA se pausan hasta que vuelvas a aceptar. Lo ya procesado no cambia.");
     return t("以后共同 AI 不再使用这段摘要，已经确认的约定仍然有效。已经分享的内容无法收回。", "Joint AI will no longer use this summary; confirmed agreements stay valid. What was already shared cannot be taken back.", "La IA compartida dejará de usar este resumen; los acuerdos confirmados siguen vigentes. Lo ya compartido no se puede retirar.");
   };
   const destructive = pending && ["delete-private", "leave", "account"].includes(pending.kind);
@@ -95,7 +95,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
       if (action.kind === "delete-private") await relationshipApi("/api/privacy/delete-private", jsonBody(body));
       if (action.kind === "leave") { await relationshipApi("/api/privacy/leave", jsonBody(body)); await onLeft(); }
       if (action.kind === "account") { await relationshipApi("/api/privacy/account", { method: "DELETE", body: JSON.stringify(body) }); setPending(null); await onDeleted(); return; }
-      if (action.kind === "ai") { await relationshipApi("/api/privacy/ai-consent", jsonBody({ agree: false, language })); setPending(null); onAiConsent?.(null); return; }
+      if (action.kind === "ai") { const result = await relationshipApi<{ activeCallMayNeedHangup?: boolean }>("/api/privacy/ai-consent", jsonBody({ agree: false, language })); setPending(null); setData((current) => current ? { ...current, aiConsentAt: null } : current); onAiConsent?.(null); if (result.activeCallMayNeedHangup) setNotice(t("授权已撤回。请挂断其他设备上仍在进行的通话。", "Permission withdrawn. End any call still open on another device.", "Permiso retirado. Finaliza cualquier llamada que siga abierta en otro dispositivo.")); return; }
       if (action.kind === "withdraw") await relationshipApi(`/api/privacy/summaries/${action.summary.id}/withdraw`, jsonBody({ confirm: true, language, version: action.summary.version }));
       setPending(null); await load();
       setNotice(action.kind === "export" ? t("数据文件已开始下载。", "Your data file is downloading.", "Tu archivo de datos se está descargando.") : t("已完成。", "Done.", "Listo."));
@@ -114,7 +114,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
       <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${partnerName} 连接`, `Connected with ${partnerName}`, `Conectado con ${partnerName}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
     <Group>
-      <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />
+      {!inIosApp() && <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />}
       {founder && <Row icon={<ListChecks size={18} weight="bold" />} tone="green" label={titles.founder} onClick={() => open("founder")} testId="settings-founder" />}
       <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
     </Group>
@@ -182,7 +182,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
     memory: <><p className="settings-intro">{t("这些是 Pinky 为了更懂你们而记下的偏好和经验，比如“吵架时先安静十分钟”。你说“记住……”时它会记下；这里可以查看、修改、删除，以及决定 AI 能不能用。", "These are preferences and lessons Pinky keeps to understand you better, like “take ten quiet minutes before talking”. It keeps one when you say “remember…”; here you can review, edit or delete them and decide whether AI may use them.", "Son preferencias y aprendizajes que Pinky guarda para entenderlos mejor, como «diez minutos de calma antes de hablar». Guarda uno cuando dices «recuerda…»; aquí puedes revisarlos, editarlos o borrarlos y decidir si la IA puede usarlos.")}</p><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /></>,
     processors: <>
       <Group title={t("第三方 AI", "Third-party AI", "IA de terceros")} note={data?.aiConsentAt ? t(`你在 ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))} 同意了。`, `You agreed on ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))}.`, `Aceptaste el ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))}.`) : undefined}>
-        <div className="settings-row settings-text-row"><strong>OpenAI · Anthropic</strong><p>{aiDisclosure(language)}</p></div>
+        <div className="settings-row settings-text-row"><strong>OpenAI · Anthropic · Replicate</strong><p>{aiDisclosure(language)}</p></div>
         {data?.aiConsentAt && <button type="button" className="settings-row settings-action" onClick={() => prepare({ kind: "ai" })} data-testid="withdraw-ai-consent">{t("撤回第三方 AI 同意", "Withdraw third-party AI consent", "Retirar el consentimiento de IA")}</button>}
       </Group>
       <Group>{processors.map(([title, text]) => <div key={title} className="settings-row settings-text-row"><strong>{title}</strong><p>{text}</p></div>)}</Group>

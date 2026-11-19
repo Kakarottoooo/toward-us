@@ -1,3 +1,4 @@
+import { screenText } from "./ai-screening.mjs";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { mediaPersistence } from "./media-dir.mjs";
 import express from "express";
@@ -30,7 +31,8 @@ import { createCoupleRituals } from "./couple-rituals.mjs";
 import { deliverLetters } from "./letters.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createNativePush } from "./native-push.mjs";
-import { aiConsentAt, createPrivacyRouter, runPrivateRetention, setAiConsent } from "./privacy-router.mjs";
+import { aiConsentAt, createPrivacyRouter, runPrivateRetention } from "./privacy-router.mjs";
+import { AI_NOTICE_VERSION, asDemoAi, demoHasPermission } from "./ai-permission.mjs";
 import { createAssistantRouter } from "./assistant-router.mjs";
 import { createTogetherRouter } from "./together-router.mjs";
 import { createPlayWeekRouter } from "./play-week-router.mjs";
@@ -49,11 +51,11 @@ import { createSuggestionsRouter } from "./suggestions-router.mjs";
 import { createPromiseKeeper, createPromisesRouter } from "./promises.mjs";
 import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
 import { createPeopleRouter } from "./people.mjs";
-import { createPeopleComparer } from "./people-compare.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createLegalRouter } from "./legal.mjs";
+import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createMembershipRouter } from "./membership.mjs";
@@ -122,7 +124,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
       if (!room || !actor) return res.status(404).json({ error: localText(languageOf(req), "临时房间不存在、已过期，或你没有访问权限。", "This temporary room does not exist, has expired, or you do not have access.", "Esta sala temporal no existe, ha caducado o no tienes acceso.") });
       if (!allDemoParticipantsConsented(room)) return res.status(409).json({ error: localText(room.language, "双方同意录音与转录后才能开始表达。", "Both of you need to agree to recording and transcription before you start.", "Los dos deben aceptar la grabación y la transcripción antes de empezar.") });
       if (typeof req.body !== "string" || !req.body.includes("v=0")) return res.status(400).json({ error: localText(room.language, "没有收到有效的实时语音连接信息。", "No valid live voice connection details were received.", "No se recibieron datos válidos de la conexión de voz en vivo.") });
-      const answer = await mediator.createRealtimeSession({ sdp: req.body, language: room.language, safetyIdentifier: sessionId(actor.participant.id) });
+      const answer = await asDemoAi(code, async () => mediator.createRealtimeSession({ sdp: req.body, language: room.language, safetyIdentifier: sessionId(actor.participant.id) }));
       res.type("application/sdp").send(answer);
     } catch (error) {
       res.status(error?.statusCode || 500).json({ error: error?.message || localText(languageOf(req), "实时语音暂时不可用。", "Live voice is unavailable right now.", "La voz en vivo no está disponible ahora.") });
@@ -142,7 +144,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
       if (!Buffer.isBuffer(req.body) || req.body.length < 100) return res.status(400).json({ error: localText(room.language, "没有收到有效录音。", "No valid recording was received.", "No se recibió una grabación válida.") });
       if (room.messages.length >= 30) return res.status(429).json({ error: localText(room.language, "本次快速体验已达到表达上限。", "This quick session has reached its message limit.", "Esta sesión rápida alcanzó su límite de mensajes.") });
 
-      const transcript = await mediator.transcribe(req.body, req.headers["content-type"] || "audio/webm", room.language);
+      const transcript = await asDemoAi(code, async () => mediator.transcribe(req.body, req.headers["content-type"] || "audio/webm", room.language));
       const requestedSpeakerId = String(req.headers["x-toward-us-speaker-id"] || "");
       const selectedSpeaker = resolveDemoSpeaker(room, actor, requestedSpeakerId);
       const additions = mapDemoTranscriptToMessages(room, actor.participant.id, transcript.segments, transcript.text, selectedSpeaker?.id || null, Boolean(requestedSpeakerId));
@@ -182,11 +184,11 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const password = req.body?.password;
     if (!validEmail(email)) return res.status(400).json({ error: "请输入有效邮箱。" });
     if (!validPassword(password)) return res.status(400).json({ error: "密码需要 10–128 个字符。" });
+    if (req.body?.adultConfirmed !== true) return res.status(400).json({ error: "Pinky requires confirmation that you are 18 or older." });
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
     const created = await store.createUser(user);
     if (!created) return res.status(409).json({ error: "这个邮箱已经注册。" });
-    // The sign-up screen states what goes to the AI providers right above the button; tapping it is that consent.
-    if (req.body?.aiConsent === true) await store.transaction(`user:${created.id}`, (tx) => setAiConsent(tx, created.id, true));
+
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
     res.status(201).json(await appState(store, created));
@@ -306,6 +308,20 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     req.on("close", () => { clearInterval(keepAlive); unregisterClient(`demo:${code}`, res); });
   });
 
+  app.post("/api/demo/rooms/:code/report", async (req, res) => {
+    const room = await store.getDemoRoom(normalizeLongCode(req.params.code)), actor = demoActor(room, readDemoToken(req));
+    if (!actor || room.expiresAt <= new Date().toISOString()) return res.status(404).json({ error: "room_not_found" });
+    const id = req.body?.messageId;
+    let reply = room.aiConversation?.find((entry) => entry.id === id && entry.role === "assistant")?.text;
+    if (room.analysis && id === `shared:${room.analysis.id}`) reply = room.analysis.shared;
+    if (room.mode !== "shared" && room.analysis && id === `private:${room.analysis.id}`) reply = room.analysis.private?.[actor.participant.id];
+    if (!reply) return res.status(404).json({ error: "reply_not_found" });
+    // The invitation code and participant token stay in the room. A report persists after its room expires.
+    await store.createDemoReplyReport({ id: sessionId(JSON.stringify([actor.participant.id, id])), createdAt: new Date().toISOString(), kind: "report", severity: "high", status: "new",
+      summary: "Reported Pinky demo reply", context: { view: "demo", report: "pinky", messageId: id }, text: (typeof reply === "string" ? reply : JSON.stringify(reply)).slice(0, 4000) });
+    res.json({ reported: true });
+  });
+
   app.post("/api/demo/rooms/:code/consent", async (req, res) => {
     const code = normalizeLongCode(req.params.code);
     const room = await store.getDemoRoom(code);
@@ -316,7 +332,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const updated = await store.updateDemoRoom(code, (draft) => {
       const participant = draft.participants.find((candidate) => candidate.id === participantId);
       if (!participant) throw httpError(404, localText(draft.language, "没有找到这位参与者。", "This participant was not found.", "No se encontró a este participante."));
-      participant.consentAt ||= new Date().toISOString();
+      if (req.body?.noticeVersion !== AI_NOTICE_VERSION) throw httpError(409, localText(room.language, "请重新确认 AI 和录音授权。", "Review the AI and recording notice first.", "Revisa el aviso de IA y grabación."));
+      participant.consentAt = new Date().toISOString();
+      participant.aiNoticeVersion = AI_NOTICE_VERSION;
     });
     broadcastDemoRoom(code);
     res.json({ room: publicDemoRoom(updated, actor.participant.id, req.auth?.user?.id || null) });
@@ -334,6 +352,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (!text) return res.status(400).json({ error: localText(room.language, "请输入想说的话。", "Type what you want to say.", "Escribe lo que quieres decir.") });
     const speaker = resolveDemoSpeaker(room, actor, req.body?.speakerId);
     if (!speaker) return res.status(403).json({ error: localText(room.language, "当前设备不能代表这位参与者发言。", "This device cannot speak for this participant.", "Este dispositivo no puede hablar por este participante.") });
+    await asDemoAi(code, () => screenText(text));
     const updated = await store.updateDemoRoom(code, (draft) => {
       draft.messages.push(createMessage(speaker.id, text, "text"));
       draft.safety = mergeSafety(draft.safety, text, draft.language);
@@ -354,6 +373,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const speaker = resolveDemoSpeaker(room, actor, req.body?.speakerId);
     if (!speaker) return res.status(403).json({ error: localText(room.language, "当前设备不能代表这位参与者发言。", "This device cannot speak for this participant.", "Este dispositivo no puede hablar por este participante.") });
     let created = false;
+    await asDemoAi(code, () => screenText(text));
     const updated = await store.updateDemoRoom(code, (draft) => {
       if (draft.messages.some((message) => message.realtimeItemId === itemId)) return;
       if (draft.messages.length >= 30) throw httpError(429, localText(draft.language, "本次快速体验已达到表达上限。", "This quick session has reached its message limit.", "Esta sesión rápida alcanzó su límite de mensajes."));
@@ -378,7 +398,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     await store.updateDemoRoom(code, (draft) => { draft.analyzing = true; });
     broadcastDemoRoom(code);
     try {
-      const analysis = await mediator.analyze(await store.getDemoRoom(code));
+      const analysis = await asDemoAi(code, async () => { const value = await mediator.analyze(await store.getDemoRoom(code)); await screenText(JSON.stringify({ shared: value.shared, private: value.private }), "output"); return value; });
       const updated = await store.updateDemoRoom(code, (draft) => {
         draft.analysis = analysis;
         draft.analyzing = false;
@@ -403,7 +423,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const question = cleanText(req.body?.question);
     if (!question) return res.status(400).json({ error: localText(room.language, "请输入想继续问 AI 的问题。", "Type what you want to ask the AI next.", "Escribe lo que quieres preguntar a la IA.") });
     if ((room.aiConversation || []).filter((entry) => entry.role === "user").length >= 6) return res.status(429).json({ error: localText(room.language, "本次快速体验的 AI 追问已达到上限。", "This quick session has reached its limit of AI questions.", "Esta sesión rápida alcanzó su límite de preguntas a la IA.") });
-    const answer = await mediator.answer(room, question);
+    const answer = await asDemoAi(code, async () => { await screenText(question); const value = await mediator.answer(room, question); await screenText(value, "output"); return value; });
     const updated = await store.updateDemoRoom(code, (draft) => {
       draft.aiConversation ||= [];
       draft.aiConversation.push(
@@ -499,6 +519,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use(createAiCostRouter({ store, internalSecret: () => reminders.internalSecret }));
   // The home-screen widget reads with its own Bearer token (no cookie), so it is mounted before any router that turns away
   // requests without a session.
+  app.use("/api", createAppMetricsRouter({ store }));
   app.use("/api", createWidgetRouter({ store }));
   // Every published "我们俩" change is mirrored to the couple's iMessage group and, without one, nudges the other member's phone.
   const relationshipRouter = createRelationshipRouter({ store, mediator, onTogether: (conversation, actorUserId) => {
@@ -527,10 +548,11 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   const profileKeeper = createProfileKeeper({ store, mediator, emit });
   const assistantRouter = createAssistantRouter({ store, mediator, reminderService: reminders, emit, chatImports: chatImportRouter, activity, promises: promiseKeeper, profile: profileKeeper });
   app.use("/api", assistantRouter);
-  app.use("/api", createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit, activity }));
+  const voiceCalls = createVoiceCallRouter({ store, mediator, assistant: assistantRouter.assistant, emit, activity });
+  app.use("/api", voiceCalls);
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit, activity });
   app.use(imessage.router);
-  app.use("/api", createPrivacyRouter({ store, production, closeConnections, ...(email ? { email } : {}) }));
+  app.use("/api", createPrivacyRouter({ store, production, closeConnections, onAiWithdrawal: voiceCalls.withdrawPermission, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
@@ -539,7 +561,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createPlayPlansRouter({ store, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message) }));
   app.use("/api", createMatchRouter({ store, mediator, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message), online: (userId) => relationshipRouter.isOnline?.(userId) }));
   app.use("/api", createProfileRouter({ store, emit }));
-  app.use("/api", createPeopleRouter({ store, emit, comparer: createPeopleComparer({ store, mediator }) }));
+  app.use("/api", createPeopleRouter({ store, emit }));
   app.use("/api", createCycleRouter({ store, emit }));
   app.use("/api", createDiscoverRouter({ store }));
   app.use("/api", createPromisesRouter({ store, keeper: promiseKeeper, emit }));
@@ -624,7 +646,7 @@ function publicDemoRoom(room, participantId) {
     analysisMeta: room.analysis ? { id: room.analysis.id, source: room.analysis.source, model: room.analysis.model, generatedAt: room.analysis.generatedAt, notice: room.analysis.notice } : null,
     currentParticipantId: viewer?.id || null,
     canControlAllSpeakers: room.mode === "shared" && room.creatorParticipantId === viewer?.id,
-    consents: room.participants.map((participant) => ({ participantId: participant.id, consented: Boolean(participant.consentAt) })),
+    consents: room.participants.map((participant) => ({ participantId: participant.id, consented: Boolean(participant.consentAt && participant.aiNoticeVersion === AI_NOTICE_VERSION) })),
     allConsented: allDemoParticipantsConsented(room),
     joinOpen: room.status === "active" && room.mode === "remote" && room.participants.length < 2 && room.joinExpiresAt > new Date().toISOString(),
     joinExpiresAt: room.joinExpiresAt, expiresAt: room.expiresAt,
@@ -663,7 +685,7 @@ function demoActor(room, token) {
   return participant ? { participant, canControlAll: room.mode === "shared" && room.creatorParticipantId === participant.id } : null;
 }
 
-function allDemoParticipantsConsented(room) { return room.participants.length === 2 && room.participants.every((participant) => participant.consentAt); }
+function allDemoParticipantsConsented(room) { return demoHasPermission(room); }
 
 async function createUniqueCode(store, length, kind) {
   for (let attempt = 0; attempt < 30; attempt += 1) {

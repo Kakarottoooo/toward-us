@@ -2,10 +2,12 @@ services:
   - type: web
     name: toward-us-private-beta
     runtime: node
-    # Free for now (founder 11-07: "暂时不充钱，还不能上线"). Before inviting real users, switch to `plan: starter` and
-    # add the disk below (≈ $13.25/month with the database): free sleeps after 15 minutes and loses uploads on restart.
-    #   disk: { name: pinky-media, mountPath: /var/data, sizeGB: 1 }  plus env TOWARD_US_MEDIA_DIR=/var/data/media
-    plan: free
+    plan: starter
+    numInstances: 1
+    disk:
+      name: pinky-media
+      mountPath: /var/data
+      sizeGB: 1
     region: oregon
     # Chromium for the read-only web lookups (server/readonly-web.mjs) and their tests, kept inside the project
     # (PLAYWRIGHT_BROWSERS_PATH=0) so the running service finds it too. Without it every build since #181 failed.
@@ -55,8 +57,12 @@ services:
       # Pinky membership and the beta board (docs/payments.zh-CN.md); the founder fills these in on Render.
       # Public privacy / terms / support pages (server/legal.mjs): the address people write to and who runs Pinky.
       - key: PINKY_SUPPORT_EMAIL
-        sync: false
+        value: ziwei@witnora.com
       - key: PINKY_OPERATOR
+        value: Witnora, Inc.
+      - key: TOWARD_US_MEDIA_DIR
+        value: /var/data/media
+      - key: PINKY_METRICS_ADMIN_TOKEN
         sync: false
       - key: FOUNDER_EMAILS
         sync: false

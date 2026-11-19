@@ -1,3 +1,4 @@
+import { screenImage } from "./ai-screening.mjs";
 import { randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
 import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
@@ -57,6 +58,7 @@ export function createPhotoRouter({ store }) {
     const context = await store.getRelationshipContext(userId);
     const shared = req.query.scope === "shared";
     if (shared && !(context?.relationship.status === "active" && context.members.length === 2)) throw fail(409, "Invite your partner before sharing photos.");
+    if (shared) await screenImage(req.body, mime);
     const record = createRelationshipRecord({ relationshipId: shared ? context.relationship.id : null, userId, visibility: shared ? "shared" : "private", aiAccessScope: shared ? "joint" : "private", mime, bytes: req.body.length, fileId: randomUUID() });
     await store.transaction(shared ? `relationship:${context.relationship.id}` : `user:${userId}`, async (tx) => {
       const mine = (await tx.listRelationshipRecordsForUser("photos", userId)).filter((photo) => photo.ownerUserId === userId && !photo.archivedAt);

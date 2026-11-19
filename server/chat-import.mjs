@@ -53,7 +53,7 @@ export function importView(record) {
     progress: record.progress || null, stats: record.stats || null, analysis: record.analysis || null, sampled: Boolean(record.sampled),
     rawDeleted: Boolean(record.rawDeleted), shareRequestedAt: record.shareRequest?.requestedAt || null, sharedCopyId: record.sharedCopyId || null,
     // Never the token or its hash: only whether this import is the Mac sync and when it last arrived.
-    sync: record.sync ? { lastSyncAt: record.sync.lastSyncAt || null } : null,
+    sync: record.sync ? { lastSyncAt: record.sync.lastSyncAt || null, needsDisclosure: record.sync.importDisclosure !== 1 } : null,
   };
 }
 
@@ -276,17 +276,31 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   // that person's own card, found by the name the chat shows or made the first time it is seen. A synced iMessage history is
   // the chat with the partner and keeps no person.
   async function attachPerson(user, record) {
-    if (record.sync || record.personId) return record;
-    const thread = record.sessionId ? await Promise.resolve().then(() => store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, user.id)).catch(() => null) : null;
-    if (thread?.personId && thread.ownerUserId === user.id) return update(record, user.id, (draft) => { draft.personId = thread.personId; });
-    const name = record.people?.find((person) => person.role === "partner")?.name;
-    if (!name) return record;
-    const pairing = await store.getRelationshipContext(user.id);
-    const partnerName = pairing?.relationship?.status === "active" ? pairing.members?.find((member) => member.userId !== user.id)?.user?.name : null;
-    if (partnerName && norm(partnerName) === norm(name)) return record;
-    const person = await store.transaction(`user:${user.id}`, (tx) => personFor(tx, user.id, name)).catch((error) => { console.error("Could not file the chat under a person:", error?.message || error); return null; });
-    // A card made just now is announced once, after the answer, so the member sees where this person's notes go.
-    return person ? update(record, user.id, (draft) => { draft.personId = person.id; if (person.version === 1) draft.personNew = person.name; }) : record;
+    if (record.sync || record.personId || record.personDetached) return record;
+    return store.transaction(`user:${user.id}`, async (tx) => {
+      const current = await tx.getRelationshipRecordForUser(COLLECTION, record.id, user.id);
+      if (!current || current.archivedAt || current.personId || current.personDetached) return current || record;
+      const thread = current.sessionId ? await tx.getRelationshipRecordForUser("privateAgentThreads", current.sessionId, user.id) : null;
+      if (current.sessionId && (!thread || thread.ownerUserId !== user.id)) return current;
+      let person = null;
+      if (thread?.personId) {
+        person = await tx.getRelationshipRecordForUser("memories", thread.personId, user.id);
+        if (!person || person.ownerUserId !== user.id || person.kind !== "person" || person.deletedAt) return current;
+      } else {
+        const name = current.people?.find((participant) => participant.role === "partner")?.name;
+        if (!name) return current;
+        const pairing = await tx.getRelationshipContext(user.id);
+        const partnerName = pairing?.relationship?.status === "active" ? pairing.members?.find((member) => member.userId !== user.id)?.user?.name : null;
+        if (partnerName && norm(partnerName) === norm(name)) return current;
+        person = await personFor(tx, user.id, name);
+      }
+      if (!person) return current;
+      return tx.updateRelationshipRecordForUser(COLLECTION, current.id, user.id, (draft) => {
+        draft.personId = person.id;
+        if (!thread?.personId && person.version === 1) draft.personNew = person.name;
+        draft.version += 1;
+      });
+    });
   }
 
   async function assignPeople(user, record, { me, partner }) {
@@ -388,10 +402,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const known = await profileContext(store, userId).catch(() => null);
     if (!known) return {};
     const facts = (list) => (list || []).slice(0, 20).map((item) => item.fact);
-    const person = personId ? known.people?.find((item) => item.id === personId) : null;
-    const view = person ? { me: facts(known.me), partner: facts(person.facts), history: facts(person.history) }
-      : { me: facts(known.me), partner: facts(known.partner), history: facts(known.history), ...(personId === null && known.people?.length ? { people: known.people.map((item) => ({ name: item.name, alsoCalled: item.alsoCalled, facts: facts(item.facts), history: facts(item.history) })) } : {}) };
-    return view.me.length || view.partner.length || view.history.length || view.people?.length ? { known: view } : {};
+    const view = { me: facts(known.me), partner: personId ? [] : facts(known.partner), history: personId ? [] : facts(known.history) };
+    return view.me.length || view.partner.length || view.history.length ? { known: view } : {};
   };
   async function importScreenshots(user, photoIds, { sessionId, language, messageId, question = "" }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
@@ -458,7 +470,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   });
   // A file from the composer, the Files picker or the iOS share sheet (sent as octet-stream so the app-wide JSON parser
   // leaves it alone), or plain text pasted into the conversation with ?pasted=1.
-  router.post("/imports", raw, async (req, res) => {
+  function disclosed(req, res, next) {
+    if (req.get("X-Pinky-Import-Disclosure") === "1" || req.body?.importDisclosure === 1) return next();
+    return res.status(409).json({ code: "import_disclosure_required", error: say(languageOf(req), "请先在 Pinky 中确认可以提交其他人的消息供 AI 处理。", "Confirm in Pinky that you may submit other people's messages for AI processing.", "Confirma en Pinky que puedes enviar los mensajes de otras personas para su tratamiento con IA.") });
+  }
+  router.post("/imports", disclosed, raw, async (req, res) => {
     const language = languageOf(req), sessionId = clean(String(req.query.session || ""), 80) || null;
     let parsed;
     if (req.query.pasted === "1") {
@@ -560,7 +576,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   });
 
   // iMessage from a Mac: a one-time command the member pastes into Terminal. It reads one conversation locally and uploads it.
-  router.post("/imports/mac-command", async (req, res) => {
+  router.post("/imports/mac-command", disclosed, async (req, res) => {
     for (const [token, entry] of macTokens) if (entry.expiresAt < Date.now()) macTokens.delete(token);
     const token = randomBytes(24).toString("base64url");
     macTokens.set(token, { userId: req.auth.user.id, language: languageOf(req), sessionId: clean(req.body?.session, 80) || null, expiresAt: Date.now() + 30 * 60_000 });
@@ -569,7 +585,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   });
   // The same one-time upload from a Windows PC, for PowerShell: it reads the iPhone backup there (no Mac needed). The member
   // reads the command off their phone and types it on the PC, so it is short: an 8-character code instead of a long token.
-  router.post("/imports/windows-command", async (req, res) => {
+  router.post("/imports/windows-command", disclosed, async (req, res) => {
     for (const [token, entry] of macTokens) if (entry.expiresAt < Date.now()) macTokens.delete(token);
     let code = "";
     while (!code || macTokens.has(code)) code = Array.from(randomBytes(8), (byte) => CODE_LETTERS[byte % CODE_LETTERS.length]).join("");
@@ -588,13 +604,13 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   // Continuous iMessage sync (11-05): one import per member that every run on the Mac appends new messages to. It is kept,
   // not analysed; Pinky searches it when its owner asks. The command keeps working until a new one is made or the import is
   // deleted; only the token's hash is stored.
-  router.post("/imports/mac-sync-command", async (req, res) => {
+  router.post("/imports/mac-sync-command", disclosed, async (req, res) => {
     const user = req.auth.user, language = languageOf(req), token = randomBytes(24).toString("base64url");
     const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).find((record) => record.ownerUserId === user.id && record.sync?.kind === "imessage" && !record.archivedAt);
     let record;
-    if (existing) record = await update(existing, user.id, (draft) => { draft.sync = { ...draft.sync, tokenHash: hashToken(token) }; });
+    if (existing) record = await update(existing, user.id, (draft) => { draft.sync = { ...draft.sync, importDisclosure: 1, tokenHash: hashToken(token) }; });
     else {
-      record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "waiting_sync", platform: "imessage", title: "iMessage", fileId: randomUUID(), language, people: [], messageCount: 0, sync: { kind: "imessage", tokenHash: hashToken(token), lastSyncAt: null } });
+      record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "waiting_sync", platform: "imessage", title: "iMessage", fileId: randomUUID(), language, people: [], messageCount: 0, sync: { kind: "imessage", importDisclosure: 1, tokenHash: hashToken(token), lastSyncAt: null } });
       await store.transaction(`user:${user.id}`, (tx) => tx.createRelationshipRecord(COLLECTION, record));
     }
     const origin = originOf(req);
@@ -605,6 +621,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const record = (await store.listRecordsForJob(COLLECTION)).find((item) => item.sync?.tokenHash === hash && !item.archivedAt);
     const user = record ? await store.getUserById(record.ownerUserId) : null;
     if (!record || !user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("This sync command no longer works. Open Pinky and copy a new one.\n");
+    if (record.sync.importDisclosure !== 1) return res.status(409).type("text/plain").send("Open Pinky, confirm the chat import notice and copy a new Mac sync command.\n");
     let parsed;
     try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read these messages.\n"); }
     const language = await memberLanguage(store, user.id);
