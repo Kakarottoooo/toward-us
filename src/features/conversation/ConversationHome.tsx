@@ -1,6 +1,6 @@
 import { ReportReply } from "../feedback/ReportReply";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, At, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
@@ -48,7 +48,10 @@ type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; version?: number; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type Pairing = { status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
-const AGENT_CALL = /\b(?:ourever|pinky)\b|@agent/i;
+type SharedRecipient = "partner" | "assistant";
+type SharedSend = { text: string; itemId: string; photoIds: string[]; speaker: "me" | "partner"; recipient?: SharedRecipient };
+const AGENT_CALL = /(?:^|[^\p{L}\p{N}_.@+-])@(?:ourever|pinky|agent)(?![a-z0-9_])|^\s*(?:ourever|pinky)(?:\s*[,，:：、]|\s+(?:help|please|can you|could you|ayuda|ayúda|por favor|puedes)\b|[， ]*(?:帮我们|帮我|请问|请帮))/iu;
+const sharedRecipient = (text: string, ask: boolean | null): SharedRecipient => (ask ?? AGENT_CALL.test(text)) ? "assistant" : "partner";
 const STOP_VOICE = /^(暂停|先停下|停止聆听|结束语音|stop listening|stop voice|pause|deja de escuchar|pausa)[。.!！]?$/i;
 
 /** The App's default screen: one private channel ("Just me", the member's assistant session) and one shared channel ("Us",
@@ -86,7 +89,13 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const olderRef = useRef<HTMLDivElement>(null);
   // A page can hand a starting sentence back ("Add to …: "); it lands in that channel's box once, then leaves the URL.
   const [drafts, setDrafts] = useState<Record<Channel, string>>(() => { const params = new URLSearchParams(location.search); const say = (params.get("say") || "").slice(0, 300); return { me: params.get("channel") !== "us" ? say : "", us: params.get("channel") === "us" ? say : "" }; });
-  const [askAgent, setAskAgent] = useState(false);
+  const [askAgent, setAskAgent] = useState<boolean | null>(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("channel") !== "us" || !params.get("say")?.trim()) return null;
+    const requested = params.get("recipient");
+    return requested === "assistant" ? true : requested === "partner" ? false : null;
+  });
+  const [unconfirmedShared, setUnconfirmedShared] = useState<SharedSend[]>([]);
   const [revising, setRevising] = useState(false);
   const [pending, setPending] = useState<Record<Channel, number>>({ me: 0, us: 0 });
   const [agentWorking, setAgentWorking] = useState(0);
@@ -124,6 +133,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   });
   const [interaction, setInteraction] = useState<"touch" | "cards" | null>(() =>
     paired && !usHidden && new URLSearchParams(location.search).get("distance") === "1" ? "cards" : null);
+  const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
   const [planQuestionId, setPlanQuestionId] = useState<string | null>(null);
   const openGames = (match: string | null = null) => {
     keyboard.hide();
@@ -378,22 +388,32 @@ ${text}` : text, target);
       } finally { setQueued((items) => items.filter((item) => item.itemId !== itemId)); }
     });
   };
-  // Sending the same text again after a failure reuses its itemId, so a retry can never post the message twice.
-  const failedSharedRef = useRef<{ text: string; body: string; itemId: string } | null>(null);
-  const sendShared = (text: string, photoIds: string[] = [], spokenBy: "me" | "partner" = "me") => {
-    const retry = failedSharedRef.current?.text === text ? failedSharedRef.current : null;
-    const body = retry ? retry.body : askAgent && !AGENT_CALL.test(text) ? `@Ourever ${text}` : text, itemId = retry ? retry.itemId : crypto.randomUUID();
-    setNotice(""); setAskAgent(false);
-    const calling = AGENT_CALL.test(body);
+  // A retry is the original delivery, including its recipient, speaker, attachments and idempotency key.
+  const deliverShared = (message: SharedSend) => {
+    const { text, itemId, photoIds, speaker, recipient } = message;
+    const calling = recipient === "assistant";
+    setNotice("");
     return enqueue("us", async () => {
-      // Show the member's words at once; the Agent's reply follows when it is ready.
       const shown = calling ? setTimeout(() => void loadTogether(), 600) : null;
       if (calling) setAgentWorking((count) => count + 1);
-      try { await relationshipApi("/api/together/messages", jsonBody({ text: body, itemId, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...(photoIds.length ? { photoIds } : {}), ...(spokenBy === "partner" ? { speaker: "partner" } : {}) })); failedSharedRef.current = null; await loadTogether(); }
-      catch (error) { failedSharedRef.current = { text, body, itemId }; keep(text, "us"); setNotice(errorText(error as ApiError)); }
-      finally { if (shown) clearTimeout(shown); if (calling) setAgentWorking((count) => count - 1); }
+      try {
+        await relationshipApi("/api/together/messages", jsonBody({ text, itemId, recipient, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          ...(photoIds.length ? { photoIds } : {}), ...(speaker === "partner" ? { speaker } : {}) }));
+        setUnconfirmedShared((items) => items.filter((item) => item.itemId !== itemId));
+        await loadTogether();
+        return true;
+      } catch (error) {
+        setUnconfirmedShared((items) => items.some((item) => item.itemId === itemId) ? items : [...items, message]);
+        setNotice(errorText(error as ApiError));
+        return false;
+      } finally {
+        if (shown) clearTimeout(shown);
+        if (calling) setAgentWorking((count) => count - 1);
+      }
     });
   };
+  const sendShared = (text: string, photoIds: string[] = [], speaker: SharedSend["speaker"] = "me", recipient?: SharedRecipient) =>
+    deliverShared({ text, itemId: crypto.randomUUID(), photoIds, speaker, recipient });
   const ready = attachments.filter((item) => item.id).map((item) => item.id!);
   const uploading = attachments.some((item) => !item.id && !item.failed);
   // The import posts its own note into this conversation; reload it so the card shows up right away.
@@ -426,7 +446,8 @@ ${text}` : text, target);
   };
   const tellPartner = async (message: PrivateMessage) => {
     const active = sessionRef.current; if (!active || !message.dateCheck) return;
-    await sendShared(t(`「${message.dateCheck.title}」我很开心，谢谢你 ❤️`, `I loved "${message.dateCheck.title}". Thank you ❤️`, `Me encantó «${message.dateCheck.title}». Gracias ❤️`));
+    const delivered = await sendShared(t(`「${message.dateCheck.title}」我很开心，谢谢你 ❤️`, `I loved "${message.dateCheck.title}". Thank you ❤️`, `Me encantó «${message.dateCheck.title}». Gracias ❤️`), [], "me", "partner");
+    if (!delivered) return;
     try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}/date-check`, jsonBody({ messageId: message.id, told: true }))).session); } catch { /* The button stays; the message went. */ }
   };
   const reloadSession = async () => { const active = sessionRef.current; if (!active) return; try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}`)).session); } catch { /* The next event or poll refreshes it. */ } };
@@ -454,7 +475,8 @@ ${text}` : text, target);
     // Long pasted conversations use the same import flow as a chat export.
     if (channel === "me" && !ready.length && looksLikePastedChat(text)) { setDraft(""); void importChat((session) => importPastedChat(text, { language, session })); return; }
     setDraft(""); setAttachments([]);
-    if (channel === "me") void sendPrivate(text, crypto.randomUUID(), false, ready); else void sendShared(text, ready);
+    if (channel === "me") void sendPrivate(text, crypto.randomUUID(), false, ready);
+    else { setAskAgent(null); void sendShared(text, ready, "me", sharedRecipient(text, askAgent)); }
   };
   // Photos are shrunk on the phone, then uploaded: private in Just me, shared in Us (sending there is the share).
   const pickPhotos = async (files: FileList | null) => {
@@ -488,7 +510,7 @@ ${text}` : text, target);
     if (STOP_VOICE.test(text.trim())) { voice.stop(); return null; }
     if (dictation.current) { dictation.current(text); return null; }
     // In "Us" speech only fills the box: nothing reaches the partner until the member taps send.
-    if (channelRef.current === "us") { if (talking.current.on) void sendShared(text, [], talking.current.speaker); else setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
+    if (channelRef.current === "us") { if (talking.current.on) { setAskAgent(null); void sendShared(text, [], talking.current.speaker, sharedRecipient(text, askAgent)); } else setDraft((value) => value ? `${value} ${text}` : text, "us"); return null; }
     return sendPrivate(text, itemId, true);
   };
   const voiceUnavailable = (message: string) => setNotice(t(message, "Voice is unavailable right now. You can still type.", "La voz no está disponible ahora. Puedes seguir escribiendo."));
@@ -632,7 +654,8 @@ ${text}` : text, target);
     catch (error) { setNotice(errorText(error as ApiError)); await loadTogether(); return false; }
   };
   // Today's question still waits for this member's answer.
-  const todayQuestion = together?.conversation.messages.filter((message) => message.kind === "daily_question").at(-1);
+  const latestDaily = together?.conversation.messages.filter((message) => message.kind === "daily_question").at(-1);
+  const todayQuestion = latestDaily && Date.now() - Date.parse(latestDaily.createdAt) < 86_400_000 ? latestDaily : null;
   const leavePlayDaily = () => { if (dictating.startsWith("play-daily:")) dictate("", null); };
   const closePlayTogether = () => {
     leavePlayDaily();
@@ -657,23 +680,24 @@ ${text}` : text, target);
     const voiceId = inPlay ? `play-daily:${message.id}` : message.id;
     const text = message.i18n?.[language] ?? message.translations?.[language]?.text ?? message.text;
     return <DailyQuestionCard key={message.id} questionId={message.id} question={text} answers={message.answers || {}} userId={user.id}
-      members={together?.members || []} language={language} current={message.id === todayQuestion?.id && Date.now() - Date.parse(message.createdAt) < 86_400_000}
+      members={together?.members || []} language={language} current={message.id === todayQuestion?.id}
       askedAt={message.createdAt} listening={dictating === voiceId && voiceActive} onVoice={(append) => dictate(voiceId, append)}
-      dailyPlay={message.dailyPlay} onAnswer={(answer) => answerDaily(message.id, answer)}
-      onOpenPlan={paired && !together?.readOnly ? () => { keyboard.hide(); setPlanQuestionId(message.id); } : undefined}
+      dailyPlay={message.dailyPlay} openForAnswer={!inPlay} onAnswer={(answer) => answerDaily(message.id, answer)}
+      onOpenPlan={paired && !together?.readOnly ? () => { if (!inPlay) closeQuestion(); keyboard.hide(); setPlanQuestionId(message.id); } : undefined}
       onContinue={inPlay && !usHidden ? (followup) => {
-        closePlayTogether(); switchChannel("us");
+        closePlayTogether(); switchChannel("us"); setAskAgent(false);
         const prompt = followup || t(`刚才这道题「${text}」，我想和你接着聊聊。`, `I'd like to talk a little more about “${text}”.`, `Me gustaría seguir hablando de «${text}».`);
         setDraft((value) => value.trim() ? `${value}\n\n${prompt}` : prompt, "us");
-      } : undefined} inPlay={inPlay} offline={offline} readOnly={inPlay && together?.readOnly} />;
+      } : undefined} inPlay={inPlay} offline={offline} readOnly={together?.readOnly} />;
   };
-  const dailyWaiting = Boolean(todayQuestion && Date.now() - Date.parse(todayQuestion.createdAt) < 86_400_000 && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2);
+  const dailyWaiting = Boolean(todayQuestion && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2);
   // Something in Us waits for this member: an agreement they have not approved yet, or a new line from the partner or Ourever.
   const unreadUs = channel !== "us" && (dailyWaiting || Boolean(pendingAgreement && !together?.readOnly && !approved.includes(`${pendingAgreement.id}:${pendingAgreement.version}`)) || Boolean(latestUs && latestUs.actorUserId !== user.id && latestUs.createdAt > seenUs));
   const readOnly = channel === "us" && (!paired || Boolean(together?.readOnly));
-  const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("贴上 TA 的话，或跟我说说…", "Paste what they said, or talk to me…", "Pega lo que dijo, o cuéntame…") : askAgent ? t("问 Ourever…", "Ask Ourever…", "Pregúntale a Ourever…") : t("发给你们俩…", "Write to both…", "Para los dos…");
+  const askingInUs = channel === "us" && sharedRecipient(draft, askAgent) === "assistant";
+  const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("贴上 TA 的话，或跟我说说…", "Paste what they said, or talk to me…", "Pega lo que dijo, o cuéntame…") : askingInUs ? t("问 Ourever…", "Ask Ourever…", "Pregúntale a Ourever…") : t(`发消息给 ${partnerName}…`, `Message ${partnerName}…`, `Mensaje para ${partnerName}…`);
   const audience = channel === "me" ? t("只有我 · 与 Ourever 私聊", "Just me · Private with Ourever", "Solo yo · En privado con Ourever") : t(`我们俩 · ${partnerName} 也能看到`, `Us · ${partnerName} can see this too`, `Nosotros · ${partnerName} también lo verá`);
-  const sendLabel = channel === "me" ? t("私下发送给 Ourever", "Send privately to Ourever", "Enviar en privado a Ourever") : t("发送到我们俩", "Send to Us", "Enviar a Nosotros");
+  const sendLabel = channel === "me" ? t("私下发送给 Ourever", "Send privately to Ourever", "Enviar en privado a Ourever") : askingInUs ? t("在我们俩问 Ourever", "Ask Ourever in Us", "Preguntar a Ourever en Nosotros") : t(`发送给 ${partnerName}`, `Send to ${partnerName}`, `Enviar a ${partnerName}`);
 
   const privateCard = (card: Card) => {
     if (card.kind === "chat_import") return <ImportCard key={card.id} id={card.id} language={language} onOpen={open} onFinished={() => void reloadSession()} />;
@@ -702,7 +726,46 @@ ${text}` : text, target);
     return index >= 0 ? list.map((item, position) => position === index ? next : item) : [...list, next];
   }, []);
   const approvedImports = new Set((together?.conversation.messages || []).flatMap((message) => message.refs.filter((ref) => ref.type === "chat_import" && ref.requestFor).map((ref) => ref.requestFor!)));
-  const sharedMessage = (message: SharedMessage, index: number) => <Fragment key={message.id}>{sharedBody(message, index)}{message.role === "agent" && together && <ReportReply language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />}</Fragment>;
+  const closeQuestion = () => {
+    if (openQuestionId && dictating === openQuestionId) dictate("", null);
+    keyboard.hide();
+    setOpenQuestionId(null);
+  };
+  const questionEntry = (message: SharedMessage, text: string) => {
+    const source = message.role === "agent" ? "Ourever" : message.actorUserId === user.id ? t("你", "You", "Tú") :
+      together?.members.find((member) => member.id === message.actorUserId)?.name || t("伴侣", "Your partner", "Tu pareja");
+    const mine = Boolean(message.answers?.[user.id]);
+    const revealed = Object.keys(message.answers || {}).length >= 2;
+    const today = message.kind === "daily_question" && message.id === todayQuestion?.id;
+    const label = today ? t("今日一问", "Today’s question", "Pregunta de hoy") : message.kind === "daily_question"
+      ? t("往日问题", "Earlier question", "Pregunta anterior") : t("双人题卡", "Question card", "Tarjeta de preguntas");
+    const status = revealed ? t("双方已回答", "Both answered", "Ambos respondieron") : mine ?
+      t(`你已回答，等 ${partnerName}`, `You answered · Waiting for ${partnerName}`, `Ya respondiste · Falta ${partnerName}`) :
+      t("你尚未回答", "You haven’t answered", "Aún no has respondido");
+    const action = revealed ? t("查看双方答案", "View answers", "Ver respuestas") : mine ? t("查看我的答案", "View my answer", "Ver mi respuesta") :
+      readOnly ? t("查看题目", "View question", "Ver pregunta") : t("去回答", "Answer", "Responder");
+    return <button type="button" key={message.id} className="shared-question" onClick={() => { keyboard.hide(); setOpenQuestionId(message.id); }}>
+      <span className="shared-question-meta">{source} · {label}</span><strong>{text}</strong>
+      <span className="shared-question-footer"><span>{status}</span><b>{action}<ArrowRight size={14} aria-hidden="true" /></b></span>
+    </button>;
+  };
+  const gameDetails = (message: SharedMessage) => {
+    if (!message.game) return null;
+    const translated = message.translations?.[language];
+    const deckId = message.game.deckId;
+    return <GameCard key={message.id} questionId={message.id} prompt={message.i18n?.[language] ?? translated?.text ?? message.text}
+      game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game}
+      answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} readOnly={readOnly}
+      onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => { closeQuestion(); void playAgain(); }}
+      onOpenDeck={deckId ? () => { closeQuestion(); setPlayTogether({ cardId: deckId }); } : undefined} />;
+  };
+  const sharedMessage = (message: SharedMessage, index: number) => {
+    const body = sharedBody(message, index);
+    if (!body || message.role !== "agent" || !together) return body;
+    return <div key={message.id} className="shared-reportable">
+      {body}<ReportReply messageMenu language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
+    </div>;
+  };
   const sharedBody = (message: SharedMessage, index: number) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
     // Like a group chat: the avatar and name show once at the start of each run of lines from the same speaker.
@@ -732,12 +795,9 @@ ${text}` : text, target);
       </article>;
     }
     if (message.kind === "match_invite" && message.match) return <MatchInviteCard key={message.id} match={message.match} userId={user.id} partnerName={partnerName} language={language} onOpen={openGames} />;
-    if (message.kind === "game" && message.game) {
-      const deckId = message.game.deckId;
-      return <GameCard key={message.id} questionId={message.id} prompt={text} game={translated?.options?.length === message.game.options.length ? { ...message.game, options: translated.options } : message.game} answers={message.answers || {}} userId={user.id} members={together?.members || []} language={language} onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => void playAgain()} onOpenDeck={deckId ? () => { keyboard.hide(); setPlayTogether({ cardId: deckId }); } : undefined} />;
-    }
+    if (message.kind === "game" && message.game) return questionEntry(message, text);
     if (message.kind === "watch_check") return <WatchCheckCard key={message.id} language={language} text={text} answer={message.watchAnswer} members={together?.members || []} onAnswer={(finished) => void answerWatch(message.id, finished)} />;
-    if (message.kind === "daily_question") return playTogether && message.id === todayQuestion?.id ? null : renderDaily(message);
+    if (message.kind === "daily_question") return playTogether && message.id === todayQuestion?.id ? null : questionEntry(message, text);
     if (message.kind === "story" && message.story) { const story = message.story; return <div key={message.id} className="conversation-turn"><StoryCard language={language} story={story} onOpen={() => { keyboard.hide(); setOpenStory(story); }} /></div>; }
     if (message.kind === "call" && message.call) return <CallRecord key={message.id} language={language} title={text} call={message.call} />;
     if (message.kind === "reminder" || message.kind === "review") {
@@ -771,7 +831,7 @@ ${text}` : text, target);
   const suggest = (items: string[], target: Channel) => <div className="conversation-suggestions" data-testid="composer-ideas">{items.map((text, index) => <button key={text} onClick={() => { setDraft(text, target); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}{reasons[target][index] && <small className="suggestion-why" data-testid="suggestion-why">{reasons[target][index]}</small>}</button>)}<button type="button" className="conversation-suggestions-all" onClick={() => open("/?view=capabilities")} data-testid="see-capabilities">{t("Ourever 还能做什么 →", "More Ourever can do →", "Más cosas de Ourever →")}</button></div>;
   // Ourever's core (founder 11-08): "I don't know how to reply to her" — a reply coach that works alone, before any pairing.
   const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t("不知道怎么回 TA？", "Not sure how to reply?", "¿No sabes qué responder?")}</h1><p>{t("把 TA 的话粘贴过来，或者发聊天截图。Ourever 帮你看懂 TA 的意思，写一句你可以直接发的回复。这段对话对伴侣保密。", "Paste what your partner said, or send a screenshot of the chat. Ourever helps you read what they mean and writes a reply you can send as is. Your partner cannot see this conversation.", "Pega lo que dijo tu pareja o envía una captura del chat. Ourever te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Tu pareja no puede ver esta conversación.")}</p><div className="card-actions"><button type="button" className="card-primary" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button>{!paired && pairing?.status !== "pending" && <button type="button" disabled={busy} onClick={() => void shareInvite()} data-testid="empty-invite"><UserPlus size={18} />{t("邀请 TA 一起用", "Invite your partner", "Invita a tu pareja")}</button>}</div></section>;
-  const usEmpty = <section className="conversation-empty"><h1>{t("你们俩和 Ourever", "The two of you, plus Ourever", "Ustedes dos y Ourever")}</h1><p>{t("你们两人都能看到这里。Ourever 平时不插话；叫一声“Ourever”或点 @，它就来帮忙。", "You both see everything here. Ourever stays quiet until you say “Ourever” or tap @.", "Los dos ven todo aquí. Ourever no interviene hasta que digan «Ourever» o toquen @.")}</p></section>;
+  const usEmpty = <section className="conversation-empty"><h1>{t(`和 ${partnerName} 聊天`, `Chat with ${partnerName}`, `Habla con ${partnerName}`)}</h1><p>{t("你们俩都能看到这里的消息。", "You can both see messages here.", "Ambos pueden ver los mensajes aquí.")}</p></section>;
   const invite = <section className="conversation-empty conversation-invite" data-testid="conversation-invite"><h1>{t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja")}</h1><p>{t("“我们俩”是你们两个人和 Ourever 的共同对话。TA 用自己的账号加入后，这里就会打开。", "Us is the shared conversation for the two of you and Ourever. It opens once your partner joins with their own account.", "Nosotros es la conversación compartida entre ustedes dos y Ourever. Se abre cuando tu pareja se une con su propia cuenta.")}</p>
     {liveInvite && <div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{liveInvite.code}</strong></div>}
     {inviteStatus && <p className="invite-status" data-testid="invite-status">{inviteStatus}</p>}
@@ -791,13 +851,17 @@ ${text}` : text, target);
   // An import is reported twice (received, then read); its live card shows only on the latest of those messages.
   const importAt = new Map(privateMessages.flatMap((message, index) => (message.cards || []).filter((card) => card.kind === "chat_import").map((card) => [card.id, index] as const)));
   // Earlier pages sit above the live working set; one list keeps the group-chat run detection working across the seam.
-  const olderMessages = older?.messages || [], sharedMessages = [...olderMessages, ...(together?.conversation.messages || [])];
+  const liveMessages = together?.conversation.messages || [];
+  const liveMessageIds = new Set(liveMessages.map((message) => message.id));
+  const olderMessages = (older?.messages || []).filter((message) => !liveMessageIds.has(message.id));
+  const sharedMessages = [...olderMessages, ...liveMessages];
+  const openQuestion = openQuestionId ? sharedMessages.find((message) => message.id === openQuestionId) : null;
   const hasOlder = Boolean(paired && together) && (older ? older.more : (together?.conversation.archived?.messages || 0) > 0);
   const lastSeen = channel === "me" ? privateMessages.at(-1)?.id || "" : sharedMessages.at(-1)?.id || "";
   const wantIdeas = !started;
   // A brand-new Just me shows the reply coach alone (founder 11-08): no idea chips or discovery card competing with it.
   const coachAlone = channel === "me" && !privateMessages.length && !queued.length;
-  const showIdeas = wantIdeas && !draft.trim() && !voice.listening && !!ideas[channel].length && !readOnly && !(channel === "us" && !paired) && !coachAlone;
+  const showIdeas = channel === "me" && wantIdeas && !draft.trim() && !voice.listening && !!ideas[channel].length && !readOnly && !coachAlone;
   // Typing, talking or sending anything (a photo included) is starting to use the app.
   useEffect(() => { if (draft.trim() || voice.listening || queued.length) setStarted(true); }, [Boolean(draft.trim()), voice.listening, queued.length]);
   const showNudge = channel === "us" && paired && wantIdeas && !draft.trim() && !voice.listening && !readOnly && Boolean(nudge);
@@ -809,7 +873,7 @@ ${text}` : text, target);
   }, [channel, language, paired, wantIdeas]);
   // Fresh ideas only when they would be shown, so a busy conversation does not ask the model after every message.
   useEffect(() => {
-    if ((channel === "us" && !paired) || !wantIdeas) return;
+    if (channel === "us" || !wantIdeas) return;
     let alive = true;
     relationshipApi<{ suggestions: string[]; reasons?: string[] }>(`/api/suggestions?channel=${channel}&language=${language}`).then((result) => { if (alive) { setIdeas((current) => ({ ...current, [channel]: result.suggestions })); setReasons((current) => ({ ...current, [channel]: result.reasons || [] })); } }).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, ideas: true })));
     return () => { alive = false; };
@@ -817,7 +881,7 @@ ${text}` : text, target);
   // In Just me only this phone's own wait counts; in Us also a reply Ourever is preparing for the partner.
   const working: AgentActivity = channel === "me" ? (waitingMe ? activity.me || { step: "thinking" } : null) : paired ? activity.us || (waitingUs ? { step: "thinking" } : null) : null;
   const draftCard = channel === "us" && paired && together?.conversation.draftAgreement && !pendingAgreement && !together.readOnly ? together.conversation.draftAgreement : null;
-  const extrasIn = (firstLook.ideas || !wantIdeas || coachAlone) && (firstLook.discover || readOnly || coachAlone) && (!paired || mascotLoaded);
+  const extrasIn = (channel === "us" || coachAlone || (firstLook.ideas || !wantIdeas) && firstLook.discover) && (!paired || mascotLoaded);
   if (!shown.current && (firstLook.cap || firstLook.session && firstLook.together && (extrasIn || firstLook.grace))) shown.current = true;
   const conversationVisible = shown.current;
   const currentThread = channel === "me" ? thread : null;
@@ -877,7 +941,7 @@ ${text}` : text, target);
       {voice.partial && <p className="conversation-partial">{voice.partial.text || t("正在听…", "Listening…", "Escuchando…")}</p>}
       {channel === "me" && queued.map((item) => <article key={item.itemId} className="conversation-message from-me is-sending"><p>{item.text}</p></article>)}
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
-      {!readOnly && !coachAlone && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} used={discoverUsed} />}
+      {channel === "me" && !readOnly && !coachAlone && <DiscoveryCard userId={user.id} channel={channel} paired={paired} language={language} partnerName={partnerName} refreshKey={(together?.conversation.messages.length || 0) + privateMessages.length} onAction={discover} used={discoverUsed} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=upcoming")} />}
       {showIdeas && suggest(ideas[channel], channel)}
       <div aria-hidden="true" />
@@ -887,6 +951,11 @@ ${text}` : text, target);
     {!recall.active && !call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
       {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
+      {channel === "us" && unconfirmedShared.map((item) => <div key={item.itemId} className="conversation-retry shared-retry" role="status">
+        <span><strong>{t("未确认送达", "Delivery unconfirmed", "Entrega sin confirmar")} · {item.recipient === "assistant" ? "Ourever" : partnerName}</strong>
+          {item.text && <span>{item.text}</span>}{item.photoIds.length > 0 && <small>{t(`照片：${item.photoIds.length}`, `Photos: ${item.photoIds.length}`, `Fotos: ${item.photoIds.length}`)}</small>}</span>
+        <button type="button" disabled={pending.us > 0} onClick={() => void deliverShared(item)}>{t("重试", "Retry", "Reintentar")}</button>
+      </div>)}
       {voice.listening && channel === "me" && <p className="conversation-listening">{t("正在听。说“结束语音”即可停止。", "Listening. Say “stop listening” to finish.", "Escuchando. Di «deja de escuchar» para terminar.")}</p>}
       {voice.listening && channel === "us" && !dictating && <div className="together-voice" data-testid="together-voice">
         <label className="together-switch"><input type="checkbox" checked={talkTogether} onChange={(event) => setTalkTogether(event.target.checked)} /><span>{t("一起说：每句直接发到“我们俩”", "Talk together: each sentence goes straight to Us", "Hablar juntos: cada frase va directo a Nosotros")}</span></label>
@@ -894,11 +963,16 @@ ${text}` : text, target);
           : <p>{t("说完的话会先放进输入框，确认后再发。", "What you say goes into the box first; send it when ready.", "Lo que digas va primero al cuadro; envíalo cuando quieras.")}</p>}
       </div>}
       {!!attachments.length && <div className="composer-photos">{attachments.map((item) => <figure key={item.key} className={item.failed ? "failed" : item.id ? "" : "uploading"}><img src={item.preview} alt="" draggable={false} /><button type="button" onClick={() => setAttachments((items) => items.filter((entry) => entry.key !== item.key))} aria-label={t("移除照片", "Remove photo", "Quitar foto")}><X size={14} weight="bold" /></button></figure>)}</div>}
+      {channel === "us" && !readOnly && <div className="shared-recipient">
+        <button type="button" aria-pressed={askingInUs} onClick={() => { setAskAgent(!askingInUs); composerRef.current?.querySelector("textarea")?.focus(); }}>
+          <Sparkle size={16} aria-hidden="true" />{askingInUs ? t(`改发给 ${partnerName}`, `Message ${partnerName} instead`, `Escribir a ${partnerName}`) : t("问 Ourever", "Ask Ourever", "Preguntar a Ourever")}
+        </button>
+        {askingInUs && <span role="status">{t("你们俩都能看到提问和回复。", "You can both see the question and reply.", "Ambos verán la pregunta y la respuesta.")}</span>}
+      </div>}
       {/* Who sees this is explained once in the welcome tour and shown by the tabs; no standing line above the box (founder 11-08). Screen readers still hear it. */}
       {!readOnly && <span className="composer-audience-sr" id={audienceId}>{audience}</span>}
       {readOnly ? <p className="conversation-notice">{t("你们的共同空间已结束，这里只能查看。", "Your shared space has ended; this conversation is read-only.", "Su espacio compartido terminó; esta conversación es de solo lectura.")}</p> :
         <div className="conversation-input">
-          {channel === "us" && <button type="button" className={`conversation-mention ${askAgent ? "active" : ""}`} aria-pressed={askAgent} onClick={() => setAskAgent(!askAgent)} aria-label={t("叫 Ourever 来帮忙", "Ask Ourever to help", "Pedir ayuda a Ourever")}><At size={20} weight="bold" /></button>}
           <button type="button" className="conversation-photo" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} disabled={attachments.length >= 6} aria-label={t("发照片", "Send a photo", "Enviar una foto")} data-testid="conversation-photo"><ImageSquare size={22} /></button>
           <input ref={fileRef} type="file" accept="image/*,.txt,.zip,.json,.csv,.xml,.html" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
           <KeyboardTextarea onPaste={(event) => { if (event.clipboardData.getData("text/plain")) pastedDraft.current[channel] = true; }} data-testid="conversation-input" aria-label={placeholder} aria-describedby={audienceId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
@@ -918,6 +992,13 @@ ${text}` : text, target);
       title={t("互动", "Connect", "Conectar")} description={t("碰一下，或者留张小卡。", "Touch together or leave a little card.", "Tóquense o deja una tarjetita.")} snap={0.76}>
       <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} conversationId={together?.conversation.id} incomingCard={interaction === "cards"} onClose={closeInteraction} />
+      <button type="button" className="connect-poster" onClick={() => { closeInteraction(); open("/?view=moments&ideas=1"); }}>
+        <Images size={18} aria-hidden="true" />{t("100 件小事海报", "100 little things poster", "Póster de 100 cosas")}<ArrowRight size={16} aria-hidden="true" />
+      </button>
+    </BottomSheet>}
+    {channel === "us" && openQuestion && <BottomSheet open onOpenChange={(value) => { if (!value) closeQuestion(); }}
+      title={t("双人题卡", "Question card", "Tarjeta de preguntas")} snap={0.82}>
+      {openQuestion.kind === "daily_question" ? renderDaily(openQuestion) : gameDetails(openQuestion)}
     </BottomSheet>}
     {planQuestionId && paired && <BottomSheet open onOpenChange={(open) => { if (!open) { keyboard.hide(); setPlanQuestionId(null); } }}
       title={t("约会点子", "Date ideas", "Ideas para una cita")} snap={0.84}>
@@ -938,7 +1019,7 @@ ${text}` : text, target);
           `Ourever, we just played “${question}” I chose “${own}” and my partner chose “${theirChoice}”. Give us one small plan we could try together.`,
           `Ourever, acabamos de jugar «${question}». Yo elegí «${own}» y mi pareja «${theirChoice}». Danos un plan pequeño para probar juntos.`,
         );
-        keyboard.hide(); closePlayTogether(); switchChannel("us");
+        keyboard.hide(); closePlayTogether(); switchChannel("us"); setAskAgent(true);
         setDraft((current) => current.trim() ? `${current}\n\n${prompt}` : prompt, "us");
       }} />}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}

@@ -1,3 +1,11 @@
 .reply-report { display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; color: #635850; font: inherit; font-size: 13px; }
 .reply-report button { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 3px 4px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .reply-report button:focus-visible { outline: 2px solid currentColor; }
+.reply-report-menu { position: relative; flex: 0 0 44px; align-self: start; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: end; width: 44px; z-index: 1; }
+.reply-report-menu:focus-within { z-index: 2; }
+.reply-report-menu .reply-report-trigger { justify-content: center; width: 44px; height: 44px; border-radius: 50%; }
+.reply-report-menu .reply-report-trigger[aria-expanded="true"] { background: var(--jian-paper-bright); }
+.reply-report-menu .reply-report-panel { grid-column: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 0 8px; width: max-content; max-width: min(224px, calc(100vw - 64px)); padding: 2px 10px; border: 1px solid var(--jian-line); border-radius: 12px; background: var(--jian-paper-bright); box-shadow: 0 3px 12px rgba(37,37,37,.12); }
+.reply-report-menu .reply-report-panel.is-confirming { padding: 10px 12px 2px; }
+.reply-report-menu .reply-report-panel > span { width: 100%; line-height: 1.4; }
+.reply-report-menu > [role="status"] { width: max-content; max-width: 112px; padding: 4px; text-align: end; }

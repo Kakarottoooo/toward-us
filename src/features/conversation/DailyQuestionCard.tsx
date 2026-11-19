@@ -13,11 +13,11 @@ export type DailyPlay = {
   aboutUserId?: string;
 };
 
-export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, onOpenPlan, readOnly = false, offline = false, inPlay = false }: {
+export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, onOpenPlan, readOnly = false, offline = false, inPlay = false, openForAnswer = false }: {
   questionId: string; question: string; answers: DailyAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language;
   current: boolean; askedAt: string; listening: boolean; onVoice: (append: ((text: string) => void) | null) => void;
   onAnswer: (answer: DailyAnswerInput) => Promise<boolean>; dailyPlay?: DailyPlay; onContinue?: (followup?: string) => void; onOpenPlan?: () => void;
-  readOnly?: boolean; offline?: boolean; inPlay?: boolean;
+  readOnly?: boolean; offline?: boolean; inPlay?: boolean; openForAnswer?: boolean;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
@@ -33,14 +33,14 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
   const [savedPlay] = useState<DailyAnswerInput>(() => {
     try { return JSON.parse(sessionStorage.getItem(richDraftKey) || "{}") || {}; } catch { return {}; }
   });
-  const [editing, setEditing] = useState(Boolean(savedDraft || savedPlay.drawing?.length || savedPlay.choice !== undefined || (dailyPlay && !mine)));
+  const [editing, setEditing] = useState(Boolean(savedDraft || savedPlay.drawing?.length || savedPlay.choice !== undefined || ((dailyPlay || openForAnswer) && !mine && !readOnly)));
   const [draft, setDraft] = useState(savedDraft || (mine?.drawing ? "" : mine?.text) || "");
   const [choice, setChoice] = useState(savedPlay.choice ?? mine?.choice);
   const [sketch, setSketch] = useState<Stroke[]>(savedPlay.drawing || mine?.drawing || []);
   const [useWords, setUseWords] = useState(Boolean(drawing && (savedDraft || (mine && !mine.drawing))));
   // Deferring only changes the view here; it sends nothing to the partner.
   const deferredKey = `pinky:daily-deferred:${userId}:${questionId}`;
-  const [deferred, setDeferred] = useState(() => { try { return localStorage.getItem(deferredKey) === "1"; } catch { return false; } });
+  const [deferred, setDeferred] = useState(() => { try { return !openForAnswer && localStorage.getItem(deferredKey) === "1"; } catch { return false; } });
   const defer = (value: boolean) => {
     if (listening) onVoice(null);
     keyboard.hide(); setDeferred(value);
