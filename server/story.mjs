@@ -61,7 +61,7 @@ export function storyMaterial(snapshot, relationshipId, members, week = null) {
       // Daily questions only once both answered, with both answers; an unanswered one is not part of their week.
       week: { from: week.from, to: week.to, conversation: messages.filter((message) => ["member", "agent"].includes(message.role) && inWeek(message.createdAt) && (message.kind !== "daily_question" || Object.keys(message.answers || {}).length >= 2)).map((message) => message.kind === "daily_question"
         ? { from: "daily question", text: String(message.text || "").slice(0, 200), answers: Object.entries(message.answers).map(([userId, answer]) => ({ from: name(userId), text: String(answer.text || "").slice(0, 300) })), date: message.createdAt.slice(0, 10) }
-        : { from: message.role === "agent" ? "Pinky" : name(message.actorUserId), text: String(message.text || "").slice(0, 200), date: message.createdAt.slice(0, 10) }).slice(-60) },
+        : { from: message.role === "agent" ? "Ourever" : name(message.actorUserId), text: String(message.text || "").slice(0, 200), date: message.createdAt.slice(0, 10) }).slice(-60) },
     };
   }
   return {
@@ -78,8 +78,8 @@ export function storyMaterial(snapshot, relationshipId, members, week = null) {
 
 const outputLanguage = (language) => language === "en" ? "English" : language === "es" ? "Spanish" : "Simplified Chinese";
 export function storyInstructions(language, occasion, weekly = false) {
-  return `You are Pinky, making a surprise recap card for a couple${occasion ? ` for ${occasion}` : ""}: a short illustrated story of them that they will open together and smile at. Write in ${outputLanguage(language)}, speaking to the two of them as "you" (你们 / ustedes); you are their companion, not part of the couple, so never say "we" or "our story" about them.${weekly ? `
-This is their weekly recap of material.week (from to to): tell only what happened that week, from what they said in Us that week and that week's moments, agreements and kept promises. Keep it to 2 to 4 short chapters about the two of them, not a log of what Pinky did: leave out buttons, drafts and how Pinky works. A hard moment appears only as how they worked through it, in one gentle sentence. Stats only for things worth celebrating that week (moments kept, promises kept, agreements made), else none. Something already done is in the past; end with one small thing still ahead (a date coming up, an agreement waiting for both approvals), if any.` : ""}
+  return `You are Ourever, making a surprise recap card for a couple${occasion ? ` for ${occasion}` : ""}: a short illustrated story of them that they will open together and smile at. Write in ${outputLanguage(language)}, speaking to the two of them as "you" (你们 / ustedes); you are their companion, not part of the couple, so never say "we" or "our story" about them.${weekly ? `
+This is their weekly recap of material.week (from to to): tell only what happened that week, from what they said in Us that week and that week's moments, agreements and kept promises. Keep it to 2 to 4 short chapters about the two of them, not a log of what Ourever did: leave out buttons, drafts and how Ourever works. A hard moment appears only as how they worked through it, in one gentle sentence. Stats only for things worth celebrating that week (moments kept, promises kept, agreements made), else none. Something already done is in the past; end with one small thing still ahead (a date coming up, an agreement waiting for both approvals), if any.` : ""}
 Use only the material given (their shared moments, dates, agreements, spaces, their shared conversation and any chat-history analysis both approved). Be specific and warm: name real moments, dates and places from the material; never invent events, numbers or feelings, and never mention anything missing. If the material is thin, keep it short and honest and look forward instead.
 Refer to them by name; never guess anyone's gender (in Spanish use wording that does not mark gender).
 title: a short headline for the occasion. subtitle: one line. stats: up to 4 small facts computed from the material that are worth celebrating (label + value, e.g. days together, moments kept, promises kept); never message counts or unfinished to-dos. chapters: 2 to 6 short sections in time order, each a heading, 1 to 3 sentences, the date when known, and a photoId copied exactly from the material when a moment has one (else null); use each photo at most once. coverPhotoId: the most meaningful photo id from the material, or null. closing: one or two warm sentences looking ahead.
@@ -98,7 +98,7 @@ export async function composeStory({ store, mediator, relationshipId, userId, la
     if (snapshot.togetherConversations?.find((item) => item.relationshipId === relationshipId)?.messages?.some((message) => message.handle === handle)) return false;
     const material = storyMaterial(snapshot, relationshipId, context.members, week);
     // A quiet week gets no card.
-    if (week && !material.moments.length && !material.week.conversation.some((message) => message.from !== "Pinky")) return false;
+    if (week && !material.moments.length && !material.week.conversation.some((message) => message.from !== "Ourever")) return false;
     const story = await mediator.structured({ name: "couple_recap", schema: storySchema, instructions: storyInstructions(language, occasion, Boolean(week)), input: JSON.stringify(material), maxOutputTokens: 3000 });
     // Photos only from the couple's shared album, whatever the model returned.
     const photos = new Set(material.moments.map((moment) => moment.photoId).filter(Boolean));

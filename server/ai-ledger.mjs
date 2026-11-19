@@ -73,10 +73,10 @@ export function aiCostConfig(now = Date.now()) {
 // ── Friendly limit messages in the member's language. The code is the existing "today's limit" code, so every screen and
 // channel that already shows that message (App, iMessage, imports, photos) shows these too. ───────────────────────────────
 const LIMIT_TEXT = {
-  daily: { zh: "今天 Pinky 的 AI 用量已经到上限了，明天会自动恢复。其他功能照常可用。", en: "Pinky has reached today's AI limit. It resets tomorrow; everything else keeps working.", es: "Pinky alcanzó el límite de IA de hoy. Se renueva mañana; todo lo demás sigue funcionando." },
-  monthly: { zh: "这个月 Pinky 的 AI 用量已经到上限了，下个月 1 日会自动恢复。其他功能照常可用。", en: "Pinky has reached this month's AI limit. It resets on the 1st of next month; everything else keeps working.", es: "Pinky alcanzó el límite de IA de este mes. Se renueva el día 1 del próximo mes; todo lo demás sigue funcionando." },
-  feature: { zh: "今天这项功能的 AI 用量已经到上限了，明天会自动恢复。Pinky 的其他功能照常可用。", en: "This feature has reached today's AI limit. It resets tomorrow; the rest of Pinky keeps working.", es: "Esta función alcanzó el límite de IA de hoy. Se renueva mañana; el resto de Pinky sigue funcionando." },
-  kill_switch: { zh: "Pinky 的 AI 正在短暂维护，请稍后再试。其他功能照常可用。", en: "Pinky's AI is briefly paused for maintenance. Please try again soon; everything else keeps working.", es: "La IA de Pinky está en una breve pausa de mantenimiento. Inténtalo pronto; todo lo demás sigue funcionando." },
+  daily: { zh: "今天 Ourever 的 AI 用量已经到上限了，明天会自动恢复。其他功能照常可用。", en: "Ourever has reached today's AI limit. It resets tomorrow; everything else keeps working.", es: "Ourever alcanzó el límite de IA de hoy. Se renueva mañana; todo lo demás sigue funcionando." },
+  monthly: { zh: "这个月 Ourever 的 AI 用量已经到上限了，下个月 1 日会自动恢复。其他功能照常可用。", en: "Ourever has reached this month's AI limit. It resets on the 1st of next month; everything else keeps working.", es: "Ourever alcanzó el límite de IA de este mes. Se renueva el día 1 del próximo mes; todo lo demás sigue funcionando." },
+  feature: { zh: "今天这项功能的 AI 用量已经到上限了，明天会自动恢复。Ourever 的其他功能照常可用。", en: "This feature has reached today's AI limit. It resets tomorrow; the rest of Ourever keeps working.", es: "Esta función alcanzó el límite de IA de hoy. Se renueva mañana; el resto de Ourever sigue funcionando." },
+  kill_switch: { zh: "Ourever 的 AI 正在短暂维护，请稍后再试。其他功能照常可用。", en: "Ourever's AI is briefly paused for maintenance. Please try again soon; everything else keeps working.", es: "La IA de Ourever está en una breve pausa de mantenimiento. Inténtalo pronto; todo lo demás sigue funcionando." },
 };
 const costLimitError = (scope, language, feature) => {
   const text = LIMIT_TEXT[scope];
