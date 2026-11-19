@@ -3,7 +3,7 @@ import { DotsThree, HandHeart, PawPrint, Sparkle, X } from "@phosphor-icons/reac
 import { localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
-import type { Character } from "./character";
+import { defaultMascot, type Character } from "./character";
 import { OutfitLayer, type OutfitId } from "./Outfit";
 import { Wardrobe } from "./Wardrobe";
 
@@ -48,12 +48,12 @@ export function FloatingPet({ userId, language, pet, character, onOpen }: { user
     }
     press.current = null; setDrag(null);
   };
-  const image = broken ? character?.image?.still || null : petImage(character);
+  const image = broken && character?.visible ? character.image?.still || null : petImage(character);
   const style = drag ? { left: drag.x - 36, top: drag.y - 40, right: "auto" } : { top: `clamp(150px, ${spot.y * 100}%, calc(100% - 220px))` };
   return <button ref={ref} type="button" className={`floating-pet is-${spot.side} is-${pet.mood}${drag ? " is-dragging" : ""}${keyboard.visible ? " is-away" : ""}`} style={style}
     onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={() => { if (!moved.current) onOpen(); moved.current = false; }}
     aria-label={t(`我们的小家伙 Lv.${pet.level}，打开它的小窝`, `Our little one, Lv.${pet.level}. Open its room`, `Nuestro pequeño, Nv.${pet.level}. Abrir su cuarto`)} data-testid="floating-pet">
-    <span className="floating-pet-figure" data-testid={image ? "couple-mascot" : undefined}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} onError={() => setBroken(true)} /><OutfitLayer id={pet.outfit} /></span> : <PawPrint size={30} weight="fill" />}</span>
+    <span className="floating-pet-figure" data-testid={image ? "couple-mascot" : undefined}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} onError={() => setBroken(true)} /><OutfitLayer id={pet.outfit} /></span> : character?.image ? <PawPrint size={30} weight="fill" /> : <img src={defaultMascot} alt="" draggable={false} />}</span>
     <small>Lv.{pet.level}</small>
   </button>;
 }
@@ -95,7 +95,7 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
     <div className="pet-room-stream"><MobileScroll className="pet-room-scroll"><div className="pet-room-body">
       <section className="pet-stage">
         <button type="button" className={`pet-bubble${pet.pettedByMe ? " is-done" : ""}`} disabled={busy} onClick={() => void pat()} data-testid="pet-pat"><span className="pet-bubble-ball"><HandHeart size={26} weight="fill" /><b>{pet.pettedByMe ? "✓" : `+${pet.pettedByPartner ? 4 : 1}`}</b></span><small>{pet.pettedByMe ? t("今天摸过了", "Petted today", "Ya lo acariciaste") : t("摸摸它", "Pet it", "Acarícialo")}</small></button>
-        <button type="button" key={hop} className={`pet-figure${hop ? " is-hop" : ""}`} onClick={() => void pat()} aria-label={t("摸摸它", "Pet it", "Acarícialo")}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} /><OutfitLayer id={pet.outfit} /></span> : <PawPrint size={88} weight="fill" />}</button>
+        <button type="button" key={hop} className={`pet-figure${hop ? " is-hop" : ""}`} onClick={() => void pat()} aria-label={t("摸摸它", "Pet it", "Acarícialo")}>{image ? <span className="pet-dress"><img src={image} alt="" draggable={false} /><OutfitLayer id={pet.outfit} /></span> : character?.image ? <PawPrint size={88} weight="fill" /> : <img src={defaultMascot} alt="" draggable={false} />}</button>
         <span className="pet-rug" aria-hidden="true" />
       </section>
       <strong className="pet-name">{t("我们的小家伙", "Our little one", "Nuestro pequeño")}</strong>

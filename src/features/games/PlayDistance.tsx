@@ -251,7 +251,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
       <button className="distance-action" type="button" disabled={locked || sending || !canSend} onClick={() => void sendCard()}><PaperPlaneTilt size={19} />
         {sending ? t("发送中…", "Sending…", "Enviando…") : t("送给 TA", "Send to your partner", "Enviar a tu pareja")}
       </button>
-      {receipt && <p className="distance-receipt" role="status">{t("小卡已送出。TA 下次打开 Pinky 时会看到。", "Card sent. Your partner will see it the next time they open Pinky.", "Tarjeta enviada. Tu pareja la verá al abrir Pinky de nuevo.")}</p>}
+      {receipt && <p className="distance-receipt" role="status">{t("小卡已送出。TA 下次打开 Ourever 时会看到。", "Card sent. Your partner will see it the next time they open Ourever.", "Tarjeta enviada. Tu pareja la verá al abrir Ourever de nuevo.")}</p>}
     </article>
     {board && <section className="distance-recent" aria-label={t("最近的小卡", "Recent cards", "Tarjetas recientes")}>
       <h2>{t("最近的小卡", "Recent cards", "Tarjetas recientes")}</h2>

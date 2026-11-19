@@ -14,7 +14,7 @@ const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): 
  * with their undated parts, and earlier ones folded away. One waiting for both of them is settled on its card in Us. */
 export function AgreementsPage({ language, userId, payload, onChanged, onReview }: { language: Language; userId: string; payload: RelationshipHomePayload; onChanged: () => void | Promise<void>; onReview: (outcomeId: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  // What this member last told Pinky about each of their promises; only they see it.
+  // What this member last told Ourever about each of their promises; only they see it.
   const [answers, setAnswers] = useState<Record<string, { done: boolean; at: string }>>({});
   useEffect(() => { relationshipApi<{ promises: Record<string, { done: boolean; at: string }> }>("/api/assistant/promises").then((result) => setAnswers(result.promises)).catch(() => {}); }, []);
   const { agreements, commitments } = payload.graph;
@@ -41,7 +41,7 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
   };
   const past = groups.find((group) => group.key === "past");
   return <div className="agreements-page" data-testid="agreements">
-    {/* What the two of them promised each other in conversation comes first: it is what Pinky follows up on (11-03). */}
+    {/* What the two of them promised each other in conversation comes first: it is what Ourever follows up on (11-03). */}
     <PromiseList language={language} partnerName={partnerName} refreshKey={payload} onChanged={onChanged} hideEmpty />
     {reviews.map((item) => <button key={item.id} className="agreement-review" onClick={() => onReview(item.id)}><ClockCounterClockwise size={20} />{t("该复盘了：", "Time to review: ", "Hora de revisar: ")}{item.title}</button>)}
     {groups.filter((group) => group.key !== "past").map((group) => <section key={group.key}><h2 className="space-subhead">{group.title}</h2>{group.items.map((item) => card(item, group.key))}</section>)}

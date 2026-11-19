@@ -55,7 +55,7 @@ if (production) {
 }
 
 const server = app.listen(port, "0.0.0.0", () => {
-  console.log(`Pinky is running on http://127.0.0.1:${port}`);
+  console.log(`Ourever is running on http://127.0.0.1:${port}`);
   console.log(`AI mediation: ${mediator.aiReady ? `ready (${mediator.model})` : "local fallback"}`);
   console.log(`Identity and storage: cookie sessions + ${store.kind}`);
   console.log(`Browser push: ${createPushDelivery().enabled ? "on" : "off (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set)"}`);

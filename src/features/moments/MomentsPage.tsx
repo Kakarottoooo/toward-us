@@ -19,18 +19,18 @@ type Checkin = { id: string; text: string; mood?: string | null; createdAt: stri
 type Scale = "years" | "months" | "all";
 type Focus = { title: string; detail?: string; moments: Moment[] };
 
-/** Moments: the couple's memory album and each member's own, photos first (founder 11-05, like Google Photos): stories Pinky
+/** Moments: the couple's memory album and each member's own, photos first (founder 11-05, like Google Photos): stories Ourever
  * found as bubbles that play full screen, the map and search as icons, a photo wall by month, and years / months / every
- * photo at the bottom. Things are added by telling Pinky. */
+ * photo at the bottom. Things are added by telling Ourever. */
 export function MomentsPage({ language, userId, paired, milestones = [], onAsk }: { language: Language; userId: string; paired: boolean; milestones?: Milestone[]; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [moments, setMoments] = useState<Moment[] | null>(null);
   // Photos first, like Google Photos (founder 11-05): a wall by month; the switch at the bottom zooms out to years or in to every photo.
   const [scale, setScale] = useState<Scale>("months");
   const [mapOpen, setMapOpen] = useState(false);
-  // 100 件小事 opens straight from the Us menu or Pinky's suggestion (/?view=moments&ideas=1).
+  // 100 件小事 opens straight from the Us menu or Ourever's suggestion (/?view=moments&ideas=1).
   const [ideasOpen, setIdeasOpen] = useState(() => new URLSearchParams(location.search).get("ideas") === "1");
-  // 一起看过的 opens straight from Pinky's card (/?view=moments&watched=1).
+  // 一起看过的 opens straight from Ourever's card (/?view=moments&watched=1).
   const [watchedOpen, setWatchedOpen] = useState(() => new URLSearchParams(location.search).get("watched") === "1");
   const [watched, setWatched] = useState<WatchedItem[]>([]);
   const [playing, setPlaying] = useState<{ title: string; slides: Slide[] } | null>(null);
@@ -54,7 +54,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
         if (spot && moment.lat === undefined) { moment.lat = Number(spot[1]); moment.lon = Number(spot[2]); }
         moment.ids.push(item.id); moment.mine = moment.mine && item.ownerUserId === userId; grouped.set(key, moment);
       }
-      // Daily check-ins told to Pinky are private moments with a feeling.
+      // Daily check-ins told to Ourever are private moments with a feeling.
       for (const checkin of checkins.filter((item) => item.ownerUserId === userId && item.visibility === "private")) grouped.set(`checkin|${checkin.id}`, { key: `checkin|${checkin.id}`, date: checkin.createdAt.slice(0, 10), title: "", text: checkin.text, photos: [], ids: [], shared: false, mine: true, mood: checkin.mood });
       setMoments([...grouped.values()].sort((a, b) => b.date.localeCompare(a.date))); setError("");
     } catch (caught) { setError((caught as Error).message); setMoments([]); }
@@ -139,7 +139,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </div>
   </div>;
 
-  // Stories Pinky found, as round bubbles at the top; each plays full screen.
+  // Stories Ourever found, as round bubbles at the top; each plays full screen.
   const bubbles: Story[] = [
     ...(onThisDay.length ? [{ id: "onthisday", kind: "first" as const, title: t("往年的今天", "On this day", "Un día como hoy"), detail: "", moments: onThisDay, cover: onThisDay.find((moment) => moment.photos.length)?.photos[0] || null }] : []),
     ...stories.trips.slice(0, 6), ...stories.days, ...stories.holidays,
@@ -176,14 +176,14 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   return <div className="moments-page is-photos" data-testid="moments-page">
     <div className="moments-toolbar">
     <div className="moments-icons">
-        <button type="button" className="moments-find" onClick={ask} aria-label={t("跟 Pinky 说一个回忆", "Tell Pinky a memory", "Cuéntale un recuerdo a Pinky")}><Plus size={18} weight="bold" /><span>{t("记一个回忆", "Add", "Añadir")}</span></button>
+        <button type="button" className="moments-find" onClick={ask} aria-label={t("跟 Ourever 说一个回忆", "Tell Ourever a memory", "Cuéntale un recuerdo a Ourever")}><Plus size={18} weight="bold" /><span>{t("记一个回忆", "Add", "Añadir")}</span></button>
         <button type="button" className="moments-find" onClick={(event) => { (event.currentTarget.closest(".relationship-main") as HTMLElement | null)?.scrollTo({ top: 0 }); setMapOpen(true); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={18} /><span>{t("地图", "Map", "Mapa")}</span></button>
       </div>
     </div>
     {!!bubbles.length && <div className="moments-top">
       {/* Native sideways scrolling (founder 11-07, "还是有点卡"): the phone moves this row itself instead of following each touch in
           code, the one exception to using Carousel; vertical swipes on it still scroll the page. */}
-      <div role="group" aria-label={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="story-bubbles story-bubbles-native"><div className="story-bubbles-track">
+      <div role="group" aria-label={t("Ourever 找到的故事", "Stories Ourever found", "Historias que encontró Ourever")} className="story-bubbles story-bubbles-native"><div className="story-bubbles-track">
         {bubbles.map((story) => <button key={story.id} type="button" className="story-bubble" onClick={() => play(story)} data-testid={`story-${story.kind}`}>
           <span className="story-bubble-ring">{photo(story.cover, "story-bubble-photo")}</span><span className="story-bubble-label">{story.title}</span>
         </button>)}
@@ -202,7 +202,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </>}
     {scale === "months" && wallOf(all)}
     {scale === "all" && everyPhoto(all)}
-    {moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Pinky 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Pinky in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Pinky en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
+    {moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Ourever 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Ourever in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Ourever en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
 
     {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
     {!!all.length && <div className="moments-scale" role="tablist" aria-label={t("按时间看", "By time", "Por fecha")}>{scales.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={scale === value} className={scale === value ? "active" : ""} onClick={() => { setScale(value); setOpenYear(""); }}>{label}</button>)}</div>}

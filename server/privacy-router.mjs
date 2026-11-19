@@ -80,10 +80,10 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     return over;
   };
   const resetMessage = (language, link) => language === "es"
-    ? { subject: "Restablece tu contraseña de Pinky", text: `Usa este enlace para elegir una nueva contraseña. Funciona durante 30 minutos y solo una vez.\n\n${link}\n\nSi no lo pediste, ignora este correo: tu contraseña no cambiará.` }
+    ? { subject: "Restablece tu contraseña de Ourever", text: `Usa este enlace para elegir una nueva contraseña. Funciona durante 30 minutos y solo una vez.\n\n${link}\n\nSi no lo pediste, ignora este correo: tu contraseña no cambiará.` }
     : language === "en"
-      ? { subject: "Reset your Pinky password", text: `Use this link to choose a new password. It works for 30 minutes and only once.\n\n${link}\n\nIf you did not ask for this, ignore this email; your password will not change.` }
-      : { subject: "重设你的 Pinky 密码", text: `用这个链接设置新密码。链接 30 分钟内有效，且只能使用一次。\n\n${link}\n\n如果不是你本人操作，请忽略这封邮件，你的密码不会改变。` };
+      ? { subject: "Reset your Ourever password", text: `Use this link to choose a new password. It works for 30 minutes and only once.\n\n${link}\n\nIf you did not ask for this, ignore this email; your password will not change.` }
+      : { subject: "重设你的 Ourever 密码", text: `用这个链接设置新密码。链接 30 分钟内有效，且只能使用一次。\n\n${link}\n\n如果不是你本人操作，请忽略这封邮件，你的密码不会改变。` };
   router.post("/auth/reset-request", async (req, res) => {
     const address = normalizeEmail(req.body?.email);
     // Both counters always advance (non-short-circuit) and every outcome is the same 200, so limits reveal nothing about accounts.
@@ -191,7 +191,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   });
   router.post("/privacy/export", async (req, res) => {
     const snapshot = await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.getPrivacySnapshot(req.auth.user.id); });
-    res.setHeader("Content-Disposition", 'attachment; filename="pinky-export.json"');
+    res.setHeader("Content-Disposition", 'attachment; filename="ourever-export.json"');
     res.json(privacyExport(snapshot, req.auth.user));
   });
   // Private photos and imported chats keep their bytes in files beside the data; deleting the records deletes those too.

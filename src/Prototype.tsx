@@ -33,34 +33,34 @@ type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" 
 
 const copy = {
   zh: {
-    homeLine: "不知道怎么回 TA，先问问 Pinky。", start: "开始", homeFooter: "看懂 · 回应 · 靠近", back: "返回",
+    homeLine: "不知道怎么回 TA，先问问 Ourever。", start: "开始", homeFooter: "看懂 · 回应 · 靠近", back: "返回",
     welcome: "欢迎回来", authHint: "它属于你们两个人，但任何一方都不能单独控制它。", email: "邮箱", password: "密码",
     displayName: "你的称呼", login: "登录", register: "创建账号", switchRegister: "还没有账号？创建一个",
     switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
     waitingHint: "对方用自己的账号接受后，共同空间才会打开。", acceptInvite: "接受邀请",
     inviteCode: "八位邀请码", logout: "退出登录",
-    joinPartner: "加入伴侣", joinHint: "TA 邀请你一起用 Pinky。接受后，你们俩共同的对话“我们俩”就会打开。",
+    joinPartner: "加入伴侣", joinHint: "TA 邀请你一起用 Ourever。接受后，你们俩共同的对话“我们俩”就会打开。",
   },
   en: {
-    homeLine: "Not sure how to reply to them? Ask Pinky first.", start: "Begin", homeFooter: "Understand · Reply · Get closer", back: "Back",
+    homeLine: "Not sure how to reply to them? Ask Ourever first.", start: "Begin", homeFooter: "Understand · Reply · Get closer", back: "Back",
     welcome: "Welcome back", authHint: "It belongs to both of you, but neither person controls it alone.", email: "Email", password: "Password",
     displayName: "Your name", login: "Sign in", register: "Create account", switchRegister: "New here? Create an account",
     switchLogin: "Already registered? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
     createInvite: "Create partner invite", copyInvite: "Copy invite link", copied: "Copied", waitingPartner: "Waiting for your partner",
     waitingHint: "They must accept with their own account before mediation and reviews are shared.", acceptInvite: "Accept invite",
     inviteCode: "Eight-character code", logout: "Sign out",
-    joinPartner: "Join your partner", joinHint: "Your partner invited you to Pinky. Accept to open Us, the conversation the two of you share.",
+    joinPartner: "Join your partner", joinHint: "Your partner invited you to Ourever. Accept to open Us, the conversation the two of you share.",
   },
   es: {
-    homeLine: "¿No sabes qué responderle? Pregúntale a Pinky.", start: "Comenzar", homeFooter: "Entender · Responder · Acercarse", back: "Volver",
+    homeLine: "¿No sabes qué responderle? Pregúntale a Ourever.", start: "Comenzar", homeFooter: "Entender · Responder · Acercarse", back: "Volver",
     welcome: "Bienvenido de nuevo", authHint: "Les pertenece a ambos, pero ninguno lo controla por sí solo.", email: "Correo electrónico", password: "Contraseña",
     displayName: "Tu nombre", login: "Iniciar sesión", register: "Crear cuenta", switchRegister: "¿Eres nuevo? Crea una cuenta",
     switchLogin: "¿Ya tienes cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
     createInvite: "Crear invitación", copyInvite: "Copiar enlace", copied: "Copiado", waitingPartner: "Esperando a tu pareja",
     waitingHint: "Debe aceptar con su propia cuenta antes de compartir mediaciones y revisiones.", acceptInvite: "Aceptar invitación",
     inviteCode: "Código de ocho caracteres", logout: "Cerrar sesión",
-    joinPartner: "Únete a tu pareja", joinHint: "Tu pareja te invitó a Pinky. Acepta para abrir Nosotros, la conversación que comparten.",
+    joinPartner: "Únete a tu pareja", joinHint: "Tu pareja te invitó a Ourever. Acepta para abrir Nosotros, la conversación que comparten.",
   },
 };
 
@@ -71,7 +71,7 @@ export default function Prototype() {
 function AccountPrototype() {
   // A partner opening an invite link on a new device sees it in their phone's language, not the default Chinese.
   const [language, setLanguage] = useState<Language>(initialLanguage);
-  // Until the server says who this is, show only the plain paper background (founder 11-08: opening Pinky flashed the
+  // Until the server says who this is, show only the plain paper background (founder 11-08: opening Ourever flashed the
   // signed-out landing page, then an empty chat, before the real conversation).
   const [screen, setScreen] = useState<Screen>("booting");
   // A password-reset link opens straight into the reset form; the token leaves the address bar at once.
@@ -204,10 +204,10 @@ function HomeScreen({ language, onLanguage, onStart, t }: { language: Language; 
       <div className="desktop-color-field desktop-color-field-red" aria-hidden="true" />
       <div className="desktop-color-field desktop-color-field-blue" aria-hidden="true" />
       <main className="desktop-home-hero">
-        <p className="desktop-kicker">{localized(language, "拉钩，说好就算数", "A PINKY PROMISE FOR TWO", "UNA PROMESA DE MEÑIQUE PARA DOS")}</p>
+        <p className="desktop-kicker">{localized(language, "两个人的关系助手", "YOUR RELATIONSHIP ASSISTANT", "SU ASISTENTE DE PAREJA")}</p>
         <h1>{t.homeLine}</h1>
         <PauseMark />
-        <p className="desktop-home-support">{localized(language, "把 TA 的话或聊天截图发给 Pinky，它帮你看懂 TA 的意思，写一句你可以直接发的回复。一个人就能用；想两个人一起用时，再邀请 TA。", "Send Pinky what they said, or a screenshot of the chat. It helps you read what they mean and writes a reply you can send as is. It works on your own; invite your partner when you want to use it together.", "Envía a Pinky lo que te dijo, o una captura del chat. Te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Funciona a solas; invita a tu pareja cuando quieran usarlo juntos.")}</p>
+        <p className="desktop-home-support">{localized(language, "把 TA 的话或聊天截图发给 Ourever，它帮你看懂 TA 的意思，写一句你可以直接发的回复。一个人就能用；想两个人一起用时，再邀请 TA。", "Send Ourever what they said, or a screenshot of the chat. It helps you read what they mean and writes a reply you can send as is. It works on your own; invite your partner when you want to use it together.", "Envía a Ourever lo que te dijo, o una captura del chat. Te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Funciona a solas; invita a tu pareja cuando quieran usarlo juntos.")}</p>
         <div className="desktop-home-actions">
           <button className="desktop-primary-cta" onClick={onStart}>{localized(language, "开始", "Get started", "Comenzar")}<ArrowRight size={24} /></button>
           <button className="desktop-secondary-cta" onClick={() => location.assign("/demo")}>{localized(language, "两个人当面试一次（不用注册）", "Try it together in person (no sign-up)", "Pruébenlo juntos en persona (sin registro)")}</button>
@@ -264,7 +264,7 @@ function PairingScreen({ pairing, language, onLanguage, onRefresh, onBack, notic
   const accept = async () => { keyboard.hide(); setBusy(true); setNotice(""); try { await api("/api/partner/accept", { method: "POST", body: JSON.stringify({ code }) }); history.replaceState({}, "", `${location.pathname}?channel=us`); await onRefresh(); } catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); } };
   return <MobileScroll className="paper-screen pairing-screen" data-testid="pairing-screen"><header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content"><div className="vertical-title"><h1>{t.joinPartner}</h1><PauseMark /></div>
-      <p className="pairing-lead">{inviter ? localized(language, `${inviter} 邀请你一起用 Pinky。接受后，你们俩共同的对话“我们俩”就会打开。`, `${inviter} invited you to Pinky. Accept to open Us, the conversation the two of you share.`, `${inviter} te invitó a Pinky. Acepta para abrir Nosotros, la conversación que comparten.`) : t.joinHint}</p>
+      <p className="pairing-lead">{inviter ? localized(language, `${inviter} 邀请你一起用 Ourever。接受后，你们俩共同的对话“我们俩”就会打开。`, `${inviter} invited you to Ourever. Accept to open Us, the conversation the two of you share.`, `${inviter} te invitó a Ourever. Acepta para abrir Nosotros, la conversación que comparten.`) : t.joinHint}</p>
       <label className="editorial-field code-field"><span>{t.inviteCode}</span><KeyboardInput value={code} onChange={(event) => { setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)); setNotice(""); }} maxLength={8} autoComplete="off" data-testid="invite-code" /></label>
       <div className="pairing-actions"><button className="primary-action" onClick={accept} disabled={busy || code.length !== 8 || code === pairing?.invitation?.code}>{t.acceptInvite}</button>
         <button className="secondary-action" disabled={busy} onClick={() => { keyboard.hide(); onBack(); }}>{localized(language, "先使用我的私人空间", "Use my private space first", "Usar primero mi espacio privado")}</button></div>
@@ -272,7 +272,7 @@ function PairingScreen({ pairing, language, onLanguage, onRefresh, onBack, notic
     </main></MobileScroll>;
 }
 
-/** Where a partner's invite link lands when signed out: who invited them, what Pinky is for the two of them in three lines,
+/** Where a partner's invite link lands when signed out: who invited them, what Ourever is for the two of them in three lines,
  * then sign-up (or sign-in) that joins the shared space in the same flow, without typing the code. A link that no longer
  * works says so; signing up still works, and the code screen afterwards lets them try another code or go on alone. */
 function InviteLanding({ code, language, onLanguage, onJoin, onSignIn }: { code: string; language: Language; onLanguage: (language: Language) => void; onJoin: () => void; onSignIn: () => void }) {
@@ -282,16 +282,16 @@ function InviteLanding({ code, language, onLanguage, onJoin, onSignIn }: { code:
   const found = preview && preview !== "missing" ? preview : null;
   const name = found?.inviterName || "";
   const usable = found?.status === "open";
-  const problem = preview === "missing" ? t("找不到这个邀请。请让对方在 Pinky 里再发一次。", "This invite could not be found. Ask them to send it again from Pinky.", "No se encontró esta invitación. Pide que te la envíen de nuevo desde Pinky.")
-    : found?.status === "expired" ? t(`这个邀请已经过期了。请让${name || "对方"}在 Pinky 里再发一次。`, `This invite has expired. Ask ${name || "them"} to send it again from Pinky.`, `Esta invitación caducó. Pide a ${name || "tu pareja"} que la envíe de nuevo desde Pinky.`)
+  const problem = preview === "missing" ? t("找不到这个邀请。请让对方在 Ourever 里再发一次。", "This invite could not be found. Ask them to send it again from Ourever.", "No se encontró esta invitación. Pide que te la envíen de nuevo desde Ourever.")
+    : found?.status === "expired" ? t(`这个邀请已经过期了。请让${name || "对方"}在 Ourever 里再发一次。`, `This invite has expired. Ask ${name || "them"} to send it again from Ourever.`, `Esta invitación caducó. Pide a ${name || "tu pareja"} que la envíe de nuevo desde Ourever.`)
     : found?.status === "used" ? t("这个邀请已经用过了。已经加入的话，直接登录就好。", "This invite has already been used. If you joined, just sign in.", "Esta invitación ya se usó. Si ya te uniste, solo inicia sesión.") : "";
   return <MobileScroll className="paper-screen pairing-screen invite-landing" data-testid="invite-landing"><header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="pairing-columns" aria-hidden="true"><i /><i /></div><main className="pairing-content">
-      <div className="vertical-title"><h1 data-testid="invite-landing-title">{name ? t(`${name} 邀请你一起用 Pinky`, `${name} invited you to Pinky`, `${name} te invitó a Pinky`) : t("有人邀请你一起用 Pinky", "You're invited to Pinky", "Te invitaron a Pinky")}</h1><PauseMark /></div>
+      <div className="vertical-title"><h1 data-testid="invite-landing-title">{name ? t(`${name} 邀请你一起用 Ourever`, `${name} invited you to Ourever`, `${name} te invitó a Ourever`) : t("有人邀请你一起用 Ourever", "You're invited to Ourever", "Te invitaron a Ourever")}</h1><PauseMark /></div>
       <ul className="invite-landing-points">
-        <li>{t("Pinky 帮你们两个人好好说话：不知道怎么回对方的时候，先问问它。", "Pinky helps the two of you talk well: when you're not sure how to reply, ask it first.", "Pinky les ayuda a hablar bien: cuando no sepas qué responder, pregúntale primero.")}</li>
+        <li>{t("Ourever 帮你们两个人好好说话：不知道怎么回对方的时候，先问问它。", "Ourever helps the two of you talk well: when you're not sure how to reply, ask it first.", "Ourever les ayuda a hablar bien: cuando no sepas qué responder, pregúntale primero.")}</li>
         <li>{t(`你有自己的私人对话，只有你能看到，${name || "对方"}也看不到。`, `You get your own private chat that only you can see, not even ${name || "them"}.`, `Tienes tu propio chat privado que solo tú ves, ni siquiera ${name || "tu pareja"}.`)}</li>
-        <li>{t("“我们俩”是你们和 Pinky 的共同对话；两个人都同意的事才算数。", "Us is the chat you two share with Pinky; something counts only once you both agree.", "Nosotros es el chat que comparten con Pinky; algo cuenta solo cuando los dos están de acuerdo.")}</li>
+        <li>{t("“我们俩”是你们和 Ourever 的共同对话；两个人都同意的事才算数。", "Us is the chat you two share with Ourever; something counts only once you both agree.", "Nosotros es el chat que comparten con Ourever; algo cuenta solo cuando los dos están de acuerdo.")}</li>
       </ul>
       {problem && <p className="form-notice" role="alert">{problem}</p>}
       <div className="pairing-actions"><button className="primary-action" disabled={preview === null} onClick={onJoin} data-testid="invite-join">{usable ? t("创建账号并加入", "Create an account and join", "Crear una cuenta y unirme") : t("创建账号", "Create an account", "Crear una cuenta")}</button>
@@ -301,7 +301,7 @@ function InviteLanding({ code, language, onLanguage, onJoin, onSignIn }: { code:
 
 function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: (language: Language) => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark language={language} /><nav aria-label={localized(language, "主导航", "Main navigation", "Navegación principal")}><a href="#how-it-works">{localized(language, "如何工作", "How it works", "Cómo funciona")}</a><button onClick={() => location.assign("/demo")}>{localized(language, "两人快速体验", "Try it together", "Probar juntos")}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{localized(language, "登录", "Sign in", "Iniciar sesión")}<ArrowRight size={17} /></button></div></header>; }
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: (language: Language) => void; compact?: boolean }) { return <div className={`language-switch ${compact ? "compact" : ""}`} role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div>; }
-function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>P I N K Y</strong>{language === "zh" && <span>拉钩，说好就算数</span>}</div>; }
+function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>Ourever</strong>{language === "zh" && <span>两个人的关系助手</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.

@@ -108,8 +108,8 @@ struct PinkyWidgetContent: View {
     var body: some View {
         switch content {
         case .ready(let payload): ready(WidgetWords(payload: payload))
-        case .signedOut(let lang): prompt(lang.say("打开 Pinky 登录", "Open Pinky to sign in", "Abre Pinky para iniciar sesión"))
-        case .unavailable(let lang): prompt(lang.say("打开 Pinky 看看今天", "Open Pinky to see today", "Abre Pinky para ver hoy"))
+        case .signedOut(let lang): prompt(lang.say("打开 Ourever 登录", "Open Ourever to sign in", "Abre Ourever para iniciar sesión"))
+        case .unavailable(let lang): prompt(lang.say("打开 Ourever 看看今天", "Open Ourever to see today", "Abre Ourever para ver hoy"))
         }
     }
 
@@ -170,12 +170,12 @@ struct PinkyWidgetContent: View {
             ZStack { AccessoryWidgetBackground(); Text("♥").font(.system(size: 22, weight: .bold)) }
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text("♥ Pinky").font(.headline)
+                Text("♥ Ourever").font(.headline)
                 Text(message).font(.caption).lineLimit(2)
             }.frame(maxWidth: .infinity, alignment: .leading)
         default:
             VStack(alignment: .leading, spacing: 6) {
-                Text("♥ Pinky").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(PinkyPalette.pinkInk)
+                Text("♥ Ourever").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(PinkyPalette.pinkInk)
                 Spacer(minLength: 0)
                 Text(message).font(.system(size: family == .systemMedium ? 20 : 17, weight: .semibold, design: .rounded)).foregroundColor(PinkyPalette.ink).lineLimit(3).minimumScaleFactor(0.8)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

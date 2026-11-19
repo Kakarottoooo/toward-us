@@ -62,29 +62,29 @@ export function gameCatalog(language: Language): GameEntry[] {
       tagline: t("双圈大棋盘：买约会地点收门票、抽心动卡、走爱心内圈，先把两架飞机送回家的人赢。", "A two-ring board: buy date spots and collect rent, draw heart cards, take the heart ring; first to fly both planes home wins.", "Un tablero de dos anillos: compra lugares de cita y cobra entrada, saca cartas, toma el anillo de corazones; gana quien lleve primero sus dos aviones a casa."),
       rules: [
         t("每人 2 架飞机、200 爱心币。掷到 6 起飞并再掷一次；绕外圈一整圈回到自己的起点就是到家，两架都先到家的人赢。", "You each have 2 planes and 200 coins. A 6 takes off and rolls again; one lap back to your own start is home. Get both home first to win.", "Cada uno tiene 2 aviones y 200 monedas. Un 6 despega y vuelve a tirar; una vuelta hasta tu salida es llegar a casa. Gana quien lleve primero los dos."),
-        t("外圈有 8 个约会地点：没人的可以买，自己的可以升级一次；停在对方的地点要付门票，也可以用一个真实的小承诺抵，Pinky 会记在“我们俩”里。", "8 date spots on the outer ring: buy one nobody owns, upgrade your own once. Stop on your partner's and pay rent, in coins or with a real little promise Pinky writes down in Us.", "8 lugares de cita en el anillo exterior: compra uno libre y mejora el tuyo una vez. Si caes en uno de tu pareja, pagas en monedas o con una pequeña promesa real que Pinky anota en Nosotros."),
+        t("外圈有 8 个约会地点：没人的可以买，自己的可以升级一次；停在对方的地点要付门票，也可以用一个真实的小承诺抵，Ourever 会记在“我们俩”里。", "8 date spots on the outer ring: buy one nobody owns, upgrade your own once. Stop on your partner's and pay rent, in coins or with a real little promise Ourever writes down in Us.", "8 lugares de cita en el anillo exterior: compra uno libre y mejora el tuyo una vez. Si caes en uno de tu pareja, pagas en monedas o con una pequeña promesa real que Ourever anota en Nosotros."),
         t("停在桥头可以走爱心内圈：一样长，有爱心任务和 60 币格，但不能买地、不用付门票。每经过一座桥 +30 币。", "Stop on a bridge to take the heart ring: the same length, with heart tasks and 60-coin squares, but nothing to buy and no rent. Every bridge you pass pays 30.", "Detente en un puente para tomar el anillo de corazones: igual de largo, con tareas y casillas de 60, sin compras ni entradas. Cada puente que pasas paga 30."),
         t("紫色格抽心动卡：前进、后退、收钱、换位置、护身符、一起拍照或回答问题……冷静角会让你歇一回合，掷出 6 或对方说句好听的话就能出来。", "Purple squares draw a heart card: move, coins, swap places, a charm, a photo or a question together… The calm corner holds you a turn: a 6, or a sweet word from your partner, gets you out.", "Las casillas moradas dan una carta: avanzar, monedas, cambiar de sitio, un amuleto, una foto o una pregunta… El rincón de calma te detiene un turno: un 6 o unas palabras bonitas de tu pareja te sacan."),
         t("自己颜色的格子再跳 4 格，自己的飞行格沿虚线飞 12 格；停在对方飞机上会把它撞回去。也可以和小家伙玩，它会自己做选择。", "Your colour hops 4, your flight square flies 12 along the dashed line; land on your partner's plane to send it back. You can play your little one too: it makes its own choices.", "Tu color salta 4, tu casilla de vuelo vuela 12 por la línea; cae sobre el avión de tu pareja para devolverlo. También puedes jugar con tu pequeñín: decide solo."),
       ],
     },
     {
-      // Played alone with Pinky hosting when the partner is away: the "with the pet" match, but the pet doesn't play.
+      // Played alone with Ourever hosting when the partner is away: the "with the pet" match, but the pet doesn't play.
       id: "soup", category: "puzzle", kind: "match", solo: true, icon: <BowlSteam size={26} weight="duotone" />, name: t("海龟汤", "Lateral puzzles", "Acertijos laterales"),
-      tagline: t("Pinky 出一个怪故事，你们一起问出真相。", "Pinky tells a strange little story; ask your way to the truth together.", "Pinky cuenta una historia rara; descubran juntos la verdad preguntando."),
+      tagline: t("Ourever 出一个怪故事，你们一起问出真相。", "Ourever tells a strange little story; ask your way to the truth together.", "Ourever cuenta una historia rara; descubran juntos la verdad preguntando."),
       rules: [
-        t("Pinky 讲一个听起来很奇怪的小故事（汤面），真相（汤底）只有它知道。都是清汤：好玩或温暖，不吓人。", "Pinky tells a short, strange-sounding story; only Pinky knows what really happened. Always gentle: clever, funny or sweet, never scary.", "Pinky cuenta una historia corta y rara; solo Pinky sabe lo que pasó de verdad. Siempre amable: ingeniosa, divertida o tierna, nunca de miedo."),
-        t("你们俩随时都可以问，只能问“是 / 不是”的问题。Pinky 会答：是、不是、不重要、是也不是。", "Either of you can ask at any time, but only yes-or-no questions. Pinky answers yes, no, doesn't matter, or yes and no.", "Cualquiera de los dos puede preguntar cuando quiera, pero solo preguntas de sí o no. Pinky responde sí, no, no importa o sí y no."),
+        t("Ourever 讲一个听起来很奇怪的小故事（汤面），真相（汤底）只有它知道。都是清汤：好玩或温暖，不吓人。", "Ourever tells a short, strange-sounding story; only Ourever knows what really happened. Always gentle: clever, funny or sweet, never scary.", "Ourever cuenta una historia corta y rara; solo Ourever sabe lo que pasó de verdad. Siempre amable: ingeniosa, divertida o tierna, nunca de miedo."),
+        t("你们俩随时都可以问，只能问“是 / 不是”的问题。Ourever 会答：是、不是、不重要、是也不是。", "Either of you can ask at any time, but only yes-or-no questions. Ourever answers yes, no, doesn't matter, or yes and no.", "Cualquiera de los dos puede preguntar cuando quiera, pero solo preguntas de sí o no. Ourever responde sí, no, no importa o sí y no."),
         t("屏幕上会显示找到了几个关键，看看离真相还有多远。", "The screen shows how many key facts you've found, so you can tell how close you are.", "La pantalla muestra cuántas claves han encontrado, para ver cuánto les falta."),
-        t("想好了就“猜汤底”，说出完整的故事，Pinky 判断对不对。实在猜不出，可以“看汤底”。", "When you think you know, guess the answer by telling the whole story, and Pinky judges it. Stuck? Show the answer.", "Cuando creas saberlo, propón la solución contando la historia completa y Pinky la juzga. ¿Atascados? Vean la solución."),
-        t("TA 不在的时候，也可以自己和 Pinky 玩。", "When your partner's away, you can solve one on your own with Pinky.", "Si tu pareja no está, puedes resolver uno tú solo con Pinky."),
+        t("想好了就“猜汤底”，说出完整的故事，Ourever 判断对不对。实在猜不出，可以“看汤底”。", "When you think you know, guess the answer by telling the whole story, and Ourever judges it. Stuck? Show the answer.", "Cuando creas saberlo, propón la solución contando la historia completa y Ourever la juzga. ¿Atascados? Vean la solución."),
+        t("TA 不在的时候，也可以自己和 Ourever 玩。", "When your partner's away, you can solve one on your own with Ourever.", "Si tu pareja no está, puedes resolver uno tú solo con Ourever."),
       ],
     },
     {
       id: "choice", category: "words", kind: "card", cardType: "choice", icon: <ArrowsSplit size={26} weight="duotone" />, name: t("二选一", "Would you rather", "¿Qué prefieres?"),
       tagline: t("两个选项各选一个，看是不是心有灵犀。", "Both pick one of two; see if you match.", "Cada uno elige una de dos; a ver si coinciden."),
       rules: [
-        t("Pinky 在“我们俩”里出一道二选一，你们各自偷偷选。", "Pinky asks a would-you-rather in Us, and you each pick in secret.", "Pinky pregunta en Nosotros y cada uno elige en secreto."),
+        t("Ourever 在“我们俩”里出一道二选一，你们各自偷偷选。", "Ourever asks a would-you-rather in Us, and you each pick in secret.", "Ourever pregunta en Nosotros y cada uno elige en secreto."),
         t("两个人都选完才一起揭晓，选得一样就加默契值。", "It's revealed once you both pick; the same pick raises your sync score.", "Se revela cuando los dos eligen; coincidir sube su sintonía."),
       ],
     },
@@ -101,7 +101,7 @@ export function gameCatalog(language: Language): GameEntry[] {
       id: "truth", category: "words", kind: "card", cardType: "truth", icon: <ChatsCircle size={26} weight="duotone" />, name: t("真心话", "Heart to heart", "De corazón"),
       tagline: t("一个温柔的问题，各写一句，同时揭晓。", "One gentle question; each writes a line, revealed together.", "Una pregunta tierna; cada uno escribe una línea y se revela a la vez."),
       rules: [
-        t("Pinky 出一个温柔的问题，你们各写一句真心话。", "Pinky asks a gentle question and you each write an honest line.", "Pinky hace una pregunta tierna y cada uno escribe una línea sincera."),
+        t("Ourever 出一个温柔的问题，你们各写一句真心话。", "Ourever asks a gentle question and you each write an honest line.", "Ourever hace una pregunta tierna y cada uno escribe una línea sincera."),
         t("两个人都写完才能看到对方的。不会问前任或让人尴尬的事。", "You see each other's only once both have written. Never about exes or anything embarrassing.", "Solo se ven cuando los dos han escrito. Nunca sobre ex parejas ni nada incómodo."),
       ],
     },
@@ -140,7 +140,7 @@ export function gameCatalog(language: Language): GameEntry[] {
       rules: [
         t("开始前可以写一个赌注，第一把出拳之前都能定。", "Before the first pick you can set a bet.", "Antes de la primera jugada pueden fijar una apuesta."),
         t("两个人各自偷偷出，都出完才一起揭晓；平手就再来。", "You each pick in secret; it's revealed once both have picked, and a tie is played again.", "Cada uno elige en secreto; se revela cuando ambos eligen, y el empate se repite."),
-        t("先赢两把的人赢。结束后 Pinky 会在“我们俩”里说谁赢了、谁要兑现赌注。", "First to two wins. Pinky then says in Us who won and who owes the bet.", "Gana quien llegue a dos. Pinky dice en Nosotros quién ganó y quién debe la apuesta."),
+        t("先赢两把的人赢。结束后 Ourever 会在“我们俩”里说谁赢了、谁要兑现赌注。", "First to two wins. Ourever then says in Us who won and who owes the bet.", "Gana quien llegue a dos. Ourever dice en Nosotros quién ganó y quién debe la apuesta."),
       ],
     },
   ];

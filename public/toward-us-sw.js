@@ -1,7 +1,7 @@
-// Pinky's installed web app: notifications, plus an offline page. It never caches the app, an API response or anything
+// Ourever's installed web app: notifications, plus an offline page. It never caches the app, an API response or anything
 // private: the only cached file is the static /offline.html, shown when a page navigation finds no network.
-// v2: the offline page now follows the App language (11-12); a new name makes installed apps fetch it again.
-const SHELL = "pinky-shell-v2";
+// A new cache version refreshes the branded offline page for previously installed apps.
+const SHELL = "ourever-shell-v4";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {
@@ -10,7 +10,9 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    for (const key of await caches.keys()) if (key !== SHELL) await caches.delete(key);
+    for (const key of await caches.keys()) {
+      if (key !== SHELL && /^(?:pinky|ourever)-shell-v\d+$/.test(key)) await caches.delete(key);
+    }
     await self.clients.claim();
   })());
 });
@@ -28,9 +30,9 @@ self.addEventListener("push", (event) => {
   let payload = null;
   try { payload = event.data?.json(); } catch { payload = null; }
   // Every push must show something (Safari revokes a subscription that receives silent pushes); the body is always vague.
-  const body = typeof payload?.body === "string" ? payload.body.slice(0, 160) : "Pinky";
-  event.waitUntil(self.registration.showNotification("Pinky", {
-    body, tag: String(payload?.tag || "toward-us-reminder").slice(0, 64), icon: "/assets/brand/pinky-icon-192.png",
+  const body = typeof payload?.body === "string" ? payload.body.slice(0, 160) : "Ourever";
+  event.waitUntil(self.registration.showNotification("Ourever", {
+    body, tag: String(payload?.tag || "toward-us-reminder").slice(0, 64), icon: "/assets/brand/pinky-icon-192.png?v=heart2",
     data: { url: safeDestination(payload?.url) }, renotify: false,
   }));
 });

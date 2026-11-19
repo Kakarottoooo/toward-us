@@ -1,10 +1,10 @@
 #!/bin/bash
-# Pinky: keep ONE iMessage conversation (the one with your partner) synced to your private Pinky, every hour, on its own.
-# Run once from the command Pinky shows you: curl ... | bash -s -- <pinky-url> <sync-token>
+# Ourever: keep ONE iMessage conversation (the one with your partner) synced to your private Ourever, every hour, on its own.
+# Run once from the command Ourever shows you: curl ... | bash -s -- <pinky-url> <sync-token>
 # It installs a small background job (no window) in your own user folder. Nothing else on this Mac is read or sent.
 # To stop: launchctl bootout gui/$(id -u)/us.toward.pinky.imessage-sync; rm -rf ~/.pinky ~/Library/LaunchAgents/us.toward.pinky.imessage-sync.plist
 set -euo pipefail
-BASE="${1:?missing Pinky address}"; TOKEN="${2:?missing sync token}"
+BASE="${1:?missing Ourever address}"; TOKEN="${2:?missing sync token}"
 DB="${PINKY_CHAT_DB:-$HOME/Library/Messages/chat.db}"
 HOME_DIR="${PINKY_HOME:-$HOME/.pinky}"; CONF="$HOME_DIR/imessage-sync.conf"; RUNNER="$HOME_DIR/imessage-sync-run.sh"
 LABEL="us.toward.pinky.imessage-sync"; PLIST="${PINKY_LAUNCH_AGENTS:-$HOME/Library/LaunchAgents}/$LABEL.plist"
@@ -12,7 +12,7 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 if ! sqlite3 -readonly "$DB" "SELECT 1 FROM message LIMIT 1" >/dev/null 2>&1; then
   echo ""
-  echo "Pinky 需要读取“信息”的记录。 / Pinky needs to read your Messages history."
+  echo "Ourever 需要读取“信息”的记录。 / Ourever needs to read your Messages history."
   echo "请打开 系统设置 → 隐私与安全性 → 完全磁盘访问权限，打开“终端”，然后重新运行同一条命令。"
   echo "Open System Settings → Privacy & Security → Full Disk Access, turn on Terminal, then run the same command again."
   open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null || true
@@ -72,7 +72,7 @@ if REPLY="$(curl -fsS -m 300 -X POST -H "content-type: application/octet-stream"
   sed -i '' "s/^LAST=.*/LAST=$TOP/" "$CONF" 2>/dev/null || sed -i "s/^LAST=.*/LAST=$TOP/" "$CONF"
   echo "$(stamp) synced up to $TOP" >> "$LOG"; echo "$REPLY"
 else
-  echo "$(stamp) upload failed (Pinky offline or the command was replaced); will retry next hour" >> "$LOG"; exit 1
+  echo "$(stamp) upload failed (Ourever offline or the command was replaced); will retry next hour" >> "$LOG"; exit 1
 fi
 RUN
 chmod 700 "$RUNNER"
@@ -94,7 +94,7 @@ if [ -z "${PINKY_NO_LAUNCHD:-}" ]; then
 fi
 
 echo ""
-echo "正在同步到 Pinky… / Syncing to Pinky…"
+echo "正在同步到 Ourever… / Syncing to Ourever…"
 "${PINKY_RUN_SHELL:-/bin/zsh}" "$RUNNER"
 echo ""
 echo "好了。以后每小时自动同步一次，不会弹出任何窗口。 / Done. It now syncs every hour on its own, with no window."

@@ -2,7 +2,7 @@
 
 ## 结论
 
-Pinky 只用 Apple 系统提供的加密（WKWebView / URLSession 的 HTTPS、钥匙串以外不存密钥），没有自带或自写的加密算法，属于豁免情况。
+Ourever 只用 Apple 系统提供的加密（WKWebView / URLSession 的 HTTPS、钥匙串以外不存密钥），没有自带或自写的加密算法，属于豁免情况。
 
 `mobile/ios/App/App/Info.plist` 已写：
 

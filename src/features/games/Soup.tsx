@@ -17,7 +17,7 @@ export type SoupState = {
 
 const MAX_PENDING = 3;
 
-/** 海龟汤: Pinky's 汤面 on top, the questions and Pinky's answers below, then a box to ask or to propose the 汤底. */
+/** 海龟汤: Ourever's 汤面 on top, the questions and Ourever's answers below, then a box to ask or to propose the 汤底. */
 export function Soup({ match, language, userId, partnerName, act, onRematch }: ScreenProps<SoupState>) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const pick = (text: SoupText | null | undefined) => text ? text[language] || text.zh || text.en || text.es || "" : "";
@@ -49,7 +49,7 @@ export function Soup({ match, language, userId, partnerName, act, onRematch }: S
   const progress = t(`已找到 ${found.length}/${total} 个关键`, `${found.length} of ${total} keys found`, `${found.length} de ${total} claves encontradas`);
 
   if (!puzzle) return <div className="soup">
-    <p className="soup-wait" role="status" data-testid="soup-brewing"><BowlSteam size={34} weight="duotone" />{over ? t("这局结束了。", "This game is over.", "Esta partida terminó.") : t("Pinky 正在熬一碗汤…", "Pinky is cooking up a puzzle…", "Pinky está preparando un acertijo…")}</p>
+    <p className="soup-wait" role="status" data-testid="soup-brewing"><BowlSteam size={34} weight="duotone" />{over ? t("这局结束了。", "This game is over.", "Esta partida terminó.") : t("Ourever 正在熬一碗汤…", "Ourever is cooking up a puzzle…", "Ourever está preparando un acertijo…")}</p>
     {over && <div className="game-actions"><button type="button" className="game-primary" onClick={onRematch} data-testid="game-rematch"><ArrowsClockwise size={16} />{t("再来一碗", "Another one", "Otro más")}</button></div>}
   </div>;
 
@@ -65,14 +65,14 @@ export function Soup({ match, language, userId, partnerName, act, onRematch }: S
     {log.length ? <ol className="soup-log" data-testid="soup-log">{log.map((entry) => <li key={entry.id} className={entry.by === userId ? "is-mine" : ""} data-testid="soup-entry">
       <div className="soup-ask"><small>{who(entry.by)}{entry.kind === "solve" && ` · ${t("猜汤底", "Guessed the answer", "Propuso la solución")}`}</small><p>{entry.text}</p></div>
       <div className="soup-reply">
-        <span className="soup-pinky">Pinky</span>
+        <span className="soup-pinky">Ourever</span>
         {entry.answer ? <>
           <b className={`soup-verdict is-${tone(entry)}`}>{verdict(entry)}</b>
           {pick(entry.note) && <span className="soup-note">{pick(entry.note)}</span>}
           {entry.found.length > 0 && <em className="soup-found"><Sparkle size={13} weight="fill" />{t(`找到 ${entry.found.length} 个关键`, entry.found.length === 1 ? "Found a key" : `Found ${entry.found.length} keys`, entry.found.length === 1 ? "Una clave" : `${entry.found.length} claves`)}</em>}
         </> : over ? <span className="soup-note">—</span> : <span className="soup-thinking" role="status">{t("在想…", "is thinking…", "está pensando…")}</span>}
       </div>
-    </li>)}</ol> : !over && <p className="game-note">{t("问 Pinky 能用“是 / 不是”回答的问题，一点点拼出整个故事。", "Ask Pinky yes-or-no questions and piece the story together.", "Hazle a Pinky preguntas de sí o no y arma la historia.")}</p>}
+    </li>)}</ol> : !over && <p className="game-note">{t("问 Ourever 能用“是 / 不是”回答的问题，一点点拼出整个故事。", "Ask Ourever yes-or-no questions and piece the story together.", "Hazle a Ourever preguntas de sí o no y arma la historia.")}</p>}
 
     {over ? <section ref={truth} className="soup-truth" data-testid="soup-truth">
       <h2>{outcome === "solved" ? pick(match.state.cheer) || t("答对啦！", "You got it!", "¡Lo tienen!") : t("汤底揭晓", "The answer", "La solución")}</h2>
@@ -94,7 +94,7 @@ export function Soup({ match, language, userId, partnerName, act, onRematch }: S
       </form>
       {dictation.active && <p className="soup-listening" role="status" data-testid="soup-listening">{dictation.connecting ? t("正在打开麦克风…", "Turning on the microphone…", "Activando el micrófono…") : dictation.partial || t("在听…说完再点一下停止。", "Listening… tap again when you're done.", "Escuchando… toca de nuevo al terminar.")}</p>}
       {voiceNote && <p className="game-note" role="alert">{voiceNote}</p>}
-      {waiting >= MAX_PENDING && <p className="game-note">{t("等 Pinky 答完再问吧。", "Let Pinky catch up first.", "Deja que Pinky responda primero.")}</p>}
+      {waiting >= MAX_PENDING && <p className="game-note">{t("等 Ourever 答完再问吧。", "Let Ourever catch up first.", "Deja que Ourever responda primero.")}</p>}
       <div className="game-actions is-end"><button type="button" className={`game-quiet ${giving ? "is-confirm" : ""}`} disabled={busy} onClick={() => { if (!giving) { setGiving(true); return; } setGiving(false); void run({ type: "reveal" }); }} onBlur={() => setGiving(false)} data-testid="soup-reveal"><Eye size={16} />{giving ? t("确定看汤底？", "Really show the answer?", "¿Ver la solución?") : t("看汤底", "Show the answer", "Ver la solución")}</button></div>
     </>}
     <div ref={end} />

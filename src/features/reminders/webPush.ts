@@ -1,4 +1,4 @@
-// Pinky as an installed web app (no App Store needed): the service worker, the install prompt and browser push. Nothing here
+// Ourever as an installed web app (no App Store needed): the service worker, the install prompt and browser push. Nothing here
 // may throw into React, and nothing runs inside the Capacitor App, whose own push lives in nativePush.ts.
 import { nativePushPlugin } from "./nativePush";
 
@@ -43,7 +43,7 @@ export function registerAppWorker() {
   } catch { /* best effort */ }
 }
 
-/** "ready" when this browser can take push now; "install" on iPhone/iPad before Pinky is on the Home Screen (iOS 16.4+ only
+/** "ready" when this browser can take push now; "install" on iPhone/iPad before Ourever is on the Home Screen (iOS 16.4+ only
  * delivers web push to installed web apps); "unsupported" otherwise. */
 export function webPushSupport(): "ready" | "install" | "unsupported" {
   try {

@@ -8,7 +8,7 @@ import "./spaces.css";
 export type SpaceItem = { id: string; title: string; text: string; date: string | null; done: boolean; photoId?: string | null; createdAt: string; version: number };
 export type Space = { id: string; title: string; system?: string; layout: "list" | "checklist" | "timeline" | "gallery" | "notes"; description: string; visibility: string; version: number; updatedAt: string; items: SpaceItem[] };
 
-/** One space Pinky built: shown in the layout it chose, with small edits only. New things are asked for in the conversation. */
+/** One space Ourever built: shown in the layout it chose, with small edits only. New things are asked for in the conversation. */
 export function SpacePage({ id, language, onBack, onAsk }: { id: string; language: Language; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [space, setSpace] = useState<Space | null>(null);
@@ -45,7 +45,7 @@ export function SpacePage({ id, language, onBack, onAsk }: { id: string; languag
   }, []);
   const body = () => {
     if (!space) return null;
-    if (!items.length) return <p className="space-empty">{t("这里还是空的。回到对话，跟 Pinky 说要放什么。", "Nothing here yet. Tell Pinky in the chat what to add.", "Aún no hay nada. Dile a Pinky en el chat qué añadir.")}</p>;
+    if (!items.length) return <p className="space-empty">{t("这里还是空的。回到对话，跟 Ourever 说要放什么。", "Nothing here yet. Tell Ourever in the chat what to add.", "Aún no hay nada. Dile a Ourever en el chat qué añadir.")}</p>;
     if (space.layout === "checklist") {
       const open = items.filter((item) => !item.done), done = items.filter((item) => item.done);
       const row = (item: SpaceItem) => <li key={item.id} className={item.done ? "done" : ""}><button className="space-check" onClick={() => void change(item, { done: !item.done })} aria-pressed={item.done} aria-label={item.title || item.text}>{item.done ? <CheckCircle size={24} weight="fill" /> : <Circle size={24} />}</button><div><strong>{item.title || item.text}</strong>{item.title && item.text && <p>{item.text}</p>}{item.date && <small>{dateText(item.date)}</small>}</div>{removeButton(item)}</li>;
@@ -63,7 +63,7 @@ export function SpacePage({ id, language, onBack, onAsk }: { id: string; languag
       {space?.description && <p className="space-description">{space.description}</p>}
       {error && <p className="space-error" role="alert">{error}</p>}
       {body()}
-      {space && <button className="space-ask" onClick={() => onAsk(t(`往“${space.title}”里加：`, `Add to "${space.title}": `, `Añade a «${space.title}»: `), shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("跟 Pinky 说", "Tell Pinky", "Díselo a Pinky")}</button>}
+      {space && <button className="space-ask" onClick={() => onAsk(t(`往“${space.title}”里加：`, `Add to "${space.title}": `, `Añade a «${space.title}»: `), shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("跟 Ourever 说", "Tell Ourever", "Díselo a Ourever")}</button>}
     </main>
   </div>;
 }

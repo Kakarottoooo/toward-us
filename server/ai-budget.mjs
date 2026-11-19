@@ -58,15 +58,15 @@ export const MODEL_METHODS = Object.freeze(Object.keys(METHODS));
 export const AI_LIMIT = "ai_daily_limit";
 export const AI_UNCHANGED = "ai_unchanged_input";
 const LIMIT_TEXT = {
-  zh: "今天 Pinky 的 AI 额度已经用完了，明天会自动恢复。其他功能照常可用。",
-  en: "Pinky has used up today's AI allowance. It resets tomorrow; everything else keeps working.",
-  es: "Pinky ya usó la asignación de IA de hoy. Se renueva mañana; todo lo demás sigue funcionando.",
+  zh: "今天 Ourever 的 AI 额度已经用完了，明天会自动恢复。其他功能照常可用。",
+  en: "Ourever has used up today's AI allowance. It resets tomorrow; everything else keeps working.",
+  es: "Ourever ya usó la asignación de IA de hoy. Se renueva mañana; todo lo demás sigue funcionando.",
 };
 // Free couples hear that a membership gives more each day (Settings → Pinky 会员); members only hear when it resets.
 const FREE_LIMIT_TEXT = {
-  zh: "今天 Pinky 的免费额度用完了，明天会自动恢复。开通 Pinky 会员（设置里）每天可以多用一些。其他功能照常可用。",
-  en: "Pinky has used up today's free allowance. It resets tomorrow, and a Pinky membership (in Settings) gives you more each day. Everything else keeps working.",
-  es: "Pinky ya usó la asignación gratuita de hoy. Se renueva mañana y la membresía Pinky (en Ajustes) da más cada día. Todo lo demás sigue funcionando.",
+  zh: "今天 Ourever 的免费额度用完了，明天会自动恢复。开通 Ourever 会员（设置里）每天可以多用一些。其他功能照常可用。",
+  en: "Ourever has used up today's free allowance. It resets tomorrow, and a Ourever membership (in Settings) gives you more each day. Everything else keeps working.",
+  es: "Ourever ya usó la asignación gratuita de hoy. Se renueva mañana y la membresía Ourever (en Ajustes) da más cada día. Todo lo demás sigue funcionando.",
 };
 export const isAiLimit = (error) => error?.code === AI_LIMIT;
 const limitError = (language, feature, scope, free = false) => { const text = free ? FREE_LIMIT_TEXT : LIMIT_TEXT; return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, upgrade: free, background: featureKind(feature) === "background" }); };

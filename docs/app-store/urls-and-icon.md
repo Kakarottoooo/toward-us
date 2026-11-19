@@ -2,34 +2,19 @@
 
 ## App Store Connect 要填的网址
 
-下表列出当前技术地址。正式商店素材使用创始人选定的 witnora.com 子域名及相同的页面路径。配置该域名并复核页面后再填写。
+独立品牌站已上线。三种语言的页面均已通过公网核对。
 
-| 字段 | 是否必填 | 填什么 | 现在的状态 |
-|---|---|---|---|
-| 隐私政策网址（Privacy Policy URL） | 必填 | `https://toward-us-private-beta.onrender.com/privacy` | 页面已做好（PR #188，`server/legal.mjs`），当前服务地址已知；英文以外的语言可填 `?lang=zh`、`?lang=es` |
-| 技术支持网址（Support URL） | 必填 | `https://toward-us-private-beta.onrender.com/support` | 页面已做好，当前服务地址已知；要先设 `PINKY_SUPPORT_EMAIL` 才会显示邮箱 |
-| 营销网址（Marketing URL） | 选填 | 可以不填，或填 `https://toward-us-private-beta.onrender.com/` | 首页就是 App 的登录页，**没有单独的营销页**；不填不影响审核 |
-| 使用条款（EULA） | 有自动续期订阅时必须在描述或 EULA 字段给出链接 | `https://toward-us-private-beta.onrender.com/terms` | 页面已做好；描述末尾已写链接 |
-
-上线前在正式服务器上要设的环境变量：
-
-- `PINKY_SUPPORT_EMAIL`：支持和隐私请求的收信邮箱（已确认 ziwei@witnora.com）
-- `PINKY_OPERATOR`：隐私政策里"由谁运营"，已确认 Witnora, Inc.；不设时显示"Pinky 团队"
-
-**还缺的页面**：没有了。三个页面都在服务器上，只差正式域名和上面两个环境变量。
-
-## 图标检查（2026-11-12）
-
-文件：`mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`
-
-| 要求 | 结果 |
+| App Store Connect 字段 | 英文默认网址 |
 |---|---|
-| 1024 × 1024 像素 | ✅ 1024 × 1024 |
-| 不能有透明通道 | ✅ RGB，无 alpha |
-| 不要自己切圆角（系统会切） | ✅ 方形，四角是米色背景 `#f4efe6` |
-| 一张"universal"图，Xcode 自动生成各尺寸 | ✅ `Contents.json` 是单尺寸 universal，Release 编译后生成了 60pt 等尺寸 |
-| 图标和 App 名字一致、不误导（2.3.8） | ✅ 两条交扣的红蓝线（拉钩），没有文字 |
-| 适合所有年龄 | ✅ |
-| 深色 / 着色图标（iOS 18+ 可选） | 未提供，可选；不提供时系统自动处理 |
+| Privacy Policy URL | https://ourever.onrender.com/privacy |
+| Support URL | https://ourever.onrender.com/support |
+| Marketing URL | https://ourever.onrender.com/ |
+| Terms of Use | https://ourever.onrender.com/terms |
 
-安卓图标和两边的启动图还是 Capacitor 默认的（`mobile/README.md` 已注明），不影响 iOS 审核。
+简体中文在路径前加 `/zh`，西语加 `/es`。公开支持邮箱为 ziwei@witnora.com，运营主体为 Witnora, Inc.。现有客户分享链接继续可用，另行决定公司子域名。
+
+## Ourever 图标
+
+iPhone 的 1024 × 1024 主图在 `mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`。发布素材为不透明方形，系统裁切圆角。
+
+默认角色是张开前爪的粉色小飞鼠。识别特征是桃粉额毛、玫瑰粉爱心爪垫、蓝紫色飞膜和奶黄色背景。网页、小组件所属 App、分享素材和手机桌面沿用同一角色。

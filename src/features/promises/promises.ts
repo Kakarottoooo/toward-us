@@ -1,7 +1,7 @@
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 
-// "还欠着什么" (11-03): promises Pinky noticed in the two conversations. The server decides who sees which one; a partner's
+// "还欠着什么" (11-03): promises Ourever noticed in the two conversations. The server decides who sees which one; a partner's
 // private promise never reaches this phone.
 export type PromiseItem = {
   id: string; version: number; description: string; when: string; by: "me" | "partner" | "both"; shared: boolean; fromPrivate: boolean;

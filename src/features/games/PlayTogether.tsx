@@ -340,7 +340,7 @@ function RoundCard({ t, card, round, userId, partnerName, paired, frozen, disabl
           <button type="button" className="play-link" disabled={busy} onClick={() => { keyboard.hide(); setComposing(false); }}>{t("稍后再聊", "Talk later", "Hablar después")}</button></div>
       </div> : <div className="play-actions"><button type="button" className="play-main" onClick={() => setComposing(true)}>{t("接着聊这题", "Keep talking", "Seguir hablando")}</button>
         {onAskPinky && <button type="button" className="play-quiet" onClick={() => onAskPinky({ question: card.prompt, own: showAnswer(own) || "", partner: showAnswer(theirs) || "" })}>
-          <Sparkle size={16} />{t("请 Pinky 想个计划", "Ask Pinky for a plan", "Pide un plan a Pinky")}
+          <Sparkle size={16} />{t("请 Ourever 想个计划", "Ask Ourever for a plan", "Pide un plan a Ourever")}
         </button>}</div>)}
     </> : waiting ? <div className="play-wait" role="status">
       <p><LockKey size={18} />{t("你的答案已锁好，等 TA 来翻牌。", "Your answer is sealed. Waiting for your partner.", "Tu respuesta está sellada. Esperando a tu pareja.")}</p>

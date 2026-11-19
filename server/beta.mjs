@@ -10,7 +10,7 @@ import { membershipFor } from "./membership.mjs";
 // actions and AI calls, active days, membership, feedback. Founder = an account whose email is in FOUNDER_EMAILS.
 const COLLECTION = "betaCodes";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const makeCode = () => `PINKY-${[...randomBytes(6)].map((byte) => ALPHABET[byte % ALPHABET.length]).join("")}`;
+const makeCode = () => `OUREVER-${[...randomBytes(6)].map((byte) => ALPHABET[byte % ALPHABET.length]).join("")}`;
 const normal = (value) => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const founders = (env) => new Set(String(env.FOUNDER_EMAILS || "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));

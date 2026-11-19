@@ -1,8 +1,8 @@
-# Pinky 手机 App 外壳（Capacitor 8）
+# Ourever 手机 App 外壳（Capacitor 8）
 
 这是一个很薄的原生外壳：App 打开后直接加载网站（`server.url`），界面、登录、语音都是现有网页，没有重写。这样现有的 `HttpOnly` Cookie 登录不用改；网站更新后 App 里立即生效，不需要重新装包。公开上架前再评估要不要把前端打进安装包。
 
-- App ID：`us.toward.app`，名字：`Pinky`。美国区正式包由 Witnora 公司团队签名。主 App 和 Widget 分别使用已注册的 `us.toward.app` 和 `us.toward.app.widget`。
+- App ID：`us.toward.app`，名字：`Ourever`。美国区正式包由 Witnora 公司团队签名。主 App 和 Widget 分别使用已注册的 `us.toward.app` 和 `us.toward.app.widget`。
 - 安卓通过 Firebase Cloud Messaging 接收推送。iPhone 首版暂不申请系统推送权限。主屏幕和锁屏小组件使用自己的只读令牌，保存在 App 和 Widget 共享的设备钥匙串里；退出后会撤销并清除。
   - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
   - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
@@ -10,7 +10,7 @@
 - **上架用的正式包**（TestFlight / App Store）用 `npm run sync:release` 或 `npm run check:ios-release`：不设 `TOWARD_US_APP_URL` 就用云端地址；设了的话只能是公网 `https://` 地址；`*.ts.net`（Tailscale，只有创始人自己的设备连得上）、`localhost`、`.local`、IP 地址都会直接报错，防止把内测地址打进正式包。
 - 连不上服务器时（没网、服务器挂了）显示包里自带的离线页（`www/offline.html`，按手机语言显示中/英/西），每 10 秒和联网时自动重试，连上就回到 App；不会白屏。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
-- iOS 图标已换成 Pinky；安卓图标和两边的启动图还是 Capacitor 默认的。
+- iOS 与 Android 用 Ourever 小飞鼠图标和启动图。
 
 ## 安卓：编出 APK
 
@@ -134,7 +134,7 @@ TOWARD_US_APP_URL=https://node.tail3f720f.ts.net npm run ios   # 生成配置、
 3. iPhone 用数据线连 Mac，在 Xcode 顶部选这台 iPhone，点运行。
 4. iPhone 第一次要：设置 → 隐私与安全性 → 开发者模式 打开（会重启）；设置 → 通用 → VPN 与设备管理 → 信任自己的开发者证书。
 
-免费签名的包 7 天后失效，到期重新点一次运行即可；不能收原生推送。图标已是 Pinky（`AppIcon-512@2x.png`，1024×1024）。
+免费签名的包 7 天后失效，到期重新点一次运行即可；不能收原生推送。图标文件为（`AppIcon-512@2x.png`，1024×1024）。
 
 ## App 内购买（PinkyStore，StoreKit 2；PR #111）
 

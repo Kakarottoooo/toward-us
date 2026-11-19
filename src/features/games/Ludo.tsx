@@ -278,6 +278,6 @@ export function Ludo({ match, language, userId, partnerName, opponent, act, onRe
     {active && !legacy && <div className="game-actions">
       <button type="button" className={`game-quiet ${resigning ? "is-confirm" : ""}`} onClick={() => { if (!resigning) { setResigning(true); return; } setResigning(false); void send({ type: "resign" }); }} onBlur={() => setResigning(false)} data-testid="ludo-resign"><Flag size={16} />{resigning ? t("确定认输", "Really resign", "Rendirme de verdad") : t("认输", "Resign", "Rendirse")}</button>
     </div>}
-    {active && !legacy && !state.tasksReady && <p className="game-note">{t("Pinky 正在准备爱心格的小任务…", "Pinky is writing the hearts' little tasks…", "Pinky está preparando las tareas de los corazones…")}</p>}
+    {active && !legacy && !state.tasksReady && <p className="game-note">{t("Ourever 正在准备爱心格的小任务…", "Ourever is writing the hearts' little tasks…", "Ourever está preparando las tareas de los corazones…")}</p>}
   </div>;
 }

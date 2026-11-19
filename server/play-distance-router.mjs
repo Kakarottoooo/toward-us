@@ -143,7 +143,7 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
     if (result.changed) {
       const partner = result.context.members.find((member) => member.userId !== req.auth.user.id)?.userId;
       if (partner && !online(partner)) void Promise.resolve().then(() => notify(partner, {
-        body: { zh: "TA 给你留了一张小卡，打开 Pinky 看看。", en: "Your partner left you a little card. Open Pinky to see it.", es: "Tu pareja te dejó una tarjetita. Abre Pinky para verla." },
+        body: { zh: "TA 给你留了一张小卡，打开 Ourever 看看。", en: "Your partner left you a little card. Open Ourever to see it.", es: "Tu pareja te dejó una tarjetita. Abre Ourever para verla." },
         url: "/?channel=us",
         tag: "pinky-distance-card",
       })).catch(() => console.error("Distance card push failed."));

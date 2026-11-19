@@ -1,6 +1,6 @@
 // The other player when someone plays with their pet, 小家伙 (server/matches/errors.mjs).
 export const PET = "pet";
-// Either player may act (海龟汤), and Pinky as a game's host (server/matches/errors.mjs).
+// Either player may act (海龟汤), and Ourever as a game's host (server/matches/errors.mjs).
 export const BOTH = "both";
 export const HOST = "host";
 

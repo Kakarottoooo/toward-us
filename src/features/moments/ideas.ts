@@ -1,5 +1,5 @@
-// "100 small things to do together": inspiration in the couple's memories (founder 11-05). Pinky's own list, grouped so a
-// couple can browse by mood. An idea counts as done when a shared memory carries its number (set by Pinky in Us).
+// "100 small things to do together": inspiration in the couple's memories (founder 11-05). Ourever's own list, grouped so a
+// couple can browse by mood. An idea counts as done when a shared memory carries its number (set by Ourever in Us).
 import type { Language } from "../../i18n";
 
 export type IdeaCategory = "outdoors" | "home" | "food" | "town" | "adventure" | "create" | "romance" | "care";

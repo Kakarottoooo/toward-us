@@ -117,7 +117,7 @@ export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
       // The first memory from a connected album tells the partner, once, where these come from.
       if (first) {
         const name = user.name || "TA";
-        const line = (lang) => say(lang, `${name} 连接了 iPhone 相册，Pinky 会把里面的照片整理成你们的回忆。`, `${name} connected an iPhone album; Pinky is turning its photos into your memories.`, `${name} conectó un álbum del iPhone; Pinky está convirtiendo sus fotos en sus recuerdos.`);
+        const line = (lang) => say(lang, `${name} 连接了 iPhone 相册，Ourever 会把里面的照片整理成你们的回忆。`, `${name} connected an iPhone album; Ourever is turning its photos into your memories.`, `${name} conectó un álbum del iPhone; Ourever está convirtiendo sus fotos en sus recuerdos.`);
         const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId, source: "app", handle: `photo-album:${context.relationship.id}`, i18n: togetherI18n(line), text: line(language) });
         if (!sent.duplicate) router.emitTogether?.(sent.conversation, null);
       }

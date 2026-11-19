@@ -4,7 +4,7 @@ import { counted, localized, type Language } from "../../i18n";
 import { FindUs } from "./FindUs";
 import { askPhotoAccess, connectedAlbum, forgetAlbum, listAlbums, onPhotoProgress, syncAlbum, type PhotoAlbum, type Progress } from "./photoAlbum";
 
-/** Connect one iPhone album (a shared couple album, say); Pinky turns it into memories by day and place. iPhone App only. */
+/** Connect one iPhone album (a shared couple album, say); Ourever turns it into memories by day and place. iPhone App only. */
 export function PhotoAlbumCard({ language, partnerName }: { language: Language; partnerName?: string }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [album, setAlbum] = useState(connectedAlbum());
@@ -16,7 +16,7 @@ export function PhotoAlbumCard({ language, partnerName }: { language: Language; 
   const connect = async () => {
     setNote("");
     const status = await askPhotoAccess();
-    if (status !== "authorized" && status !== "limited") { setNote(t("没有拿到相册权限。可以在 iPhone 的“设置 → Pinky → 照片”里打开。", "No photo access. Turn it on in iPhone Settings → Pinky → Photos.", "Sin acceso a fotos. Actívalo en Ajustes → Pinky → Fotos.")); return; }
+    if (status !== "authorized" && status !== "limited") { setNote(t("没有拿到相册权限。可以在 iPhone 的“设置 → Ourever → 照片”里打开。", "No photo access. Turn it on in iPhone Settings → Ourever → Photos.", "Sin acceso a fotos. Actívalo en Ajustes → Ourever → Fotos.")); return; }
     const albums = await listAlbums();
     if (!albums.length) { setNote(t("没找到有照片的相册。", "No albums with photos found.", "No se encontraron álbumes con fotos.")); return; }
     setChoices(albums);
@@ -41,8 +41,8 @@ export function PhotoAlbumCard({ language, partnerName }: { language: Language; 
     <span className="photo-album-head"><ImagesSquare size={20} weight="fill" /><strong>{t(`已连接相册「${album.title}」`, `Connected album "${album.title}"`, `Álbum conectado «${album.title}»`)}</strong></span>
     <small>{progress.running
       ? t(`正在整理… 已整理 ${progress.made} 段回忆，还剩 ${progress.remaining} 段`, `Sorting… ${counted(progress.made, "memory", "memories")} made, ${progress.remaining} to go`, `Ordenando… ${counted(progress.made, "recuerdo", "recuerdos")} hechos, faltan ${progress.remaining}`)
-      : progress.error ? t("这次没整理完，下次打开 Pinky 会接着来。", "Not finished this time; it continues next time you open Pinky.", "No terminó esta vez; seguirá la próxima vez que abras Pinky.")
-      : t("新照片会在你打开 Pinky 时自动整理进回忆。", "New photos are added to your memories when you open Pinky.", "Las fotos nuevas se añaden a sus recuerdos al abrir Pinky.")}</small>
+      : progress.error ? t("这次没整理完，下次打开 Ourever 会接着来。", "Not finished this time; it continues next time you open Ourever.", "No terminó esta vez; seguirá la próxima vez que abras Ourever.")
+      : t("新照片会在你打开 Ourever 时自动整理进回忆。", "New photos are added to your memories when you open Ourever.", "Las fotos nuevas se añaden a sus recuerdos al abrir Ourever.")}</small>
     <span className="photo-album-actions">
       {!progress.running && <button type="button" onClick={() => void syncAlbum(album, language)}>{t("现在整理", "Sort now", "Ordenar ahora")}</button>}
       <button type="button" className="photo-album-quiet" onClick={stop}>{t("断开", "Disconnect", "Desconectar")}</button>
@@ -52,7 +52,7 @@ export function PhotoAlbumCard({ language, partnerName }: { language: Language; 
 
   return <section className="photo-album" data-testid="photo-album">
     <span className="photo-album-head"><ImagesSquare size={20} weight="fill" /><strong>{t("从 iPhone 相册自动整理回忆", "Make memories from your iPhone album", "Recuerdos desde tu álbum del iPhone")}</strong></span>
-    <small>{t("连上你们的情侣相册，Pinky 按日子和地点整理成一段段回忆，往年的今天还会提起。", "Connect your couple album; Pinky sorts it into memories by day and place, and brings them back on the day in later years.", "Conecta su álbum de pareja; Pinky lo ordena en recuerdos por día y lugar, y los recuerda en el aniversario.")}</small>
+    <small>{t("连上你们的情侣相册，Ourever 按日子和地点整理成一段段回忆，往年的今天还会提起。", "Connect your couple album; Ourever sorts it into memories by day and place, and brings them back on the day in later years.", "Conecta su álbum de pareja; Ourever lo ordena en recuerdos por día y lugar, y los recuerda en el aniversario.")}</small>
     {note && <p className="space-error" role="alert">{note}</p>}
     <span className="photo-album-actions"><button type="button" onClick={() => void connect()} data-testid="photo-album-connect">{t("连接相册", "Connect album", "Conectar álbum")}</button>{findButton}</span>
   </section>;
