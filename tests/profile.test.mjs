@@ -1,3 +1,5 @@
+import { mockModeration } from "./helpers/moderation.mjs";
+import { AI_NOTICE_VERSION } from "../server/ai-permission.mjs";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,7 +8,7 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { buildTogetherContext } from "../server/together-domain.mjs";
-import { pendingPartner, profileContext, scanBroughtChat, scanCall, scanPrivateProfile, scanTogetherProfile } from "../server/profile.mjs";
+import { profileContext, scanBroughtChat, scanCall, scanPrivateProfile, scanTogetherProfile } from "../server/profile.mjs";
 
 // 喜好档案 (11-06): kept automatically from conversations, visible afterwards, each person's notes their own.
 let server, base, directory, store, counter = 0;
@@ -31,7 +33,10 @@ async function call(path, user, body, status = 200, method = body === undefined 
 async function pair() {
   const register = async (name) => {
     const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
-    assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
+    assert.equal(response.status, 201);
+    const member = { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
+    await call("/privacy/ai-consent", member, { agree: true, noticeVersion: AI_NOTICE_VERSION });
+    return member;
   };
   const a = await register("Ziwei"), b = await register("Mia");
   const invitation = await call("/partner/invitations", a, {}, 201);
@@ -56,7 +61,7 @@ test("private interview captions preserve the full accepted turn and ground note
   const rows = [{ role: "agent", text: "你们都想去冰岛，也都爱露营？" }, { role: "user", text }];
   const model = fakeModel((input, instructions) => {
     assert.equal(input.messages[1].text, text, "the scanner must read the full caption accepted by the call router");
-    assert.deepEqual(input.messages.map((line) => [line.from, line.isNew]), [["Pinky", false], ["A", true]]);
+    assert.deepEqual(input.messages.map((line) => [line.from, line.isNew]), [["Ourever", false], ["A", true]]);
     assert.match(instructions, /including later corrections and negations/);
     assert.match(instructions, /"I like doing X with B" describes A's preference, subject A/);
     assert.match(instructions, /Use subject both only when A explicitly describes a mutual/);
@@ -79,8 +84,8 @@ test("private interview captions preserve the full accepted turn and ground note
   assert.ok(!/格陵兰|六月十七|老电影/.test(JSON.stringify(shared)));
 });
 
-test("before any partner joins, Pinky still learns TA privately from chats and brought screenshots, and keeps it after pairing", async () => {
-  // Reply coach (founder 11-08): Pinky works alone and gets to know her as it is used; nothing waits for an invitation.
+test("before pairing only the member’s own facts are kept, and pairing does not create or expose a non-user profile", async () => {
+  // The solo member can use the coach and keep evidence about themself.
   const register = async (name) => {
     const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
     assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
@@ -91,27 +96,27 @@ test("before any partner joins, Pinky still learns TA privately from chats and b
     fact({ messageId: "s1", quote: "她最讨厌我迟到", subject: "B", category: "dislikes", fact: "讨厌迟到" }),
     fact({ messageId: "s1", quote: "我自己不吃辣", subject: "A", fact: "不吃辣" }),
   ]), userId: solo.user.id, sessionId: session.id });
-  assert.deepEqual(kept.map((item) => [item.text, item.subjectUserId]), [["讨厌迟到", pendingPartner(solo.user.id)], ["不吃辣", solo.user.id]]);
+  assert.deepEqual(kept.map((item) => [item.text, item.subjectUserId]), [["不吃辣", solo.user.id]]);
   assert.ok(kept.every((item) => item.visibility === "private" && item.ownerUserId === solo.user.id && item.relationshipId === null));
-  assert.match((await store.getRelationshipRecordForUser("privateAgentThreads", session.id, solo.user.id)).messages.at(-1).text, /^已记进「关于我们」：TA 讨厌迟到；你不吃辣$/);
+  assert.match((await store.getRelationshipRecordForUser("privateAgentThreads", session.id, solo.user.id)).messages.at(-1).text, /^已记进「关于我们」：你不吃辣$/);
 
-  // A brought chat: TA's own words are the evidence about TA; invented quotes are dropped.
+  // Quoting a non-member in a brought chat does not create a profile about them.
   const brought = await scanBroughtChat({ store, mediator: fakeModel((input, instructions) => {
-    assert.match(instructions, /brought to Pinky privately/);
+    assert.match(instructions, /brought to Ourever privately/);
     assert.deepEqual(input.messages.map((item) => item.from), ["B", "A", "B"], "both of them count; other people do not");
     return [fact({ messageId: "imp:2", quote: "我一直想养一只柯基", subject: "B", category: "wishes", fact: "想养一只柯基" }), fact({ messageId: "imp:0", quote: "she loves cats", subject: "B", fact: "loves cats" })];
   }), userId: solo.user.id, sessionId: session.id, sourceId: "imp", messages: [
     { role: "partner", text: "你又迟到了" }, { role: "me", text: "对不起，路上堵车" }, { role: "partner", text: "算了。周末陪我去看狗吧，我一直想养一只柯基" }, { role: "other", text: "群消息" },
   ] });
-  assert.deepEqual(brought.map((item) => [item.text, item.subjectUserId]), [["想养一只柯基", pendingPartner(solo.user.id)]]);
-  assert.deepEqual((await profileContext(store, solo.user.id)).partner.map((item) => item.fact).sort(), ["想养一只柯基", "讨厌迟到"]);
-  assert.deepEqual((await call("/profile", solo)).facts.filter((item) => item.subject === "partner").map((item) => item.text).sort(), ["想养一只柯基", "讨厌迟到"]);
+  assert.deepEqual(brought, []);
+  assert.deepEqual((await profileContext(store, solo.user.id)).partner.map((item) => item.fact).sort(), []);
+  assert.deepEqual((await call("/profile", solo)).facts.filter((item) => item.subject === "partner").map((item) => item.text).sort(), []);
 
-  // After pairing it still counts as being about TA, and TA never sees it.
+  // Pairing does not retroactively create facts about the other person.
   const partner = await register("Xia");
   const invitation = await call("/partner/invitations", solo, {}, 201);
   await call("/partner/accept", partner, { code: invitation.pairing.invitation.code });
-  assert.deepEqual((await profileContext(store, solo.user.id)).partner.map((item) => item.fact).sort(), ["想养一只柯基", "讨厌迟到"]);
+  assert.deepEqual((await profileContext(store, solo.user.id)).partner.map((item) => item.fact).sort(), []);
   const leaks = (value) => /迟到|柯基|不吃辣/.test(JSON.stringify(value));
   assert.ok(!leaks(await call("/profile", partner)) && !leaks(await profileContext(store, partner.user.id)));
 });
@@ -205,7 +210,8 @@ test("a line about yourself can be shared with the exact words; only its sharer 
   assert.deepEqual((await call("/profile", a)).facts.map((item) => item.text).sort(), ["在学钢琴和吉他", "穿 M 码"]);
 });
 
-test("what they say together in Us belongs to both, about the right person", async () => {
+test("what they say together in Us belongs to both, about the right person", async (t) => {
+  mockModeration(t);
   const { a, b, relationshipId } = await pair();
   const say = (user, text) => call("/together/messages", user, { text, itemId: crypto.randomUUID(), language: "zh" }, 201);
   await say(a, "我对花生过敏，别给我带花生的东西");

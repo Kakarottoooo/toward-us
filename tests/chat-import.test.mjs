@@ -20,7 +20,13 @@ const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "eac
 async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
-  const previous = process.env.TOWARD_US_DATA_FILE; process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
+  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
+  const media = join(directory, "media");
+  process.env.TOWARD_US_MEDIA_DIR = media;
+  t.after(() => {
+    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
+    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
+  });
   const store = await createFileStore(join(directory, "store.json"));
   const people = [{ id: randomUUID(), name: "Alex" }, { id: randomUUID(), name: "Blair" }];
   for (const person of people) await store.createUser({ ...person, email: `${person.id}@example.invalid`, passwordHash: "test", createdAt: new Date().toISOString() });
@@ -47,21 +53,21 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   app.use("/api", createTogetherRouter({ store, mediator }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
-  t.after(async () => { await new Promise((r) => server.close(r)); process.env.TOWARD_US_DATA_FILE = previous; assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
   const url = (path) => `http://127.0.0.1:${server.address().port}/api${path}`;
   const request = async (path, method = "GET", body, userId = people[0].id) => {
     const response = await fetch(url(path), { method, headers: { "x-user": userId, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
   const upload = async (text, name = "WhatsApp Chat - Blair.txt", userId = people[0].id, session = "") => {
-    const response = await fetch(url(`/imports?name=${encodeURIComponent(name)}&language=en${session ? `&session=${session}` : ""}`), { method: "POST", headers: { "x-user": userId, "content-type": "application/octet-stream" }, body: Buffer.from(text) });
+    const response = await fetch(url(`/imports?name=${encodeURIComponent(name)}&language=en${session ? `&session=${session}` : ""}`), { method: "POST", headers: { "x-user": userId, "X-Pinky-Import-Disclosure": "1", "content-type": "application/octet-stream" }, body: Buffer.from(text) });
     return { status: response.status, body: await response.json() };
   };
   const ready = async (id, userId = people[0].id) => {
     for (let index = 0; index < 400; index += 1) { const item = (await request(`/imports/${id}`, "GET", null, userId)).body.import; if (item?.status === "ready" || item?.status === "failed") return item; await new Promise((r) => setTimeout(r, 30)); }
     throw new Error("analysis did not finish");
   };
-  const files = async () => (await readdir(`${process.env.TOWARD_US_DATA_FILE}.media`).catch(() => [])).filter((name) => name.endsWith(".chat.json"));
+  const files = async () => (await readdir(media).catch(() => [])).filter((name) => name.endsWith(".chat.json"));
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
   return { people, calls, request, upload, ready, files, session, url, store };
 }
@@ -333,7 +339,7 @@ test("pasted-chat questions read complete lines before the history report, only 
   t.after(() => release());
   const lastWords = "I only told you at seven; you had already waited an hour.";
   const paste = `[2026-10-01 17:00] Alex: Dinner at six.\n[2026-10-01 17:01] Blair: I'll be there.\n[2026-10-01 19:00] Alex: ${"Work updates. ".repeat(100)}${lastWords}\n[2026-10-01 19:45] Blair: I needed you to tell me before six.`;
-  const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "content-type": "text/plain" }, body: paste });
+  const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "X-Pinky-Import-Disclosure": "1", "content-type": "text/plain" }, body: paste });
   assert.equal(response.status, 201);
   const imported = (await response.json()).import;
   assert.equal(imported.status, "analyzing");
@@ -374,7 +380,7 @@ test("pasted-chat questions read complete lines before the history report, only 
 test("long imported history explicitly marks a bounded excerpt instead of claiming a complete reading", async (t) => {
   const f = await fixture(t);
   const paste = `Alex: ${"A long message. ".repeat(3000)}\nBlair: I'll reply later.\nAlex: END_OUTSIDE_EXCERPT`;
-  const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "content-type": "text/plain" }, body: paste });
+  const response = await fetch(f.url(`/imports?pasted=1&language=en&session=${f.session.id}`), { method: "POST", headers: { "x-user": f.people[0].id, "X-Pinky-Import-Disclosure": "1", "content-type": "text/plain" }, body: paste });
   assert.equal(response.status, 201);
   const imported = (await response.json()).import;
   await f.ready(imported.id);
@@ -442,6 +448,12 @@ test("Spanish screenshot advice uses natural Spanish partner references instead 
 
 test("an imported chat is analyzed privately and reported back into the owner's conversation", async (t) => {
   const f = await fixture(t);
+  const unconfirmed = await fetch(f.url("/imports?language=en"), {
+    method: "POST", headers: { "x-user": f.people[0].id, "content-type": "application/octet-stream" }, body: whatsapp,
+  });
+  assert.equal(unconfirmed.status, 409);
+  assert.equal((await unconfirmed.json()).code, "import_disclosure_required");
+  assert.deepEqual((await f.request("/imports")).body.imports, []);
   const created = await f.upload(whatsapp, undefined, undefined, f.session.id);
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.import.status, "analyzing", "the owner's own name and the one other person are recognized without asking");
@@ -523,7 +535,8 @@ test("deleting really removes the messages, and a Mac upload token works once", 
   assert.equal((await f.request(`/imports/${id}`)).body.import.analysis.overview, report.overview, "the analysis stays");
   assert.equal((await f.request(`/imports/${id}`, "DELETE")).status, 204);
   assert.equal((await f.request(`/imports/${id}`)).status, 404);
-  const { command } = (await f.request("/imports/mac-command", "POST", { language: "en" })).body;
+  assert.equal((await f.request("/imports/mac-command", "POST", { language: "en" })).body.code, "import_disclosure_required");
+  const { command } = (await f.request("/imports/mac-command", "POST", { language: "en", importDisclosure: 1 })).body;
   const token = command.split(" ").at(-1);
   const helper = JSON.stringify({ format: "pinky-imessage", chat: { title: "+15550100" }, rows: [{ date: 726000000000000000, is_from_me: 1, handle: "+15550100", text: "hi love", body_hex: null, attachments: 0 }, { date: 726000060000000000, is_from_me: 0, handle: "+15550100", text: "hi you", body_hex: null, attachments: 0 }, { date: 726000120000000000, is_from_me: 1, handle: "+15550100", text: "dinner?", body_hex: null, attachments: 0 }] });
   const post = () => fetch(f.url(`/imports/upload/${token}`), { method: "POST", headers: { "content-type": "application/octet-stream" }, body: helper });
@@ -538,7 +551,8 @@ test("deleting really removes the messages, and a Mac upload token works once", 
 
 test("the synced iMessage history is analysed by itself: once it has enough, quietly again after a week with enough new", async (t) => {
   const f = await fixture(t);
-  const { command } = (await f.request("/imports/mac-sync-command", "POST", { language: "en" })).body;
+  assert.equal((await f.request("/imports/mac-sync-command", "POST", { language: "en" })).body.code, "import_disclosure_required");
+  const { command } = (await f.request("/imports/mac-sync-command", "POST", { language: "en", importDisclosure: 1 })).body;
   const token = command.trim().split(" ").at(-1);
   const rows = (from, count) => Array.from({ length: count }, (_, index) => ({ date: (757_000_000 + (from + index) * 600) * 1e9, text: `${(from + index) % 2 ? "running late" : "are you home"} ${from + index}`, is_from_me: (from + index) % 2 ? 0 : 1, handle: "+15550001111" }));
   const sync = async (from, count) => (await fetch(f.url(`/imports/sync/${token}`), { method: "POST", headers: { "content-type": "application/octet-stream" }, body: JSON.stringify({ format: "pinky-imessage", chat: { title: "Blair" }, rows: rows(from, count) }) })).status;
@@ -582,12 +596,13 @@ test("a synced history is due again only after a week and enough new messages", 
 
 test("a Windows PC imports iMessage from the iPhone backup with a short, single-use code (founder 11-09)", async (t) => {
   const f = await fixture(t);
-  const { command, expiresInMinutes } = (await f.request("/imports/windows-command", "POST", { language: "en" })).body;
+  assert.equal((await f.request("/imports/windows-command", "POST", { language: "en" })).body.code, "import_disclosure_required");
+  const { command, expiresInMinutes } = (await f.request("/imports/windows-command", "POST", { language: "en", importDisclosure: 1 })).body;
   assert.equal(expiresInMinutes, 60);
   const code = command.match(/\/imports\/w\/([A-Z2-9]{8}) \| iex$/)?.[1];
   assert.ok(code, command);
   const script = await (await fetch(f.url(`/imports/w/${code}`))).text();
-  assert.ok(script.startsWith("$Base = '") && script.split("\n")[0].endsWith(`; $Token = '${code}'`), "the script carries its code and needs no arguments");
+  assert.ok(script.startsWith("$Base = '") && script.split(/\r?\n/)[0].endsWith(`; $Token = '${code}'`), "the script carries its code and needs no arguments");
   assert.match(script, /3d0d7e5fb2ce288813306e4d4636395e047a3d28/, "it reads the backup's message database");
   assert.doesNotMatch(script, /^param\(/m);
   const rows = JSON.stringify({ format: "pinky-imessage", chat: { title: "Lin" }, rows: [{ date: 726000000000000000, is_from_me: 1, handle: "+15550100", text: "hi", body_hex: null, attachments: 0 }, { date: 726000060000000000, is_from_me: 0, handle: "+15550100", text: "hey", body_hex: null, attachments: 0 }] });

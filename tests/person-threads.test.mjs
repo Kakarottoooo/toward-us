@@ -53,7 +53,7 @@ test("each person has one conversation of their own, and the brain is never one 
   assert.ok(lily);
 });
 
-test("what the member says in a person's conversation is kept on that person even when it names nobody", async (t) => {
+test("a contact thread does not turn its messages into a profile of that person or the partner", async (t) => {
   const { store, id, call, add } = await setup(t);
   const jie = await add("阿杰"); await add("Lily");
   const thread = (await call("/assistant/sessions", { language: "zh", timezone: "UTC", personId: jie.id })).body.session;
@@ -63,8 +63,9 @@ test("what the member says in a person's conversation is kept on that person eve
     { messageId: "u1", quote: "最怕别人迟到", subject: "B", person: "", category: "dislikes", fact: "最怕别人迟到", replaces: "" }] }; } };
   await scanPrivateProfile({ store, mediator, userId: id, sessionId: thread.id });
   const known = await profileContext(store, id);
-  assert.deepEqual(known.people.find((person) => person.id === jie.id).facts.map((item) => item.fact).sort(), ["不吃香菜", "最怕别人迟到"].sort());
+  assert.deepEqual(known.people.find((person) => person.id === jie.id).facts, []);
   assert.deepEqual(known.partner, [], "never the partner's");
   const kept = (await store.listRelationshipRecordsForUser("memories", id)).filter((record) => record.subjectUserId === personSubject(jie.id));
-  assert.equal(kept.length, 2);
+  assert.deepEqual(kept, []);
+  assert.equal((await store.getRelationshipRecordForUser("privateAgentThreads", thread.id, id)).messages[0].text, "他不吃香菜，最怕别人迟到");
 });

@@ -1,3 +1,4 @@
+import { mockModeration } from "../../tests/helpers/moderation.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blindPair, completionResult, decodeVerdict, summarize } from "./score.mjs";
@@ -148,6 +149,7 @@ test("replay calendar stays case-local while timeouts advance and native Date op
 });
 
 test("agreement replay uses actual HTTP actions and independent authenticated approvals", async (t) => {
+  mockModeration(t);
   const base = resolve("work", "parity-test"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "approval-"));
   const mediator = { aiReady: false, continueTogether: async () => ({ reply: "这是草稿，小闻需要本人批准。", source: "test", actions: [],

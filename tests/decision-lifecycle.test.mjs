@@ -1,3 +1,6 @@
+import { asAiUser } from "../server/ai-budget.mjs";
+import { mockModeration } from "./helpers/moderation.mjs";
+import { AI_NOTICE_VERSION } from "../server/ai-permission.mjs";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -120,7 +123,7 @@ test("concurrent completion and reviews are idempotent and cannot cross relation
   assert.deepEqual(results[0].outcome.sharedResponses, []);
 });
 
-test("discussion drafts are editable, never approve themselves, and changed agreements reject stale approval", async () => {
+test("discussion drafts are editable, never approve themselves, and changed agreements reject stale approval", async (t) => {
   const { a, b, issue, agreement } = await activate(await agreementFixture());
   for (const text of ["month", "AI unavailable"]) await store.createRelationshipRecord("memories", createRelationshipRecord({ relationshipId: issue.relationshipId, userId: a.user.id, visibility: "jointly_confirmed", aiAccessScope: "joint", text, memberUserIds: [a.user.id, b.user.id], approvals: [a, b].map(actor => ({ userId: actor.user.id, version: 1 })) }));
   // No model: Pinky says so and drafts nothing; the person's raw words never become terms.
@@ -137,9 +140,10 @@ test("discussion drafts are editable, never approve themselves, and changed agre
   // With the model, the draft is pinned to what it read and stays editable.
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: a.user }; next(); });
   app.use(createRelationshipRouter({ store, mediator, decisionAgent: { async discuss() { return { source: "openai", reply: "Here is a draft to review.", draft: { title: "Monthly visits", summary: "Once a month", terms: ["Visit once a month"], unresolvedPoints: [] } }; } } }));
-  const isolated = app.listen(0, "127.0.0.1"); await new Promise(resolve => isolated.once("listening", resolve));
+  const isolated = app.listen(0, "127.0.0.1");
+  t.after(() => new Promise(resolve => isolated.close(resolve)));
+  await new Promise(resolve => isolated.once("listening", resolve));
   const drafted = await fetch(`http://127.0.0.1:${isolated.address().port}/issues/${issue.id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "Please change visits to once a month", language: "en" }) }).then((response) => response.json());
-  await new Promise(resolve => isolated.close(resolve));
   const prepared = drafted.issue;
   assert.equal(prepared.discussionDraft.sourceRefs.length, 4, "Two summaries and two current memory grants are pinned to the draft");
   assert.equal(prepared.discussionDraft.source, "openai");
@@ -205,21 +209,30 @@ test("simultaneous option generation creates one set and repeated evaluations do
   assert.equal((await call(`/issues/${issue.id}`, a)).evaluations.length, 1);
 });
 
-test("model output stays a draft and Responses explicitly disables provider state retention", async () => {
+async function approvedDecisionActor(t) {
+  const { a, b } = await pair();
+  for (const member of [a, b]) await call("/privacy/ai-consent", member, { agree: true, noticeVersion: AI_NOTICE_VERSION });
+  mockModeration(t);
+  return { userId: a.user.id };
+}
+
+test("model output stays a draft and Responses explicitly disables provider state retention", async (t) => {
+  const actor = await approvedDecisionActor(t);
   let sent;
   const agent = createDecisionAgent({ client: { responses: { async create(request) { sent = request; return { output_text: JSON.stringify({ reply: "Please review this proposal", draft: { title: "Monthly", summary: "One visit", terms: ["Once a month"], unresolvedPoints: [], status: "active", approvals: ["both"] } }) }; } } } });
-  const result = await agent.discuss({ issue: { title: "Visits" }, confirmedSummaries: [{ text: "A confirmed" }, { text: "B confirmed" }], agreement: null, messages: [{ role: "user", text: "Try monthly" }] }, "en");
+  const result = await asAiUser(actor, () => agent.discuss({ issue: { title: "Visits" }, confirmedSummaries: [{ text: "A confirmed" }, { text: "B confirmed" }], agreement: null, messages: [{ role: "user", text: "Try monthly" }] }, "en"));
   assert.equal(sent.store, false);
   assert.equal(result.source, "openai");
   assert.equal(result.draft.status, undefined);
   assert.equal(result.draft.approvals, undefined);
 });
 
-test("a discussion turn waits at most 45 s without retries, and a failed model drafts nothing from the raw words", async () => {
+test("a discussion turn waits at most 45 s without retries, and a failed model drafts nothing from the raw words", async (t) => {
+  const actor = await approvedDecisionActor(t);
   let options;
   const agent = createDecisionAgent({ client: { responses: { async create(_request, requestOptions) { options = requestOptions; throw new Error("timed out"); } } } });
   const context = { issue: { title: "Visits" }, confirmedSummaries: [], agreement: { title: "Visits", summary: "Weekly", terms: ["Every Sunday"], unresolvedPoints: [] }, messages: [{ role: "user", text: "RAW_WORDS make it monthly" }] };
-  const result = await agent.discuss(context, "zh");
+  const result = await asAiUser(actor, () => agent.discuss(context, "zh"));
   assert.deepEqual(options, { timeout: 45_000, maxRetries: 0 });
   assert.equal(result.source, "local");
   assert.equal(result.draft, null);

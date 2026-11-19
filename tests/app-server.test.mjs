@@ -1,3 +1,6 @@
+import { mockModeration, withModeration } from "./helpers/moderation.mjs";
+import { AI_NOTICE_VERSION } from "../server/ai-permission.mjs";
+import { asAiUser } from "../server/ai-budget.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +16,7 @@ let server;
 let baseUrl;
 let temporaryDirectory;
 let store;
+let providerUser;
 let counter = 0;
 let lastDecisionContext = null;
 
@@ -20,30 +24,31 @@ let lastDecisionContext = null;
 const withProvider = async (env, run) => {
   const keys = ["AI_PROVIDER", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"], saved = Object.fromEntries(keys.map((key) => [key, process.env[key]])), realFetch = globalThis.fetch;
   for (const key of keys) delete process.env[key];
+  if (env.AI_PROVIDER) process.env.OPENAI_API_KEY = "synthetic-provider-key";
   Object.assign(process.env, env);
-  try { await run(); } finally { globalThis.fetch = realFetch; for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
+  try { await asAiUser({ userId: providerUser.id }, run); } finally { globalThis.fetch = realFetch; for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
 };
 const header = (init, name) => typeof init.headers?.get === "function" ? init.headers.get(name) : init.headers?.[name] ?? init.headers?.[name.toLowerCase()];
 
-test("without the model Pinky only says it is unavailable, in every language, and never drafts an agreement from the couple's words", async () => {
+test("without the model Ourever only says it is unavailable, in every language, and never drafts an agreement from the couple's words", async () => {
   await withProvider({}, async () => {
     const local = createMediator({ apiKey: "" });
     // The exact shape that once became agreement v1: a question as the title and two raw chat lines as its terms.
     const asked = { messages: [{ role: "member", text: "周末要不要去看房？" }, { role: "member", text: "我周六要加班" }, { role: "member", text: "Pinky，帮我们定下来" }], activeAgreements: [], openCommitments: [], pendingAgreement: null };
     const turn = await local.continueTogether(asked, "zh");
     assert.deepEqual([turn.draftAgreement, turn.actions, turn.source], [null, [], "local"]);
-    assert.equal(turn.reply, "Pinky 暂时不可用，稍后再试。");
+    assert.equal(turn.reply, "Ourever 暂时不可用，稍后再试。");
     assert.deepEqual(Object.keys(turn.i18n).sort(), ["en", "es", "zh"]);
     assert.equal((await local.continueTogether(asked, "en")).reply, turn.i18n.en);
-    assert.match((await local.continueTogether(asked, "es")).reply, /^Pinky no está disponible/);
+    assert.match((await local.continueTogether(asked, "es")).reply, /^Ourever no está disponible/);
   });
   // The model fails (here: the network): the same plain copy, no draft, and no silent retries that keep the couple waiting.
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     let attempts = 0;
-    globalThis.fetch = async () => { attempts += 1; throw new Error("connection reset"); };
+    globalThis.fetch = withModeration(async () => { attempts += 1; throw new Error("connection reset"); });
     const failing = createMediator({ apiKey: "test-key" });
     const turn = await failing.continueTogether({ messages: [{ role: "member", text: "Pinky，帮我们定下来" }], activeAgreements: [], openCommitments: [], pendingAgreement: null }, "zh");
-    assert.deepEqual([turn.draftAgreement, turn.actions, turn.source, turn.reply, attempts], [null, [], "local", "Pinky 暂时不可用，稍后再试。", 1]);
+    assert.deepEqual([turn.draftAgreement, turn.actions, turn.source, turn.reply, attempts], [null, [], "local", "Ourever 暂时不可用，稍后再试。", 1]);
     await assert.rejects(failing.planAssistantTurn({ messages: [] }, "en"), /Connection error/i, "the private assistant reports the failure to its router, which answers with its own plain copy");
     assert.equal(attempts, 2);
   });
@@ -69,13 +74,13 @@ test("CLI interactive care uses Sonnet by default, keeps background reads cheap 
 test("screenshot advice grounds the verdict in observations and unknowns in one model call", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     let calls = 0;
-    globalThis.fetch = async (_url, init) => {
+    globalThis.fetch = withModeration(async (_url, init) => {
       calls += 1;
       const schema = JSON.parse(init.body).text.format.schema;
       assert.deepEqual(schema.required, ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"]);
       const answer = { observations: ["Blair reports an earlier promise."], uncertainties: ["The original promise is not visible."], reply: "I cannot verify that promise from this screenshot.", sendableDraft: null, activityDescription: null };
       return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(answer) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
-    };
+    });
     const answer = await createMediator({ apiKey: "test-key" }).answerScreenshot({ question: "Who's right?", transcript: "[partner] Blair: You promised yesterday." }, "en");
     assert.match(answer.reply, /cannot verify/);
     assert.equal(calls, 1);
@@ -85,10 +90,10 @@ test("screenshot advice grounds the verdict in observations and unknowns in one 
 test("screenshot questions use the capable vision model once, while transcription alone stays cheap", async () => {
   await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
     const seen = [];
-    globalThis.fetch = async (_url, init) => {
+    globalThis.fetch = withModeration(async (_url, init) => {
       const body = JSON.parse(init.body); seen.push(body);
       return new Response(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: JSON.stringify({ messages: [], advice: { observations: [], uncertainties: [], reply: "Private answer." } }) }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }), { headers: { "content-type": "application/json" } });
-    };
+    });
     const mediator = createMediator({ apiKey: "" });
     const schema = { type: "object", required: ["messages"], properties: { messages: { type: "array", items: { type: "string" } } } };
     const input = { paths: [resolve("public/assets/brand/pinky-icon-512.png")], schema, language: "zh" };
@@ -107,26 +112,26 @@ test("screenshot questions use the capable vision model once, while transcriptio
 
 test("shared agreement drafting preserves given rules and labels reversible defaults as proposals", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
-    globalThis.fetch = async (_url, init) => {
+    globalThis.fetch = withModeration(async (_url, init) => {
       const instructions = JSON.parse(init.body).input[0].content;
       assert.match(instructions, /Keep each agreed rule once/);
       assert.match(instructions, /Do not list a detail already supplied as unresolved/);
       assert.match(instructions, /default clearly labeled as a suggestion they can change/);
       assert.match(instructions, /Never approve anything for them/);
       return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Draft ready.", draftAgreement: null, actions: [], waitingFor: [] }) }] }] }), { headers: { "content-type": "application/json" } });
-    };
+    });
     await createMediator({ apiKey: "test-key" }).continueTogether({ messages: [{ role: "member", text: "Pinky，我们说好以后周末轮流做饭" }] }, "zh");
   });
 });
 
-// 90 s since 11-15: a complete analysis (question-playbooks.mjs) ran past 45 s and reached the user as "Pinky 暂时不可用".
+// 90 s since 11-15: a complete analysis (question-playbooks.mjs) ran past 45 s and reached the user as "Ourever 暂时不可用".
 test("a person waits at most about 90 seconds for a reply; only background work may take minutes", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     const seen = [];
-    globalThis.fetch = async (_url, init) => {
+    globalThis.fetch = withModeration(async (_url, init) => {
       seen.push(header(init, "X-Stainless-Timeout"));
       return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "ok", draftAgreement: null, actions: [], shared: "", feedback: [], question: "q" }) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
-    };
+    });
     const mediator = createMediator({ apiKey: "test-key" });
     await mediator.planAssistantTurn({ messages: [] }, "en");
     await mediator.continueTogether({ messages: [] }, "en");
@@ -137,7 +142,7 @@ test("a person waits at most about 90 seconds for a reply; only background work 
   });
   // Claude through the API honours the caller's limit instead of stretching every call to a minute or more.
   await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
-    globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true }));
+    globalThis.fetch = withModeration((_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true })));
     const started = Date.now();
     await assert.rejects(createAnthropicClient().responses.create({ model: "m", input: "hi" }, { timeout: 25, maxRetries: 0 }), /timed out/i);
     assert.ok(Date.now() - started < 5_000, "a 25 ms limit is not rounded up to the client's minute");
@@ -147,10 +152,10 @@ test("a person waits at most about 90 seconds for a reply; only background work 
 test("an explicit screenshot decision starts reading even if the planner returns no actions; normal photos stay ordinary", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     let readChatScreenshots = true, format;
-    globalThis.fetch = async (_url, init) => {
+    globalThis.fetch = withModeration(async (_url, init) => {
       format = JSON.parse(init.body).text.format;
       return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Reading privately", actions: [], readChatScreenshots }) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
-    };
+    });
     const mediator = createMediator({ apiKey: "test-key" });
     const context = { attachedPhotos: ["fictional-photo"], messages: [{ role: "user", text: "What should I reply to this argument?" }] };
     const turn = await mediator.planAssistantTurn(context, "en");
@@ -184,7 +189,7 @@ test("WebRTC transcription is created as a realtime call with ASR input enabled"
   };
   try {
     const mediator = createMediator({ apiKey: "test-key" });
-    const answer = await mediator.createRealtimeSession({ sdp: "v=0\r\ns=-\r\n", language: "es" });
+    const answer = await asAiUser({ userId: providerUser.id }, () => mediator.createRealtimeSession({ sdp: "v=0\r\ns=-\r\n", language: "es" }));
     assert.match(answer, /^v=0/);
     assert.equal(session.type, "realtime");
     assert.equal(session.model, "gpt-realtime");
@@ -210,9 +215,11 @@ before(async () => {
   server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  providerUser = (await createPair("ProviderA", "ProviderB")).a.user;
 });
 
 after(async () => {
+  server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
   await rm(temporaryDirectory, { recursive: true, force: true });
 });
@@ -397,7 +404,8 @@ test("agreement approval, commitment completion, and outcome review require both
   assert.equal(finalized.outcome.learnedPattern, "Choosing the time in advance helped in this situation.");
 });
 
-test("quick demo rooms require two recording consents and isolate guest capabilities", async () => {
+test("quick demo rooms require two recording consents and isolate guest capabilities", async (t) => {
+  mockModeration(t);
   const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "remote", language: "zh", nameA: "红方" } });
   assert.equal(createdResponse.status, 201, JSON.stringify(createdResponse.payload));
   assert.match(createdResponse.headers.get("set-cookie") || "", /toward_us_demo=.*HttpOnly.*SameSite=Lax/);
@@ -418,9 +426,9 @@ test("quick demo rooms require two recording consents and isolate guest capabili
   const partnerId = joinedResponse.payload.room.currentParticipantId;
 
   await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: hostCookie, body: { text: "还没同意。" }, expectedStatus: 409 });
-  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { participantId: partnerId }, expectedStatus: 403 });
-  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { participantId: hostId } });
-  const bothConsented = await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: partnerCookie, body: { participantId: partnerId } });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: partnerId }, expectedStatus: 403 });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: hostId } });
+  const bothConsented = await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: partnerCookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: partnerId } });
   assert.equal(bothConsented.room.allConsented, true);
 
   await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: hostCookie, body: { text: "我希望先说清楚事实。" }, expectedStatus: 201 });
@@ -434,7 +442,8 @@ test("quick demo rooms require two recording consents and isolate guest capabili
   await request(`/api/demo/rooms/${code}`, { cookie: otherCookie, expectedStatus: 404 });
 });
 
-test("one-device demo preserves Spanish while the host attributes both perspectives", async () => {
+test("one-device demo preserves Spanish while the host attributes both perspectives", async (t) => {
+  mockModeration(t);
   const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "shared", language: "es", nameA: "Rojo", nameB: "Azul" } });
   assert.equal(createdResponse.status, 201, JSON.stringify(createdResponse.payload));
   const cookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
@@ -443,8 +452,8 @@ test("one-device demo preserves Spanish while the host attributes both perspecti
   assert.match(room.safety.message, /mediación/i);
   assert.equal(room.participants.length, 2);
   assert.equal(room.canControlAllSpeakers, true);
-  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[0].id } });
-  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[1].id } });
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: room.participants[0].id } });
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: room.participants[1].id } });
   await request(`/api/demo/rooms/${room.code}/messages`, { method: "POST", cookie, body: { speakerId: room.participants[0].id, text: "这是我的看法。" }, expectedStatus: 201 });
   const secondView = await request(`/api/demo/rooms/${room.code}/messages`, { method: "POST", cookie, body: { speakerId: room.participants[1].id, text: "这是对方的看法。" }, expectedStatus: 201 });
   assert.equal(secondView.room.messages[1].participantId, room.participants[1].id);
@@ -454,8 +463,8 @@ test("one-device demo voice obeys the manually selected speaker", async () => {
   const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "shared", language: "zh", nameA: "红方", nameB: "蓝方" } });
   const cookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
   const room = createdResponse.payload.room;
-  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[0].id } });
-  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: room.participants[1].id } });
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: room.participants[0].id } });
+  await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: room.participants[1].id } });
 
   const response = await fetch(`${baseUrl}/api/demo/rooms/${room.code}/audio`, {
     method: "POST",
@@ -472,11 +481,12 @@ test("one-device demo voice obeys the manually selected speaker", async () => {
   assert.equal(payload.room.messages.at(-1).participantId, room.participants[1].id);
 });
 
-test("one-device demo supports realtime turns and shared AI follow-up without an account", async () => {
+test("one-device demo supports realtime turns and shared AI follow-up without an account", async (t) => {
+  mockModeration(t);
   const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", headers: { "x-forwarded-for": "203.0.113.44" }, body: { mode: "shared", language: "zh", nameA: "小红", nameB: "小蓝" } });
   const cookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
   const room = createdResponse.payload.room;
-  for (const participant of room.participants) await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { participantId: participant.id } });
+  for (const participant of room.participants) await request(`/api/demo/rooms/${room.code}/consent`, { method: "POST", cookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: participant.id } });
 
   const session = await fetch(`${baseUrl}/api/demo/rooms/${room.code}/realtime`, { method: "POST", headers: { cookie, origin: baseUrl, "content-type": "application/sdp" }, body: "v=0\r\no=demo-offer" });
   assert.equal(session.status, 200, await session.text());
@@ -488,7 +498,8 @@ test("one-device demo supports realtime turns and shared AI follow-up without an
   assert.deepEqual(asked.room.aiConversation.map((entry) => entry.role), ["user", "assistant"]);
 });
 
-test("both demo participants can create accounts and jointly preserve the result", async () => {
+test("both demo participants can create accounts and jointly preserve the result", async (t) => {
+  mockModeration(t);
   const createdResponse = await rawRequest("/api/demo/rooms", { method: "POST", body: { mode: "remote", language: "en", nameA: "Demo A" } });
   const hostCookie = (createdResponse.headers.get("set-cookie") || "").split(";")[0];
   const code = createdResponse.payload.room.code;
@@ -496,8 +507,8 @@ test("both demo participants can create accounts and jointly preserve the result
   const joinedResponse = await rawRequest(`/api/demo/rooms/${code}/join`, { method: "POST", body: { name: "Demo B" } });
   const partnerCookie = (joinedResponse.headers.get("set-cookie") || "").split(";")[0];
   const partnerId = joinedResponse.payload.room.currentParticipantId;
-  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { participantId: hostId } });
-  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: partnerCookie, body: { participantId: partnerId } });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: hostCookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: hostId } });
+  await request(`/api/demo/rooms/${code}/consent`, { method: "POST", cookie: partnerCookie, body: { noticeVersion: AI_NOTICE_VERSION, participantId: partnerId } });
   await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: hostCookie, body: { text: "I need clarity." }, expectedStatus: 201 });
   await request(`/api/demo/rooms/${code}/messages`, { method: "POST", cookie: partnerCookie, body: { text: "I need time." }, expectedStatus: 201 });
   await request(`/api/demo/rooms/${code}/analyze`, { method: "POST", cookie: hostCookie });
@@ -574,6 +585,7 @@ const fakeMediator = {
 async function createPair(firstName, secondName) {
   const a = await register(firstName);
   const b = await register(secondName);
+  for (const person of [a, b]) await request("/api/privacy/ai-consent", { method: "POST", cookie: person.cookie, body: { agree: true, noticeVersion: AI_NOTICE_VERSION } });
   const invitation = await request("/api/partner/invitations", { method: "POST", cookie: a.cookie, expectedStatus: 201 });
   await request("/api/partner/accept", { method: "POST", cookie: b.cookie, body: { code: invitation.pairing.invitation.code } });
   return { a, b };

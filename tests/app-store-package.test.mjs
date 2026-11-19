@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 // docs/app-store/ is pasted into App Store Connect as is: keep it within Apple's field limits, keep the privacy answers in
 // step with the privacy manifest that ships in the app, and keep the screenshots at sizes App Store Connect accepts.
-const doc = (name) => readFileSync(new URL(`../docs/app-store/${name}`, import.meta.url), "utf8");
+const doc = (name) => readFileSync(new URL(`../docs/app-store/${name}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const section = (text, heading) => {
   const start = text.indexOf(`\n## ${heading}\n`);
   assert.notEqual(start, -1, heading);

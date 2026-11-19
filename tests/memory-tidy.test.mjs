@@ -5,7 +5,6 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
-import { personFor, personSubject } from "../server/people.mjs";
 import { profileContext } from "../server/profile.mjs";
 import { searchMemory } from "../server/memory-search.mjs";
 import { tidyMemory } from "../server/memory-tidy.mjs";
@@ -20,17 +19,20 @@ async function setup(t) {
   const store = await createFileStore(join(directory, "store.json"));
   const user = { id: randomUUID(), name: "Alex" };
   await store.createUser({ ...user, email: `${user.id}@example.invalid`, passwordHash: "test", createdAt: new Date().toISOString() });
-  const alex = await store.transaction(`user:${user.id}`, (tx) => personFor(tx, user.id, "Alex Chen"));
-  const note = async (text, saidAt, extra = {}) => { const record = createRelationshipRecord({ relationshipId: null, userId: user.id, ownerUserId: user.id, visibility: "private", aiAccessScope: "private", status: "active", kind: "profile", subjectUserId: personSubject(alex.id), category: "likes", text, evidence: { saidAt }, ...extra }); await store.createRelationshipRecord("memories", record); return record; };
-  return { store, user, alex, note };
+  const note = async (text, saidAt, extra = {}) => { const record = createRelationshipRecord({ relationshipId: null, userId: user.id, ownerUserId: user.id, visibility: "private", aiAccessScope: "private", status: "active", kind: "profile", subjectUserId: user.id, category: "likes", text, evidence: { saidAt }, ...extra }); await store.createRelationshipRecord("memories", record); return record; };
+  return { store, user, note };
 }
 
 test("duplicates fold into one, an outdated note is kept as what used to be true, and both are found as such", async (t) => {
-  const { store, user, alex, note } = await setup(t);
+  const { store, user, note } = await setup(t);
   const coffee = [await note("喜欢喝咖啡", "2025-01-01T00:00:00Z"), await note("爱喝咖啡", "2025-02-01T00:00:00Z"), await note("每天都要喝咖啡", "2025-03-01T00:00:00Z")];
   const shanghai = await note("住在上海", "2025-01-05T00:00:00Z", { category: "other" });
   const beijing = await note("搬到北京了", "2026-10-20T00:00:00Z", { category: "other" });
   for (const thing of ["爬山", "猫", "爵士乐", "日料"]) await note(`喜欢${thing}`, "2025-04-01T00:00:00Z");
+  // Older releases could save profiles about non-users. Even a large legacy group must stay out of model input.
+  for (const subjectUserId of ["person:old-contact", `partner-of:${user.id}`]) {
+    for (let i = 0; i < 10; i++) await note(`legacy contact note ${i}`, "2025-01-01", { subjectUserId });
+  }
   let calls = 0, seen = null;
   const mediator = { structured: async ({ input }) => { calls += 1; seen = JSON.parse(input); return { merges: [{ keep: coffee[2].id, drop: [coffee[0].id, coffee[1].id], text: "每天都要喝咖啡" }], outdated: [{ old: shanghai.id, by: beijing.id }, { old: beijing.id, by: shanghai.id }] }; } };
   assert.equal(await tidyMemory({ store, mediator, userId: user.id }), 3);
@@ -43,7 +45,7 @@ test("duplicates fold into one, an outdated note is kept as what used to be true
   assert.equal(of(beijing.id).status, "active", "a newer note is never marked outdated by an older one");
   assert.deepEqual(of(beijing.id).past, [{ text: "住在上海", saidAt: "2025-01-05T00:00:00Z", until: "2026-10-20T00:00:00Z" }]);
 
-  const known = (await profileContext(store, user.id)).people.find((person) => person.id === alex.id).facts.map((item) => item.fact);
+  const known = (await profileContext(store, user.id)).me.map((item) => item.fact);
   assert.ok(known.includes("搬到北京了") && !known.includes("住在上海") && known.filter((fact) => fact.includes("咖啡")).length === 1);
   assert.match(await searchMemory({ store, userId: user.id, query: "住在上海" }), /以前是这样，2026-10-20 起变成：搬到北京了/);
 

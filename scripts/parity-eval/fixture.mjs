@@ -15,6 +15,7 @@ import { refreshPortraits } from "../../server/portraits.mjs";
 import { tidyMemory } from "../../server/memory-tidy.mjs";
 import { FILLER } from "../memory-eval/cases.mjs";
 import { recordChecks } from "./evidence.mjs";
+import { AI_NOTICE_VERSION } from "../../server/ai-permission.mjs";
 import { fixtureValue, writeChecks } from "./external-cases.mjs";
 import { appendTogetherMessage } from "../../server/together-domain.mjs";
 import { agreementFlow } from "./agreement-flow.mjs";
@@ -71,6 +72,7 @@ export async function createHarness(directory, { requestContext, mediator, clien
   }
   async function account(name) {
     const { result, cookie } = await call("/auth/register", { name, adultConfirmed: true, email: `parity-${++accounts}-${randomUUID()}@example.test`, password: "synthetic local parity only" });
+    await call("/privacy/ai-consent", { agree: true, noticeVersion: AI_NOTICE_VERSION }, cookie);
     return { user: result.user, cookie };
   }
 const DAY = 24 * 60 * 60 * 1000;

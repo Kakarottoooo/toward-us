@@ -48,24 +48,28 @@ const reading = (people, chase = {}) => ({
     { id: "someone-else", kind: "mutual", chase: "even", depth: "deep", shares: "even", view: "x", self: "", quote: { text: "", who: "me", date: "" }, traits: [], turns: [] }],
 });
 
-test("在了解的人 is read by itself with counted numbers, keeps who is chasing whom, and shows who moved", async (t) => {
+test("the private directory never displays a legacy comparison, its chat numbers or changes in stage", async (t) => {
   const inputs = [];
   let people = [], chase = {};
   const mediator = { structured: async (args) => { inputs.push(JSON.parse(args.input)); return reading(people, chase); } };
   const { comparer, users, call, add, note, chat } = await setup(t, mediator);
   const lily = await add("Lily");
-  assert.equal((await call("/people/board")).status, "few", "one person is nothing to compare");
+  assert.equal((await call("/people/board")).status, "directory");
+  assert.equal((await comparer.current(users[0].id)).status, "few");
   const jie = await add("阿杰");
   people = [lily, jie];
   await note(jie, "2026-11-08 问我们现在算什么", "history", "我想知道我们现在算什么");
   // Screenshots: no times, so only what text shows is counted.
   await chat(jie, [["阿杰", "今天跟你看完电影走回来那段路，我一直在想一件事"], ["Alex", "什么事？"], ["阿杰", "我想知道我们现在算什么"], ["阿杰", "你身边是不是还有别人在聊？"]]);
 
-  await call("/people"); // listing them starts the reading; nobody picks anyone
-  await new Promise((r) => setTimeout(r, 300));
+  await call("/people");
   await comparer.settle(users[0].id);
-  assert.equal(inputs.length, 1, "the listing alone started it");
-  const board = await call("/people/board?language=zh");
+  assert.equal(inputs.length, 0, "listing contacts never starts a comparison");
+  // Build an old reading directly to exercise data kept before the directory change.
+  await comparer.current(users[0].id);
+  await comparer.settle(users[0].id);
+  assert.equal(inputs.length, 1);
+  const board = await comparer.current(users[0].id);
   assert.equal(board.status, "ready"); assert.equal(board.stale, false);
   assert.deepEqual(board.reading.people.map((row) => row.name).sort(), ["Lily", "阿杰"], "a person the notes do not have is dropped");
   assert.deepEqual(board.reading.insights.map((item) => item.headline), ["你和主动的人在一起最放松。"]);
@@ -77,34 +81,36 @@ test("在了解的人 is read by itself with counted numbers, keeps who is chasi
   assert.deepEqual(sent.history, [{ text: "2026-11-08 问我们现在算什么", quote: "我想知道我们现在算什么" }], "the reading sees the exact words");
   assert.deepEqual(sent.numbers.questions, { me: 1, them: 1 });
   assert.equal(inputs[0].people.find((person) => person.name === "Lily").numbers, null);
-  await call("/people/board?language=zh");
+  await comparer.current(users[0].id);
   assert.equal(inputs.length, 1, "unchanged notes reuse the reading");
 
   // Lily drifts to the member chasing her: who moved is kept on her record, with when.
   chase = { Lily: "you_much" };
   await note(lily, "2026-11-10 又是你先开口", "history");
-  assert.equal((await call("/people/board?language=zh")).stale, true, "the last reading shows while a new one is made");
+  assert.equal((await comparer.current(users[0].id)).stale, true, "the last reading shows while a new one is made");
   await comparer.settle(users[0].id);
   const moved = (await call("/people")).people.find((person) => person.id === lily.id);
-  assert.deepEqual([moved.previousChase, moved.chase, moved.stage], ["even", "you_much", "you_chase"]);
-  assert.ok(moved.chaseAt);
-
+  for (const field of ["stage", "previousChase", "chase", "chaseAt"]) assert.ok(!(field in moved));
+  const publicBoard = await call("/people/board?language=zh");
+  assert.equal(publicBoard.status, "directory");
+  assert.ok(!("reading" in publicBoard) && !("numbers" in publicBoard));
   const card = await call(`/people/${jie.id}?language=zh`);
-  assert.equal(card.read.view, "阿杰 的看法", "a person's page carries Pinky's read of them");
-  assert.equal(card.read.turns[0].title, "你坦白还在和别人聊");
-  assert.equal(card.numbers.them.messages, 3);
+  assert.equal(card.read, null);
+  assert.equal(card.numbers, null);
+  assert.deepEqual(card.history, []);
   const other = await call("/people/board", { userId: users[1].id });
-  assert.equal(other.status, "few"); assert.deepEqual(other.people, [], "another member sees none of it");
+  assert.equal(other.status, "directory"); assert.deepEqual(other.people, [], "another member sees none of it");
 });
 
-test("someone newly risky puts a dot on the menu until the page is opened", async (t) => {
+test("a legacy risk classification does not produce a contact alert", async (t) => {
   let people = [];
   const mediator = { structured: async () => ({ ...reading(people), people: reading(people).people.map((row) => row.id === people[0]?.id ? { ...row, kind: "risk" } : row) }) };
   const { comparer, users, call, add } = await setup(t, mediator);
   people = [await add("Mia"), await add("阿杰")];
-  await call("/people/board");
+  await comparer.current(users[0].id);
   await comparer.settle(users[0].id);
-  assert.equal((await call("/people")).alerts, 1);
+  assert.equal((await comparer.current(users[0].id)).reading.people.find((p) => p.id === people[0].id).kind, "risk");
+  assert.equal((await call("/people")).alerts, 0);
   await call("/people/board?seen=1");
   assert.equal((await call("/people")).alerts, 0);
 });
@@ -114,9 +120,10 @@ test("a reading naming too few known people is not shown, and a failure is not r
   const mediator = { structured: async () => { calls += 1; return { insights: [], people: [{ ...reading(people).people[0] }] }; } };
   const { comparer, users, call, add } = await setup(t, mediator);
   people = [await add("Lily"), await add("阿杰")];
-  await call("/people/board");
+  await comparer.current(users[0].id);
   await comparer.settle(users[0].id);
-  assert.equal((await call("/people/board")).status, "failed");
+  assert.equal((await comparer.current(users[0].id)).status, "failed");
+  assert.equal((await call("/people/board")).status, "directory");
   await comparer.settle(users[0].id);
   assert.equal(calls, 1);
 });

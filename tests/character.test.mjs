@@ -22,7 +22,13 @@ async function couple(store, ids) {
 async function fixture(t) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "character-"));
-  process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
+  const media = join(directory, "media");
+  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
+  process.env.TOWARD_US_MEDIA_DIR = media;
+  t.after(() => {
+    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
+    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
+  });
   const store = await createFileStore(join(directory, "store.json"));
   const [a, b, c, d, e] = Array.from({ length: 5 }, () => randomUUID());
   for (const id of [a, b, c, d, e]) await store.createUser({ id, email: `${id}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
@@ -85,7 +91,7 @@ test("the couple's character is made in the background and shown only to its two
   assert.equal(record.ownerUserId, a);
   assert.equal(record.provenance.source, "member_upload");
   const fileId = ready.image.still.split("/")[4];
-  assert.deepEqual((await readdir(join(`${join(directory, "store.json")}.media`, "characters", fileId))).sort(), ["motion.webp", "still.png"], "the original photo is not kept");
+  assert.deepEqual((await readdir(join(directory, "media", "characters", fileId))).sort(), ["motion.webp", "still.png"], "the original photo is not kept");
 });
 
 test("files that are not pictures, members without a partner and a server that cannot make pictures are refused", async (t) => {

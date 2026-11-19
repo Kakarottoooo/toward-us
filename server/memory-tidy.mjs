@@ -1,6 +1,5 @@
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { listPeople, personSubject } from "./people.mjs";
-import { isProfileFact } from "./profile.mjs";
+import { visibleTo } from "./profile.mjs";
 import { refreshPortraits } from "./portraits.mjs";
 import { terms } from "./memory-search.mjs";
 
@@ -52,11 +51,10 @@ export function batchFor(notes, since) {
 }
 
 async function subjectsOf(store, userId) {
-  const notes = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => isProfileFact(item) && item.status === "active" && !item.archivedAt && !item.deletedAt && item.visibility === "private" && item.ownerUserId === userId);
+  const notes = (await store.listRelationshipRecordsForUser("memories", userId)).filter((item) => item.visibility === "private" && item.aiAccessScope === "private" && visibleTo(item, userId, null));
   const keys = new Map();
   for (const note of notes) { const key = note.subjectUserId || "us"; keys.set(key, [...(keys.get(key) || []), note]); }
-  const live = new Set((await listPeople(store, userId)).map((person) => personSubject(person.id)));
-  return [...keys.entries()].filter(([key]) => !key.startsWith("person:") || live.has(key));
+  return keys;
 }
 
 async function readState(store, userId) {

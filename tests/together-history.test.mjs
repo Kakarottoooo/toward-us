@@ -109,7 +109,7 @@ test("shared recall and HTTP jump use the same membership boundary, including ar
   for (let index = 0; index < 210; index++) await f.say(f.b, `other ${index}`);
   for (const userId of [f.a, f.b]) {
     const found = await searchMemoryResults({ store: f.store, userId, channel: "us", query: "蓝色风筝" });
-    assert.match(found.findings, /约定是什么.*\nPinky 当时答.*每周一起散步/);
+    assert.match(found.findings, /约定是什么.*\nOurever 当时答.*每周一起散步/);
     assert.doesNotMatch(found.findings, /PRIVATE_SECRET/);
     assert.equal(found.sources[0].messageId, question.id);
     const result = await f.request(`/together/locate?messageId=${question.id}`, "GET", null, userId);

@@ -30,7 +30,13 @@ test("photos become one memory per day and place, with a few spread across it", 
 test("the phone gets the next memories to make; each is made once, in the shared album, and the partner is told once", async (t) => {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "photo-memories-"));
-  process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
+  const media = join(directory, "media");
+  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
+  process.env.TOWARD_US_MEDIA_DIR = media;
+  t.after(() => {
+    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
+    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
+  });
   const store = await createFileStore(join(directory, "store.json"));
   const ids = [randomUUID(), randomUUID()];
   for (const id of ids) await store.createUser({ id, email: `${id}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
@@ -44,7 +50,7 @@ test("the phone gets the next memories to make; each is made once, in the shared
   app.use("/api", createPhotoRouter({ store })); app.use("/api", createSpaceRouter({ store })); app.use("/api", memories);
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
-  t.after(async () => { await new Promise((r) => server.close(r)); delete process.env.TOWARD_US_DATA_FILE; await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
   const url = (path) => `http://127.0.0.1:${server.address().port}/api${path}`;
   const post = async (path, body, userId = ids[0]) => { const response = await fetch(url(path), { method: "POST", headers: { "x-user": userId, "content-type": "application/json" }, body: JSON.stringify(body) }); return { status: response.status, body: await response.json() }; };
   const upload = async (scope) => (await (await fetch(url(`/photos?scope=${scope}`), { method: "POST", headers: { "x-user": ids[0], "content-type": "image/jpeg" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]) })).json()).photo.id;
@@ -85,13 +91,19 @@ test("a photo can be fetched small for bubbles and walls, made once and kept", a
   const { readdir } = await import("node:fs/promises");
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "photo-thumbs-"));
-  process.env.TOWARD_US_DATA_FILE = join(directory, "store.json");
+  const media = join(directory, "media");
+  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
+  process.env.TOWARD_US_MEDIA_DIR = media;
+  t.after(() => {
+    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
+    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
+  });
   const store = await createFileStore(join(directory, "store.json"));
   const userId = randomUUID();
   await store.createUser({ id: userId, email: `${userId}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
   const app = express(); app.use((req, _res, next) => { req.auth = { user: { id: userId } }; next(); }); app.use("/api", createPhotoRouter({ store }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
-  t.after(async () => { await new Promise((r) => server.close(r)); delete process.env.TOWARD_US_DATA_FILE; await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
   const url = (path) => `http://127.0.0.1:${server.address().port}/api${path}`;
   const big = await sharp({ create: { width: 1280, height: 960, channels: 3, background: { r: 228, g: 106, b: 154 } } }).jpeg({ quality: 90 }).toBuffer();
   const id = (await (await fetch(url("/photos"), { method: "POST", headers: { "content-type": "image/jpeg" }, body: big })).json()).photo.id;
@@ -100,6 +112,6 @@ test("a photo can be fetched small for bubbles and walls, made once and kept", a
   const bytes = Buffer.from(await small.arrayBuffer()), meta = await sharp(bytes).metadata();
   assert.deepEqual([meta.width, meta.height], [240, 240], "a square, cropped to fill a tile");
   assert.ok(bytes.length < big.length / 5);
-  assert.ok((await readdir(`${process.env.TOWARD_US_DATA_FILE}.media`)).some((name) => name.endsWith(".w240.jpg")), "kept for the next time");
+  assert.ok((await readdir(media)).some((name) => name.endsWith(".w240.jpg")), "kept for the next time");
   assert.equal((await sharp(Buffer.from(await (await fetch(url(`/photos/${id}?w=999`))).arrayBuffer())).metadata()).width, 1280, "other sizes get the photo itself");
 });

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mockModeration } from "./helpers/moderation.mjs";
+import { asAiUser } from "../server/ai-budget.mjs";
+import { setAiConsent } from "../server/privacy-router.mjs";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -18,14 +21,22 @@ async function fixture(t, { configured = true, planner = () => ({ reply: "Saved 
   const directory = await mkdtemp(join(base, "voice-"));
   const store = await createFileStore(join(directory, "store.json"));
   const people = [{ id: randomUUID(), name: "Alex" }, { id: randomUUID(), name: "Blair" }, { id: randomUUID(), name: "Solo" }];
-  for (const person of people) await store.createUser({ ...person, email: `${person.id}@example.invalid`, passwordHash: "test", createdAt: new Date().toISOString() });
+  for (const person of people) {
+    await store.createUser({ ...person, email: `${person.id}@example.invalid`, passwordHash: "test", createdAt: new Date().toISOString() });
+    await store.transaction(`user:${person.id}`, tx => setAiConsent(tx, person.id, true));
+  }
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: people[0].id, role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: people[0].id, expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, people[1].id, new Date().toISOString());
   const provider = { configured, started: [], hungUp: [], async start(input) { this.started.push(input); return { providerId: `live_${this.started.length}`, sdp: "v=0\r\nanswer" }; }, async hangup(id) { this.hungUp.push(id); } };
   const mediator = { planAssistantTurn: async (context) => planner(context), continueTogether: async (context) => shared(context) };
   const app = express(); app.use(express.json());
-  app.use((req, _res, next) => { const person = people.find((item) => item.id === req.headers["x-user"]); if (person) req.auth = { user: person }; next(); });
+  app.use((req, _res, next) => {
+    const person = people.find((item) => item.id === req.headers["x-user"]);
+    if (!person) return next();
+    req.auth = { user: person };
+    asAiUser({ userId: person.id, language: req.body?.language }, next);
+  });
   const assistant = createAssistantRouter({ store, mediator, reminderService: createReminderService({ store }) });
   app.use("/api", assistant);
   app.use("/api", createTogetherRouter({ store, mediator }));
@@ -77,7 +88,7 @@ test("a call in Us mediates for everyone in the room, and its captions are saved
   const us = (await f.request("/together?language=en", "GET", null, f.people[1].id)).body.conversation.messages;
   const record = us.find((message) => message.kind === "call");
   assert.ok(record, "the partner sees the call");
-  assert.equal(record.i18n.en, "Call with Pinky · 1 min");
+  assert.equal(record.i18n.en, "Call with Ourever · 1 min");
   assert.deepEqual(record.call.rows.map((row) => row.text), ["I'm Alex", "I'm Blair", "Thank you both."]);
 });
 
@@ -102,6 +113,7 @@ test("the call starts from at most 20 recent messages within a size budget, spea
 
 test("a call's minutes go into the AI cost ledger, and the kill switch keeps a new call from opening", async (t) => {
   const f = await fixture(t);
+  mockModeration(t);
   installAiLedger({ store: f.store, log: { log() {}, warn() {}, error() {} } });
   t.after(() => installAiLedger({}));
   const started = await f.start({ channel: "us" });

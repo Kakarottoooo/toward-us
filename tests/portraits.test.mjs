@@ -22,33 +22,35 @@ async function setup(t) {
   return { store, users, note };
 }
 
-test("a person with enough notes gets a standing portrait and timeline, in context for its owner only", async (t) => {
+test("portraits and timelines use the member’s notes and exclude legacy contact notes", async (t) => {
   const { store, users, note } = await setup(t);
   const lin = await store.transaction(`user:${users[0].id}`, (tx) => personFor(tx, users[0].id, "Lin"));
-  await note(personSubject(lin.id), "对芒果过敏", "food");
-  for (const thing of ["爬山", "黑白摄影", "猫", "爵士乐", "咖啡"]) await note(personSubject(lin.id), `喜欢${thing}`);
-  await note(personSubject(lin.id), "2025-02-14 第一次见面，聊到店关门", "history");
+  for (const text of ["Lin A", "Lin B", "Lin C", "Lin D", "Lin E", "Lin F"]) await note(personSubject(lin.id), text);
+  await note(users[0].id, "对芒果过敏", "food");
+  for (const thing of ["爬山", "黑白摄影", "猫", "爵士乐", "咖啡"]) await note(users[0].id, `喜欢${thing}`);
+  await note(users[0].id, "2025-02-14 第一次见面，聊到店关门", "history");
   const inputs = [];
-  const mediator = { structured: async ({ input, instructions }) => { inputs.push({ input: JSON.parse(input), instructions }); return { portrait: "Lin：对芒果过敏；爱爬山、黑白摄影、猫。", timeline: [{ period: "2025-02", text: "第一次见面，聊到店关门" }] }; } };
+  const mediator = { structured: async ({ input, instructions }) => { inputs.push({ input: JSON.parse(input), instructions }); return { portrait: "Alex：对芒果过敏；爱爬山、黑白摄影、猫。", timeline: [{ period: "2025-02", text: "第一次见面，聊到店关门" }] }; } };
   await refreshPortraits({ store, mediator, userId: users[0].id });
   assert.equal(inputs.length, 1, "only subjects with enough notes are drawn");
-  assert.match(inputs[0].instructions, /Lin/);
+  assert.ok(!JSON.stringify(inputs).includes("Lin A"));
   assert.match(inputs[0].instructions, /do not carry forward an old duration/);
   assert.match(inputs[0].instructions, /Omitted details of the replacement are unknown/);
   assert.deepEqual(inputs[0].input.history, ["2025-02-14 第一次见面，聊到店关门"]);
   assert.ok(inputs[0].input.facts.some((fact) => fact.text === "对芒果过敏" && fact.saidOn === "2025-03-01"));
 
   const known = await profileContext(store, users[0].id);
-  assert.match(known.people.find((person) => person.id === lin.id).portrait.portrait, /芒果过敏/);
-  assert.deepEqual(known.people.find((person) => person.id === lin.id).portrait.timeline, [{ period: "2025-02", text: "第一次见面，聊到店关门" }]);
+  assert.match(known.portraits.me.portrait, /芒果过敏/);
+  assert.deepEqual(known.portraits.me.timeline, [{ period: "2025-02", text: "第一次见面，聊到店关门" }]);
+  assert.equal(known.people.find((person) => person.id === lin.id).portrait, undefined);
   assert.deepEqual(await readPortraits(store, users[1].id), {}, "another member never reads it");
   assert.equal((await profileContext(store, users[1].id)).people.length, 0);
 
   // Not redrawn for one new note, redrawn once enough is new.
-  await note(personSubject(lin.id), "喜欢露营");
+  await note(users[0].id, "喜欢露营");
   await refreshPortraits({ store, mediator, userId: users[0].id });
   assert.equal(inputs.length, 1);
-  for (const thing of ["日料", "跑步", "看展", "乐高"]) await note(personSubject(lin.id), `喜欢${thing}`);
+  for (const thing of ["日料", "跑步", "看展", "乐高"]) await note(users[0].id, `喜欢${thing}`);
   await refreshPortraits({ store, mediator, userId: users[0].id });
   assert.equal(inputs.length, 2);
 });

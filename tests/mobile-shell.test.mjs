@@ -26,7 +26,7 @@ test("when the server can't be reached the shell shows a bundled offline page th
   assert.equal(config.server.errorPath, "offline.html");
   assert.equal(offline, offlinePage("https://pinky.example.com"));
   assert.match(offline, /var SERVER = "https:\/\/pinky\.example\.com";/);
-  for (const words of ["暂时连不上 Pinky", "Can't reach Pinky right now", "No podemos conectar con Pinky", "重试", "Try again", "Reintentar"]) assert.ok(offline.includes(words), words);
+  for (const words of ["暂时连不上 Ourever", "Can't reach Ourever right now", "No podemos conectar con Ourever", "重试", "Try again", "Reintentar"]) assert.ok(offline.includes(words), words);
   assert.match(offline, /addEventListener\("online"/);
   assert.match(offline, /location\.replace\(SERVER \+ "\/"\)/);
   assert.doesNotMatch(offline, /<script[^>]+src=|<link[^>]+href=/, "the page must draw with no network");
@@ -38,7 +38,8 @@ test("the iPhone app declares no non-exempt encryption, arm64, portrait iPhone o
   assert.match(plist, /<key>UIRequiredDeviceCapabilities<\/key>\s*<array>\s*<string>arm64<\/string>\s*<\/array>/);
   assert.match(plist, /<key>UISupportedInterfaceOrientations<\/key>\s*<array>\s*<string>UIInterfaceOrientationPortrait<\/string>\s*<\/array>/);
   const project = ios("App.xcodeproj/project.pbxproj");
-  assert.equal((project.match(/TARGETED_DEVICE_FAMILY = 1;/g) || []).length, 2);
+  const targets = [...project.matchAll(/INFOPLIST_FILE = (App|PinkyWidget)\/Info\.plist;[^}]+?TARGETED_DEVICE_FAMILY = ([^;]+);/g)];
+  assert.deepEqual(targets.map((match) => [match[1], match[2]]).sort(), [["App", "1"], ["App", "1"], ["PinkyWidget", "1"], ["PinkyWidget", "1"]]);
   assert.doesNotMatch(project, /TARGETED_DEVICE_FAMILY = "1,2"/);
 });
 
@@ -49,9 +50,10 @@ test("the privacy manifest ships in the app bundle and lists what Pinky collects
   const manifest = ios("App/PrivacyInfo.xcprivacy");
   assert.match(manifest, /<key>NSPrivacyTracking<\/key>\s*<false\/>/);
   assert.match(manifest, /<key>NSPrivacyTrackingDomains<\/key>\s*<array\/>/);
-  for (const type of ["EmailAddress", "Name", "UserID", "Health", "PreciseLocation", "PhotosorVideos", "AudioData", "EmailsOrTextMessages", "OtherUserContent", "PurchaseHistory", "ProductInteraction", "CustomerSupport", "PhoneNumber"]) {
+  for (const type of ["EmailAddress", "Name", "UserID", "Health", "PreciseLocation", "PhotosorVideos", "AudioData", "EmailsOrTextMessages", "OtherUserContent", "DeviceID", "CrashData", "ProductInteraction", "CustomerSupport", "PhoneNumber"]) {
     assert.match(manifest, new RegExp(`<string>NSPrivacyCollectedDataType${type}</string>`), type);
   }
+  assert.doesNotMatch(manifest, /<string>NSPrivacyCollectedDataTypePurchaseHistory<\/string>/, "the free iOS release does not collect purchase history");
   assert.doesNotMatch(manifest, /NSPrivacyCollectedDataTypeTracking<\/key>\s*<true\/>/);
   assert.doesNotMatch(manifest, /PurposeThirdPartyAdvertising|PurposeDeveloperAdvertising/);
 });

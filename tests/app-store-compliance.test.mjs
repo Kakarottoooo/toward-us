@@ -1,3 +1,4 @@
+import { AI_NOTICE_VERSION } from "../server/ai-permission.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -29,19 +30,22 @@ async function fixture(run) {
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
 }
 
-test("third-party AI consent is given on sign-up or later, can be withdrawn, and every change is in the history", () => fixture(async ({ request, register }) => {
+test("third-party AI consent requires a separate current notice after sign-up, can be withdrawn, and every change is in the history", () => fixture(async ({ request, register }) => {
   const agreed = await register("agreed", { aiConsent: true });
-  assert.match(agreed.user.aiConsentAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(agreed.user.aiConsentAt, null, "registration cannot grant AI permission");
+  await request("/api/privacy/ai-consent", { method: "POST", cookie: agreed.cookie, body: { agree: true }, status: 409 });
+  const confirmed = await request("/api/privacy/ai-consent", { method: "POST", cookie: agreed.cookie, body: { agree: true, noticeVersion: AI_NOTICE_VERSION } });
+  assert.match(confirmed.aiConsentAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.match((await request("/api/auth/me", { cookie: agreed.cookie })).user.aiConsentAt, /^\d{4}-/);
 
-  // An account without consent (made before sign-up asked, or via the API) has none until it agrees.
+  // Consent belongs to the authenticated person. The other account still has none.
   const later = await register("later");
   assert.equal(later.user.aiConsentAt, null);
   assert.equal((await request("/api/privacy", { cookie: later.cookie })).aiConsentAt, null);
   await request("/api/privacy/ai-consent", { method: "POST", cookie: later.cookie, body: { agree: "yes" }, status: 400 });
-  const given = await request("/api/privacy/ai-consent", { method: "POST", cookie: later.cookie, body: { agree: true } });
+  const given = await request("/api/privacy/ai-consent", { method: "POST", cookie: later.cookie, body: { agree: true, noticeVersion: AI_NOTICE_VERSION } });
   assert.match(given.aiConsentAt, /^\d{4}-/);
-  assert.deepEqual(given.aiProviders, ["OpenAI", "Anthropic"]);
+  assert.deepEqual(given.aiProviders, ["OpenAI", "Anthropic", "Replicate"]);
   assert.equal((await request("/api/auth/me", { cookie: later.cookie })).user.aiConsentAt, given.aiConsentAt);
 
   const withdrawn = await request("/api/privacy/ai-consent", { method: "POST", cookie: later.cookie, body: { agree: false } });
@@ -55,7 +59,7 @@ test("third-party AI consent is given on sign-up or later, can be withdrawn, and
 }));
 
 test("a report about the partner or Pinky goes to the team's queue marked urgent, skipping the model's sorting", () => fixture(async ({ store, request, register }) => {
-  const member = await register("reporter", { aiConsent: true });
+  const member = await register("reporter");
   await request("/api/feedback", { method: "POST", cookie: member.cookie, body: { report: "partner" }, status: 400 });
   const sent = await request("/api/feedback", { method: "POST", cookie: member.cookie, body: { report: "partner", text: "They keep sending threats.", context: { view: "settings-report" } }, status: 201 });
   assert.equal(sent.feedback.kind, "report");
@@ -73,25 +77,26 @@ test("a report about the partner or Pinky goes to the team's queue marked urgent
 
 test("privacy policy, terms and support are public pages in all three languages, naming the AI providers", () => fixture(async ({ request }) => {
   for (const page of ["privacy", "terms", "support"]) {
-    for (const [lang, words] of [["zh", "返回 Pinky"], ["en", "Back to Pinky"], ["es", "Volver a Pinky"]]) {
+    for (const [lang, words] of [["zh", "返回 Ourever"], ["en", "Back to Ourever"], ["es", "Volver a Ourever"]]) {
       const { html } = await request(`/${page}?lang=${lang}`);
       assert.ok(html.includes(words), `${page} ${lang}`);
       assert.ok(html.includes(`data-testid="legal-${page}"`));
     }
   }
-  assert.ok((await request("/privacy", { headers: { "accept-language": "es-MX,es;q=0.9" } })).html.includes("Política de privacidad de Pinky"));
+  assert.ok((await request("/privacy", { headers: { "accept-language": "es-MX,es;q=0.9" } })).html.includes("Política de privacidad de Ourever"));
   const policy = (await request("/privacy?lang=en")).html;
-  for (const words of ["OpenAI", "Anthropic", "Delete account", "18 and older", "never uploaded", "We do not sell your data"]) assert.ok(policy.includes(words), words);
+  for (const words of ["OpenAI", "Anthropic", "Replicate", "Delete account", "18 and older", "never uploaded", "We do not sell your data"]) assert.ok(policy.includes(words), words);
   assert.ok((await request("/terms?lang=zh")).html.includes("24 小时内"));
 }));
 
 test("the contact line uses the configured support address, and nothing else is a placeholder", () => {
   const withEmail = renderLegalPage("support", "en", { PINKY_SUPPORT_EMAIL: "help@pinky.example", PINKY_OPERATOR: "Example Labs LLC" });
   assert.ok(withEmail.includes('href="mailto:help@pinky.example"'));
-  assert.ok(renderLegalPage("privacy", "en", { PINKY_OPERATOR: "Example Labs LLC" }).includes("Pinky is operated by Example Labs LLC."));
+  assert.ok(renderLegalPage("privacy", "en", { PINKY_OPERATOR: "Example Labs LLC" }).includes("Ourever is operated by Example Labs LLC."));
   const without = renderLegalPage("support", "zh", {});
+  assert.ok(without.includes('href="mailto:ziwei@witnora.com"'));
   assert.ok(without.includes("设置 → 举报或求助"));
-  assert.doesNotMatch(without + renderLegalPage("privacy", "es", {}), /TODO|TBD|lorem ipsum|\{\{|example\.com/);
-  assert.ok(renderLegalPage("privacy", "zh", {}).includes("Pinky 由 Pinky 团队 运营"));
+  assert.doesNotMatch(without + renderLegalPage("privacy", "es", {}), /\bTODO\b|\bTBD\b|lorem ipsum|\{\{|example\.com/);
+  assert.ok(renderLegalPage("privacy", "zh", {}).includes("Ourever 由 Witnora, Inc. 运营"));
   assert.ok(renderLegalPage("privacy", "en", { PINKY_OPERATOR: "<script>" }).includes("&lt;script&gt;"));
 });

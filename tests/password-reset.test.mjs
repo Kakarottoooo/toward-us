@@ -100,6 +100,6 @@ test("the email sender logs locally, stays quiet in production and never leaks t
   await live.send({ to: "a@example.test", subject: "Hello", text: "secret body" });
   assert.equal(call.url, "https://api.resend.com/emails");
   assert.equal(call.options.headers.authorization, "Bearer re_secret_key");
-  assert.equal(JSON.parse(call.options.body).from, "Pinky <onboarding@resend.dev>");
+  assert.equal(JSON.parse(call.options.body).from, "Ourever <onboarding@resend.dev>");
   assert.deepEqual(lines.slice(1), ["[email] delivery failed with status 422"]);
 });

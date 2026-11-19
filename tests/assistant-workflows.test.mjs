@@ -31,7 +31,7 @@ async function fixture(t, planner) {
   app.use("/api", createMemoryRouter({ store }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
-  t.after(async () => { await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
   const request = async (path, method = "GET", body, userId = ids[0]) => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { ...(userId ? { "x-user": userId } : {}), "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
@@ -176,7 +176,7 @@ test("spoken reminder creation, continuation and cancellation update one durable
   const restarted = await createFileStore(f.storePath); assert.equal((await restarted.getRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0])).messages.length, 6);
 });
 
-test("the private Pinky answers in the interface language the member picked, whatever they type, and says plainly when the model is down", async (t) => {
+test("the private Ourever assistant answers in the interface language the member picked, whatever they type, and says plainly when the model is down", async (t) => {
   // One language everywhere (founder 11-06): an English interface gets English, even when the member types Chinese.
   const f = await fixture(t, (context) => { if (/fail|出错/.test(context.messages.at(-1).text)) throw new Error("model down"); return { reply: "ok", actions: [] }; });
   const language = () => f.calls.at(-1)[1];
@@ -190,8 +190,8 @@ test("the private Pinky answers in the interface language the member picked, wha
   assert.match(assistantInstructions("zh"), /partner would read, written in Simplified Chinese/);
   assert.match(assistantInstructions("es"), /Reply in Spanish\./);
   // A failed model: a plain, current message in that language; nothing about forms that no longer exist.
-  let failed = await f.turn("fail"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky is unavailable right now. Nothing was changed; please try again later.");
-  await f.store.updateUserLanguage(f.ids[0], "zh"); failed = await f.turn("刚才出错了，再试一次吧"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Pinky 暂时不可用，什么都没有改动。请稍后再试。");
+  let failed = await f.turn("fail"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Ourever is unavailable right now. Nothing was changed; please try again later.");
+  await f.store.updateUserLanguage(f.ids[0], "zh"); failed = await f.turn("刚才出错了，再试一次吧"); assert.equal(failed.status, 503); assert.equal(failed.body.error, "Ourever 暂时不可用，什么都没有改动。请稍后再试。");
   assert.ok(!/表单|forms|formularios/.test(JSON.stringify(failed.body)));
   assert.equal((await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.length, 6, "a failed turn saves nothing");
 });

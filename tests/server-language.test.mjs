@@ -101,7 +101,7 @@ test("a browser reminder push follows the member's interface language, not the s
   await service.createReminder(userId, { title: "Cena", localDateTime: "2026-09-07T12:01", timezone: "UTC", frequency: "once" });
   time = new Date("2026-09-07T12:02Z");
   assert.equal((await service.runDue()).accepted, 1);
-  assert.equal(sent[0][1].body, "Tienes un recordatorio. Abre Pinky cuando quieras.");
+  assert.equal(sent[0][1].body, "Tienes un recordatorio. Abre Ourever cuando quieras.");
 });
 
 test("the little one's new level is announced in both members' languages", async (t) => {

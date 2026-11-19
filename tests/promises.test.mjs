@@ -1,3 +1,5 @@
+import { mockModeration } from "./helpers/moderation.mjs";
+import { AI_NOTICE_VERSION } from "../server/ai-permission.mjs";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -33,7 +35,10 @@ async function call(path, user, body, status = 200) {
 async function pair() {
   const register = async (name) => {
     const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `promises-${++counter}@example.com`, password: "correct horse battery" }) });
-    assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
+    assert.equal(response.status, 201);
+    const member = { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
+    await call("/privacy/ai-consent", member, { agree: true, noticeVersion: AI_NOTICE_VERSION });
+    return member;
   };
   const a = await register("Alex"), b = await register("Blair");
   const invitation = await call("/partner/invitations", a, {}, 201);
@@ -49,7 +54,8 @@ function fakeModel(answer) {
   return { seen, structured: async ({ name, input }) => { assert.equal(name, "couple_promises"); const parsed = JSON.parse(input); seen.push(parsed); return { promises: answer(parsed) }; } };
 }
 
-test("promises in Us are kept only with a real quote from a partner, once, and only new lines are read", async () => {
+test("promises in Us are kept only with a real quote from a partner, once, and only new lines are read", async (t) => {
+  mockModeration(t);
   const { a, b, relationshipId } = await pair();
   await say(a, "This weekend I'll come with you to see the apartment, promise.");
   await say(b, "Deal. And I'll book the dinner for Friday.");
@@ -140,7 +146,8 @@ test("a promise from a private chat stays its owner's through every API until th
   assert.ok(!paraphrase(stored), "the shared record itself keeps nothing of the private wording");
 });
 
-test("a shared promise becomes an agreement only when both approve the same version", async () => {
+test("a shared promise becomes an agreement only when both approve the same version", async (t) => {
+  mockModeration(t);
   const { a, b, relationshipId } = await pair();
   await say(b, "OK, I'll take out the trash every Monday.");
   const [line] = (await conversation(relationshipId, a.user.id)).messages;
@@ -166,7 +173,8 @@ test("a shared promise becomes an agreement only when both approve the same vers
   assert.equal(done.promise.status, "kept");
 });
 
-test("Pinky brings up at most one shared promise per fresh start, and not again soon", async () => {
+test("Pinky brings up at most one shared promise per fresh start, and not again soon", async (t) => {
+  mockModeration(t);
   const { a, b, relationshipId } = await pair();
   await say(a, "I'll fix the bike. I'll plan the trip.");
   const [line] = (await conversation(relationshipId, a.user.id)).messages;
@@ -191,7 +199,8 @@ test("Pinky brings up at most one shared promise per fresh start, and not again 
   assert.equal((await call("/promises", a)).promises.length, 1);
 });
 
-test("answering Pinky's mention with done or not now never brings up another one in the same window", async () => {
+test("answering Pinky's mention with done or not now never brings up another one in the same window", async (t) => {
+  mockModeration(t);
   const { a, relationshipId } = await pair();
   await say(a, "I'll fix the bike. I'll plan the trip. I'll call mom.");
   const [line] = (await conversation(relationshipId, a.user.id)).messages;
@@ -208,7 +217,8 @@ test("answering Pinky's mention with done or not now never brings up another one
   assert.ok(await promiseToMention(store, { userId: a.user.id, relationshipId, now: start + 21 * 3_600_000 }), "then one again");
 });
 
-test("a long backlog in Us is read to the end in batches, never skipped", async () => {
+test("a long backlog in Us is read to the end in batches, never skipped", async (t) => {
+  mockModeration(t);
   const { a, b, relationshipId } = await pair();
   await say(a, "Hi.");
   const model = fakeModel((input) => input.messages.filter((item) => item.isNew && /I'll/.test(item.text)).map((item) => ({ messageId: item.id, quote: item.text, by: "B", what: item.text.slice(5), when: "" })));

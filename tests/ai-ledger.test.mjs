@@ -1,3 +1,4 @@
+import { setAiConsent } from "../server/privacy-router.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -26,7 +27,9 @@ after(async () => { installAiLedger({}); if (directory) await rm(directory, { re
 const install = () => { logs.length = 0; installAiLedger({ store, now: () => clock, log }); };
 
 async function user(name) {
-  return store.createUser({ id: randomUUID(), email: `ledger-${++counter}@example.com`, name, passwordHash: "x", createdAt: new Date().toISOString() });
+  const member = await store.createUser({ id: randomUUID(), email: `ledger-${++counter}@example.com`, name, passwordHash: "x", createdAt: new Date().toISOString() });
+  await setAiConsent(store, member.id, true);
+  return member;
 }
 async function couple() {
   const a = await user("Alex"), b = await user("Blair"), now = new Date();
@@ -137,7 +140,7 @@ test("at the hard limit the member gets a friendly message in their language, an
   await flushAiLedger();
   const { mediator, seen } = fakeMediator();
   const metered = meterMediator(mediator);
-  for (const [language, pattern] of [["zh", /今天 Pinky 的 AI 用量已经到上限了/], ["en", /today's AI limit/], ["es", /límite de IA de hoy/]]) {
+  for (const [language, pattern] of [["zh", /今天 Ourever 的 AI 用量已经到上限了/], ["en", /today's AI limit/], ["es", /límite de IA de hoy/]]) {
     const error = await limitOf(asAiUser({ userId: a.id, language }, () => metered.planAssistantTurn({})));
     assert.equal(error.code, AI_LIMIT); assert.equal(error.statusCode, 429); assert.equal(error.scope, "daily"); assert.match(error.message, pattern);
   }
@@ -233,7 +236,10 @@ test("the admin report gives cost per user per day and month, per feature, top u
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.ok(Array.isArray(body.perUserDay) && Array.isArray(body.perFeature) && Array.isArray(body.topUsers) && body.costPerActiveUser);
-  } finally { server.close(); }
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("rows are kept 35 days, monthly totals 13 months, and the hourly summary line is content-free", async () => {

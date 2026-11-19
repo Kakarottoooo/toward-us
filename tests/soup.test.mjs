@@ -76,7 +76,7 @@ test("海龟汤: Pinky writes the puzzle in each player's language and keeps the
   assert.equal(started.body.match.turn, "both", "either of them may act");
   assert.equal(started.body.match.state.puzzle, null, "the puzzle is still being written");
   const early = await request(`/matches/${id}/actions`, "POST", { type: "ask", text: "Is it a key?", language: "en" }, ids[1]);
-  assert.equal(early.status, 409); assert.equal(early.body.code, "soup_not_ready"); assert.match(early.body.error, /Pinky is still writing/);
+  assert.equal(early.status, 409); assert.equal(early.body.code, "soup_not_ready"); assert.match(early.body.error, /Ourever is still writing/);
   release();
   const match = await until(async () => { const seen = await look(id, ids[1]); return seen.state.puzzle ? seen : null; });
   assert.deepEqual(model.calls[0], { name: "soup_puzzle", languages: ["zh", "en"] }, "written in both players' languages");

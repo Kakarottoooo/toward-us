@@ -40,7 +40,7 @@ test("only the founder makes codes and sees the board", async (t) => {
   assert.equal((await request("/founder/beta", "GET", null, ids.a)).status, 404);
   assert.equal((await request("/founder/beta/codes", "POST", { count: 1 }, ids.a)).status, 404);
   const made = await request("/founder/beta/codes", "POST", { count: 2, note: "小王和女朋友" });
-  assert.equal(made.status, 201); assert.equal(made.body.codes.length, 2); assert.match(made.body.codes[0].code, /^PINKY-[A-Z2-9]{6}$/);
+  assert.equal(made.status, 201); assert.equal(made.body.codes.length, 2); assert.match(made.body.codes[0].code, /^OUREVER-[A-Z2-9]{6}$/);
   const board = await request("/founder/beta");
   assert.equal(board.status, 200); assert.equal(board.body.codes.length, 2); assert.equal(board.body.couples.length, 2);
   assert.equal(JSON.stringify(board.body).includes("@example.invalid"), false, "the board never shows emails");

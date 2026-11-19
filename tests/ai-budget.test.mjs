@@ -1,3 +1,7 @@
+import { mockModeration, withModeration } from "./helpers/moderation.mjs";
+import { AI_NOTICE_VERSION } from "../server/ai-permission.mjs";
+import { setAiConsent } from "../server/privacy-router.mjs";
+import { installAiLedger } from "../server/ai-ledger.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -168,8 +172,11 @@ test("background work and chat import run on the cheaper model; what the person 
   assert.deepEqual(["together_turn", "assistant_turn", "web_lookup", "private_agent", "perspective_summary", "decision_options", "together_mediation", "some_new_feature"].filter(usesCheaperModel), []);
   const keys = ["AI_PROVIDER", "OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_BACKGROUND_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_BACKGROUND_MODEL"];
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]])), realFetch = globalThis.fetch, seen = [];
+  const modelUser = await user("Provider");
+  await setAiConsent(store, modelUser.id, true);
+  installAiLedger({ store });
   // No network: every provider request is answered here and only its chosen model is recorded.
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = withModeration(async (url, init) => {
     const host = new URL(String(url?.url || url)).host, body = JSON.parse(init.body);
     seen.push({ host, model: body.model });
     const text = JSON.stringify({ question: "q" });
@@ -178,18 +185,18 @@ test("background work and chat import run on the cheaper model; what the person 
         : null;
     if (!payload) throw new Error(`unexpected request to ${host}`);
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
-  };
+  });
   try {
     for (const key of keys) delete process.env[key];
     process.env.AI_PROVIDER = "openai"; process.env.OPENAI_API_KEY = "test-key";
     let mediator = createMediator();
-    await mediator.structured({ name: "couple_promises", schema: {}, instructions: "x", input: "{}" });
-    await mediator.summarizePerspective({ goal: "g" }, "en");
+    await asAiUser({ userId: modelUser.id }, () => mediator.structured({ name: "couple_promises", schema: {}, instructions: "x", input: "{}" }));
+    await asAiUser({ userId: modelUser.id }, () => mediator.summarizePerspective({ goal: "g" }, "en"));
     assert.equal(mediator.backgroundModel, "gpt-5.4-mini");
     process.env.AI_PROVIDER = "anthropic"; process.env.ANTHROPIC_API_KEY = "test-key";
     mediator = createMediator();
-    await mediator.structured({ name: "daily_question", schema: {}, instructions: "x", input: "{}" });
-    await mediator.summarizePerspective({ goal: "g" }, "en");
+    await asAiUser({ userId: modelUser.id }, () => mediator.structured({ name: "daily_question", schema: {}, instructions: "x", input: "{}" }));
+    await asAiUser({ userId: modelUser.id }, () => mediator.summarizePerspective({ goal: "g" }, "en"));
     assert.deepEqual(seen, [
       { host: "api.openai.com", model: "gpt-5.4-mini" }, { host: "api.openai.com", model: "gpt-5.4" },
       { host: "api.anthropic.com", model: "claude-haiku-5-5" }, { host: "api.anthropic.com", model: "claude-opus-5-5" },
@@ -200,9 +207,10 @@ test("background work and chat import run on the cheaper model; what the person 
   }
 });
 
-test("a capped Us turn keeps the member's words and answers with the localized limit; the ops report shows the counts", async () => {
-  const previous = { secret: process.env.REMINDER_RUN_SECRET, key: process.env.OPENAI_API_KEY };
-  process.env.REMINDER_RUN_SECRET = "budget-test-secret-0123456789abcdef"; process.env.OPENAI_API_KEY = "";
+test("a capped Us turn keeps the member's words and answers with the localized limit; the ops report shows the counts", async (t) => {
+  mockModeration(t);
+  const previous = process.env.REMINDER_RUN_SECRET;
+  process.env.REMINDER_RUN_SECRET = "budget-test-secret-0123456789abcdef";
   const turns = [];
   const server = createApiApp({ store, mediator: { aiReady: true, model: "fake", continueTogether: async () => { turns.push(1); return { reply: "Sure.", draftAgreement: null, actions: [] }; } } }).listen(0, "127.0.0.1");
   try {
@@ -217,6 +225,7 @@ test("a capped Us turn keeps the member's words and answers with the localized l
       return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
     };
     const a = await register("Alex"), b = await register("Blair");
+    for (const person of [a, b]) assert.equal((await call("/privacy/ai-consent", person, { agree: true, noticeVersion: AI_NOTICE_VERSION })).status, 200);
     const invitation = await call("/partner/invitations", a, {});
     await call("/partner/accept", b, { code: invitation.body.pairing.invitation.code });
     const say = (text) => call("/together/messages", a, { text, itemId: randomUUID(), language: "en" });
@@ -225,8 +234,8 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     // A big album (one call per memory) once used 70 of the couple's 80 background calls in a day, so games fell back to
     // canned questions and translations failed. Even with both members syncing, album captions leave most of the pool.
     for (const plan of [AI_CAPS.free, AI_CAPS.paid]) assert.ok(plan.features.photo_memory * 2 <= plan.background * 0.6);
-    for (let i = 0; i < AI_CAPS.free.person; i += 1) assert.equal((await say(`@Pinky idea ${i}?`)).status, 201);
-    const capped = await say("@Pinky one more idea?");
+    for (let i = 0; i < AI_CAPS.free.person; i += 1) assert.equal((await say(`@Ourever idea ${i}?`)).status, 201);
+    const capped = await say("@Ourever one more idea?");
     assert.equal(capped.status, 429);
     assert.equal(capped.body.code, AI_LIMIT);
     assert.match(capped.body.error, /today's free allowance/);
@@ -234,7 +243,7 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     // The member's own words still reach their partner, and talking without Pinky is untouched.
     const relationshipId = (await store.getRelationshipContext(a.user.id)).relationship.id;
     const messages = (await store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, a.user.id)).messages;
-    assert.ok(messages.some((message) => message.text === "@Pinky one more idea?"));
+    assert.ok(messages.some((message) => message.text === "@Ourever one more idea?"));
     assert.equal((await say("see you at 7")).status, 201);
     // Read-only ops view, behind the same Bearer gate as the other internal reports.
     assert.equal((await call("/internal/ai-usage", null)).status, 401);
@@ -243,7 +252,8 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     assert.deepEqual(report.body.caps, AI_CAPS);
     assert.deepEqual(report.body.rows.find((row) => row.relationshipId === relationshipId).features, { together_turn: AI_CAPS.free.person });
   } finally {
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    for (const [key, name] of [["secret", "REMINDER_RUN_SECRET"], ["key", "OPENAI_API_KEY"]]) if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
+    if (previous === undefined) delete process.env.REMINDER_RUN_SECRET; else process.env.REMINDER_RUN_SECRET = previous;
   }
 });

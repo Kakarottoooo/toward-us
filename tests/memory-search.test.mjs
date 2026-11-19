@@ -92,9 +92,9 @@ test("an old detail is found in older pages and notes, with its day, scoped to a
   await thread(users[1].id, { messages: [said("我也想提前一周订餐厅", "2025-03-12T11:00:00.000Z")] });
 
   const found = await searchMemory({ store, userId: users[0].id, query: "提前一周订餐厅" });
-  assert.match(found, /^\[2025-03-12 · 和 Pinky 的对话 · 你说\] 阿明道歉说以后每年都提前一周订好餐厅/);
+  assert.match(found, /^\[2025-03-12 · 和 Ourever 的对话 · 你说\] 阿明道歉说以后每年都提前一周订好餐厅/);
   assert.doesNotMatch(found, /我也想/, "another member's conversation is never searched");
-  assert.match(await searchMemory({ store, userId: users[0].id, query: "怕狗" }), /\[2025-06-02 · 记忆卡 · 关于阿杰\] 最怕狗/);
+  assert.match(await searchMemory({ store, userId: users[0].id, query: "怕狗" }), /No matching record/, "legacy non-user profiles are excluded from recall");
   assert.match(await searchMemory({ store, userId: users[0].id, date: "2025-03-13" }), /今天天气不错/);
   assert.doesNotMatch(await searchMemory({ store, userId: users[0].id, date: "2025-03-13" }), /订好餐厅/);
   // Inside 阿杰's own conversation only 阿杰 is searched.

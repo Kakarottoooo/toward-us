@@ -1,3 +1,4 @@
+import { setAiConsent } from "../server/privacy-router.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -26,6 +27,7 @@ async function fixture(t, mediator) {
   const relationshipId = randomUUID();
   await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
   await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
+  for (const id of ids.slice(0, 2)) await setAiConsent(store, id, true);
   const nudges = [];
   const activity = createAgentActivity({ notify: (audience) => nudges.push(audience) });
   const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
@@ -37,7 +39,7 @@ async function fixture(t, mediator) {
   app.use("/api", createAgentActivityRouter({ store, activity }));
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
-  t.after(async () => { await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); assert.ok(resolve(directory).startsWith(base)); await rm(directory, { recursive: true, force: true }); });
   const request = async (path, method = "GET", body, userId = ids[0]) => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { ...(userId ? { "x-user": userId } : {}), "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: await response.json() };
