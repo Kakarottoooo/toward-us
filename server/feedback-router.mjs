@@ -26,6 +26,10 @@ export function createFeedbackRouter({ store, mediator }) {
   router.post("/feedback/reply", async (req, res) => {
     const userId = req.auth.user.id, { channel, conversationId, messageId } = req.body || {};
     if (![conversationId, messageId].every((id) => typeof id === "string" && id.length > 0 && id.length <= 160)) return res.status(400).json({ error: "invalid_reply" });
+    // Legacy clients submit safety reports without an intent.
+    const { intent = "report" } = req.body;
+    if (intent !== "report" && intent !== "unhelpful") return res.status(400).json({ error: "invalid_feedback_intent" });
+    const isReport = intent === "report";
     let messages;
     if (channel === "private-workspace" || channel === "decision") {
       const record = projectRecord(await store.getRelationshipRecordForUser(channel === "decision" ? "issues" : "privateAgentThreads", conversationId, userId), userId);
@@ -42,14 +46,22 @@ export function createFeedbackRouter({ store, mediator }) {
     if (!reply) return res.status(404).json({ error: "reply_not_found" });
     const lang = ["en", "es"].includes(req.body.language) ? req.body.language : "zh";
     const text = reply.i18n?.[lang] || reply.translations?.[lang]?.text || reply.text || (reply.call?.rows || []).filter((r) => r.role === "agent").map((r) => r.text).join("\n") || reply.kind || "Ourever reply";
-    const id = "report:" + createHash("sha256").update(JSON.stringify([userId, conversationId, messageId])).digest("hex");
+    const qualityLabel = { zh: "这条回复没帮到我", en: "This reply wasn’t helpful", es: "Esta respuesta no me ayudó" }[lang];
+    const id = (isReport ? "report:" : "unhelpful:") + createHash("sha256").update(JSON.stringify([userId, conversationId, messageId])).digest("hex");
     await store.transaction(`user:${userId}`, async (tx) => {
       if (await tx.getRelationshipRecordForUser("feedback", id, userId)) return;
-      const report = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", status: "new", text: clean(text, 4000), photoIds: [], context: { view: "conversation-" + channel, channel, conversationId, messageId, report: "pinky", language: lang }, kind: "report", severity: "high", summary: "Reported Ourever reply" });
-      report.id = id;
-      await tx.createRelationshipRecord("feedback", report);
+      const feedback = createRelationshipRecord({
+        relationshipId: null, userId, visibility: "private", aiAccessScope: "none", status: "new",
+        text: isReport ? clean(text, 4000) : qualityLabel, photoIds: [],
+        context: { view: "conversation-" + channel, channel, conversationId, messageId, language: lang,
+          ...(isReport ? { report: "pinky" } : { replyFeedback: "unhelpful" }) },
+        kind: isReport ? "report" : "friction", severity: isReport ? "high" : "low",
+        summary: isReport ? "Reported Ourever reply" : qualityLabel,
+      });
+      feedback.id = id;
+      await tx.createRelationshipRecord("feedback", feedback);
     });
-    res.json({ reported: true });
+    res.json(isReport ? { reported: true } : { recorded: true });
   });
   router.post("/feedback", async (req, res) => {
     const userId = req.auth.user.id, text = clean(req.body?.text, 4000);
