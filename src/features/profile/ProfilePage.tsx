@@ -45,7 +45,7 @@ function TogetherShelves({ language, relationshipId }: { language: Language; rel
   </section>;
 }
 
-/** 关于我们 (喜好档案, founder 11-06): what Pinky keeps about each of them, kept by itself from their conversations. Each
+/** 关于我们 (喜好档案, founder 11-06): what Ourever keeps about each of them, kept by itself from their conversations. Each
  * person's notes are their own; a line about yourself can be shared, and what was said together in Us belongs to both. */
 export function ProfilePage({ language, relationshipId }: { language: Language; relationshipId: string | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
@@ -68,7 +68,7 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
   }, [load]);
 
   const partner = partnerName || t("TA", "Your partner", "Tu pareja");
-  // Before a partner joins, what Pinky learned about TA privately still shows here, to see, correct or remove (11-08).
+  // Before a partner joins, what Ourever learned about TA privately still shows here, to see, correct or remove (11-08).
   const has = (subject: "partner" | "us") => (facts || []).some((fact) => fact.subject === subject);
   const tabs: Array<["me" | "partner" | "us", string]> = partnerName ? [["partner", partner], ["me", t("我", "Me", "Yo")], ["us", t("我们", "Us", "Nosotros")]]
     : [...(has("partner") ? [["partner", partner] as ["partner", string]] : []), ["me", t("我", "Me", "Yo")], ...(has("us") ? [["us", t("我们", "Us", "Nosotros")] as ["us", string]] : [])];
@@ -86,16 +86,16 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
   const remove = (fact: Fact) => run(() => relationshipApi(`/api/profile/${fact.id}`, { method: "DELETE", body: JSON.stringify({ expectedVersion: fact.version, language }) }));
   const share = (fact: Fact) => run(() => relationshipApi(`/api/profile/${fact.id}/share`, jsonBody({ confirm: true, digest: sharing?.digest, expectedVersion: fact.version, language })));
   const prepareShare = async (fact: Fact) => { setNotice(""); try { setSharing(await relationshipApi<{ text: string; digest: string }>(`/api/profile/${fact.id}/share-preview?language=${language}`)); } catch (error) { setNotice((error as Error).message); } };
-  const intro = shown === "partner" ? t(`Pinky 记下的 ${partner} 的喜好和习惯。`, `What Pinky remembers about ${partner}'s likes and habits.`, `Lo que Pinky recuerda de los gustos y hábitos de ${partner}.`)
-    : shown === "me" ? t("Pinky 从聊天里了解到的你。", "What Pinky has learned about you.", "Lo que Pinky sabe de ti.")
-    : t("Pinky 记下的你们俩的习惯和默契。", "What Pinky remembers about you as a couple.", "Lo que Pinky recuerda de ustedes como pareja.");
+  const intro = shown === "partner" ? t(`Ourever 记下的 ${partner} 的喜好和习惯。`, `What Ourever remembers about ${partner}'s likes and habits.`, `Lo que Ourever recuerda de los gustos y hábitos de ${partner}.`)
+    : shown === "me" ? t("Ourever 从聊天里了解到的你。", "What Ourever has learned about you.", "Lo que Ourever sabe de ti.")
+    : t("Ourever 记下的你们俩的习惯和默契。", "What Ourever remembers about you as a couple.", "Lo que Ourever recuerda de ustedes como pareja.");
 
   return <div className="profile-page" data-testid="profile-page">
     <TogetherShelves language={language} relationshipId={relationshipId} />
     {tabs.length > 1 && <div className="profile-tabs" role="tablist" aria-label={t("关于谁", "About whom", "Sobre quién")}>{tabs.map(([value, name]) => <button key={value} type="button" role="tab" aria-selected={shown === value} className={shown === value ? "active" : ""} onClick={() => setTab(value)} data-testid={`profile-tab-${value}`}>{name}</button>)}</div>}
     <p className="settings-intro">{intro}</p>
     {facts === null ? <p className="profile-empty" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>
-      : !list.length ? <div className="profile-empty"><strong>{t("还没有记下什么", "Nothing yet", "Aún no hay nada")}</strong><p>{t("平时和 Pinky 聊天时提到的喜好、雷区、想要的东西，会自动出现在这里。", "Likes, sore spots and wishes you mention while chatting with Pinky appear here by themselves.", "Los gustos, puntos sensibles y deseos que mencionas al hablar con Pinky aparecen aquí solos.")}</p></div>
+      : !list.length ? <div className="profile-empty"><strong>{t("还没有记下什么", "Nothing yet", "Aún no hay nada")}</strong><p>{t("平时和 Ourever 聊天时提到的喜好、雷区、想要的东西，会自动出现在这里。", "Likes, sore spots and wishes you mention while chatting with Ourever appear here by themselves.", "Los gustos, puntos sensibles y deseos que mencionas al hablar con Ourever aparecen aquí solos.")}</p></div>
       : CATEGORIES.filter((category) => list.some((fact) => fact.category === category)).map((category) => <section key={category} className="settings-group">
         <h2>{label[category]}</h2>
         <div className="settings-card">{list.filter((fact) => fact.category === category).map((fact) => <button key={fact.id} type="button" className="settings-row profile-fact" onClick={() => { setNotice(""); setOpen(fact); setEditing(null); setSharing(null); }} data-testid="profile-fact">

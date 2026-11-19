@@ -5,7 +5,7 @@ import { useScreenPortal } from "../../mobile";
 
 export type Slide = { photo: string | null; title: string; date: string; text: string };
 
-/** A story Pinky found, played full screen like Google Photos' memories: one photo at a time, advancing by itself; tap
+/** A story Ourever found, played full screen like Google Photos' memories: one photo at a time, advancing by itself; tap
  * the right side for the next, the left for the previous. */
 export function StoryViewer({ title, slides, closeLabel, onClose }: { title: string; slides: Slide[]; closeLabel: string; onClose: () => void }) {
   const { screenRef } = useScreenPortal();

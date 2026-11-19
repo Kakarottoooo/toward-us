@@ -1,7 +1,7 @@
 import { localized, type Language } from "../../i18n";
 import "./agent-working.css";
 
-// What Pinky is doing while it prepares a reply (server/agent-activity.mjs gives the step code). Shown as a small pill under
+// What Ourever is doing while it prepares a reply (server/agent-activity.mjs gives the step code). Shown as a small pill under
 // the couple's character and as a typing bubble in the thread (the founder, 11-03, after Meta Muse).
 export type AgentActivity = { step: string; detail?: string | null } | null;
 
@@ -27,11 +27,11 @@ export function AgentStatusPill({ activity, language }: { activity: NonNullable<
   return <span className="agent-pill" data-testid="agent-pill"><Dots /><span>{agentStepLabel(activity.step, language)}</span></span>;
 }
 
-/** Pinky's typing bubble at the end of the thread; in Us it sits in Pinky's row with its avatar, like its replies. */
+/** Ourever's typing bubble at the end of the thread; in Us it sits in Ourever's row with its avatar, like its replies. */
 export function AgentTyping({ activity, language, inUs }: { activity: NonNullable<AgentActivity>; language: Language; inUs: boolean }) {
   const label = agentStepLabel(activity.step, language);
   const bubble = <article className="conversation-message from-agent agent-typing" role="status" data-testid="agent-typing">
-    <span>Pinky</span><p><Dots /><span>{activity.detail ? localized(language, `${label}：${activity.detail}`, `${label}: ${activity.detail}`, `${label}: ${activity.detail}`) : label}</span></p>
+    <span>Ourever</span><p><Dots /><span>{activity.detail ? localized(language, `${label}：${activity.detail}`, `${label}: ${activity.detail}`, `${label}: ${activity.detail}`) : label}</span></p>
   </article>;
-  return inUs ? <div className="us-row from-agent"><i className="us-avatar is-pinky" aria-hidden="true">P</i>{bubble}</div> : bubble;
+  return inUs ? <div className="us-row from-agent"><i className="us-avatar is-pinky" aria-hidden="true">O</i>{bubble}</div> : bubble;
 }

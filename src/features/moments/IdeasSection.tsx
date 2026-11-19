@@ -20,15 +20,15 @@ const LOOK: Record<IdeaCategory, { icon: (size: number) => ReactNode; tone: stri
 
 /** "100 small things to do together" (founder 11-06, design A, then readable cards): all hundred by kind, each card with its words
  * and turning into the couple's own photo once they have done it. "今天做什么" picks one they haven't done. A card opens the
- * idea: tell Pinky you did it (it keeps the memory and ticks the card) or that you want to (it helps plan it). */
+ * idea: tell Ourever you did it (it keeps the memory and ticks the card) or that you want to (it helps plan it). */
 export function IdeasSection({ language, done, onDid, onPlan }: { language: Language; done: Done; onDid: (text: string) => void; onPlan?: (text: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [category, setCategory] = useState<IdeaCategory | "all">("all");
   const [open, setOpen] = useState<Idea | null>(null), [picked, setPicked] = useState(false);
   const left = useMemo(() => IDEAS.filter((idea) => !done.has(idea.number) && (category === "all" || idea.category === category)), [done, category]);
   const label = (id: IdeaCategory) => ideaText(IDEA_CATEGORIES.find((item) => item.id === id)!, language);
-  const did = (idea: Idea) => { const text = ideaText(idea, language); onDid(t(`Pinky，我们一起「${text}」了！帮我们存进回忆，写几句温馨的话。（100 件小事 #${idea.number}）`, `Pinky, we did "${text}" together! Keep it in our memories with a few warm words. (100 little things #${idea.number})`, `Pinky, ¡hicimos «${text}» juntos! Guárdalo en nuestros recuerdos con unas palabras bonitas. (100 cosas #${idea.number})`)); };
-  const plan = (idea: Idea) => { const text = ideaText(idea, language); (onPlan || onDid)(t(`Pinky，我们想找个时间一起「${text}」，帮我们想想什么时候、怎么安排。（100 件小事 #${idea.number}）`, `Pinky, we'd like to "${text}" together sometime. Help us work out when and how. (100 little things #${idea.number})`, `Pinky, nos gustaría «${text}» juntos. Ayúdanos a ver cuándo y cómo. (100 cosas #${idea.number})`)); };
+  const did = (idea: Idea) => { const text = ideaText(idea, language); onDid(t(`Ourever，我们一起「${text}」了！帮我们存进回忆，写几句温馨的话。（100 件小事 #${idea.number}）`, `Ourever, we did "${text}" together! Keep it in our memories with a few warm words. (100 little things #${idea.number})`, `Ourever, ¡hicimos «${text}» juntos! Guárdalo en nuestros recuerdos con unas palabras bonitas. (100 cosas #${idea.number})`)); };
+  const plan = (idea: Idea) => { const text = ideaText(idea, language); (onPlan || onDid)(t(`Ourever，我们想找个时间一起「${text}」，帮我们想想什么时候、怎么安排。（100 件小事 #${idea.number}）`, `Ourever, we'd like to "${text}" together sometime. Help us work out when and how. (100 little things #${idea.number})`, `Ourever, nos gustaría «${text}» juntos. Ayúdanos a ver cuándo y cómo. (100 cosas #${idea.number})`)); };
   const surprise = () => { if (!left.length) return; setPicked(true); setOpen(left[Math.floor(Math.random() * left.length)]); };
   const mark = open ? done.get(open.number) : undefined;
   const day = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
@@ -74,7 +74,7 @@ export function IdeasSection({ language, done, onDid, onPlan }: { language: Lang
           {mark.photo && <img className="ideas-sheet-photo" decoding="async" src={`/api/photos/${encodeURIComponent(mark.photo)}?w=640`} alt="" draggable={false} />}
           <p>{t(`你们在 ${day(mark.date)} 一起做过了 ♡`, `You did this together on ${day(mark.date)} ♡`, `Lo hicieron juntos el ${day(mark.date)} ♡`)}</p>
         </> : <>
-          <p>{t("做过了就告诉 Pinky，发几张那天的照片，它会存进你们的回忆，这一张就会换成你们的照片。", "Done it? Tell Pinky and send a few photos from that day: it keeps them in your memories and this card becomes your photo.", "¿Ya lo hicieron? Díganselo a Pinky con unas fotos de ese día: las guarda en sus recuerdos y esta tarjeta será su foto.")}</p>
+          <p>{t("做过了就告诉 Ourever，发几张那天的照片，它会存进你们的回忆，这一张就会换成你们的照片。", "Done it? Tell Ourever and send a few photos from that day: it keeps them in your memories and this card becomes your photo.", "¿Ya lo hicieron? Díganselo a Ourever con unas fotos de ese día: las guarda en sus recuerdos y esta tarjeta será su foto.")}</p>
           <div className="ideas-sheet-actions">
             <button type="button" className="ideas-primary" onClick={() => { setOpen(null); plan(open); }} data-testid="idea-plan"><CalendarPlus size={18} weight="bold" />{t("就做这件，帮我们安排", "Let's do it: help us plan", "Hagámoslo: ayúdanos a planearlo")}</button>
             <button type="button" className="ideas-quiet" onClick={() => { setOpen(null); did(open); }} data-testid="idea-did"><Camera size={18} />{t("我们做过了", "We did it", "Ya lo hicimos")}</button>

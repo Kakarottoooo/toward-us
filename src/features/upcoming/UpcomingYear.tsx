@@ -68,7 +68,7 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
       <small>{t("下一个", "Next", "Lo próximo")}</small>
       <div><strong>{next.title}</strong><span>{daysBetween(today, next.day) === 0 ? t("就是今天", "It's today", "Es hoy") : t(`还有 ${daysBetween(today, next.day)} 天`, `in ${countOf(daysBetween(today, next.day), "day", "days")}`, `en ${countOf(daysBetween(today, next.day), "día", "días")}`)}</span></div>
       <small>{dateLabel(next.day, next.day.slice(0, 4) !== String(thisYear))}{next.note ? ` · ${next.note}` : ""}</small>
-    </section> : <section className="upcoming-next kind-empty"><strong>{t("还没有要记住的日子", "No dates to remember yet", "Aún no hay fechas que recordar")}</strong><small>{t("跟 Pinky 说说你们的纪念日和生日。", "Tell Pinky your anniversary and birthdays.", "Cuéntale a Pinky su aniversario y cumpleaños.")}</small></section>}
+    </section> : <section className="upcoming-next kind-empty"><strong>{t("还没有要记住的日子", "No dates to remember yet", "Aún no hay fechas que recordar")}</strong><small>{t("跟 Ourever 说说你们的纪念日和生日。", "Tell Ourever your anniversary and birthdays.", "Cuéntale a Ourever su aniversario y cumpleaños.")}</small></section>}
 
     <header className="upcoming-yearbar">
       <button type="button" onClick={() => setYear(year - 1)} aria-label={t("上一年", "Previous year", "Año anterior")}><CaretLeft size={18} weight="bold" /></button>
@@ -92,7 +92,7 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
 
     <section className="upcoming-ahead"><h2>{t("接下来", "Coming up", "Próximamente")}</h2>
       {lasting.length ? <ul className="upcoming-list">{lasting.slice(0, 8).map((entry) => row(entry, true))}</ul> : <p className="upcoming-empty">{t("接下来还没有安排。", "Nothing planned yet.", "Aún no hay nada planeado.")}</p>}
-      <button type="button" className="space-ask" onClick={() => onAsk(t("帮我记下一个日子：", "Add a date for us: ", "Añade una fecha: "))}><ChatCircleDots size={20} weight="fill" />{t("跟 Pinky 说一个日子", "Tell Pinky a date", "Dile una fecha a Pinky")}</button>
+      <button type="button" className="space-ask" onClick={() => onAsk(t("帮我记下一个日子：", "Add a date for us: ", "Añade una fecha: "))}><ChatCircleDots size={20} weight="fill" />{t("跟 Ourever 说一个日子", "Tell Ourever a date", "Dile una fecha a Ourever")}</button>
     </section>
   </div>;
 }

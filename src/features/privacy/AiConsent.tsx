@@ -9,9 +9,9 @@ export const AI_NOTICE_VERSION = "2026-11-18";
 
 export function aiDisclosure(language: Language) {
   return localized(language,
-    "Pinky 会把与你的请求相关的聊天记录、截图、所选照片和语音发送给 OpenAI 或 Anthropic，用来回复、转录、理解图片及检查内容安全。导入另一人的聊天或截图时，其中对方的消息也会发送。请只提交有权分享的内容。",
-    "Pinky sends relevant chat history, screenshots, selected photos and voice recordings to OpenAI or Anthropic for replies, transcription, image understanding and safety screening. Imported chats and screenshots can include the other person’s messages. Only submit material you have permission to share.",
-    "Pinky envía el historial de chat pertinente, capturas, fotos elegidas y grabaciones de voz a OpenAI o Anthropic para responder, transcribir, interpretar imágenes y revisar la seguridad. Los chats y capturas importados pueden incluir mensajes de la otra persona. Comparte solo contenido que tengas permiso para enviar.");
+    "Ourever 会把与你的请求相关的聊天记录、截图、所选照片和语音发送给 OpenAI 或 Anthropic，用来回复、转录、理解图片及检查内容安全。导入另一人的聊天或截图时，其中对方的消息也会发送。请只提交有权分享的内容。",
+    "Ourever sends relevant chat history, screenshots, selected photos and voice recordings to OpenAI or Anthropic for replies, transcription, image understanding and safety screening. Imported chats and screenshots can include the other person’s messages. Only submit material you have permission to share.",
+    "Ourever envía el historial de chat pertinente, capturas, fotos elegidas y grabaciones de voz a OpenAI o Anthropic para responder, transcribir, interpretar imágenes y revisar la seguridad. Los chats y capturas importados pueden incluir mensajes de la otra persona. Comparte solo contenido que tengas permiso para enviar.");
 }
 
 /** Links to the public privacy policy and terms, in the reader's language. */
@@ -62,5 +62,5 @@ export function OfflineBanner() {
   // The banner sits outside the language state; the page's lang attribute follows the chosen interface language.
   const lang = document.documentElement.lang || "en";
   const language: Language = lang.startsWith("en") ? "en" : lang.startsWith("es") ? "es" : "zh";
-  return <div className="offline-banner" role="status" data-testid="offline-banner"><WifiSlash size={16} weight="bold" />{localized(language, "没有网络连接，联网后会自动恢复", "No connection. Pinky picks up again once you're online", "Sin conexión. Pinky sigue en cuanto vuelva la red")}</div>;
+  return <div className="offline-banner" role="status" data-testid="offline-banner"><WifiSlash size={16} weight="bold" />{localized(language, "没有网络连接，联网后会自动恢复", "No connection. Ourever picks up again once you're online", "Sin conexión. Ourever sigue en cuanto vuelva la red")}</div>;
 }

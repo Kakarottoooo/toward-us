@@ -11,11 +11,11 @@ type Started = { channel: "me" | "us"; sessionId: string | null };
 const ERRORS: Record<string, [string, string, string]> = {
   voice_not_configured: ["通话还没开通：服务器还没有配置语音服务。", "Calls aren't set up yet: the voice service isn't configured on the server.", "Las llamadas aún no están activadas: falta configurar el servicio de voz."],
   voice_quota: ["语音服务的账户余额用完了，充值后就能通话。", "The voice service account is out of credit. Calls work again once it is topped up.", "La cuenta del servicio de voz se quedó sin saldo. Las llamadas vuelven al recargarla."],
-  microphone_denied: ["需要麦克风权限才能通话。可以在手机设置里给 Pinky 打开麦克风。", "Pinky needs the microphone for calls. Turn it on for Pinky in your phone's settings.", "Pinky necesita el micrófono para llamar. Actívalo para Pinky en los ajustes del teléfono."],
+  microphone_denied: ["需要麦克风权限才能通话。可以在手机设置里给 Ourever 打开麦克风。", "Ourever needs the microphone for calls. Turn it on for Ourever in your phone's settings.", "Ourever necesita el micrófono para llamar. Actívalo para Ourever en los ajustes del teléfono."],
   voice_already_active: ["已经有一通电话在进行中。", "A call is already in progress.", "Ya hay una llamada en curso."],
   voice_daily_limit: ["今天的通话时长用完了，明天再来。", "Today's call time is used up. Try again tomorrow.", "Se acabó el tiempo de llamada de hoy. Prueba mañana."],
   voice_monthly_limit: ["这个月的 AI 用量到上限了，下个月 1 日会恢复。", "This month's AI limit is reached. It resets on the 1st of next month.", "Se alcanzó el límite de IA de este mes. Se renueva el día 1 del próximo mes."],
-  voice_paused: ["Pinky 的 AI 正在短暂维护，请稍后再试。", "Pinky's AI is briefly paused for maintenance. Please try again soon.", "La IA de Pinky está en una breve pausa de mantenimiento. Inténtalo pronto."],
+  voice_paused: ["Ourever 的 AI 正在短暂维护，请稍后再试。", "Ourever's AI is briefly paused for maintenance. Please try again soon.", "La IA de Ourever está en una breve pausa de mantenimiento. Inténtalo pronto."],
   pairing_required: ["先邀请另一半加入，才能在“我们俩”里通话。", "Invite your partner before calling in Us.", "Invita a tu pareja antes de llamar en Nosotros."],
   connection_lost: ["通话断开了。", "The call dropped.", "La llamada se cortó."],
   time_limit: ["已到本次通话时长上限。", "The call reached its time limit.", "La llamada llegó a su límite de tiempo."],
@@ -29,7 +29,7 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
   const [pending, setPending] = useState(0);
   const [muted, setMuted] = useState(false), [speakerMuted, setSpeakerMuted] = useState(false), [blocked, setBlocked] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  // A member Pinky barely knows yet: the private call opens as a getting-to-know-you chat (server decides; founder 11-07).
+  // A member Ourever barely knows yet: the private call opens as a getting-to-know-you chat (server decides; founder 11-07).
   const [interview, setInterview] = useState(false);
   const call = useRef<LiveCall | null>(null);
   const reason = useRef("");
@@ -56,13 +56,13 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
   }, []);
   const captions = rows.slice(-4);
   const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-  const status = state === "connecting" || state === "idle" ? t("正在接通 Pinky…", "Connecting to Pinky…", "Conectando con Pinky…") : state === "connected" ? pending ? t("Pinky 正在办…", "Pinky is on it…", "Pinky está en ello…") : clock : t("正在挂断…", "Hanging up…", "Colgando…");
+  const status = state === "connecting" || state === "idle" ? t("正在接通 Ourever…", "Connecting to Ourever…", "Conectando con Ourever…") : state === "connected" ? pending ? t("Ourever 正在办…", "Ourever is on it…", "Ourever está en ello…") : clock : t("正在挂断…", "Hanging up…", "Colgando…");
   return <section className="call-panel" data-testid="call-panel" aria-live="polite">
-    <header><span className={`call-dot is-${state}`} aria-hidden="true" /><strong>{started.channel === "us" ? t("你们和 Pinky 通话中", "On a call with Pinky", "En llamada con Pinky") : t("和 Pinky 私下通话", "Private call with Pinky", "Llamada privada con Pinky")}</strong><span>{status}</span></header>
-    {interview && state === "connected" && !rows.length && <p className="call-hint">{t("Pinky 还不太认识你，会先问你几个问题。哪题不想答就说“跳过”；有别的事想聊，直接说就行。", "Pinky doesn't know you well yet, so it will start with a few questions. Say “skip” for any you'd rather not answer, or just say what you called about.", "Pinky aún no te conoce bien, así que empezará con unas preguntas. Di «saltar» si no quieres responder, o di de qué querías hablar.")}</p>}
-    {started.channel === "us" && state === "connected" && !rows.length && <p className="call-hint">{t(`把手机放在你们中间。Pinky 会先问每个人的名字，之后谁说话它都能听到。旁边有第三个人也可以一起说。`, `Put the phone between you. Pinky will ask everyone's name first; after that it hears whoever speaks. A third person can join in too.`, `Pon el teléfono entre ustedes. Pinky preguntará primero el nombre de cada uno; después oye a quien hable. Una tercera persona también puede participar.`)}</p>}
-    {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}{row.conversationId && row.messageId && <ReportReply language={language} channel={started.channel} conversationId={row.conversationId} messageId={row.messageId} />}</li>)}</ol>}
-    {blocked && <p className="call-hint">{t("点一下扬声器按钮，打开 Pinky 的声音。", "Tap the speaker button to hear Pinky.", "Toca el altavoz para oír a Pinky.")}</p>}
+    <header><span className={`call-dot is-${state}`} aria-hidden="true" /><strong>{started.channel === "us" ? t("你们和 Ourever 通话中", "On a call with Ourever", "En llamada con Ourever") : t("和 Ourever 私下通话", "Private call with Ourever", "Llamada privada con Ourever")}</strong><span>{status}</span></header>
+    {interview && state === "connected" && !rows.length && <p className="call-hint">{t("Ourever 还不太认识你，会先问你几个问题。哪题不想答就说“跳过”；有别的事想聊，直接说就行。", "Ourever doesn't know you well yet, so it will start with a few questions. Say “skip” for any you'd rather not answer, or just say what you called about.", "Ourever aún no te conoce bien, así que empezará con unas preguntas. Di «saltar» si no quieres responder, o di de qué querías hablar.")}</p>}
+    {started.channel === "us" && state === "connected" && !rows.length && <p className="call-hint">{t(`把手机放在你们中间。Ourever 会先问每个人的名字，之后谁说话它都能听到。旁边有第三个人也可以一起说。`, `Put the phone between you. Ourever will ask everyone's name first; after that it hears whoever speaks. A third person can join in too.`, `Pon el teléfono entre ustedes. Ourever preguntará primero el nombre de cada uno; después oye a quien hable. Una tercera persona también puede participar.`)}</p>}
+    {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Ourever" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}{row.conversationId && row.messageId && <ReportReply language={language} channel={started.channel} conversationId={row.conversationId} messageId={row.messageId} />}</li>)}</ol>}
+    {blocked && <p className="call-hint">{t("点一下扬声器按钮，打开 Ourever 的声音。", "Tap the speaker button to hear Ourever.", "Toca el altavoz para oír a Ourever.")}</p>}
     <div className="call-controls">
       <button type="button" className={muted ? "on" : ""} aria-pressed={muted} onClick={() => setMuted(call.current?.mute() ?? false)}>{muted ? <MicrophoneSlash size={24} /> : <Microphone size={24} />}<span>{muted ? t("已静音", "Muted", "Silenciado") : t("静音", "Mute", "Silenciar")}</span></button>
       <button type="button" className="call-hangup" onClick={() => void call.current?.end("user")} aria-label={t("挂断", "Hang up", "Colgar")} data-testid="call-hangup"><PhoneDisconnect size={28} weight="fill" /></button>
@@ -75,6 +75,6 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
 /** A finished call in the conversation: its length, and the captions on demand. */
 export function CallRecord({ language, title, call }: { language: Language; title: string; call: { minutes: number; rows: Array<{ role: string; text: string }> } }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  return <details className="call-record" data-testid="call-record"><summary>{title || t(`和 Pinky 通话 · ${call.minutes} 分钟`, `Call with Pinky · ${call.minutes} min`, `Llamada con Pinky · ${call.minutes} min`)}<span>{t("看字幕", "Captions", "Subtítulos")}</span></summary>
-    <ol>{call.rows.map((row, index) => <li key={index} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : t("说话的人", "Speaker", "Persona")}</span>{row.text}</li>)}</ol></details>;
+  return <details className="call-record" data-testid="call-record"><summary>{title || t(`和 Ourever 通话 · ${call.minutes} 分钟`, `Call with Ourever · ${call.minutes} min`, `Llamada con Ourever · ${call.minutes} min`)}<span>{t("看字幕", "Captions", "Subtítulos")}</span></summary>
+    <ol>{call.rows.map((row, index) => <li key={index} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Ourever" : t("说话的人", "Speaker", "Persona")}</span>{row.text}</li>)}</ol></details>;
 }
