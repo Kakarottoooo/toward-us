@@ -61,7 +61,7 @@ test("notes shared with a partner are never part of a tidy, and too few notes co
   await new Promise((r) => server.once("listening", r));
   t.after(async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); });
   const request = async (path, { method = "GET", body, cookie } = {}) => { const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] }; };
-  const register = async (name) => (await request("/api/auth/register", { method: "POST", body: { name, email: `${name}-${Date.now()}@example.test`, password: "synthetic-test-password-26" } }));
+  const register = async (name) => (await request("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}-${Date.now()}@example.test`, password: "synthetic-test-password-26" } }));
   const a = await register("tidy-a"), b = await register("tidy-b");
   const invite = await request("/api/partner/invitations", { method: "POST", body: {}, cookie: a.cookie });
   await request("/api/partner/accept", { method: "POST", body: { code: invite.body.pairing.invitation.code }, cookie: b.cookie });

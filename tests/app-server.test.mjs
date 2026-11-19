@@ -581,7 +581,7 @@ async function createPair(firstName, secondName) {
 
 async function register(name) {
   counter += 1;
-  const response = await rawRequest("/api/auth/register", { method: "POST", body: { name, email: `${name.toLowerCase()}-${counter}@example.com`, password: "correct-horse-battery" } });
+  const response = await rawRequest("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name.toLowerCase()}-${counter}@example.com`, password: "correct-horse-battery" } });
   assert.equal(response.status, 201, JSON.stringify(response.payload));
   const setCookie = response.headers.get("set-cookie") || "";
   return { user: response.payload.user, cookie: setCookie.split(";")[0], setCookie };

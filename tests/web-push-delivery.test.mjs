@@ -239,7 +239,7 @@ test("opening Us posts the daily question and pushes only the partner, not the o
     const response = await fetch(origin + path, { method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: response.status, body: response.status === 204 ? null : await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
-  const register = async (name) => (await request("/api/auth/register", { method: "POST", body: { name, email: `${name}-${randomUUID()}@example.test`, password: "synthetic-test-password-26" } })).cookie;
+  const register = async (name) => (await request("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}-${randomUUID()}@example.test`, password: "synthetic-test-password-26" } })).cookie;
   const a = await register("push-a"), b = await register("push-b");
   const invite = await request("/api/partner/invitations", { method: "POST", body: {}, cookie: a });
   await request("/api/partner/accept", { method: "POST", body: { code: invite.body.pairing.invitation.code }, cookie: b });

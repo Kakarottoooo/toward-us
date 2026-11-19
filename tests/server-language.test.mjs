@@ -45,7 +45,7 @@ test("API errors read in the member's language: demo rooms, pairing, shared deci
     return { status: response.status, body: response.status === 204 ? null : await response.json(), headers: response.headers };
   };
   const register = async (name) => {
-    const response = await call("/api/auth/register", { method: "POST", body: { name, email: `${name}-${randomUUID()}@example.com`, password: "correct-horse-battery" } });
+    const response = await call("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}-${randomUUID()}@example.com`, password: "correct-horse-battery" } });
     assert.equal(response.status, 201);
     return (response.headers.get("set-cookie") || "").split(";")[0];
   };

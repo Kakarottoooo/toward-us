@@ -24,7 +24,7 @@ async function fixture(run) {
     assert.equal(response.status, status, `${path}: ${JSON.stringify(result)}`);
     return { ...result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
-  const register = (name) => request("/api/auth/register", { method: "POST", body: { name, email: `${name}@example.test`, password }, status: 201 });
+  const register = (name) => request("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}@example.test`, password }, status: 201 });
   const requestLink = async (address) => { await request("/api/auth/reset-request", { method: "POST", body: { email: address, language: "en" } }); await new Promise((resolve) => setImmediate(resolve)); };
   const tokenOf = (message) => new URL(message.link).searchParams.get("reset");
   try { await run({ store, request, register, requestLink, tokenOf, sent, base }); }

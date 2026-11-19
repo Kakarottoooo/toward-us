@@ -70,7 +70,7 @@ export async function createHarness(directory, { requestContext, mediator, clien
     return { result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
   }
   async function account(name) {
-    const { result, cookie } = await call("/auth/register", { name, email: `parity-${++accounts}-${randomUUID()}@example.test`, password: "synthetic local parity only" });
+    const { result, cookie } = await call("/auth/register", { name, adultConfirmed: true, email: `parity-${++accounts}-${randomUUID()}@example.test`, password: "synthetic local parity only" });
     return { user: result.user, cookie };
   }
 const DAY = 24 * 60 * 60 * 1000;

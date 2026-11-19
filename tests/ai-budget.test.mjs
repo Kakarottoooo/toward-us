@@ -213,7 +213,7 @@ test("a capped Us turn keeps the member's words and answers with the localized l
       return { status: response.status, body: await response.json() };
     };
     const register = async (name) => {
-      const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, email: `budget-http-${++counter}@example.com`, password: "correct horse battery" }) });
+      const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `budget-http-${++counter}@example.com`, password: "correct horse battery" }) });
       return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
     };
     const a = await register("Alex"), b = await register("Blair");

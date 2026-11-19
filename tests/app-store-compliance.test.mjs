@@ -24,7 +24,7 @@ async function fixture(run) {
     const result = response.headers.get("content-type")?.includes("json") ? JSON.parse(text) : { html: text };
     return { ...result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
-  const register = (name, extra = {}) => request("/api/auth/register", { method: "POST", body: { name, email: `${name}@example.test`, password, ...extra }, status: 201 });
+  const register = (name, extra = {}) => request("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}@example.test`, password, ...extra }, status: 201 });
   try { await run({ store, request, register }); }
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
 }

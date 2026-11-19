@@ -17,11 +17,23 @@ async function couple(run) {
     const response = await fetch(base + path, { method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: response.status, body: response.status === 204 ? null : await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
   };
-  const register = async (name) => (await request("/api/auth/register", { method: "POST", body: { name, email: `${name}-${Date.now()}@example.test`, password: "synthetic-test-password-26" } })).cookie;
-  const a = await register("dates-a"), b = await register("dates-b");
-  const invite = await request("/api/partner/invitations", { method: "POST", body: {}, cookie: a });
-  await request("/api/partner/accept", { method: "POST", body: { code: invite.body.pairing.invitation.code }, cookie: b });
-  try { await run({ request, a, b, store }); } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }
+  try {
+    const register = async (name) => {
+      const result = await request("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}-${Date.now()}@example.test`, password: "synthetic-test-password-26" } });
+      assert.equal(result.status, 201, result.body.error);
+      return result.cookie;
+    };
+    const a = await register("dates-a"), b = await register("dates-b");
+    const invite = await request("/api/partner/invitations", { method: "POST", body: {}, cookie: a });
+    assert.equal(invite.status, 201, invite.body.error);
+    const accepted = await request("/api/partner/accept", { method: "POST", body: { code: invite.body.pairing.invitation.code }, cookie: b });
+    assert.equal(accepted.status, 200, accepted.body.error);
+    await run({ request, a, b, store });
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 test("either partner sets the day they got together; setting it again moves the one date, and future days are refused", () => couple(async ({ request, a, b }) => {

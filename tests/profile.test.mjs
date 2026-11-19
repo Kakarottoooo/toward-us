@@ -30,7 +30,7 @@ async function call(path, user, body, status = 200, method = body === undefined 
 }
 async function pair() {
   const register = async (name) => {
-    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
+    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
     assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
   };
   const a = await register("Ziwei"), b = await register("Mia");
@@ -82,7 +82,7 @@ test("private interview captions preserve the full accepted turn and ground note
 test("before any partner joins, Pinky still learns TA privately from chats and brought screenshots, and keeps it after pairing", async () => {
   // Reply coach (founder 11-08): Pinky works alone and gets to know her as it is used; nothing waits for an invitation.
   const register = async (name) => {
-    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
+    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
     assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
   };
   const solo = await register("Zhou");

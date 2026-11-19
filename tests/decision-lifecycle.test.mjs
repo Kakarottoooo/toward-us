@@ -36,7 +36,7 @@ async function call(path, user, body, status = 200, method = body === undefined 
 }
 async function pair() {
   const register = async () => {
-    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Member ${++counter}`, email: `decisions-${counter}@example.com`, password: "correct-horse-battery" }) });
+    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `Member ${++counter}`, adultConfirmed: true, email: `decisions-${counter}@example.com`, password: "correct-horse-battery" }) });
     assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
   };
   const a = await register(), b = await register();
