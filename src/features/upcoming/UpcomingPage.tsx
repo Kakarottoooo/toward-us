@@ -14,7 +14,7 @@ type Reminder = { id: string; title?: string; dueAt?: string; status: string; mi
 const localDay = (iso: string) => { const date = new Date(iso); return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-CA"); };
 
 /** Coming up for one member: the couple's shared dates and deadlines (when paired) with their own reminders, on one calendar.
- * Tapping a shared date shows its details; changes are asked of Pinky, and whoever added a date can delete it. */
+ * Tapping a shared date shows its details; changes are asked of Ourever, and whoever added a date can delete it. */
 export function UpcomingPage({ clear = false, language, userId = "", streak = null, partnerName = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { clear?: boolean; top?: ReactNode; language: Language; userId?: string; streak?: CoupleStreak | null; partnerName?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -59,10 +59,10 @@ export function UpcomingPage({ clear = false, language, userId = "", streak = nu
             <dd>{new Date(open.dueAt).toLocaleString(languageTag(language), { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}</dd>
           </>}
           <dt>{t("重复", "Repeats", "Se repite")}</dt><dd>{open.recurringRule === "yearly" ? t("每年", "Every year", "Cada año") : t("只有这一次", "Just once", "Solo una vez")}</dd>
-          <dt>{t("提醒", "Reminder", "Aviso")}</dt><dd>{remindBefore ? t("Pinky 会在“我们俩”里提醒你们", "Pinky reminds you both in Us", "Pinky les avisa en Nosotros") : t("没有设提醒", "No reminder", "Sin aviso")}</dd>
+          <dt>{t("提醒", "Reminder", "Aviso")}</dt><dd>{remindBefore ? t("Ourever 会在“我们俩”里提醒你们", "Ourever reminds you both in Us", "Ourever les avisa en Nosotros") : t("没有设提醒", "No reminder", "Sin aviso")}</dd>
         </dl>
         {open.type === "relationship_started" && <p>{t("这是你们在一起的日子，可以在“回忆”最上面修改。", "This is the day you got together; change it at the top of Moments.", "Es el día en que empezaron; cámbialo arriba en Momentos.")}</p>}
-        <button type="button" className="upcoming-sheet-ask" onClick={() => { setOpen(null); onAsk(t(`把“${open.title}”改一下：`, `Change "${open.title}": `, `Cambia «${open.title}»: `)); }}><ChatCircleDots size={18} weight="fill" />{t("跟 Pinky 说怎么改", "Tell Pinky what to change", "Dile a Pinky qué cambiar")}</button>
+        <button type="button" className="upcoming-sheet-ask" onClick={() => { setOpen(null); onAsk(t(`把“${open.title}”改一下：`, `Change "${open.title}": `, `Cambia «${open.title}»: `)); }}><ChatCircleDots size={18} weight="fill" />{t("跟 Ourever 说怎么改", "Tell Ourever what to change", "Dile a Ourever qué cambiar")}</button>
         {open.createdByUserId === userId && open.type !== "relationship_started" && <button type="button" className={`upcoming-sheet-delete ${confirming ? "confirming" : ""}`} onClick={() => void remove()}><Trash size={18} />{confirming ? t("确认删除这个日子", "Delete this date", "Eliminar esta fecha") : t("删除", "Delete", "Eliminar")}</button>}
         {error && <p className="space-error" role="alert">{error}</p>}
       </div>}

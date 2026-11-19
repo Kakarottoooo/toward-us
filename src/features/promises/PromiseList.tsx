@@ -27,14 +27,14 @@ export function PromiseList({ language, partnerName, refreshKey, onChanged, hide
   return <section className="promise-list" data-testid="promise-list" aria-labelledby="promise-list-title">
     <h2 id="promise-list-title" className="space-subhead">{t("还欠着什么", "Promises to keep", "Promesas pendientes")}</h2>
     {notice && <p className="space-error" role="alert">{notice}</p>}
-    {!items.length && <p className="promise-empty">{t("你们在对话里答应对方的事，Pinky 会记在这里。", "When you promise each other something in a chat, Pinky keeps it here.", "Cuando se prometan algo en un chat, Pinky lo guardará aquí.")}</p>}
+    {!items.length && <p className="promise-empty">{t("你们在对话里答应对方的事，Ourever 会记在这里。", "When you promise each other something in a chat, Ourever keeps it here.", "Cuando se prometan algo en un chat, Ourever lo guardará aquí.")}</p>}
     {items.map((item) => <article key={item.id} className={`promise-item is-${item.status}${item.later ? " is-later" : ""}`} data-testid="promise-item">
       <div className="promise-head"><span>{who(item)}</span>{!item.shared && <em className="promise-private"><LockKey size={13} />{t("只有你看得到", "Only you see this", "Solo tú lo ves")}</em>}</div>
       <strong>{item.description}{item.when && <small> · {item.when}</small>}</strong>
       {item.quote && <q>{item.quote}</q>}
       <div className="promise-tags">
         {item.status === "kept" && <span className="is-kept"><CheckCircle size={14} weight="fill" />{t("做到了", "Done", "Hecho")}{item.keptAt ? ` · ${day(item.keptAt)}` : ""}</span>}
-        {item.status === "open" && item.later && <span>{t("先不提，过几天再说", "Not now; Pinky will wait", "Ahora no; Pinky esperará")}</span>}
+        {item.status === "open" && item.later && <span>{t("先不提，过几天再说", "Not now; Ourever will wait", "Ahora no; Ourever esperará")}</span>}
         {agreementState(item) && <span><Handshake size={14} />{agreementState(item)}</span>}
       </div>
       {sharing?.id === item.id ? <div className="promise-share">

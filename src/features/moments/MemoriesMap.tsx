@@ -12,7 +12,7 @@ const MODE_KEY = "pinky-map-mode";
 type Mode = "globe" | "flat";
 const readMode = (): Mode => { try { return localStorage.getItem(MODE_KEY) === "flat" ? "flat" : "globe"; } catch { return "globe"; } };
 
-// Pinky's palette on OpenFreeMap's positron (founder 11-06: "做的再更精美一点"): ivory land, soft blue water, sage parks,
+// Ourever's palette on OpenFreeMap's positron (founder 11-06: "做的再更精美一点"): ivory land, soft blue water, sage parks,
 // rose borders, and one name per place in the app's language instead of "Russia / Россия".
 const PAINT: Record<string, Record<string, unknown>> = {
   background: { "background-color": "#f6f0e6" }, water: { "fill-color": "#bcd8e6" }, park: { "fill-color": "#e3ebd6" },
@@ -30,7 +30,7 @@ async function loadStyle(language: Language): Promise<StyleSpecification> {
   for (const layer of style.layers || []) {
     if (layer.layout && Array.isArray(layer.layout["symbol-placement"])) layer.layout["symbol-placement"] = "line";
     if (PAINT[layer.id]) layer.paint = { ...layer.paint, ...PAINT[layer.id] };
-    // Place and water names: one name in the app's language, in Pinky's ink on an ivory halo. Road shields keep their numbers.
+    // Place and water names: one name in the app's language, in Ourever's ink on an ivory halo. Road shields keep their numbers.
     if (layer.type === "symbol" && layer.layout?.["text-field"] && /^(label_|water_name|airport)/.test(layer.id)) {
       layer.layout["text-field"] = localName(language);
       layer.paint = { ...layer.paint, "text-color": layer.id.startsWith("water") ? "#5b7f99" : layer.id.startsWith("label_country") ? "#5f4a52" : "#4a4540", "text-halo-color": "#f6f0e6", "text-halo-width": 1.4, "text-halo-blur": 0.5 };

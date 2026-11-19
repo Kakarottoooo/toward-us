@@ -1,5 +1,5 @@
-// A live voice call with Pinky over WebRTC. Speech and actions stay separate: captions never authorize anything; requests
-// Pinky delegates run on the server like typed ones, and their results are spoken back. Ported from 人脉's voice-call.js.
+// A live voice call with Ourever over WebRTC. Speech and actions stay separate: captions never authorize anything; requests
+// Ourever delegates run on the server like typed ones, and their results are spoken back. Ported from 人脉's voice-call.js.
 export type CallState = "idle" | "connecting" | "connected" | "ending" | "ended";
 export type CaptionRow = { id: string; role: "user" | "agent"; text: string; start: number; end: number; conversationId?: string; messageId?: string };
 type ProviderEvent = { type: string; item_id?: string; transcript?: string; event_id?: string; delta?: string; start_ms?: number; end_ms?: number; delegation?: { id?: string; target?: string } };

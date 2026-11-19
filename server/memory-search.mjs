@@ -86,12 +86,12 @@ export async function searchMemoryResults({ store, userId, query = "", date = ""
       const source = { channel: scope, conversationId: thread.id, messageId: message.id, date: String(message.createdAt || "").slice(0, 10), ...(thread.personId ? { personId: thread.personId } : {}) };
       // Separate caps keep a long question from crowding out the answer. Mark truncation rather than invent the rest.
       const excerpt = (value) => `${squash(value, 220)}${String(value || "").length > 220 ? "…" : ""}`;
-      consider([question?.text, answer?.text].filter(Boolean).join("\n"), message.createdAt, `${where} · ${question ? scope === "us" ? "成员说" : "你说" : "Pinky 说"}`, source,
-        [question && excerpt(question.text), answer && `Pinky 当时答 (${String(answer.createdAt || "").slice(0, 10)})：${excerpt(answer.text)}`].filter(Boolean).join("\n"), answer?.createdAt);
+      consider([question?.text, answer?.text].filter(Boolean).join("\n"), message.createdAt, `${where} · ${question ? scope === "us" ? "成员说" : "你说" : "Ourever 说"}`, source,
+        [question && excerpt(question.text), answer && `Ourever 当时答 (${String(answer.createdAt || "").slice(0, 10)})：${excerpt(answer.text)}`].filter(Boolean).join("\n"), answer?.createdAt);
     }
   };
   for (const thread of threads) {
-    const where = thread.personId ? `只聊${nameOf(thread.personId) || "TA"}` : "和 Pinky 的对话";
+    const where = thread.personId ? `只聊${nameOf(thread.personId) || "TA"}` : "和 Ourever 的对话";
     await addConversation(thread, "me", where);
   }
   if (relationshipId && !personId) {

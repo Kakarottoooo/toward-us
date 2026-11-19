@@ -20,7 +20,7 @@ const VIEWS: View[] = ["upcoming", "decide", "plans", "moments", "reminders"];
 // live at the top of Coming up since 11-06.
 const ALIASES: Record<string, View> = { checkins: "moments", memories: "moments", home: "upcoming", agreements: "upcoming", notifications: "upcoming", lists: "upcoming" };
 
-/** The shared pages the drawer opens. Each shows what Pinky has done; new things are asked for in the conversation. */
+/** The shared pages the drawer opens. Each shows what Ourever has done; new things are asked for in the conversation. */
 export function RelationshipHome({ user, language, onNotice, onAccessChanged, onBack, onAsk }: { user: { id: string; name: string }; language: Language; onNotice: (value: string) => void; onAccessChanged: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const [view, setView] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return VIEWS.includes(requested as View) ? requested as View : ALIASES[requested] || "upcoming"; }); const [parent, setParent] = useState<View | null>(null); const [payload, setPayload] = useState<RelationshipHomePayload | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [selection, setSelection] = useState(() => ({ issueId: new URLSearchParams(location.search).get("issue") || undefined, outcomeId: new URLSearchParams(location.search).get("outcome") || undefined }));

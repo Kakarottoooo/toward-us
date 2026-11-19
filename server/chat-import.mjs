@@ -194,7 +194,7 @@ Extract the episodes that matter for understanding the relationship: conflicts (
 }
 
 function reportInstructions(names, language) {
-  return `You are Pinky, a warm relationship assistant. You have notes from every part of a couple's chat history plus exact statistics computed by code. ${ground(names)}
+  return `You are Ourever, a warm relationship assistant. You have notes from every part of a couple's chat history plus exact statistics computed by code. ${ground(names)}
 Write an honest, kind analysis that helps them understand themselves, not a score and not a verdict on who is right. Ground every pattern in evidence (dates and short verbatim quotes taken only from the notes). Describe recurring cycles (for example one person pursues while the other withdraws), what each person seems to need, what already works between them, and small concrete things to try. Use the statistics only as facts given (who starts conversations, reply times, quiet periods); do not invent numbers.
 watched lists the films, series and shows the two of them clearly watched or followed together (from the notes' shows; together in person or each on their own screen at the same time), once each by its usual name, with the date it was first watched or finished if known and note as at most one short line (where or how, the episode they reached), never inventing any; leave it empty when none. moments are warm or important memories worth keeping; dates are recurring dates worth remembering (anniversary, birthdays) with yearly true when they repeat; promises are things one promised the other, with whether the history shows them kept.
 Safety first: if the history shows threats, intimidation, controlling behavior, coercion, stalking or violence, set safety.concern true, explain briefly and kindly in safety.note, do not frame it as a mutual communication problem, and do not suggest compromise with the harm.
@@ -472,7 +472,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   // leaves it alone), or plain text pasted into the conversation with ?pasted=1.
   function disclosed(req, res, next) {
     if (req.get("X-Pinky-Import-Disclosure") === "1" || req.body?.importDisclosure === 1) return next();
-    return res.status(409).json({ code: "import_disclosure_required", error: say(languageOf(req), "请先在 Pinky 中确认可以提交其他人的消息供 AI 处理。", "Confirm in Pinky that you may submit other people's messages for AI processing.", "Confirma en Pinky que puedes enviar los mensajes de otras personas para su tratamiento con IA.") });
+    return res.status(409).json({ code: "import_disclosure_required", error: say(languageOf(req), "请先在 Ourever 中确认可以提交其他人的消息供 AI 处理。", "Confirm in Ourever that you may submit other people's messages for AI processing.", "Confirma en Ourever que puedes enviar los mensajes de otras personas para su tratamiento con IA.") });
   }
   router.post("/imports", disclosed, raw, async (req, res) => {
     const language = languageOf(req), sessionId = clean(String(req.query.session || ""), 80) || null;
@@ -533,7 +533,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!activePair(context)) throw fail(409, say(language, "先邀请另一半加入，再一起看。", "Invite your partner first.", "Invita primero a tu pareja."));
     const period = `${day(record.firstAt) || "?"} – ${day(record.lastAt) || "?"}`;
     const result = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
-      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: say(language, `我想和你一起看我们聊天记录的分析（${period}，${record.messageCount} 条）。你同意后，分析会放进“我们俩”，我们都能看、都能问 Pinky。`, `I'd like us to look at the analysis of our chat history together (${period}, ${plural(record.messageCount, "message", "messages")}). If you agree, it goes into Us and we can both read it and ask Pinky about it.`, `Me gustaría que viéramos juntos el análisis de nuestro historial de chat (${period}, ${plural(record.messageCount, "mensaje", "mensajes")}). Si aceptas, pasa a Nosotros y los dos podremos leerlo y preguntarle a Pinky.`), handle: `chat_import_request:${record.id}:${record.version}`, refs: [{ type: "chat_import_request", id: record.id, ownerUserId: userId }] });
+      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: say(language, `我想和你一起看我们聊天记录的分析（${period}，${record.messageCount} 条）。你同意后，分析会放进“我们俩”，我们都能看、都能问 Ourever。`, `I'd like us to look at the analysis of our chat history together (${period}, ${plural(record.messageCount, "message", "messages")}). If you agree, it goes into Us and we can both read it and ask Ourever about it.`, `Me gustaría que viéramos juntos el análisis de nuestro historial de chat (${period}, ${plural(record.messageCount, "mensaje", "mensajes")}). Si aceptas, pasa a Nosotros y los dos podremos leerlo y preguntarle a Ourever.`), handle: `chat_import_request:${record.id}:${record.version}`, refs: [{ type: "chat_import_request", id: record.id, ownerUserId: userId }] });
       await tx.updateRelationshipRecordForUser(COLLECTION, record.id, userId, (draft) => { draft.shareRequest = { requestedAt: new Date().toISOString(), relationshipId: context.relationship.id, messageId: sent.message.id }; draft.version += 1; });
       return sent;
     });
@@ -596,7 +596,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   router.get("/imports/w/:code", async (req, res) => {
     const entry = macTokens.get(String(req.params.code).toUpperCase());
     res.type("text/plain; charset=utf-8");
-    if (!entry || entry.expiresAt < Date.now()) return res.send("Write-Host '这条命令已经过期，请回到 Pinky 重新获取。 / This command expired. Get a new one in Pinky.'\n");
+    if (!entry || entry.expiresAt < Date.now()) return res.send("Write-Host '这条命令已经过期，请回到 Ourever 重新获取。 / This command expired. Get a new one in Ourever.'\n");
     const script = await readFile(new URL("./pinky-imessage-windows.ps1", import.meta.url), "utf8");
     res.send(script.replace(/^param\([^\n]*\)/, `$Base = '${originOf(req)}'; $Token = '${String(req.params.code).toUpperCase()}'`));
   });
@@ -620,10 +620,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const hash = hashToken(req.params.token);
     const record = (await store.listRecordsForJob(COLLECTION)).find((item) => item.sync?.tokenHash === hash && !item.archivedAt);
     const user = record ? await store.getUserById(record.ownerUserId) : null;
-    if (!record || !user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("This sync command no longer works. Open Pinky and copy a new one.\n");
-    if (record.sync.importDisclosure !== 1) return res.status(409).type("text/plain").send("Open Pinky, confirm the chat import notice and copy a new Mac sync command.\n");
+    if (!record || !user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("This sync command no longer works. Open Ourever and copy a new one.\n");
+    if (record.sync.importDisclosure !== 1) return res.status(409).type("text/plain").send("Open Ourever, confirm the chat import notice and copy a new Mac sync command.\n");
     let parsed;
-    try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read these messages.\n"); }
+    try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Ourever could not read these messages.\n"); }
     const language = await memberLanguage(store, user.id);
     const context = await store.getRelationshipContext(user.id);
     const partner = context?.members?.find((member) => member.userId !== user.id)?.user?.name || "";
@@ -649,21 +649,21 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // The partner's words are in it, so the partner is told once, in Us, that it exists and who can see it (founder 11-05).
     if (first && activePair(context)) {
       const name = user.name || "TA";
-      const result = await store.transaction(`relationship:${context.relationship.id}`, (tx) => appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId: user.id, source: "app", handle: `imessage-sync:${record.id}`, i18n: togetherI18n((lang) => say(lang, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`)), text: say(language, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`) })).catch((error) => { console.error("Could not tell the partner about iMessage sync:", error?.message || error); return null; });
+      const result = await store.transaction(`relationship:${context.relationship.id}`, (tx) => appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId: user.id, source: "app", handle: `imessage-sync:${record.id}`, i18n: togetherI18n((lang) => say(lang, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Ourever，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Ourever, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Ourever de ${name}, solo ${name} lo ve.`)), text: say(language, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Ourever，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Ourever, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Ourever de ${name}, solo ${name} lo ve.`) })).catch((error) => { console.error("Could not tell the partner about iMessage sync:", error?.message || error); return null; });
       if (result && !result.duplicate) router.emitTogether?.(result.conversation, null);
     }
     res.type("text/plain").send(`${say(language, `已同步 ${fresh.length} 条新消息，一共 ${messages.length} 条。只有你能看到。`, `Synced ${plural(fresh.length, "new message", "new messages")}, ${messages.length} in all. Only you can see them.`, `${fresh.length === 1 ? "Se sincronizó 1 mensaje nuevo" : `Se sincronizaron ${fresh.length} mensajes nuevos`}, ${messages.length} en total. Solo tú los ves.`)}\n`);
   });
   router.post("/imports/upload/:token", raw, async (req, res) => {
     const entry = macTokens.get(req.params.token);
-    if (!entry || entry.expiresAt < Date.now()) return res.status(401).type("text/plain").send("This command expired. Open Pinky and copy a new one.\n");
+    if (!entry || entry.expiresAt < Date.now()) return res.status(401).type("text/plain").send("This command expired. Open Ourever and copy a new one.\n");
     const user = await store.getUserById(entry.userId);
-    if (!user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("Please sign in to Pinky again.\n");
+    if (!user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("Please sign in to Ourever again.\n");
     let parsed;
-    try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read this conversation.\n"); }
+    try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Ourever could not read this conversation.\n"); }
     macTokens.delete(req.params.token);
     const record = await createImport(user, parsed, { sessionId: entry.sessionId, language: entry.language });
-    res.type("text/plain").send(`${say(entry.language, `已导入 ${parsed.conversations[0]?.messages.length || 0} 条消息。回到 Pinky 看分析进度。`, `Imported ${plural(parsed.conversations[0]?.messages.length || 0, "message", "messages")}. Go back to Pinky to follow the analysis.`, `${(parsed.conversations[0]?.messages.length || 0) === 1 ? "Se importó 1 mensaje" : `Se importaron ${parsed.conversations[0]?.messages.length || 0} mensajes`}. Vuelve a Pinky para ver el análisis.`)}\n${record.id}\n`);
+    res.type("text/plain").send(`${say(entry.language, `已导入 ${parsed.conversations[0]?.messages.length || 0} 条消息。回到 Ourever 看分析进度。`, `Imported ${plural(parsed.conversations[0]?.messages.length || 0, "message", "messages")}. Go back to Ourever to follow the analysis.`, `${(parsed.conversations[0]?.messages.length || 0) === 1 ? "Se importó 1 mensaje" : `Se importaron ${parsed.conversations[0]?.messages.length || 0} mensajes`}. Vuelve a Ourever para ver el análisis.`)}\n${record.id}\n`);
   });
 
   router.use((error, req, res, next) => error.statusCode ? res.status(error.statusCode).json({ error: error.message }) : error.type === "entity.too.large" ? res.status(413).json({ error: say(languageOf(req), "文件太大了。导出时选“不含媒体”，或只导出文字。", "This file is too large. Export without media, or text only.", "El archivo es demasiado grande. Exporta sin archivos multimedia.") }) : next(error));

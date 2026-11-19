@@ -1,4 +1,4 @@
-/* Pinky at work (AgentWorking.tsx): three dots that rise in turn, a pill under the character and a typing bubble. */
+/* Ourever at work (AgentWorking.tsx): three dots that rise in turn, a pill under the character and a typing bubble. */
 .agent-dots { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
 .agent-dots i { display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--jian-blue); animation: agent-dot 1.2s ease-in-out infinite; }
 .agent-dots i:nth-child(2) { animation-delay: .15s; }

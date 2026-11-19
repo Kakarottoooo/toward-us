@@ -5,6 +5,10 @@ const TIMEOUT_MS = 15_000;
 
 export function createEmailSender({ env = process.env, fetchImpl = globalThis.fetch, log = console } = {}) {
   const apiKey = env.RESEND_API_KEY || "";
+  // Keep the verified sender address even when its old display name is still configured.
+  const senderAddress = String(env.EMAIL_FROM || "onboarding@resend.dev").trim();
+  const mailbox = senderAddress.match(/<([^<>]+)>$/)?.[1] || senderAddress;
+  const from = `Ourever <${mailbox}>`;
   const configured = Boolean(apiKey);
   const production = env.NODE_ENV === "production";
   async function send({ to, subject, text, html, link }) {
@@ -16,7 +20,7 @@ export function createEmailSender({ env = process.env, fetchImpl = globalThis.fe
       const response = await fetchImpl(RESEND_URL, {
         method: "POST",
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({ from: env.EMAIL_FROM || "Pinky <onboarding@resend.dev>", to: [to], subject, text, ...(html ? { html } : {}) }),
+        body: JSON.stringify({ from, to: [to], subject, text, ...(html ? { html } : {}) }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!response.ok) { log.error(`[email] delivery failed with status ${response.status}`); return { sent: false }; }

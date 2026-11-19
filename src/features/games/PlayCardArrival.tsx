@@ -37,7 +37,7 @@ export function PlayCardArrival({ language }: { language: Language }) {
       activeLoad.current = next;
       void relationshipApi<Inbox>(inboxPath, { signal: next.signal }).then((received) => {
         if (!next.signal.aborted) setInbox(received);
-      }).catch(() => { /* Opening the rest of Pinky never depends on the inbox. */ });
+      }).catch(() => { /* Opening the rest of Ourever never depends on the inbox. */ });
     };
     const visibility = () => {
       if (document.hidden) activeLoad.current?.abort();

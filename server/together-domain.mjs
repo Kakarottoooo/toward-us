@@ -22,7 +22,7 @@ import { markShowedUp } from "./streak.mjs";
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
 // "nudge" is 想你了: one tap, no words (founder 11-06).
 const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter", "game", "match_invite", "watch_check"]);
-const AGENT_CALL = /\bpinky\b|@agent/i;
+const AGENT_CALL = /\b(?:ourever|pinky)\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 // The conversation record carries at most MESSAGE_LIMIT messages (the working set every read and prompt sees). What falls off
 // the front is not lost: it moves, KEEP_AFTER_ARCHIVE at a time, into archive chunks of up to ARCHIVE_CHUNK messages each,
@@ -70,7 +70,7 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
   // One pending agreement per couple, whatever path created it (together, full decision flow).
   const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
-    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call, answers }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}),
+    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call, answers }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Ourever" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}),
       // A daily question carries its answers only once both have answered; before that neither answer reaches the model.
       ...(answers && Object.keys(answers).length >= 2 ? { answers: Object.entries(answers).map(([userId, answer]) => ({ userId, text: answer.text })) } : {}) })),
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
@@ -235,7 +235,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const name = (id) => members.find((member) => member.id === id)?.name || "";
   // Each open commitment says whose it is, so an answer to a check-in is recorded against the writer's own part only.
   const owner = (ownerType) => ownerType === "both" ? "both" : (membership?.members || []).find((member) => ownerType === `member_${String(member.role).toLowerCase()}`)?.user?.name || "";
-  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Pinky" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), notTriedYet: await notTriedYet(store, actorUserId, "us").catch(() => []) };
+  const context = { ...built, messages: built.messages.map((item) => ({ ...item, from: item.role === "agent" ? "Ourever" : name(item.actorUserId), ...(item.answers ? { answers: item.answers.map((answer) => ({ from: name(answer.userId), text: answer.text })) } : {}) })), openCommitments: built.openCommitments.map((item) => ({ ...item, owner: owner(item.ownerType) })), sharedProfile: built.sharedProfile.map((item) => ({ ...item, about: item.about ? name(item.about) : "both" })), notTriedYet: await notTriedYet(store, actorUserId, "us").catch(() => []) };
   // Today in the writer's time zone, with its weekday, so "this Sunday" becomes the right date on the calendar (founder 11-06).
   const zone = await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, actorUserId)).catch(() => null) || "UTC";
   const today = `${new Date().toLocaleDateString("en-CA", { timeZone: zone })} (${new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: zone })})`;
@@ -342,7 +342,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
       for (const note of action.notes || []) {
         if (!context?.members.some((member) => member.userId === note.memberId)) continue;
         const session = await privateSessionFor(tx, note.memberId);
-        const header = { zh: "Pinky 给你的私下反馈（只有你能看到）", en: "Private feedback from Pinky (only you can see this)", es: "Comentario privado de Pinky (solo tú puedes verlo)" }[session.language] || "Pinky 给你的私下反馈（只有你能看到）";
+        const header = { zh: "Ourever 给你的私下反馈（只有你能看到）", en: "Private feedback from Ourever (only you can see this)", es: "Comentario privado de Ourever (solo tú puedes verlo)" }[session.language] || "Ourever 给你的私下反馈（只有你能看到）";
         const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, note.memberId, (draft) => {
           keepMessages(draft, [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: `${header}\n\n${clean(note.text, 2000)}`, askedFrom: "mediation", createdAt: new Date().toISOString() }]);
           draft.version += 1;

@@ -41,9 +41,9 @@ export function createHandoffRouter() {
     const [date, time] = start.split("T"); const begin = `${date.replace(/-/g, "")}T${time.replace(":", "")}00`;
     const endDate = new Date(`${start}:00Z`); endDate.setUTCHours(endDate.getUTCHours() + 1);
     const end = endDate.toISOString().slice(0, 16).replace(/[-:]/g, "") + "00";
-    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Pinky//EN", "BEGIN:VEVENT", `UID:${randomUUID()}@pinky`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Ourever//EN", "BEGIN:VEVENT", `UID:${randomUUID()}@pinky`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
       `DTSTART;TZID=${tz}:${begin}`, `DTEND;TZID=${tz}:${end}`, `SUMMARY:${icsText(title)}`, ...(req.query.location ? [`LOCATION:${icsText(req.query.location)}`] : []), "END:VEVENT", "END:VCALENDAR"];
-    res.set({ "content-type": "text/calendar; charset=utf-8", "content-disposition": "inline; filename=pinky-event.ics", "cache-control": "no-store" }).send(lines.join("\r\n"));
+    res.set({ "content-type": "text/calendar; charset=utf-8", "content-disposition": "inline; filename=ourever-event.ics", "cache-control": "no-store" }).send(lines.join("\r\n"));
   });
   return router;
 }

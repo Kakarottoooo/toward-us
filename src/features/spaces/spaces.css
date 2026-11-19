@@ -1,4 +1,4 @@
-/* Spaces: the containers Pinky builds per couple, drawn in one of five general layouts on the ivory surface. */
+/* Spaces: the containers Ourever builds per couple, drawn in one of five general layouts on the ivory surface. */
 .space-main { display: flex; flex-direction: column; gap: 14px; }
 .space-scope { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #6f6860; font-size: 14px; }
 .space-description { margin: 0; color: #4a4540; font-size: 16px; line-height: 1.55; }

@@ -18,7 +18,7 @@ export function FindUs({ language, partnerName, onClose }: { language: Language;
   const pick = async (who: "me" | "partner") => {
     setNote("");
     const status = await askPhotoAccess();
-    if (status !== "authorized" && status !== "limited") { setNote(t("没有相册权限。可以在 iPhone 的“设置 → Pinky → 照片”里打开“所有照片”。", "No photo access. Allow all photos in iPhone Settings → Pinky → Photos.", "Sin acceso a fotos. Permite todas las fotos en Ajustes → Pinky → Fotos.")); return; }
+    if (status !== "authorized" && status !== "limited") { setNote(t("没有相册权限。可以在 iPhone 的“设置 → Ourever → 照片”里打开“所有照片”。", "No photo access. Allow all photos in iPhone Settings → Ourever → Photos.", "Sin acceso a fotos. Permite todas las fotos en Ajustes → Ourever → Fotos.")); return; }
     const face = await pickFace();
     if (face === "no_face") { setNote(t("这张照片里没找到清楚的脸，换一张正脸的试试。", "No clear face in that photo; try one facing the camera.", "No hay una cara clara en esa foto; prueba con otra de frente.")); return; }
     if (face) setFaces((current) => ({ ...current, [who]: face }));

@@ -1,4 +1,4 @@
-// Ways into years of memories without scrolling (founder 11-05): stories Pinky finds by itself (trips, holidays across years,
+// Ways into years of memories without scrolling (founder 11-05): stories Ourever finds by itself (trips, holidays across years,
 // anniversaries, years, firsts), a year → month zoom, topics and a map. Everything is derived from dates and places already
 // on each memory; nothing here calls a model.
 import type { Language } from "../../i18n";
@@ -80,7 +80,7 @@ export function holidaysOf(moments: Moment[], language: Language): Story[] {
   });
 }
 
-/** Days they marked as yearly in Pinky (birthdays, anniversaries), across the years. */
+/** Days they marked as yearly in Ourever (birthdays, anniversaries), across the years. */
 export function anniversariesOf(moments: Moment[], milestones: Milestone[], language: Language): Story[] {
   return milestones.filter((item) => !item.archivedAt && typeof item.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && (item.recurringRule === "yearly" || item.type === "relationship_started")).flatMap((item) => {
     const monthDay = String(item.date).slice(5), matching = moments.filter((moment) => moment.date.slice(5) === monthDay);

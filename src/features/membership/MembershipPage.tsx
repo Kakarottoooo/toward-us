@@ -5,7 +5,7 @@ import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./membership.css";
 
-// Pinky 会员 (founder 11-06): one member pays, both are members. In the iPhone app the purchase goes through Apple (the
+// Ourever 会员 (founder 11-06): one member pays, both are members. In the iPhone app the purchase goes through Apple (the
 // PinkyStore StoreKit plugin); on the web through Stripe Checkout. The server decides who is a member from verified payments.
 export type Membership = { plan: "free" | "member"; until: string | null; source: string | null; paidBy: string | null; outfits: { owned: string[]; equipped: string | null }; providers: { stripe: boolean; apple: boolean }; prices: { monthly: { usd: number }; yearly: { usd: number }; outfit: { usd: number } } };
 type StoreProduct = { id: string; displayPrice: string };
@@ -46,7 +46,7 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
   const [code, setCode] = useState(readBetaCode);
   const redeem = async () => {
     keyboard.hide(); setBusy("redeem"); setNotice("");
-    try { await relationshipApi("/api/membership/redeem", jsonBody({ code, language })); forgetBetaCode(); setCode(""); await load(); setNotice(t("内测码已用上，谢谢你们来试 Pinky！", "Beta code applied. Thanks for trying Pinky!", "Código aplicado. ¡Gracias por probar Pinky!")); }
+    try { await relationshipApi("/api/membership/redeem", jsonBody({ code, language })); forgetBetaCode(); setCode(""); await load(); setNotice(t("内测码已用上，谢谢你们来试 Ourever！", "Beta code applied. Thanks for trying Ourever!", "Código aplicado. ¡Gracias por probar Ourever!")); }
     catch (error) { setNotice((error as Error).message); } finally { setBusy(""); }
   };
   const load = async () => { try { setData(await relationshipApi<Membership>("/api/membership")); } catch (error) { setNotice((error as Error).message); } };
@@ -86,15 +86,15 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
   const price = (plan: "monthly" | "yearly") => apple[APPLE_IDS[plan]] || dollars(data.prices[plan].usd);
   const canPay = Boolean(store) || (!ios && data.providers.stripe);
   const perks = [
-    t("每天和 Pinky 聊得更多、打电话更久", "More with Pinky every day, and longer calls", "Más con Pinky cada día y llamadas más largas"),
-    t("导入更多聊天记录，让 Pinky 看懂你们", "Import more chat history for Pinky to understand you", "Importa más historial para que Pinky los entienda"),
+    t("每天和 Ourever 聊得更多、打电话更久", "More with Ourever every day, and longer calls", "Más con Ourever cada día y llamadas más largas"),
+    t("导入更多聊天记录，让 Ourever 看懂你们", "Import more chat history for Ourever to understand you", "Importa más historial para que Ourever los entienda"),
     t("小家伙的全部装扮", "Every outfit for your little one", "Todos los atuendos para su pequeño"),
     t(partnerName ? `一个人开通，你和 ${partnerName} 都能用` : "一个人开通，两个人都能用", partnerName ? `One of you pays; you and ${partnerName} both get it` : "One of you pays; you both get it", partnerName ? `Uno paga; tú y ${partnerName} lo tienen` : "Uno paga; los dos lo tienen"),
   ];
   return <div className="membership" data-testid="membership-page">
     <section className={`membership-hero ${member ? "is-member" : ""}`}>
       <span className="membership-crown" aria-hidden="true"><Crown size={26} weight="fill" /></span>
-      <h2>{member ? t("你们是 Pinky 会员", "You're Pinky members", "Son miembros de Pinky") : t("Pinky 会员", "Pinky membership", "Membresía Pinky")}</h2>
+      <h2>{member ? t("你们是 Ourever 会员", "You're Ourever members", "Son miembros de Ourever") : t("Ourever 会员", "Ourever membership", "Membresía Ourever")}</h2>
       <p>{member
         ? data.source === "beta" ? t(`内测送的会员，到 ${until}。`, `A beta gift, until ${until}.`, `Regalo de la beta, hasta ${until}.`)
           : mine ? t(`由你开通，下次续费 ${until}。`, `You pay for it; it renews ${until}.`, `Lo pagas tú; se renueva el ${until}.`)

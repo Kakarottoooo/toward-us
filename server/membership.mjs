@@ -158,7 +158,7 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
   async function applyApple(userId, signedTransaction) {
     const payload = verifyAppleJws(signedTransaction, { now: now(), allowXcode: !production });
     const product = APPLE_PRODUCTS[payload.productId];
-    if (!product || !appleBundles().has(payload.bundleId)) throw fail(400, "This is not a Pinky purchase.", "apple_product");
+    if (!product || !appleBundles().has(payload.bundleId)) throw fail(400, "This is not a Ourever purchase.", "apple_product");
     const owner = String(payload.appAccountToken || "").toLowerCase();
     if (userId && owner && owner !== userId.toLowerCase()) throw fail(403, "This purchase belongs to another account.", "apple_owner");
     const externalId = `apple:${payload.originalTransactionId || payload.transactionId}`;
@@ -203,10 +203,10 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
     try {
       const common = { client_reference_id: user.id, customer_email: user.email, success_url: `${origin}/?view=membership&paid=1`, cancel_url: `${origin}/?view=membership`, locale: language === "zh" ? "zh" : language, metadata: { userId: user.id } };
       const session = outfit
-        ? await stripe("POST", "checkout/sessions", { ...common, mode: "payment", metadata: { userId: user.id, outfit }, line_items: { 0: { quantity: 1, price_data: { currency: "usd", unit_amount: PRICES.outfit.usd, product_data: { name: `Pinky outfit: ${outfit}` } } } } })
+        ? await stripe("POST", "checkout/sessions", { ...common, mode: "payment", metadata: { userId: user.id, outfit }, line_items: { 0: { quantity: 1, price_data: { currency: "usd", unit_amount: PRICES.outfit.usd, product_data: { name: `Ourever outfit: ${outfit}` } } } } })
         : await stripe("POST", "checkout/sessions", { ...common, mode: "subscription", subscription_data: { metadata: { userId: user.id, plan: product } }, line_items: { 0: env[product === "yearly" ? "STRIPE_PRICE_YEARLY" : "STRIPE_PRICE_MONTHLY"]
           ? { quantity: 1, price: env[product === "yearly" ? "STRIPE_PRICE_YEARLY" : "STRIPE_PRICE_MONTHLY"] }
-          : { quantity: 1, price_data: { currency: "usd", unit_amount: PRICES[product].usd, recurring: { interval: product === "yearly" ? "year" : "month" }, product_data: { name: product === "yearly" ? "Pinky membership (yearly)" : "Pinky membership (monthly)" } } } } });
+          : { quantity: 1, price_data: { currency: "usd", unit_amount: PRICES[product].usd, recurring: { interval: product === "yearly" ? "year" : "month" }, product_data: { name: product === "yearly" ? "Ourever membership (yearly)" : "Ourever membership (monthly)" } } } } });
       res.json({ url: session.url });
     } catch (error) { res.status(error?.statusCode || 500).json({ error: say(language, "现在付不了款，请稍后再试。", "Payment isn't available right now. Try again soon.", "El pago no está disponible ahora. Inténtalo más tarde."), code: error?.code }); }
   });

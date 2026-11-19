@@ -73,7 +73,7 @@ export async function answerDateCheck(store, { userId, sessionId, messageId, rat
   if (!Object.hasOwn(RATINGS, rating)) throw fail(400, "Choose an answer.");
   if (question.dateAnswer) return session;
   const context = await store.getRelationshipContext(userId);
-  if (!(context?.relationship.status === "active" && context.members.length === 2)) throw fail(409, say(language, "你们已经不在一起使用 Pinky 了。", "You are no longer connected.", "Ya no están conectados."));
+  if (!(context?.relationship.status === "active" && context.members.length === 2)) throw fail(409, say(language, "你们已经不在一起使用 Ourever 了。", "You are no longer connected.", "Ya no están conectados."));
   return store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
     const current = await tx.getRelationshipRecordForUser("privateAgentThreads", session.id, userId);
     const asked = current?.messages.find((message) => message.id === messageId && message.dateCheck);

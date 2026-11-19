@@ -7,9 +7,9 @@ import "./people.css";
 
 // 我的 TA 们 (founder 11-09: someone single may be getting to know several people, and must find this without being taught).
 // The cards appear by themselves: a chat screenshot with someone new files them, and from then on they sit in a row at the
-// top of Just me. Tapping one shows what Pinky keeps about them; 对比 and 完整档案 open the 我的 TA 们 page.
+// top of Just me. Tapping one shows what Ourever keeps about them; 对比 and 完整档案 open the 我的 TA 们 page.
 export type Person = { id: string; name: string; aliases: string[]; archived: boolean; lastSeenAt: string; thread?: { id: string; updatedAt: string; lastFrom: string | null } | null };
-/** One Pinky, three stages (founder 11-09): getting to know several people, settled on one, together in Pinky. */
+/** One Ourever, three stages (founder 11-09): getting to know several people, settled on one, together in Ourever. */
 export type Stage = "dating" | "chosen" | "together";
 export type PeopleState = { people: Person[]; stage: Stage; chosen: Person | null };
 
@@ -45,11 +45,11 @@ export function TogetherSheet({ language, person, others, onClose, onInvite }: {
     {person && <div className="person-sheet" data-testid="together-sheet">
       <ul>
         {others > 0 && <li>{t(`其他 ${others} 个人先收起来，不会删除；以后在 设置 → 隐私 → 以前的档案 里还能看到。`, `The other ${others} are put away, not deleted; you can still find them in Settings → Privacy → Earlier people.`, `Las otras ${others} quedan guardadas, no borradas; están en Ajustes → Privacidad.`)}</li>}
-        <li>{t(`${name}永远看不到他们，也看不到你和 Pinky 聊过的私密内容。`, `${name} will never see them, nor what you told Pinky in private.`, `${name} nunca las verá, ni lo que le contaste a Pinky en privado.`)}</li>
-        <li>{t(`你与 Pinky 单独谈到${name}的对话仍会保密。`, `Your private conversations with Pinky about ${name} stay private.`, `Tus conversaciones privadas con Pinky sobre ${name} seguirán siendo privadas.`)}</li>
+        <li>{t(`${name}永远看不到他们，也看不到你和 Ourever 聊过的私密内容。`, `${name} will never see them, nor what you told Ourever in private.`, `${name} nunca las verá, ni lo que le contaste a Ourever en privado.`)}</li>
+        <li>{t(`你与 Ourever 单独谈到${name}的对话仍会保密。`, `Your private conversations with Ourever about ${name} stay private.`, `Tus conversaciones privadas con Ourever sobre ${name} seguirán siendo privadas.`)}</li>
       </ul>
       <div className="person-actions">
-        <button type="button" className="person-primary" onClick={onInvite} data-testid="together-invite">{t(`邀请${name}一起用 Pinky`, `Invite ${name} to Pinky`, `Invitar a ${name} a Pinky`)}</button>
+        <button type="button" className="person-primary" onClick={onInvite} data-testid="together-invite">{t(`邀请${name}一起用 Ourever`, `Invite ${name} to Ourever`, `Invitar a ${name} a Ourever`)}</button>
         <button type="button" className="person-secondary" onClick={onClose} data-testid="together-later">{t("先不邀请", "Not now", "Ahora no")}</button>
       </div>
     </div>}
@@ -61,7 +61,7 @@ export function PeopleRow({ language, people, current, unread, brainUnread, onBr
   if (!people.length) return null;
   // Founder 11-09: "点击一个人，然后自动是一个会话……还有一个主会话，就算大脑，可以问所有人的关系".
   return <Carousel ariaLabel={t("对话", "Conversations", "Conversaciones")} className="people-row" contentClassName="people-row-track">
-    <button type="button" className={`person-chip ${current === null ? "current" : ""}`} onClick={onBrain} aria-current={current === null ? "true" : undefined} data-testid="thread-brain"><span className="person-avatar brain">P</span>{brainUnread && current !== null && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>Pinky</small></button>
+    <button type="button" className={`person-chip ${current === null ? "current" : ""}`} onClick={onBrain} aria-current={current === null ? "true" : undefined} data-testid="thread-brain"><span className="person-avatar brain" aria-hidden="true" />{brainUnread && current !== null && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>Ourever</small></button>
     {people.map((person) => <button key={person.id} type="button" className={`person-chip ${current === person.id ? "current" : ""}`} onClick={() => onOpen(person)} aria-current={current === person.id ? "true" : undefined} data-testid="person-chip"><Avatar name={person.name} />{unread.includes(person.id) && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>{person.name}</small></button>)}
     <button type="button" className="person-chip" onClick={onAdd} data-testid="person-add"><span className="person-avatar add"><Plus size={18} /></span><small>{t("新的人", "Someone new", "Alguien nuevo")}</small></button>
   </Carousel>;

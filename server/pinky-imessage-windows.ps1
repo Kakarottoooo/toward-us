@@ -1,6 +1,6 @@
 param([Parameter(Mandatory = $true)][string]$Base, [Parameter(Mandatory = $true)][string]$Token)
-# Pinky: read ONE iMessage conversation from the iPhone backup on this Windows PC and send it to your private Pinky import.
-# Nothing else is read or sent. Run from the command Pinky shows you. It reads a copy of the backup's message database with
+# Ourever: read ONE iMessage conversation from the iPhone backup on this Windows PC and send it to your private Ourever import.
+# Nothing else is read or sent. Run from the command Ourever shows you. It reads a copy of the backup's message database with
 # the SQLite that ships with Windows (winsqlite3.dll), and the backup's contacts only to show names in the list.
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -66,7 +66,7 @@ public static class PinkyBackup {
     return s.Append("]}").ToString();
   }
 
-  /** Sends the document gzipped; returns the status code and Pinky's reply. */
+  /** Sends the document gzipped; returns the status code and Ourever's reply. */
   public static string[] Send(string url, string json) {
     var buffer = new MemoryStream();
     using (var zip = new GZipStream(buffer, CompressionMode.Compress, true)) { var bytes = Encoding.UTF8.GetBytes(json); zip.Write(bytes, 0, bytes.Length); }
@@ -105,8 +105,8 @@ try {
   Copy-Item -LiteralPath $sms.FullName -Destination $db
   try { [void][PinkyBackup]::Query($db, 'SELECT 1 FROM message LIMIT 1') } catch {
     Write-Host ''
-    Say '这份 iPhone 备份是加密的，Pinky 读不了。在“Apple 设备”App（或 iTunes）里取消勾选“加密本地备份”（需要输入当时设的备份密码），再点“立即备份”，完成后重新运行同一条命令。' `
-        'This iPhone backup is encrypted, so Pinky cannot read it. In the Apple Devices app (or iTunes), turn off "Encrypt local backup" (it asks for the backup password), click Back Up Now, then run the same command again.'
+    Say '这份 iPhone 备份是加密的，Ourever 读不了。在“Apple 设备”App（或 iTunes）里取消勾选“加密本地备份”（需要输入当时设的备份密码），再点“立即备份”，完成后重新运行同一条命令。' `
+        'This iPhone backup is encrypted, so Ourever cannot read it. In the Apple Devices app (or iTunes), turn off "Encrypt local backup" (it asks for the backup password), click Back Up Now, then run the same command again.'
     return
   }
 
@@ -149,7 +149,7 @@ try {
   $chosen = $chats[$n - 1]
   $title = NameOf $chosen[1]; if (-not $title) { $title = $chosen[1] }
 
-  Say '正在读取并发送到 Pinky…' 'Reading and sending to Pinky…'
+  Say '正在读取并发送到 Ourever…' 'Reading and sending to Ourever…'
   $result = [PinkyBackup]::Send("$Base/api/imports/upload/$Token", [PinkyBackup]::Export($db, [long]$chosen[0], $title))
   Write-Host ''
   Write-Host (($result[1] -split "`n")[0])

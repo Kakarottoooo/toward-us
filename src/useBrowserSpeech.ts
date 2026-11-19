@@ -29,7 +29,7 @@ export function useBrowserSpeech({ lang, onTranscript, onError }: { lang: string
       }
       setPartial(interim);
     };
-    instance.onerror = (event) => { if (["no-speech", "aborted"].includes(event.error)) return; stop(); callbacks.current.onError(event.error === "not-allowed" ? "Allow microphone and speech recognition for Pinky in Settings." : "Voice is unavailable right now. You can still type."); };
+    instance.onerror = (event) => { if (["no-speech", "aborted"].includes(event.error)) return; stop(); callbacks.current.onError(event.error === "not-allowed" ? "Allow microphone and speech recognition for Ourever in Settings." : "Voice is unavailable right now. You can still type."); };
     // Phones end a session after a pause; keep listening until the person stops.
     instance.onend = () => { if (wanted.current && recognition.current === instance) { try { instance.start(); } catch { stop(); } } };
     recognition.current = instance;

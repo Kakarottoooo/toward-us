@@ -9,7 +9,7 @@ import "./feedback.css";
 type Sent = { id: string; text: string; photoIds: string[]; kind: string | null; status: string; createdAt: string };
 type Shot = { key: string; preview: string; id: string | null; failed?: boolean };
 
-// Feedback about Pinky itself: what happened, where, and screenshots. Only the sender sees it here; the team reads the
+// Feedback about Ourever itself: what happened, where, and screenshots. Only the sender sees it here; the team reads the
 // sorted queue. The page the person came from is sent along so a bug can be found.
 export function FeedbackPage({ language, from, onBack }: { language: Language; from: string; onBack: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);

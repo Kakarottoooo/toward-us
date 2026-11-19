@@ -1,6 +1,7 @@
 @import "./welcome-layout.css";
 
 :root {
+  --ourever-avatar: url("/assets/brand/pinky-icon-192.png?v=heart2");
   --jian-paper: #f4efe6;
   --jian-paper-bright: #fbf7ef;
   --jian-ink: #252525;
@@ -321,7 +322,7 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .recovery-content .account-recovery form { display: grid; gap: 18px; }
 .recovery-content .account-recovery form > button { justify-self: stretch; }
 
-/* Install Pinky on the Home Screen: a once-only sheet (src/features/reminders/InstallHint.tsx). */
+/* Install Ourever on the Home Screen: a once-only sheet (src/features/reminders/InstallHint.tsx). */
 .install-hint { display: grid; gap: 14px; padding: 4px 0 8px; color: var(--jian-ink); }
 .install-hint p { margin: 0; color: #4a4540; font-size: 16px; line-height: 1.6; }
 .install-hint ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-size: 16px; line-height: 1.5; }

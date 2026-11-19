@@ -24,7 +24,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidEnterBackground(_ scene: UIScene) { PinkyTelemetry.shared.background() }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        // Files shared to Pinky (WhatsApp "Export chat", Files, Mail) are chat-history imports; other links go to Capacitor.
+        // Files shared to Ourever (WhatsApp "Export chat", Files, Mail) are chat-history imports; other links go to Capacitor.
         let files = URLContexts.filter { $0.url.isFileURL }
         for context in files { ChatImportUploader.shared.receive(context.url, window: window) }
         let others = URLContexts.subtracting(files)
@@ -100,8 +100,8 @@ final class ChatImportUploader {
                     if status == 201, let id = id, let target = URL(string: "/?view=import&import=\(id)", relativeTo: page) {
                         webView.load(URLRequest(url: target))
                     } else {
-                        let message = json?["error"] as? String ?? (status == 401 ? "Please open Pinky and sign in first." : "Pinky could not import this file.")
-                        let alert = UIAlertController(title: "Pinky", message: message, preferredStyle: .alert)
+                        let message = json?["error"] as? String ?? (status == 401 ? "Please open Ourever and sign in first." : "Ourever could not import this file.")
+                        let alert = UIAlertController(title: "Ourever", message: message, preferredStyle: .alert)
                         alert.addAction(UIAlertAction(title: "OK", style: .default))
                         window?.rootViewController?.present(alert, animated: true)
                     }
@@ -129,7 +129,7 @@ private final class PinkyLanguagePreference: NSObject, WKScriptMessageHandlerWit
     }
 }
 
-/// The bridge with Pinky's own native plugins registered (Capacitor 8 has no auto-registration for app-target plugins).
+/// The bridge with Ourever's own native plugins registered (Capacitor 8 has no auto-registration for app-target plugins).
 class PinkyBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
@@ -190,7 +190,7 @@ class PinkyBridgeViewController: CAPBridgeViewController {
     }
 }
 
-/// Reads one photo album the member picked (usually a shared couple album) so Pinky can turn it into the couple's memories.
+/// Reads one photo album the member picked (usually a shared couple album) so Ourever can turn it into the couple's memories.
 /// The web app asks for times and places first and only then for small copies of the few photos each memory needs.
 @objc(PinkyPhotosPlugin)
 public class PinkyPhotosPlugin: CAPPlugin, CAPBridgedPlugin {

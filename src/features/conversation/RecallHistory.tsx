@@ -69,7 +69,7 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
     {page.messages.map((message) => {
       const mine = message.role === "user" || message.actorUserId === userId;
       const agent = message.role === "assistant" || message.role === "agent";
-      const author = agent ? "Pinky" : members.find((member) => member.id === message.actorUserId)?.name || t("我", "Me", "Yo");
+      const author = agent ? "Ourever" : members.find((member) => member.id === message.actorUserId)?.name || t("我", "Me", "Yo");
       return <article key={message.id} ref={message.id === page.messageId ? target : undefined} tabIndex={-1} data-message-id={message.id} data-highlighted={highlight === message.id ? "true" : undefined}
         className={`conversation-message ${mine ? "from-me" : agent ? "from-agent" : "from-partner"} recall-original${highlight === message.id ? " is-highlighted" : ""}`}>
         <span>{author}</span><time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleString(languageTag(language), { dateStyle: "medium", timeStyle: "short" })}</time>

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The shell loads the hosted web app so the existing HttpOnly session cookie keeps working unchanged.
-// CLOUD_URL is Pinky's server in the cloud (render.yaml, Render service "toward-us-private-beta"): the one place
+// CLOUD_URL is Ourever's server in the cloud (render.yaml, Render service "toward-us-private-beta"): the one place
 // the App's server is set.
 // TOWARD_US_APP_URL overrides it at sync time for dogfooding (a PC on the same Wi-Fi, a Tailscale name). A release build
 // (--release, used for TestFlight and the App Store) may not point at a private or cleartext address.
@@ -31,7 +31,7 @@ export function shellFiles(raw, { release = false } = {}) {
   const cleartext = url.protocol === 'http:';
   const config = {
     appId: 'us.toward.app',
-    appName: 'Pinky',
+    appName: 'Ourever',
     webDir: 'www',
     loggingBehavior: 'none',
     backgroundColor: '#f4efe6',
@@ -41,15 +41,15 @@ export function shellFiles(raw, { release = false } = {}) {
     ios: { contentInset: 'automatic', allowsLinkPreview: false },
     plugins: { CapacitorHttp: { enabled: false }, PinkyWelcome: { productionOrigin: CLOUD_URL } },
   };
-  return { url, cleartext, config, index: '<!doctype html><meta charset="utf-8"><title>Pinky</title><p>Loading ' + url.origin + '</p>\n', offline: offlinePage(url.origin) };
+  return { url, cleartext, config, index: '<!doctype html><meta charset="utf-8"><title>Ourever</title><p>Loading ' + url.origin + '</p>\n', offline: offlinePage(url.origin) };
 }
 
-/** The page shown when Pinky's server cannot be reached: in the saved language (English by default), with a retry button,
+/** The page shown when Ourever's server cannot be reached: in the saved language (English by default), with a retry button,
  * and an automatic return as soon as the server answers again. Self-contained: no network needed to draw it. */
 export function offlinePage(origin) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pinky</title>
+<title>Ourever</title>
 <style>
   :root { color-scheme: light; }
   html, body { margin: 0; height: 100%; background: #f4efe6; color: #2b2622; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; }
@@ -62,7 +62,7 @@ export function offlinePage(origin) {
   small { font-size: 14px; color: #7a7068; min-height: 20px; }
 </style></head>
 <body><main data-testid="offline-page">
-  <div class="mark">PINKY</div>
+  <div class="mark">OUREVER</div>
   <h1 id="title"></h1><p id="body"></p>
   <button id="retry" type="button"></button>
   <small id="status" role="status"></small>
@@ -70,9 +70,9 @@ export function offlinePage(origin) {
 <script>
   var SERVER = ${JSON.stringify(origin)};
   var COPY = {
-    zh: { title: "暂时连不上 Pinky", body: "请检查网络。连上之后会自动回来，你的内容都还在。", retry: "重试", trying: "正在重新连接…", still: "还是连不上，稍后会自动再试。" },
-    es: { title: "No podemos conectar con Pinky", body: "Revisa tu conexión. Volverás solo en cuanto haya red; todo lo tuyo sigue ahí.", retry: "Reintentar", trying: "Reconectando…", still: "Sigue sin conexión; lo intentaremos de nuevo." },
-    en: { title: "Can't reach Pinky right now", body: "Check your connection. You'll be back automatically once you're online; everything you saved is still there.", retry: "Try again", trying: "Reconnecting…", still: "Still offline. We'll keep trying." }
+    zh: { title: "暂时连不上 Ourever", body: "请检查网络。连上之后会自动回来，你的内容都还在。", retry: "重试", trying: "正在重新连接…", still: "还是连不上，稍后会自动再试。" },
+    es: { title: "No podemos conectar con Ourever", body: "Revisa tu conexión. Volverás solo en cuanto haya red; todo lo tuyo sigue ahí.", retry: "Reintentar", trying: "Reconectando…", still: "Sigue sin conexión; lo intentaremos de nuevo." },
+    en: { title: "Can't reach Ourever right now", body: "Check your connection. You'll be back automatically once you're online; everything you saved is still there.", retry: "Try again", trying: "Reconnecting…", still: "Still offline. We'll keep trying." }
   };
   var text, button = document.getElementById("retry"), status = document.getElementById("status");
   function readLanguage() {

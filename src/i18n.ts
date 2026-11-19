@@ -24,11 +24,11 @@ export function localized(language: Language, zh: string, en: string, es: string
 }
 
 export function brandLabel(language: Language) {
-  return "Pinky";
+  return "Ourever";
 }
 
 export function pageTitle(language: Language) {
-  return localized(language, "Pinky · 拉钩，说好就算数", "Pinky · A shared relationship agent for two", "Pinky · Un agente compartido de relación para dos");
+  return localized(language, "Ourever · 两个人的关系助手", "Ourever · A shared relationship agent for two", "Ourever · Un agente compartido de relación para dos");
 }
 
 /** "1 day" / "3 days", "1 día" / "3 días": a count with the word in its singular or plural form. */

@@ -49,7 +49,7 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
   </div>;
 }
 
-/** Ways in: a file, iMessage from a Mac or from a Windows PC's iPhone backup, or asking Pinky for steps for any app. */
+/** Ways in: a file, iMessage from a Mac or from a Windows PC's iPhone backup, or asking Ourever for steps for any app. */
 function ImportStart({ language, onImported, onAsk }: { language: Language; onImported: (item: ChatImport) => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -87,7 +87,7 @@ function ImportStart({ language, onImported, onAsk }: { language: Language; onIm
         <li>{t("看到“已导入”后回到这里看分析。这一行一小时内有效，只能用一次。", "When it says imported, come back here for the analysis. The line works for an hour, once.", "Cuando diga importado, vuelve aquí para ver el análisis. La línea sirve una hora, una sola vez.")}</li></ol>
       <code className="import-typed">{winCommand}</code><button onClick={() => void copy()}><Copy size={16} />{copied ? t("已复制", "Copied", "Copiado") : t("复制", "Copy", "Copiar")}</button>
     </div>}
-    <button className="import-way" onClick={() => onAsk(t("我想导入我和 TA 的聊天记录，告诉我怎么从", "I want to import my chat history with my partner. How do I export it from ", "Quiero importar mi historial de chat con mi pareja. ¿Cómo lo exporto desde "), "me")}><ChatCircleDots size={22} /><span><strong>{t("问 Pinky 怎么导出", "Ask Pinky how to export", "Pregúntale a Pinky cómo exportar")}</strong><small>{t("微信、iPhone 短信等：Pinky 一步步教你，也可以直接发截图", "WeChat, iPhone texts and more: Pinky walks you through it, or send screenshots", "WeChat, mensajes del iPhone y más: Pinky te guía, o envía capturas")}</small></span></button>
+    <button className="import-way" onClick={() => onAsk(t("我想导入我和 TA 的聊天记录，告诉我怎么从", "I want to import my chat history with my partner. How do I export it from ", "Quiero importar mi historial de chat con mi pareja. ¿Cómo lo exporto desde "), "me")}><ChatCircleDots size={22} /><span><strong>{t("问 Ourever 怎么导出", "Ask Ourever how to export", "Pregúntale a Ourever cómo exportar")}</strong><small>{t("微信、iPhone 短信等：Ourever 一步步教你，也可以直接发截图", "WeChat, iPhone texts and more: Ourever walks you through it, or send screenshots", "WeChat, mensajes del iPhone y más: Ourever te guía, o envía capturas")}</small></span></button>
     {error && <p className="space-error" role="alert">{error}</p>}
   </section>;
 }
@@ -134,7 +134,7 @@ function ImportReport({ item, user, paired, language, onBack, onAsk, onChanged }
         <button className="space-ask" onClick={() => onAsk(t("把聊天记录分析里我们一起看过的剧和电影放进“一起看过的”", "Put the shows from the chat analysis on our watched-together shelf", "Pon en nuestro estante lo que vimos juntos según el análisis del chat"), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("放进一起看过的", "Add to watched together", "Añadir a vistos juntos")}</button></section>}
       {!!analysis.dates.length && <section className="import-block"><h2 className="space-subhead">{t("重要的日子", "Dates to remember", "Fechas para recordar")}</h2><ul>{analysis.dates.map((entry, index) => <li key={index}><strong>{entry.title}</strong><small>{date(entry.date)}{entry.yearly ? t(" · 每年", " · yearly", " · cada año") : ""}</small></li>)}</ul></section>}
       {!!analysis.promises.length && <section className="import-block"><h2 className="space-subhead">{t("说过的承诺", "Promises made", "Promesas hechas")}</h2><ul>{analysis.promises.map((promise, index) => <li key={index} className={`is-${promise.status}`}><strong>{promise.speaker}：{promise.text}</strong><small>{[date(promise.date), promise.status === "kept" ? t("做到了", "kept", "cumplida") : promise.status === "open" ? t("还没做到", "still open", "pendiente") : t("不确定", "unclear", "no está claro")].filter(Boolean).join(" · ")}</small></li>)}</ul></section>}
-      <button className="space-ask" onClick={() => onAsk(t(`关于我们的聊天记录分析，我想问：`, "About our chat history analysis: ", "Sobre el análisis de nuestro historial: "), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("问 Pinky", "Ask Pinky", "Pregúntale a Pinky")}</button>
+      <button className="space-ask" onClick={() => onAsk(t(`关于我们的聊天记录分析，我想问：`, "About our chat history analysis: ", "Sobre el análisis de nuestro historial: "), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("问 Ourever", "Ask Ourever", "Pregúntale a Ourever")}</button>
       <section className="import-block import-controls">
         {owner && !item.shared && paired && !item.sharedCopyId && <button disabled={busy || requested} onClick={() => void run("share", () => importAction(item.id, "share-request", { language }), () => setRequested(true))}><UsersThree size={18} />{requested ? t("已邀请 TA，等 TA 同意", "Asked your partner; waiting for their OK", "Le preguntaste a tu pareja; esperando su respuesta") : t("邀请 TA 一起看", "Ask your partner to look together", "Pedirle a tu pareja verlo juntos")}</button>}
         {owner && !item.shared && item.sharedCopyId && <p className="import-note"><UsersThree size={16} />{t("TA 已同意，“我们俩”里有一份共享的分析。", "Your partner agreed; a shared copy is in Us.", "Tu pareja aceptó; hay una copia compartida en Nosotros.")}</p>}
