@@ -49,11 +49,11 @@ import { createSuggestionsRouter } from "./suggestions-router.mjs";
 import { createPromiseKeeper, createPromisesRouter } from "./promises.mjs";
 import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
 import { createPeopleRouter } from "./people.mjs";
-import { createPeopleComparer } from "./people-compare.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createLegalRouter } from "./legal.mjs";
+import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
 import { createMembershipRouter } from "./membership.mjs";
@@ -500,6 +500,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use(createAiCostRouter({ store, internalSecret: () => reminders.internalSecret }));
   // The home-screen widget reads with its own Bearer token (no cookie), so it is mounted before any router that turns away
   // requests without a session.
+  app.use("/api", createAppMetricsRouter({ store }));
   app.use("/api", createWidgetRouter({ store }));
   // Every published "我们俩" change is mirrored to the couple's iMessage group and, without one, nudges the other member's phone.
   const relationshipRouter = createRelationshipRouter({ store, mediator, onTogether: (conversation, actorUserId) => {
@@ -540,7 +541,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createPlayPlansRouter({ store, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message) }));
   app.use("/api", createMatchRouter({ store, mediator, emit, notify: (userId, message) => reminders.notifyMember?.(userId, message), online: (userId) => relationshipRouter.isOnline?.(userId) }));
   app.use("/api", createProfileRouter({ store, emit }));
-  app.use("/api", createPeopleRouter({ store, emit, comparer: createPeopleComparer({ store, mediator }) }));
+  app.use("/api", createPeopleRouter({ store, emit }));
   app.use("/api", createCycleRouter({ store, emit }));
   app.use("/api", createDiscoverRouter({ store }));
   app.use("/api", createPromisesRouter({ store, keeper: promiseKeeper, emit }));
