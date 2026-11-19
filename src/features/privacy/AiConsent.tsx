@@ -64,7 +64,7 @@ export function OfflineBanner() {
   }, []);
   if (online) return null;
   // The banner sits outside the language state; the page's lang attribute follows the chosen interface language.
-  const lang = document.documentElement.lang || "zh";
+  const lang = document.documentElement.lang || "en";
   const language: Language = lang.startsWith("en") ? "en" : lang.startsWith("es") ? "es" : "zh";
   return <div className="offline-banner" role="status" data-testid="offline-banner"><WifiSlash size={16} weight="bold" />{localized(language, "没有网络连接，联网后会自动恢复", "No connection. Pinky picks up again once you're online", "Sin conexión. Pinky sigue en cuanto vuelva la red")}</div>;
 }

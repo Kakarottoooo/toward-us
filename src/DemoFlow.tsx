@@ -111,7 +111,7 @@ export default function DemoFlow() {
   const roomCode = room?.code || initialRoomCode();
   const joinUrl = room ? `${location.origin}/j/${room.code}` : "";
 
-  useEffect(() => { localStorage.setItem("toward-us.language", language); document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
+  useEffect(() => { try { localStorage.setItem("toward-us.language", language); } catch { /* keep the selection for this visit */ } document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
   useEffect(() => { api<Health>("/api/health").then(setHealth).catch(() => {}); api<{ user: Account | null }>("/api/auth/me").then((value) => setAccount(value.user)).catch(() => {}); }, []);
   useEffect(() => {
     const code = initialRoomCode();

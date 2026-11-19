@@ -22,7 +22,7 @@
     </main>
     <script>
       (function () {
-        // English unless the App (or else the browser) says Chinese or Spanish, so no other language ever sees Chinese.
+        // Honor a language chosen in Pinky. A first visit starts in English.
         var copy = {
           zh: ["现在连不上网络", "Pinky 需要网络才能打开你们的对话。联网后再试一次。", "再试一次", "zh-CN"],
           en: ["You're offline", "Pinky needs a connection to open your conversations. Try again once you're back online.", "Try again", "en"],
@@ -30,7 +30,7 @@
         };
         var saved = null;
         try { saved = localStorage.getItem("toward-us.language"); } catch (error) { saved = null; }
-        var language = saved || (navigator.language || "").slice(0, 2);
+        var language = saved === "zh" || saved === "es" ? saved : "en";
         var text = copy[language];
         if (!text || language === "en") return;
         document.documentElement.lang = text[3];

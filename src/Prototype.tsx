@@ -20,7 +20,7 @@ import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeW
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
 import { PlayCardArrival } from "./features/games/PlayCardArrival";
-import { brandLabel, inInterfaceLanguage, initialLanguage, isLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
+import { brandLabel, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
@@ -70,7 +70,7 @@ export default function Prototype() {
 
 function AccountPrototype() {
   // A partner opening an invite link on a new device sees it in their phone's language, not the default Chinese.
-  const [language, setLanguage] = useState<Language>(() => { try { if (!isLanguage(localStorage.getItem("toward-us.language")) && inviteCode()) { const tag = navigator.language.toLowerCase(); return tag.startsWith("zh") ? "zh" : tag.startsWith("es") ? "es" : "en"; } } catch { /* private mode */ } return initialLanguage(); });
+  const [language, setLanguage] = useState<Language>(initialLanguage);
   // Until the server says who this is, show only the plain paper background (founder 11-08: opening Pinky flashed the
   // signed-out landing page, then an empty chat, before the real conversation).
   const [screen, setScreen] = useState<Screen>("booting");
@@ -88,7 +88,7 @@ function AccountPrototype() {
   const keyboard = useKeyboard();
   const t = copy[language];
 
-  useEffect(() => { localStorage.setItem("toward-us.language", language); document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
+  useEffect(() => { try { localStorage.setItem("toward-us.language", language); } catch { /* keep the selection for this visit */ } document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
   useEffect(() => {
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
