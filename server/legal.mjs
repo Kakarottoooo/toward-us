@@ -1,5 +1,3 @@
-import express from "express";
-
 // Public pages App Review and every user can open without signing in (App Review 5.1.1(i), 1.2, 1.5): the privacy
 // policy, the terms of use and support. In Simplified Chinese, English and Spanish (?lang=zh|en|es, else the browser's
 // language). The contact address and the operator's name come from the environment so nothing here is a placeholder:
@@ -9,12 +7,6 @@ import express from "express";
 export const LEGAL_PAGES = ["privacy", "terms", "support"];
 const UPDATED = "2026-11-18";
 
-const pick = (req) => {
-  const asked = String(req.query.lang || "").toLowerCase();
-  if (["zh", "en", "es"].includes(asked)) return asked;
-  const header = String(req.get("accept-language") || "").toLowerCase();
-  return header.startsWith("zh") ? "zh" : header.startsWith("es") ? "es" : "en";
-};
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
 function contactLine(language, email) {
@@ -146,23 +138,21 @@ function content(page, language, { email, operator }) {
 
 const NAV = { zh: { back: "返回 Ourever", updated: "更新于", privacy: "隐私政策", terms: "使用条款", support: "帮助与支持" }, en: { back: "Back to Ourever", updated: "Updated", privacy: "Privacy", terms: "Terms", support: "Support" }, es: { back: "Volver a Ourever", updated: "Actualizado", privacy: "Privacidad", terms: "Condiciones", support: "Ayuda" } };
 
-export function renderLegalPage(page, language, env = process.env) {
+export function renderLegalPage(page, language, env = process.env, standalone = false) {
   const operator = String(env.PINKY_OPERATOR || "").trim() || "Witnora, Inc.";
   const { title, sections } = content(page, language, { email: String(env.PINKY_SUPPORT_EMAIL || "").trim() || "ziwei@witnora.com", operator });
   const nav = NAV[language];
-  const links = LEGAL_PAGES.map((name) => name === page ? `<strong>${nav[name]}</strong>` : `<a href="/${name}?lang=${language}">${nav[name]}</a>`).join(" · ");
-  const languages = ["zh", "en", "es"].map((code) => code === language ? `<strong>${code.toUpperCase()}</strong>` : `<a href="/${page}?lang=${code}">${code.toUpperCase()}</a>`).join(" / ");
+  const pageUrl = (name, code) => standalone
+    ? `/${code === "en" ? "" : code + "/"}${name}`
+    : `/${name}?lang=${code}`;
+  const homeUrl = standalone && language !== "en" ? `/${language}/` : "/";
+  const links = LEGAL_PAGES.map((name) => name === page ? `<strong>${nav[name]}</strong>` : `<a href="${pageUrl(name, language)}">${nav[name]}</a>`).join(" · ");
+  const languages = ["zh", "en", "es"].map((code) => code === language ? `<strong>${code.toUpperCase()}</strong>` : `<a href="${pageUrl(page, code)}">${code.toUpperCase()}</a>`).join(" / ");
   // Inside the app there is no browser back button: go back if there is history, else to the app's home.
   return `<!doctype html><html lang="${language === "zh" ? "zh-Hans" : language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>${title}</title>
 <style>body{margin:0;background:#f4efe6;color:#2b2622;font:17px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}main{max-width:680px;margin:0 auto;padding:max(20px,env(safe-area-inset-top)) 20px max(32px,env(safe-area-inset-bottom))}h1{font-size:26px;line-height:1.3;margin:18px 0 4px}h2{font-size:19px;margin:26px 0 6px}p{margin:0 0 10px}nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:15px}a{color:#b03a33}small{color:#6f655d}.back{display:inline-flex;align-items:center;min-height:44px;font-weight:600;text-decoration:none}</style></head>
-<body><main data-testid="legal-${page}"><nav><a class="back" href="/" onclick="if(history.length>1){history.back();return false}">← ${nav.back}</a><span>${languages}</span></nav>
+<body><main data-testid="legal-${page}"><nav><a class="back" href="${homeUrl}"${standalone ? "" : ' onclick="if(history.length>1){history.back();return false}"'}>← ${nav.back}</a><span>${languages}</span></nav>
 <h1>${title}</h1><small>${nav.updated} ${UPDATED}</small>
 ${sections.map(([heading, paragraphs]) => `<h2>${heading}</h2>${paragraphs.map((text) => `<p>${text}</p>`).join("")}`).join("\n")}
 <p><small>${links}</small></p></main></body></html>`;
-}
-
-export function createLegalRouter({ env = process.env } = {}) {
-  const router = express.Router();
-  for (const page of LEGAL_PAGES) router.get(`/${page}`, (req, res) => { res.set("Cache-Control", "public, max-age=300"); res.type("html").send(renderLegalPage(page, pick(req), env)); });
-  return router;
 }

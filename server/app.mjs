@@ -54,7 +54,7 @@ import { createPeopleRouter } from "./people.mjs";
 import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
-import { createLegalRouter } from "./legal.mjs";
+import { createLegalRouter } from "./legal-router.mjs";
 import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
