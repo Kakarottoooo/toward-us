@@ -9,7 +9,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Pinky</string>
+        <string>Ourever</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -53,9 +53,9 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used only when you tap the microphone, to turn your speech into text in real time.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Used only when you choose to take a photo to send in Pinky.</string>
+	<string>Used only when you choose to take a photo to send in Ourever.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Used when you choose photos to send, connect an album so Pinky can turn it into your memories, or ask Pinky to find photos of the two of you (faces are matched on your phone and never uploaded).</string>
+	<string>Used when you choose photos to send, connect an album so Ourever can turn it into your memories, or ask Ourever to find photos of the two of you (faces are matched on your phone and never uploaded).</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Used only when you tap the microphone, to turn your speech into text on your phone.</string>
 	<key>CFBundleLocalizations</key>

@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-/// Pinky on the home screen and lock screen: days together, the couple's streak and who has shown up today, the next date.
+/// Ourever on the home screen and lock screen: days together, the couple's streak and who has shown up today, the next date.
 /// Tapping it opens the app. It refreshes about every 30 minutes, and right away when the app signs in or out.
 struct PinkyEntry: TimelineEntry {
     let date: Date
@@ -56,7 +56,7 @@ struct PinkyWidget: Widget {
         return StaticConfiguration(kind: "PinkyWidget", provider: PinkyProvider()) { entry in
             PinkyWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Pinky")
+        .configurationDisplayName("Ourever")
         .description(lang.say("在一起的天数、一起打卡的连续天数和下一个日子。", "Days together, your streak and the next date.", "Días juntos, vuestra racha y la próxima fecha."))
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular])
     }
