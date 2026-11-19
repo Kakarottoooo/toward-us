@@ -10,6 +10,7 @@ import { jsonBody, relationshipApi } from "../relationship/api";
 import { CharacterMaker } from "../character/CharacterMaker";
 import { characterError, setCharacterVisible, useCoupleCharacter } from "../character/character";
 import { inIosApp, MembershipPage, type Membership } from "../membership/MembershipPage";
+import { inviteTitle, ReferralPage } from "../membership/ReferralPage";
 import { FounderBeta } from "../membership/FounderBeta";
 import { AiAccess } from "./AiAccess";
 import { aiDisclosure } from "./AiConsent";
@@ -18,8 +19,8 @@ import "./settings.css";
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; aiConsentAt?: string | null; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account" | "ai"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "access" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
-type SettingsProps = { onFeedback?: () => void; initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
+type Page = "main" | "access" | "referrals" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
+type SettingsProps = { onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 function downloadFile(contents: string, filename: string, type: string) {
@@ -106,7 +107,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), membership: t("Ourever 会员", "Ourever membership", "Membresía Ourever"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("AI 与数据处理方", "AI and data processors", "IA y encargados de datos"), report: t("举报或求助", "Report or get help", "Denunciar o pedir ayuda"), access: t("Ourever 能看到什么", "What Ourever can see", "Qué puede ver Ourever"), memory: t("Ourever 记得的事", "What Ourever remembers", "Lo que Ourever recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
+  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), referrals: inviteTitle(language), membership: t("Ourever 会员", "Ourever membership", "Membresía Ourever"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("AI 与数据处理方", "AI and data processors", "IA y encargados de datos"), report: t("举报或求助", "Report or get help", "Denunciar o pedir ayuda"), access: t("Ourever 能看到什么", "What Ourever can see", "Qué puede ver Ourever"), memory: t("Ourever 记得的事", "What Ourever remembers", "Lo que Ourever recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
 
   const main = <>
     <section className="settings-profile">
@@ -115,6 +116,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
     </section>
     <Group>
       {!inIosApp() && <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />}
+      <Row icon={<UsersThree size={18} weight="bold" />} tone="green" label={titles.referrals} onClick={() => open("referrals")} testId="settings-referrals" />
       {founder && <Row icon={<ListChecks size={18} weight="bold" />} tone="green" label={titles.founder} onClick={() => open("founder")} testId="settings-founder" />}
       <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
     </Group>
@@ -168,6 +170,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
     [t("删除账号后", "After deleting your account", "Después de borrar la cuenta"), t("你在“我们俩”里说过的话会留给对方。", "What you wrote in Us stays for your partner.", "Lo que escribiste en Nosotros queda para tu pareja.")],
   ];
   const sub: Record<Exclude<Page, "main">, ReactNode> = {
+    referrals: <ReferralPage language={language} />,
     founder: <FounderBeta language={language} />,
     access: <AiAccess language={language} onOpen={open} />,
     membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} />,

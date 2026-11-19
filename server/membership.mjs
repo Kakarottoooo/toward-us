@@ -38,7 +38,10 @@ export async function membershipFor(store, userId, { now = new Date(), purchases
   const members = pairing?.relationship?.status === "active" && pairing.members?.length ? pairing.members.map((member) => member.userId) : [userId];
   const owners = new Set(members);
   const records = (purchases || await store.listRecordsForJob(COLLECTION)).filter((record) => owners.has(record.ownerUserId) && record.status === "active");
-  const active = records.filter((record) => record.kind === "membership" && record.until && Date.parse(record.until) + GRACE_MS > now.getTime()).sort((a, b) => Date.parse(b.until) - Date.parse(a.until));
+  const active = records.filter((record) => {
+    const grace = ["feedback", "referral"].includes(record.source) ? 0 : GRACE_MS;
+    return record.kind === "membership" && record.until && Date.parse(record.until) + grace > now.getTime();
+  }).sort((a, b) => Date.parse(b.until) - Date.parse(a.until));
   const best = active[0] || null;
   const owned = [...new Set(records.filter((record) => record.kind === "outfit" && OUTFITS.includes(record.outfit)).map((record) => record.outfit))];
   return { plan: best ? "member" : "free", until: best?.until || null, source: best?.source || null, paidBy: best?.ownerUserId || null, members, outfits: best ? [...OUTFITS] : owned };

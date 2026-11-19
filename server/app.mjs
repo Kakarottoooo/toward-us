@@ -24,7 +24,7 @@ import { createPrivateAgentRouter } from "./private-agent-router.mjs";
 import { createMemoryRouter } from "./memory-router.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createPhoneRouter } from "./phone-identity.mjs";
-import { createReminderRouter } from "./reminder-router.mjs";
+import { createReminderRouter, internalBearerStatus } from "./reminder-router.mjs";
 import { createUsageRouter } from "./usage.mjs";
 import { createReminderService } from "./reminder-service.mjs";
 import { createCoupleRituals } from "./couple-rituals.mjs";
@@ -55,6 +55,8 @@ import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createLegalRouter } from "./legal-router.mjs";
+import { attachReferral, referralPage, referralPreview, referralReport, rememberReferralInstall } from "./referrals.mjs";
+import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
@@ -178,6 +180,27 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   });
   app.use(aiUserMiddleware);
 
+  app.get("/api/referrals/me", requireAuth, async (req, res) => {
+    res.json(await referralPage(store, req.auth.user.id, { installId: req.get("x-install-id") }));
+  });
+  const previewRequests = new Map();
+  let previewWindowEnd = 0;
+  app.get("/api/referrals/preview", async (req, res) => {
+    const now = Date.now();
+    if (now >= previewWindowEnd) { previewRequests.clear(); previewWindowEnd = now + 60_000; }
+    const hits = previewRequests.get(req.ip) || 0;
+    if (hits >= 60 || (!hits && previewRequests.size >= 10_000)) return res.set("Retry-After", "60").sendStatus(429);
+    previewRequests.set(req.ip, hits + 1);
+    const preview = await referralPreview(store, req.query.code, { installId: req.get("x-install-id") });
+    if (!preview) return res.status(404).json({ code: "referral_not_found" });
+    res.json(preview);
+  });
+  app.get("/api/internal/referrals", async (req, res) => {
+    const status = internalBearerStatus(req, process.env.PINKY_METRICS_ADMIN_TOKEN);
+    if (status !== 200) return res.status(status).json({ error: status === 503 ? "metrics_admin_not_configured" : "unauthorized" });
+    res.json(await referralReport(store, { from: req.query.from, to: req.query.to }));
+  });
+
   app.post("/api/auth/register", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const name = cleanName(req.body?.name, "我");
@@ -186,7 +209,32 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (!validPassword(password)) return res.status(400).json({ error: "密码需要 10–128 个字符。" });
     if (req.body?.adultConfirmed !== true) return res.status(400).json({ error: "Ourever requires confirmation that you are 18 or older." });
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
-    const created = await store.createUser(user);
+    const { referralCode, installId = req.get("x-install-id") } = req.body || {};
+    // A signed-in principal cannot open a second account through their own invitation.
+    if (referralCode && req.auth && (await store.getReferralByCode(referralCode))?.ownerUserId === req.auth.user.id) {
+      return res.status(422).json({ code: "referral_ineligible" });
+    }
+    let created;
+    if (referralCode || installId) {
+      try {
+        created = await store.transaction(REWARD_LOCK, async (tx) => {
+          const account = await tx.createUser(user);
+          if (!account) return null;
+          if (referralCode) {
+            const result = await attachReferral(tx, account.id, { code: referralCode, installId });
+            if (!result.accepted) throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible" });
+          } else {
+            await rememberReferralInstall(tx, account.id, { installId });
+          }
+          return account;
+        });
+      } catch (error) {
+        if (error.code === "referral_ineligible") return res.status(422).json({ code: error.code });
+        throw error;
+      }
+    } else {
+      created = await store.createUser(user);
+    }
     if (!created) return res.status(409).json({ error: "这个邮箱已经注册。" });
 
     const { token } = await issueSession(store, created.id);
@@ -592,7 +640,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   app.use((error, req, res, _next) => {
     if (res.headersSent) return;
-    res.status(error?.statusCode || 500).json({ error: error?.statusCode ? error.message : localText(languageOf(req), "服务器暂时无法完成这个请求。", "The server could not complete this request right now.", "El servidor no pudo completar esta solicitud ahora."), ...(error?.code === AI_LIMIT ? { code: AI_LIMIT } : {}) });
+    res.status(error?.statusCode || 500).json({ error: error?.statusCode ? error.message : localText(languageOf(req), "服务器暂时无法完成这个请求。", "The server could not complete this request right now.", "El servidor no pudo completar esta solicitud ahora."), ...(error?.code === AI_LIMIT ? { code: AI_LIMIT, upgrade: error.upgrade === true, background: error.background === true } : {}) });
   });
 
   return app;

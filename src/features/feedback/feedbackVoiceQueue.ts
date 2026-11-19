@@ -1,7 +1,7 @@
 import type { Language } from "../../i18n";
 import { DRAFTS, read, write } from "./feedbackStorage";
 
-type VoiceFailure = "failed" | "network" | "consent" | "session" | "rate";
+type VoiceFailure = "failed" | "network" | "consent" | "session" | "rate" | "freeDaily" | "daily";
 export type VoiceTake = {
   id: string;
   created: number;
@@ -71,7 +71,8 @@ async function transcribe(owner: string, take: StoredTake, signal: AbortSignal) 
       await updateTake(owner, take.id, ({ audio: _audio, ...rest }) => ({ ...rest, transcript: result.text.trim() }));
     } else {
       const consent = result.code === "ai_consent_required" || result.error === "ai_consent_required";
-      const failure: VoiceFailure = response.status === 429 ? "rate" : consent ? "consent" :
+      const daily = response.status === 429 && result.code === "ai_daily_limit";
+      const failure: VoiceFailure = daily ? (result.upgrade === true ? "freeDaily" : "daily") : response.status === 429 ? "rate" : consent ? "consent" :
         [401, 403, 409].includes(response.status) ? "session" : "failed";
       const retryAt = failure === "rate" ? Date.now() + 1000 * (Number(response.headers.get("Retry-After")) || 600) : undefined;
       await updateTake(owner, take.id, record => ({ ...record, failure, retryAt }));

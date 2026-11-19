@@ -4,6 +4,7 @@ import { readableConversation, conversationMessages } from "./conversation-recal
 import { createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { feedbackContext } from "./feedback-context.mjs";
 import { feedbackVoiceRoute } from "./feedback-voice.mjs";
+import { feedbackRewardRoutes, settleFeedbackReward } from "./feedback-rewards.mjs";
 import { feedbackError, feedbackParts, limitFeedbackUploads, readMultipart, removeFeedbackFiles, saveFeedbackImages } from "./feedback-images.mjs";
 import { consumeFeedbackQuota, internalFeedbackRoutes, opaque, ownedFeedback, sendAttachment, statusFor, userView } from "./feedback-lifecycle.mjs";
 
@@ -14,7 +15,8 @@ const clean = (value, limit) => String(value ?? "").trim().slice(0, limit);
 
 export function createFeedbackRouter({ store, mediator, notify, now = () => new Date(), adminToken = () => process.env.PINKY_METRICS_ADMIN_TOKEN }) {
   const router = express.Router();
-  internalFeedbackRoutes(router, { store, notify, now, adminToken });
+  internalFeedbackRoutes(router, { store, notify, now, adminToken, settleReward: settleFeedbackReward });
+  feedbackRewardRoutes(router, { store, now });
   router.use("/feedback", (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
     return req.auth ? next() : res.status(401).json({ error: "Please sign in." });

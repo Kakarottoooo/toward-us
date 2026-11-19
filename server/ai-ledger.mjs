@@ -3,7 +3,8 @@ import { AsyncResource } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { requireAiPermission } from "./ai-permission.mjs";
-import { AI_LIMIT, MODEL_METHODS, currentAiUser, featureForCall, isPaidAiUser } from "./ai-budget.mjs";
+import { AI_LIMIT, FREE_LIMIT_OPTIONS, MODEL_METHODS, currentAiUser, featureForCall, isPaidAiUser } from "./ai-budget.mjs";
+import { isReferralAiCall, recordReferralUse } from "./referrals.mjs";
 import { currentAiCall, runInAiCall } from "./ai-call-context.mjs";
 import { claudeResult } from "./model-call-budget.mjs";
 import { MODEL_PRICES, PRICE_SOURCES, canonicalModel, estimateUsd } from "./ai-prices.mjs";
@@ -78,9 +79,9 @@ const LIMIT_TEXT = {
   feature: { zh: "今天这项功能的 AI 用量已经到上限了，明天会自动恢复。Ourever 的其他功能照常可用。", en: "This feature has reached today's AI limit. It resets tomorrow; the rest of Ourever keeps working.", es: "Esta función alcanzó el límite de IA de hoy. Se renueva mañana; el resto de Ourever sigue funcionando." },
   kill_switch: { zh: "Ourever 的 AI 正在短暂维护，请稍后再试。其他功能照常可用。", en: "Ourever's AI is briefly paused for maintenance. Please try again soon; everything else keeps working.", es: "La IA de Ourever está en una breve pausa de mantenimiento. Inténtalo pronto; todo lo demás sigue funcionando." },
 };
-const costLimitError = (scope, language, feature) => {
-  const text = LIMIT_TEXT[scope];
-  return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, cost: true });
+const costLimitError = (scope, language, feature, free) => {
+  const text = free ? Object.fromEntries(Object.entries(LIMIT_TEXT[scope]).map(([lang, value]) => [lang, value + " " + FREE_LIMIT_OPTIONS[lang]])) : LIMIT_TEXT[scope];
+  return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, cost: true, upgrade: free });
 };
 
 // Safety first: a request that shows self-harm, violence, threats or coercion is never capped, degraded or switched off.
@@ -172,8 +173,9 @@ async function persist(row) {
   const base = { relationshipId: null, userId: row.userId, visibility: "private", aiAccessScope: "none", approvalPolicy: "owner", status: "recorded", provenanceSource: "system" };
   const monthKey = row.utcDay.slice(0, 7), id = rollupId(row.userId, monthKey);
   let dayUsd = 0;
+  const eventId = `ai-ledger:${randomUUID()}`;
   await store.transaction(`ai-cost:${row.userId}`, async (tx) => {
-    const entry = createRelationshipRecord({ ...base, ...row }); entry.id = `ai-ledger:${randomUUID()}`;
+    const entry = createRelationshipRecord({ ...base, ...row }); entry.id = eventId;
     await tx.createRelationshipRecord(COLLECTION, entry);
     let rollup = await tx.getRelationshipRecordForUser(COLLECTION, id, row.userId);
     if (!rollup) {
@@ -187,6 +189,10 @@ async function persist(row) {
       dayUsd = today.usd;
     });
   });
+  // Persist the provider receipt first. A pending referral can replay this same event ID after a restart.
+  if (isReferralAiCall(row)) {
+    await recordReferralUse(store, row.userId, { now: new Date(row.at), eventId, spaceId: row.spaceId });
+  }
   if (dayUsd > aiCostConfig().anomaly.userDailyUsd) anomaly("user_day_cost", { userId: row.userId, day: row.utcDay, usd: dayUsd }, `day:${row.userId}:${row.utcDay}`);
 }
 
@@ -216,9 +222,9 @@ export async function runAiFeature({ feature, args = [], channel = "metered", us
   const exempt = config.exemptFeatures?.includes(name) ? "consent" : safetySignal(args) ? "safety" : null;
   const spaceId = userId ? await spaceOf(ledger.store, userId) : null;
   const call = { feature: name, userId, spaceId, channel, degrade: false, exempt, wouldLimit: null };
-  const block = (scope) => {
+  const block = (scope, free = false) => {
     recordAiCall({ userId, spaceId, feature: name, channel, outcome: `blocked_${scope}` });
-    throw costLimitError(scope, language, name);
+    throw costLimitError(scope, language, name, free);
   };
   if (!exempt && config.killSwitch) {
     anomaly("kill_switch", { feature: name }, `kill:${day(now)}:${now.getUTCHours()}`);
@@ -229,7 +235,7 @@ export async function runAiFeature({ feature, args = [], channel = "metered", us
     const enforced = (config.enforceOn || []).includes(channel);
     if (state.hard) {
       anomaly(enforced ? "hard_limit" : "hard_limit_shadow", { userId, scope: state.hard, plan: state.plan, dayUsd: state.dayUsd, monthUsd: state.monthUsd, feature: name }, `hard:${userId}:${state.hard}:${day(now)}${state.hard === "feature" ? `:${name}` : ""}:${enforced}`);
-      if (enforced) block(state.hard === "feature" ? "feature" : state.hard);
+      if (enforced) block(state.hard, state.plan === "free");
       call.wouldLimit = "hard";
     } else if (state.soft) {
       anomaly(enforced ? "soft_limit" : "soft_limit_shadow", { userId, plan: state.plan, dayUsd: state.dayUsd, monthUsd: state.monthUsd }, `soft:${userId}:${day(now)}:${enforced}`);

@@ -64,10 +64,15 @@ const LIMIT_TEXT = {
   es: "Ourever ya usó la asignación de IA de hoy. Se renueva mañana; todo lo demás sigue funcionando.",
 };
 // Free couples hear that a membership gives more each day (Settings → Pinky 会员); members only hear when it resets.
+export const FREE_LIMIT_OPTIONS = {
+  zh: "你可以升级会员，或邀请好友赚会员天数。",
+  en: "You can upgrade your membership or invite a friend to earn membership days.",
+  es: "Puedes mejorar tu membresía o invitar a alguien para ganar días de membresía.",
+};
 const FREE_LIMIT_TEXT = {
-  zh: "今天 Ourever 的免费额度用完了，明天会自动恢复。开通 Ourever 会员（设置里）每天可以多用一些。其他功能照常可用。",
-  en: "Ourever has used up today's free allowance. It resets tomorrow, and a Ourever membership (in Settings) gives you more each day. Everything else keeps working.",
-  es: "Ourever ya usó la asignación gratuita de hoy. Se renueva mañana y la membresía Ourever (en Ajustes) da más cada día. Todo lo demás sigue funcionando.",
+  zh: `今天 Ourever 的免费额度用完了，明天会自动恢复。${FREE_LIMIT_OPTIONS.zh}`,
+  en: `Ourever has used up today's free allowance. It resets tomorrow. ${FREE_LIMIT_OPTIONS.en}`,
+  es: `Ourever ya usó la asignación gratuita de hoy. Se renueva mañana. ${FREE_LIMIT_OPTIONS.es}`,
 };
 export const isAiLimit = (error) => error?.code === AI_LIMIT;
 const limitError = (language, feature, scope, free = false) => { const text = free ? FREE_LIMIT_TEXT : LIMIT_TEXT; return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, upgrade: free, background: featureKind(feature) === "background" }); };

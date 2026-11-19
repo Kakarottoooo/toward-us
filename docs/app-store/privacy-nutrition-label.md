@@ -27,7 +27,7 @@ App Store Connect → App 隐私。答案要和 `mobile/ios/App/App/PrivacyInfo.
 | 用户内容 → 客户支持 | `NSPrivacyCollectedDataTypeCustomerSupport` | App 功能 | 反馈和举报 |
 | 标识符 → 用户 ID | `NSPrivacyCollectedDataTypeUserID` | App 功能 | 账号 ID |
 | 使用数据 → 产品交互 | `NSPrivacyCollectedDataTypeProductInteraction` | 分析、App 功能 | 前台与后台切换、打开次数、使用时长；已登录使用计入日活，不含内容 |
-| 标识符 → 设备 ID | `NSPrivacyCollectedDataTypeDeviceID` | 分析 | 安装时生成的随机 ID 和会话 ID 随使用事件发送，服务端仅保留两者的组合哈希用于同一次会话统计。 |
+| 标识符 → 设备 ID | `NSPrivacyCollectedDataTypeDeviceID` | 分析、App 功能 | 会话统计使用随机安装 ID 和会话 ID 的组合摘要。好友邀请使用独立的随机安装标识，服务端关联其摘要以防同设备重复领奖。 |
 
 ## 未关联到个人的诊断数据
 

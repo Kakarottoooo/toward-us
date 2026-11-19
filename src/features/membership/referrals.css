@@ -1,0 +1,23 @@
+.referrals-page { display: grid; gap: 18px; width: 100%; min-width: 0; }
+.referral-section { display: grid; gap: 12px; min-width: 0; padding: 18px; border-radius: 16px; background: var(--jian-paper-bright); color: var(--jian-ink); }
+.referral-section h2 { margin: 0; font-size: 19px; line-height: 1.25; }
+.referral-section p, .referral-options p { margin: 0; font-size: 15px; line-height: 1.5; }
+.referral-section .referral-empty { color: #6b625e; }
+.referral-link { color: #73314d; font-size: 16px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+.referral-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.referral-actions button, .referral-options button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 16px; border: 1px solid #b9a6ad; border-radius: 12px; background: #fffaf8; color: #58263f; font: inherit; font-weight: 600; cursor: pointer; }
+.referral-actions .card-primary, .referral-options .card-primary { border-color: #613149; background: #613149; color: white; }
+.referral-actions button:hover, .referral-options button:hover { filter: brightness(.96); }
+.referral-section ul { margin: 0; padding: 0; list-style: none; }
+.referral-section li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(50,36,30,.12); }
+.referral-section li b { flex-shrink: 0; color: #69304c; }
+.referral-section li small { display: block; margin-top: 3px; color: #615955; font-size: 13px; }
+.referral-initial { display: inline-grid; place-items: center; min-width: 32px; height: 32px; border-radius: 50%; background: #f1e4ed; color: #63334b; font-weight: 650; }
+.referral-text-button { min-height: 44px; border: 0; background: transparent; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; }
+.referral-error { line-height: 1.5; color: #792b31; }
+.referral-options { display: grid; gap: 12px; padding: 8px 20px 22px; }
+.reward-arrival { position: absolute; z-index: 30; top: calc(var(--mobile-status-bar-height, 44px) + 4px); left: 12px; right: 12px; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid #d2b7c4; border-radius: 14px; background: #fff8fb; color: #58263f; box-shadow: 0 4px 18px #43233322; }
+.reward-arrival svg { flex-shrink: 0; }
+.reward-arrival button { min-height: 44px; padding: 5px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 650; text-align: start; cursor: pointer; }
+.reward-arrival button:last-child { display: grid; place-items: center; margin-inline-start: auto; min-width: 44px; }
+.referral-actions button:focus-visible, .referral-options button:focus-visible, .referral-text-button:focus-visible, .reward-arrival button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

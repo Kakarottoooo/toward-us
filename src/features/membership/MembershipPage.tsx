@@ -96,7 +96,8 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
       <span className="membership-crown" aria-hidden="true"><Crown size={26} weight="fill" /></span>
       <h2>{member ? t("你们是 Ourever 会员", "You're Ourever members", "Son miembros de Ourever") : t("Ourever 会员", "Ourever membership", "Membresía Ourever")}</h2>
       <p>{member
-        ? data.source === "beta" ? t(`内测送的会员，到 ${until}。`, `A beta gift, until ${until}.`, `Regalo de la beta, hasta ${until}.`)
+        ? data.source === "referral" || data.source === "feedback" ? t(`奖励会员有效至 ${until}。`, `Reward membership through ${until}.`, `Membresía de recompensa hasta el ${until}.`)
+          : data.source === "beta" ? t(`内测送的会员，到 ${until}。`, `A beta gift, until ${until}.`, `Regalo de la beta, hasta ${until}.`)
           : mine ? t(`由你开通，下次续费 ${until}。`, `You pay for it; it renews ${until}.`, `Lo pagas tú; se renueva el ${until}.`)
             : t(`由 ${partnerName || "TA"} 开通，到 ${until}。`, `${partnerName || "Your partner"} pays for it; until ${until}.`, `Lo paga ${partnerName || "tu pareja"}; hasta ${until}.`)
         : t("现在是免费版，所有功能都能用，只是每天 AI 次数少一些。", "You're on the free plan: every feature works, with less AI each day.", "Estás en el plan gratis: todo funciona, con menos IA cada día.")}</p>

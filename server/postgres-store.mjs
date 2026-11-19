@@ -13,12 +13,12 @@ const GRAPH_TABLES = Object.freeze({
   outcomes: "outcome_reviews", outcomeResponses: "outcome_review_responses", notifications: "notifications",
   consentEvents: "consent_events", productEvents: "product_events", togetherConversations: "together_conversations", nativePushDevices: "native_push_devices",
   spaces: "relationship_spaces", spaceItems: "relationship_space_items", photos: "relationship_photos", chatImports: "relationship_chat_imports", feedback: "product_feedback",
-  characters: "relationship_characters", aiUsage: "ai_usage", togetherArchives: "together_archives", matches: "relationship_matches", purchases: "purchases", betaCodes: "beta_codes",
+  characters: "relationship_characters", aiUsage: "ai_usage", togetherArchives: "together_archives", matches: "relationship_matches", purchases: "purchases", betaCodes: "beta_codes", referrals: "referrals",
 });
 
 const METERING = new Set(["productEvents", "aiUsage"]);
 // Older Us messages are read on demand (together-domain's history and daily-question lookups), never with every snapshot.
-const ON_DEMAND = new Set(["togetherArchives", "matches", "purchases", "betaCodes"]);
+const ON_DEMAND = new Set(["togetherArchives", "matches", "purchases", "betaCodes", "referrals"]);
 
 export async function createPostgresStore(databaseUrl) {
   const rawPool = new Pool({ connectionString: databaseUrl, max: Number(process.env.DB_POOL_SIZE || 5), ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false } });
@@ -62,6 +62,10 @@ export async function createPostgresStore(databaseUrl) {
         return result;
       } catch (error) { await client.query("rollback"); throw error; }
       finally { client.release(); }
+    },
+    async acquireRewardLock(key) {
+      if (!transactions.getStore()) throw new Error("Reward lock requires a transaction");
+      await pool.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [key]);
     },
     async ping() { await pool.query("select 1"); return true; },
     async getUserByEmail(email) { return mapUser((await pool.query("select * from users where email = $1", [email])).rows[0]); },
@@ -139,7 +143,7 @@ export async function createPostgresStore(databaseUrl) {
       return store.transaction(`user:${userId}`, async () => {
         let deleted = (await pool.query("delete from app_metric_activity where user_id=$1", [userId])).rowCount;
         for (const collection of GRAPH_COLLECTIONS) {
-          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
+          if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes", "referrals"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
         }
         // The streak's showed-up days (accountSettings "showedup:…") are this person's activity: they go with private data.
@@ -322,6 +326,26 @@ export async function createPostgresStore(databaseUrl) {
       const result = await pool.query(`delete from ${table} r where r.id=$1 and r.owner_user_id=$2 and ${recordScopeSql(collection, "$2")}`, [id, userId]);
       return result.rowCount > 0;
     },
+    async getReferralById(id) {
+      return mapGraphRecord((await pool.query("select * from referrals where id=$1", [id])).rows[0]);
+    },
+    async getReferralByCode(code) {
+      return mapGraphRecord((await pool.query("select * from referrals where data->>'kind'='profile' and data->>'code'=$1", [code])).rows[0]);
+    },
+    async listReferralClaims(inviterId) {
+      return (await pool.query("select * from referrals where data->>'kind'='claim' and data->>'inviterId'=$1 order by created_at", [inviterId])).rows.map(mapGraphRecord);
+    },
+    async listReferralAiCalls(userId, from, to) {
+      const rows = await pool.query(`select id, owner_user_id as "ownerUserId", data->>'at' as at,
+        data->>'spaceId' as "spaceId", data->>'feature' as feature, data->>'provider' as provider, data->>'outcome' as outcome
+        from ai_usage where owner_user_id=$1 and data->>'kind'='ai_ledger' and data->>'at'>=$2 and data->>'at'<$3`, [userId, from, to]);
+      return rows.rows;
+    },
+    async listFeedbackRewardDependents(id) {
+      return (await pool.query(`select id, owner_user_id as "ownerUserId" from product_feedback where
+        coalesce(data->>'rewardClusterId',data->>'duplicateOf')=$1 and data->>'kind'='bug'
+        and status in ('shipped','duplicate','fixed') and data->>'feedbackReward' is null`, [id])).rows;
+    },
     async getFeedbackForInbox(id) {
       return mapGraphRecord((await pool.query("select * from product_feedback where id=$1", [id])).rows[0]);
     },
@@ -410,6 +434,12 @@ async function migrate(pool) {
       create index if not exists ${table}_expiry_idx on ${table}(expires_at) where expires_at is not null;
     `);
   }
+  await pool.query(`
+    create index if not exists product_feedback_reward_cluster_idx on product_feedback ((coalesce(data->>'rewardClusterId',data->>'duplicateOf')))
+      where data->>'kind'='bug' and data->>'feedbackReward' is null and status in ('shipped','duplicate','fixed');
+    create unique index if not exists referrals_code_idx on referrals ((data->>'code')) where data->>'kind'='profile';
+    create index if not exists referrals_inviter_idx on referrals ((data->>'inviterId')) where data->>'kind'='claim';
+  `);
 }
 
 function recordScopeSql(collection, userParameter) {

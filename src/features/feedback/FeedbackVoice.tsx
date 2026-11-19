@@ -148,6 +148,8 @@ export function FeedbackVoice({ owner, language, online, position, insert, onBus
   const retry = t("重试", "Retry", "Reintentar");
   const discard = t("丢弃录音", "Discard recording", "Descartar grabación");
   const failures = {
+    freeDaily: t("今天的免费 AI 额度已用完，录音已保留。", "You’ve used today’s free AI allowance. Your recording is saved.", "Has agotado la cuota gratuita de IA de hoy. Tu grabación está guardada."),
+    daily: t("今天的 AI 额度已用完。明天可重新转写这段录音。", "You’ve used today’s AI allowance. You can retry this recording tomorrow.", "Has agotado la cuota de IA de hoy. Mañana podrás volver a transcribir esta grabación."),
     consent: t("请先在 AI 功能中同意第三方 AI 处理，再重试。你也可以继续打字。", "Open an AI feature to review third-party AI consent, then retry. You can also keep typing.", "Abre una función de IA para revisar el consentimiento de IA de terceros y reintenta. También puedes seguir escribiendo."),
     session: t("请重新登录录音时的账号，再重试。", "Sign back into the account that recorded this take, then retry.", "Vuelve a entrar en la cuenta que hizo esta grabación y reintenta."),
     rate: t("转写次数已达上限。", "Transcription limit reached.", "Has alcanzado el límite de transcripciones."),
@@ -175,6 +177,11 @@ export function FeedbackVoice({ owner, language, online, position, insert, onBus
     </div>
     {unsaved && <div className="feedback-voice-actions"><button type="button" disabled={mode === "saving"} onClick={() => void store(unsaved.take, unsaved.audio)}>{retry}</button>
       <button type="button" disabled={mode === "saving"} onClick={() => { setUnsaved(null); setError(""); }}>{discard}</button></div>}
+    {takes.some((take) => take.failure === "freeDaily") && <div className="feedback-voice-actions">
+      <button type="button" onClick={() => window.dispatchEvent(new Event("ourever:free-limit"))}>
+        {t("升级会员或邀请好友", "Upgrade or invite a friend", "Mejorar el plan o invitar a alguien")}
+      </button>
+    </div>}
     {takes.map((take, index) => {
       const minutes = Math.max(1, Math.ceil(((take.retryAt || 0) - Date.now()) / 60000));
       return <div className="feedback-voice-take" key={take.id}>

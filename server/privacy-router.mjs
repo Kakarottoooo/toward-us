@@ -8,13 +8,15 @@ import { feedbackFile } from "./feedback-images.mjs";
 import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
 import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
+import { deleteReferralAccount } from "./referrals.mjs";
+import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createEmailSender } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
 // The request's language, else the signed-in member's saved interface language, else zh.
 const local = (req, zh, en, es) => { const language = req.body?.language || req.query.language || req.auth?.user?.language || "zh"; return language === "zh" ? zh : language === "es" ? es : en; };
-const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "aiUsage"]);
+const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "aiUsage", "referrals"]);
 
 // Consent to third-party AI (App Review 5.1.2(i), founder 11-12 App Store prep): before anything this person writes, says
 // or picks is sent to an outside AI provider, they agree to it explicitly; they can withdraw it in Settings. The time they
@@ -220,8 +222,10 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     confirm(req);
     const context = await store.getRelationshipContext(req.auth.user.id);
     const files = await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => {
+      await tx.acquireRewardLock?.(REWARD_LOCK);
       await reauthenticate(req, tx);
       const paths = await privateFiles(tx, req.auth.user.id);
+      await deleteReferralAccount(tx, req.auth.user.id);
       await tx.deleteAccount(req.auth.user.id); return paths;
     });
     await removeFiles(files);

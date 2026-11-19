@@ -59,7 +59,10 @@ export function feedbackVoiceRoute(router, { store, mediator, now }) {
           mediator.transcribe(clip.bytes, "audio/wav", clip.language, "feedback_voice"));
       } catch (error) {
         // Provider errors can contain private request details. Send only known, content-free codes.
-        if (["ai_content_blocked", "ai_screening_unavailable", "ai_consent_required", "ai_daily_limit"].includes(error?.code)) {
+        if (error?.code === "ai_daily_limit") {
+          return res.status(429).json({ error: error.code, code: error.code, upgrade: error.upgrade === true });
+        }
+        if (["ai_content_blocked", "ai_screening_unavailable", "ai_consent_required"].includes(error?.code)) {
           throw feedbackError(error.statusCode, error.code);
         }
         throw feedbackError(503, "feedback_voice_unavailable");

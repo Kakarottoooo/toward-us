@@ -65,7 +65,7 @@ const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
 // Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
 const REOPEN_AFTER = 30 * 60_000;
 
-export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: (page?: "character" | "profile" | "membership") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -393,6 +393,7 @@ ${text}` : text, target);
           ...(photoIds.length ? { photoIds } : {}), ...(speaker === "partner" ? { speaker } : {}) }));
         setUnconfirmedShared((items) => items.filter((item) => item.itemId !== itemId));
         await loadTogether();
+        if (calling) window.dispatchEvent(new Event("toward-us:assistant-changed"));
         return true;
       } catch (error) {
         setUnconfirmedShared((items) => items.some((item) => item.itemId === itemId) ? items : [...items, message]);
@@ -643,14 +644,6 @@ ${text}` : text, target);
   const longDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
   const partnerName = together?.members.find((member) => member.id !== user.id)?.name || t("TA", "Your partner", "Tu pareja");
   const pendingAgreement = together?.pendingAgreement;
-  // Recommend Ourever to friends: the phone's own share sheet when it has one, else the link is copied.
-  const sharePinky = async () => {
-    const url = "https://ourever.onrender.com/";
-    const text = t("我在用 Ourever：两个人的 AI，帮我们好好说话、说到做到、记住在一起的日子。你们也试试：", "I'm using Ourever, an AI for two that helps us talk, keep our promises and remember our days together. Try it:", "Uso Ourever, una IA para dos que nos ayuda a hablar, cumplir lo que prometemos y recordar nuestros días. Pruébala:");
-    try { if (navigator.share) { await navigator.share({ title: "Ourever", text, url }); return; } } catch (error) { if ((error as Error).name === "AbortError") return; }
-    try { await navigator.clipboard.writeText(`${text} ${url}`); setNotice(t("链接已复制，发给朋友吧。", "Link copied. Send it to a friend.", "Enlace copiado. Envíaselo a alguien.")); }
-    catch { setNotice(`${text} ${url}`); }
-  };
   // 小游戏: answer a round, or start another ("再来一局").
   const answerWatch = async (id: string, finished: boolean) => {
     setNotice("");
@@ -1040,7 +1033,7 @@ ${text}` : text, target);
         keyboard.hide(); closePlayTogether(); switchChannel("us"); setAskAgent(true);
         setDraft((current) => current.trim() ? `${current}\n\n${prompt}` : prompt, "us");
       }} />}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); void sharePinky(); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); keyboard.hide(); onPrivacy("referrals"); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 

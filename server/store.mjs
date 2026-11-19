@@ -275,7 +275,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
         if (row.userId === userId) { delete state().appMetricActivity[key]; deleted++; }
       }
       for (const collection of GRAPH_COLLECTIONS) {
-        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
+        if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes", "referrals"].includes(collection)) continue;
         for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) { delete state().relationshipGraph[collection][id]; deleted += 1; }
       }
       // The streak's showed-up days (accountSettings "showedup:…") are this person's activity: they go with private data.
@@ -458,6 +458,23 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       if (!accessibleRecord(collection, record, userId) || record.ownerUserId !== userId) return false;
       delete state().relationshipGraph[collection][id]; await persist(); return true;
     },
+    getReferralById(id) { return copyEntry(state().relationshipGraph.referrals[id] || null); },
+    getReferralByCode(code) {
+      return copyEntry(Object.values(state().relationshipGraph.referrals).find((row) => row.kind === "profile" && row.code === code) || null);
+    },
+    listReferralClaims(inviterId) {
+      return Object.values(state().relationshipGraph.referrals).filter((row) => row.kind === "claim" && row.inviterId === inviterId).map(copyEntry);
+    },
+    listReferralAiCalls(userId, from, to) {
+      return Object.values(state().relationshipGraph.aiUsage)
+        .filter((row) => row.ownerUserId === userId && row.kind === "ai_ledger" && row.at >= from && row.at < to)
+        .map(({ id, ownerUserId, at, spaceId, feature, provider, outcome }) => ({ id, ownerUserId, at, spaceId, feature, provider, outcome }));
+    },
+    listFeedbackRewardDependents(id) {
+      return Object.values(state().relationshipGraph.feedback)
+        .filter((r) => r.kind === "bug" && !r.feedbackReward && ["shipped", "duplicate", "fixed"].includes(r.status) && (r.rewardClusterId || r.duplicateOf) === id)
+        .map(({ id, ownerUserId }) => ({ id, ownerUserId }));
+    },
     getFeedbackForInbox(id) { return copyEntry(state().relationshipGraph.feedback[id] || null); },
     countUnreadFeedback(userId) {
       return Object.values(state().relationshipGraph.feedback).filter((row) => row.ownerUserId === userId && row.unread === true).length;
@@ -472,7 +489,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
     async relationshipSnapshotForUser(userId) {
       const relationshipId = state().memberships[userId]?.relationshipId;
       // Metering rows and archived Us history stay out of every snapshot; archives are read on demand by together-domain.
-      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage", "togetherArchives", "matches", "purchases", "betaCodes"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map(copyEntry)]));
+      return Object.fromEntries(GRAPH_COLLECTIONS.filter((collection) => !["productEvents", "aiUsage", "togetherArchives", "matches", "purchases", "betaCodes", "referrals"].includes(collection)).map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => accessibleRecord(collection, record, userId)).map(copyEntry)]));
     },
   };
   const store = Object.fromEntries(Object.entries(implementation).map(([name, value]) => [name,

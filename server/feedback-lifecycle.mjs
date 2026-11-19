@@ -3,6 +3,8 @@ import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { attachmentBytes, feedbackError } from "./feedback-images.mjs";
 import { workbenchContext } from "./feedback-context.mjs";
 import { internalBearerStatus } from "./reminder-router.mjs";
+import { REWARD_LOCK } from "./reward-ledger.mjs";
+import { forgetPurchases } from "./membership.mjs";
 
 export const STATUSES = ["received", "triaging", "reproducing", "fixing", "shipped", "needs_info", "suggestion", "wont_fix", "duplicate", "reopened"];
 const legacy = { new: "received", seen: "triaging", planned: "fixing", fixed: "shipped", declined: "wont_fix" };
@@ -17,7 +19,8 @@ const attachments = (row, internal = false) => (row.attachmentIds || row.photoId
 export function userView(row) {
   return { id: row.id, text: row.text, kind: row.kind, severity: row.severity, summary: row.summary,
     context: workbenchContext(row.context), photoIds: row.photoIds || [], attachments: attachments(row),
-    status: statusFor(row), public_note: row.publicNote || "", unread: row.unread === true, createdAt: row.createdAt, updatedAt: publicUpdated(row) };
+    status: statusFor(row), public_note: row.publicNote || "", reward: row.feedbackReward || null,
+    unread: row.unread === true, createdAt: row.createdAt, updatedAt: publicUpdated(row) };
 }
 
 function inboxView(row) {
@@ -27,6 +30,7 @@ function inboxView(row) {
     text: capturedReply ? "Reported Ourever reply" : row.text, status: statusFor(row), public_note: row.publicNote || "",
     context: workbenchContext(row.context), include_activity: row.includeActivity === true, activity: row.includeActivity === true ? row.activity || "" : null,
     attachments: attachments(row, true), duplicate_of: row.duplicateOf || null, fix_commit: row.fixCommit || null,
+    verdict: row.rewardExclusion || null, reward: row.feedbackReward || null,
     created_at: row.createdAt, updated_at: row.updatedAt };
 }
 
@@ -55,13 +59,29 @@ export async function sendAttachment(store, row, index, res) {
   res.set({ "Content-Type": "image/webp", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }).send(bytes);
 }
 
-function timestamp(value) {
+export function timestamp(value) {
   if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(value) || !Number.isFinite(Date.parse(value))) throw feedbackError(400, "invalid_since");
   return new Date(value).toISOString();
 }
 
-export function internalFeedbackRoutes(router, { store, adminToken, notify, now }) {
-  router.use("/internal/feedback", (req, res, next) => {
+// Store the canonical item id so a duplicate of a duplicate follows the same fix.
+// Old chains may predate this normalization. Bound their traversal and reject cycles.
+async function canonicalDuplicate(tx, itemId, parentId) {
+  const visited = new Set([itemId]);
+  let id = parentId;
+  while (!visited.has(id) && visited.size <= 32) {
+    visited.add(id);
+    const parent = await tx.getFeedbackForInbox(id);
+    if (!parent) throw feedbackError(400, "unknown_duplicate");
+    const next = parent.rewardClusterId || parent.duplicateOf;
+    if (!next) return id;
+    id = next;
+  }
+  throw feedbackError(400, "invalid_duplicate_chain");
+}
+
+export function internalFeedbackRoutes(router, { store, adminToken, notify, now, settleReward }) {
+  router.use(["/internal/feedback", "/internal/rewards"], (req, res, next) => {
     res.set("Cache-Control", "no-store");
     const status = internalBearerStatus(req, adminToken());
     if (status !== 200) return res.status(status).json({ error: status === 503 ? "metrics_admin_not_configured" : "unauthorized" });
@@ -83,29 +103,45 @@ export function internalFeedbackRoutes(router, { store, adminToken, notify, now 
   });
   router.post("/internal/feedback/:id/status", async (req, res) => {
     const body = req.body || {};
-    if (!STATUSES.includes(body.status) || Object.keys(body).some((key) => !["status", "public_note", "duplicate_of", "fix_commit"].includes(key))
+    if (!STATUSES.includes(body.status) || Object.keys(body).some((key) => !["status", "public_note", "duplicate_of", "fix_commit", "verdict", "reward_days"].includes(key))
+      || (body.verdict !== undefined && !["spam", "abuse"].includes(body.verdict))
+      || (body.reward_days !== undefined && !(body.reward_days === 1 && body.status === "shipped"))
       || (body.public_note !== undefined && (typeof body.public_note !== "string" || body.public_note.length > 2000))
       || (body.fix_commit != null && (typeof body.fix_commit !== "string" || !/^[a-f\d]{7,40}$/i.test(body.fix_commit)))
-      || (body.duplicate_of != null && (typeof body.duplicate_of !== "string" || !body.duplicate_of || body.duplicate_of.length > 160 || body.duplicate_of === req.params.id || body.status !== "duplicate")))
+      || (body.duplicate_of != null && (typeof body.duplicate_of !== "string" || !body.duplicate_of || body.duplicate_of.length > 160 || body.duplicate_of === req.params.id || !["duplicate", "shipped"].includes(body.status))))
       throw feedbackError(400, "invalid_feedback_update");
     const initial = await store.getFeedbackForInbox(req.params.id);
     if (!initial) throw missing();
-    const result = await store.transaction(`user:${initial.ownerUserId}`, async (tx) => {
+    const result = await store.transaction(REWARD_LOCK, async (tx) => {
+      const owner = await tx.getUserForUpdate(initial.ownerUserId);
+      if (!owner || owner.passwordHash === "deleted") throw missing();
       const row = await ownedFeedback(tx, initial.ownerUserId, initial.id);
       const changedStatus = statusFor(row) !== body.status;
       const publicNote = body.public_note ?? (changedStatus ? "" : row.publicNote || "");
-      const duplicateOf = body.status === "duplicate" ? body.duplicate_of ?? row.duplicateOf ?? null : null;
+      const duplicateOf = ["duplicate", "shipped"].includes(body.status) ? body.duplicate_of ?? row.duplicateOf ?? null : null;
       const fixCommit = body.fix_commit ?? (body.status === "reopened" ? null : row.fixCommit || null);
-      if (duplicateOf && !(await tx.getFeedbackForInbox(duplicateOf))) throw feedbackError(400, "unknown_duplicate");
+      const exclusion = row.rewardExclusion || body.verdict || null;
+      const clusterId = body.duplicate_of ? await canonicalDuplicate(tx, row.id, body.duplicate_of) : row.rewardClusterId || row.duplicateOf || null;
       const notifyUser = changedStatus || publicNote !== (row.publicNote || "");
-      if (!notifyUser && duplicateOf === (row.duplicateOf || null) && fixCommit === (row.fixCommit || null)) return { row, notifyUser: false };
-      const updated = await tx.updateRelationshipRecordForUser("feedback", row.id, row.ownerUserId, (draft) => {
+      const metadataChanged = duplicateOf !== (row.duplicateOf || null) || clusterId !== (row.rewardClusterId || null)
+        || fixCommit !== (row.fixCommit || null) || exclusion !== (row.rewardExclusion || null);
+      let updated = row;
+      if (notifyUser || metadataChanged) updated = await tx.updateRelationshipRecordForUser("feedback", row.id, row.ownerUserId, (draft) => {
         draft.status = body.status; draft.publicNote = publicNote; draft.duplicateOf = duplicateOf; draft.fixCommit = fixCommit;
+        draft.rewardClusterId = clusterId;
+        if (exclusion) draft.rewardExclusion = exclusion;
         draft.feedbackUpdatedAt = new Date(Math.max(now().getTime(), Date.parse(publicUpdated(row)) + 1)).toISOString();
         draft.unread = notifyUser || row.unread === true; draft.version++;
       });
-      return { row: updated, notifyUser };
+      if (!updated) throw missing();
+      let receipt = null;
+      if (!updated.feedbackReward && updated.kind === "bug" && !updated.rewardExclusion && ["duplicate", "shipped"].includes(body.status)) {
+        receipt = await settleReward(tx, updated, now(), body.reward_days);
+        if (receipt) updated = await ownedFeedback(tx, row.ownerUserId, row.id);
+      }
+      return { row: updated, notifyUser: notifyUser || (!row.feedbackReward && !!updated.feedbackReward), granted: !!receipt?.granted_days };
     });
+    if (result.granted) forgetPurchases(store);
     if (result.notifyUser) {
       try {
         await notify?.(initial.ownerUserId, { body: { zh: "你的反馈有了新进展。", en: "There’s an update to your feedback.", es: "Hay novedades sobre tus comentarios." },

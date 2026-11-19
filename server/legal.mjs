@@ -5,7 +5,7 @@
 //   PINKY_OPERATOR       company operating Ourever (defaults to Witnora, Inc.)
 // What the policy says must stay true to the code: update it with any change to what is collected or who processes it.
 export const LEGAL_PAGES = ["privacy", "terms", "support"];
-const UPDATED = "2026-11-18";
+const UPDATED = "2026-11-19";
 
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
@@ -21,6 +21,7 @@ function content(page, language, { email, operator }) {
     privacy: {
       zh: { title: "Ourever 隐私政策", sections: [
         ["我们是谁", [`Ourever 由 ${op} 运营。Ourever 是一个私人的关系助手：先做你一个人的教练，你和另一半连接后，也是你们俩共同的助手。`]],
+        ["邀请与奖励", ["我们用随机安装标识的摘要、账号及已有付款标识核对奖励资格。邀请人可以看到好友名字首字和达标进度。删除账号后，我们保留去标识的发放和防重复记录。"]],
         ["我们收集什么", [
           "账号：你的名字（显示名）、邮箱、加密保存的密码；如果你绑定了手机号用 iMessage 和 Ourever 聊天，还有手机号。",
           "你主动给 Ourever 的内容：你打字或说出的话（语音会转成文字）、你选择发送或连接的照片和相册信息（拍摄时间、地点坐标）、你导入的聊天记录、提醒、约定、记忆、经期记录等。",
@@ -40,6 +41,7 @@ function content(page, language, { email, operator }) {
         ["联系我们", [contact]]] },
       en: { title: "Ourever Privacy Policy", sections: [
         ["Who we are", [`Ourever is operated by ${op}. Ourever is a private relationship assistant: first a coach for you alone, and, once you connect with a partner, a shared assistant for the two of you.`]],
+        ["Invitations and rewards", ["We use a hash of a random installation identifier, account details and existing payment identifiers to check reward eligibility. The inviter sees a friend’s initial and progress. After account deletion we retain pseudonymous grant and fraud-prevention records."]],
         ["What we collect", [
           "Account: your display name, email and a hashed password; if you link a phone number to talk to Ourever over iMessage, that number.",
           "What you give Ourever: what you type or say (voice is turned into text), photos you choose to send or connect and their album details (when and where they were taken), chat history you import, reminders, agreements, memories, cycle entries and the like.",
@@ -59,6 +61,7 @@ function content(page, language, { email, operator }) {
         ["Contact", [contact]]] },
       es: { title: "Política de privacidad de Ourever", sections: [
         ["Quiénes somos", [`Ourever lo opera ${op}. Ourever es un asistente privado de pareja: primero un coach solo para ti y, cuando te conectas con tu pareja, un asistente compartido para los dos.`]],
+        ["Invitaciones y recompensas", ["Usamos un resumen criptográfico de un identificador aleatorio de instalación, los datos de la cuenta y los identificadores de pago existentes para comprobar las recompensas. Quien invita ve la inicial y el progreso de su amigo. Al borrar la cuenta, conservamos registros seudónimos de concesión y prevención de duplicados."]],
         ["Qué recopilamos", [
           "Cuenta: tu nombre visible, tu correo y una contraseña cifrada; si vinculas un teléfono para hablar con Ourever por iMessage, ese número.",
           "Lo que le das a Ourever: lo que escribes o dices (la voz se convierte en texto), las fotos que eliges enviar o conectar y sus datos de álbum (cuándo y dónde se tomaron), los chats que importas, recordatorios, acuerdos, recuerdos, registros del ciclo y similares.",
