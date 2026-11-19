@@ -1,4 +1,4 @@
-# Pinky 美区首发检查清单
+# Ourever 美区首发检查清单
 
 ## 当前提交口径（2026-11-18）
 
@@ -7,7 +7,7 @@
 - 生产服务是 `https://toward-us-private-beta.onrender.com`。现有 PostgreSQL 保存账号和记录。旧免费实例的临时文件尚未确认备份，创始人决定先保留原实例。合并 #212 前已关闭 Web 自动部署并暂停 Blueprint 自动同步。迁移完成前两项保持关闭，禁止手动部署、重启、升级或挂盘。
 - 获准的目标是单 Web 实例 US$7/月，加 1 GB 磁盘最多 US$0.25/月。迁出、核对文件数和完整性后，再切换、还原到媒体目录并检查公网健康接口显示 `media: disk`。
 - 统计内部接口要求 Bearer `PINKY_METRICS_ADMIN_TOKEN`。公司钥匙串保存该令牌。生产配置与公网验证在迁移后进行。公开支持邮箱 `ziwei@witnora.com`，主体 Witnora, Inc.。
-- 新名称经创始人明确确认后才用新名建记录，随后选图标、完成改名并构建新版。仅在真机核验与新版公网后端均通过后，首次内部 TestFlight 上传已获准。首次外测、公开链接仍须另行批准。TestFlight 真机验收通过后提交审核，审核通过由创始人手动发布。见 [TestFlight 材料](testflight.md)。
+- Apple 已建立正式记录 Ourever: Couples & Connection（6836668212），等待图标定稿和发布构建。仅在真机核验与新版公网后端均通过后，首次内部 TestFlight 上传已获准。首次外测、公开链接仍须另行批准。TestFlight 真机验收通过后提交审核，审核通过由创始人手动发布。见 [TestFlight 材料](testflight.md)。
 
 ## 2026-11-12 历史基线
 

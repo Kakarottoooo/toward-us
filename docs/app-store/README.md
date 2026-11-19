@@ -1,4 +1,4 @@
-# Pinky App Store 上架材料包
+# Ourever App Store 上架材料包
 
 全部是虚构示例数据（Mia / Leo、小雨 / 阿杰、Lucía / Mateo），不含任何真实用户内容。
 
@@ -21,6 +21,4 @@
 node tools/app-store/screenshots.mjs
 ```
 
-它会在本机起一个临时服务器（临时数据文件，不碰内测数据），用虚构账号走一遍真实界面，Pinky 的回复走本机 Claude 订阅（`AI_PROVIDER=claude-cli`），不调用付费 API。
-
-`tests/app-store-package.test.mjs` 检查字段长度、隐私答案和清单一致、截图尺寸。
+它在临时本机服务中使用虚构情侣账号，拍摄三语真实页面，覆盖欢迎页、功能入口、情侣日历、双人游戏和隐私设置。截图流程不调用模型 API。

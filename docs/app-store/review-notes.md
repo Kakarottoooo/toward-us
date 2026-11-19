@@ -7,20 +7,20 @@ Paste the **Notes** block into App Store Connect → App Review Information → 
 - User name: `ziwei+pinky-review-mia@witnora.com`
 - Password: retrieve from the company release keychain
 
-## Notes (English, paste as is after inserting the private Leo password and updating the approved display name)
+## Notes (English, paste as is after inserting the private Leo password)
 
 ```
-Pinky is a private relationship assistant for one person, which becomes a shared assistant for a couple once two accounts connect.
+Ourever is a private relationship assistant for one person, which becomes a shared assistant for a couple once two accounts connect.
 
 DEMO ACCOUNTS (fictional people, already connected to each other)
 - Mia: ziwei+pinky-review-mia@witnora.com  /  password in Sign-In Information
 - Leo: ziwei+pinky-review-leo@witnora.com  /  insert the separate Leo password in private review notes
-Sign in as Mia. "Just me" is Mia's private chat with Pinky; "Us" is the shared chat that Leo also sees. To see the two-person flow, sign in as Leo on a second device or after signing out.
+Sign in as Mia. "Just me" is Mia's private chat with Ourever; "Us" is the shared chat that Leo also sees. To see the two-person flow, sign in as Leo on a second device or after signing out.
 
 THINGS TO TRY
-1. Just me: type or say "Leo forgot our anniversary dinner, how do I bring it up?" Pinky replies privately; Leo never sees it.
-2. Us: "@Pinky help us plan Saturday dinner under $80". Pinky drafts a plan; an agreement only counts after both approve the same version.
-3. Settings (menu, top left) → Report or get help: report the partner's content or a Pinky reply. Settings → Leave this relationship blocks the partner immediately.
+1. Just me: type or say "Leo forgot our anniversary dinner, how do I bring it up?" Ourever replies privately; Leo never sees it.
+2. Us: "@Ourever help us plan Saturday dinner under $80". Ourever drafts a plan; an agreement only counts after both approve the same version.
+3. Settings (menu, top left) → Report or get help: report the partner's content or a Ourever reply. Settings → Leave this relationship blocks the partner immediately.
 4. Settings → Delete account: deletes the account in the app (password confirmation).
 5. Settings → AI and data processors: names the third-party AI providers and lets the user withdraw consent.
 
@@ -29,7 +29,7 @@ With permission, relevant messages (including imported chats), selected photos, 
 
 NATIVE FEATURES (beyond the web content)
 - "Find photos of you two": on-device Vision face matching across the photo library; face data never leaves the phone, only photos the user picks are uploaded.
-- Share a WhatsApp/WeChat chat export or a text file to Pinky from the share sheet to import it privately.
+- Share a WhatsApp/WeChat chat export or a text file to Ourever from the share sheet to import it privately.
 - Live voice input with the microphone.
 - A Home Screen widget and an offline screen bundled with the app.
 

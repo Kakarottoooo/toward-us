@@ -31,7 +31,7 @@ App Store Connect → App 隐私。答案要和 `mobile/ios/App/App/PrivacyInfo.
 
 ## 未关联到个人的诊断数据
 
-崩溃数据（Crash Data，`NSPrivacyCollectedDataTypeCrashData`），用途选 App 功能。通过 Apple MetricKit 上报至 Pinky，仅用于诊断；不附带账号、聊天文本、录音或完整诊断载荷。
+崩溃数据（Crash Data，`NSPrivacyCollectedDataTypeCrashData`），用途选 App 功能。通过 Apple MetricKit 上报至 Ourever，仅用于诊断；不附带账号、聊天文本、录音或完整诊断载荷。
 
 ## 不收集
 

@@ -13,7 +13,7 @@
 | Feedback email | ziwei@witnora.com |
 | Distribution | Internal TestFlight group with manual build selection and only designated company testers |
 
-Create the record with the approved new name. The current company-signed build 2611.19.5 is the pre-rename reference. Archive and export a new build with the selected icon and a higher build number. Wait for the migrated public backend and device verification before the first internal upload. After Apple processes it, assign that exact build to the internal group. App Review uses the build verified through TestFlight. The founder controls public release.
+The company App Store Connect record is **Ourever: Couples & Connection** (Apple ID `6836668212`). The device display name is **Ourever**. The current company-signed build 2611.19.5 is the pre-rename reference. Archive and export a new build with the selected icon and a higher build number. Wait for the migrated public backend and device verification before the first internal upload. After Apple processes it, assign that exact build to the internal group. App Review uses the build verified through TestFlight. The founder controls public release.
 
 ## English (U.S.)
 
