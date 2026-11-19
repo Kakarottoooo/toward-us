@@ -597,7 +597,7 @@ ${text}` : text, target);
   const pendingAgreement = together?.pendingAgreement;
   // Recommend Ourever to friends: the phone's own share sheet when it has one, else the link is copied.
   const sharePinky = async () => {
-    const url = "https://agentcert.app/";
+    const url = "https://ourever.onrender.com/";
     const text = t("我在用 Ourever：两个人的 AI，帮我们好好说话、说到做到、记住在一起的日子。你们也试试：", "I'm using Ourever, an AI for two that helps us talk, keep our promises and remember our days together. Try it:", "Uso Ourever, una IA para dos que nos ayuda a hablar, cumplir lo que prometemos y recordar nuestros días. Pruébala:");
     try { if (navigator.share) { await navigator.share({ title: "Ourever", text, url }); return; } } catch (error) { if ((error as Error).name === "AbortError") return; }
     try { await navigator.clipboard.writeText(`${text} ${url}`); setNotice(t("链接已复制，发给朋友吧。", "Link copied. Send it to a friend.", "Enlace copiado. Envíaselo a alguien.")); }

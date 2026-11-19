@@ -40,8 +40,8 @@ PRIVACIDAD QUE PUEDES COMPROBAR
 
 Las sugerencias de Ourever las genera una IA y pueden equivocarse. Ourever no es terapia ni consejo médico. Para mayores de 18 años.
 
-Condiciones de uso: https://ourever.witnora.com/terms?lang=es
-Política de privacidad: https://ourever.witnora.com/privacy?lang=es
+Condiciones de uso: https://ourever.onrender.com/es/terms
+Política de privacidad: https://ourever.onrender.com/es/privacy
 
 ## Novedades (1.0)
 La primera versión de Ourever en el App Store: un coach privado para ti, un asistente compartido para los dos, acuerdos que ambos aprueban, recordatorios y recuerdos.

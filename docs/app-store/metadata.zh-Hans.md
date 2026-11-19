@@ -40,8 +40,8 @@ Ourever 是你的私人恋爱教练；你和另一半连接以后，它也是你
 
 Ourever 的建议由 AI 生成，可能出错；Ourever 不是心理咨询或医疗建议。仅限 18 岁及以上使用。
 
-使用条款：https://ourever.witnora.com/terms?lang=zh
-隐私政策：https://ourever.witnora.com/privacy?lang=zh
+使用条款：https://ourever.onrender.com/zh/terms
+隐私政策：https://ourever.onrender.com/zh/privacy
 
 ## 新内容（1.0）
 Ourever 第一次上架 App Store：你的私人教练、你们俩的共同助手、两个人都同意才算数的约定、提醒和回忆。
