@@ -3,7 +3,7 @@ import { wantsOneSentence } from "./reply-contract.mjs";
 import express from "express";
 import { createHash, randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { listPeople, matchPerson, nameKey, personFor, personOf, personSubject } from "./people.mjs";
+import { listPeople, matchPerson, nameKey, personFor, personOf } from "./people.mjs";
 import { readPortraits } from "./portraits.mjs";
 import { maintainMemory } from "./memory-tidy.mjs";
 
@@ -33,7 +33,7 @@ export const activePair = (context, relationshipId = null) => context?.relations
 export const isProfileFact = (record) => record?.kind === PROFILE_KIND;
 const live = (record) => isProfileFact(record) && record.status === "active" && !record.archivedAt && !record.deletedAt;
 /** A fact this member may see: their own private ones, and shared ones of their current couple. */
-export const visibleTo = (record, userId, relationshipId) => live(record) && (record.visibility === "private" ? record.ownerUserId === userId : Boolean(relationshipId) && record.relationshipId === relationshipId && (record.memberUserIds || []).includes(userId));
+export const visibleTo = (record, userId, relationshipId) => live(record) && !/^(person:|partner-of:)/.test(record.subjectUserId || "") && (record.visibility === "private" ? record.ownerUserId === userId : Boolean(relationshipId) && record.relationshipId === relationshipId && (record.memberUserIds || []).includes(userId));
 
 // Pinky works alone first (founder 11-08: the reply coach needs no invitation) and learns the partner as it is used. Before a
 // partner joins, a note about "TA" points at this stand-in instead of a user id; like every private note it is the member's
@@ -90,9 +90,10 @@ async function keepFacts(tx, { relationshipId, userId, visibility, ownerUserId, 
   const scoped = (await tx.listRelationshipRecordsForUser("memories", userId)).filter((item) => live(item) && item.relationshipId === relationshipId && item.visibility === visibility && (visibility === "shared" || item.ownerUserId === ownerUserId));
   const changed = [];
   for (const found of findings) {
+    if (found.subject === "B" && !relationshipId) continue;
     const subjectUserId = subjectOf(found.subject, found);
     const evidence = { channel, ...(sessionId ? { sessionId } : {}), messageId: found.line.id, quote: found.quote, saidAt: found.line.createdAt };
-    const target = found.replaces && scoped.find((item) => item.id === found.replaces);
+    const target = found.replaces && scoped.find((item) => item.id === found.replaces && (item.subjectUserId || null) === subjectUserId);
     if (target) {
       if (key(target.text) === key(found.fact)) continue;
       const updated = await tx.updateRelationshipRecordForUser("memories", target.id, userId, (draft) => { // No longer true is kept, not erased (memory plan, 11-09): the old wording stays on the note's past with when it changed.
@@ -121,15 +122,20 @@ const PEOPLE_NOTE = (people) => people.length ? `\nPeople A is getting to know (
 /** Writes facts about the people someone is getting to know apart from the rest: theirs alone, outside any couple. In A's
  * own chat a newly named person gets their card here (11-09 test: "Lily 不吃辣" and "阿杰最爱火锅" both landed on one TA). */
 async function keepWithPeople(tx, options, people, { create = false, partnerName = "" } = {}) {
-  const resolved = new Map();
+  const allowed = [];
   for (const found of options.findings) {
-    if (found.subject !== "B" || !found.person || (partnerName && nameKey(found.person) === nameKey(partnerName))) continue;
-    let person = matchPerson(people, found.person);
-    if (!person && create) { person = await personFor(tx, options.ownerUserId, found.person); if (person) people.push(person); }
-    if (person) resolved.set(found, person);
+    const aboutContact = found.subject === "B" && found.person && (!partnerName || nameKey(found.person) !== nameKey(partnerName));
+    if (aboutContact) {
+      // A named contact can still have a dedicated conversation. Do not build an inferred profile for them.
+      if (create && !matchPerson(people, found.person)) {
+        const person = await personFor(tx, options.ownerUserId, found.person);
+        if (person) people.push(person);
+      }
+    } else if (found.subject !== "B" || options.relationshipId) {
+      allowed.push(found);
+    }
   }
-  const personal = options.findings.filter((found) => resolved.has(found)), rest = options.findings.filter((found) => !resolved.has(found));
-  return [...await keepFacts(tx, { ...options, findings: rest }), ...await keepFacts(tx, { ...options, relationshipId: null, findings: personal, subjectOf: (_subject, found) => personSubject(resolved.get(found).id) })];
+  return keepFacts(tx, { ...options, findings: allowed });
 }
 
 /** Reads one member's new private lines and keeps what they reveal, privately for that member. */
@@ -157,6 +163,8 @@ export async function scanPrivateProfile({ store, mediator, userId, sessionId })
   }
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
+    const current = await tx.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
+    if (!current || current.ownerUserId !== userId) return [];
     const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, people, { create: true, partnerName: scope.b });
     // No version bump: the member's next turn checks the session version and must never fail because of this.
     await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
@@ -225,6 +233,9 @@ export async function scanCall({ store, mediator, userId, sessionId, noteId, row
  * question, the reply coach) and keeps what it shows about either of them, privately for the member (founder 11-08: "用得越多
  * 越懂她"). Runs after the answer, so it never slows it down; B's own words are the evidence about B. */
 export async function scanBroughtChat({ store, mediator, userId, sessionId, sourceId, messages, personId = null, quiet = false, at = new Date().toISOString() }) {
+  if (personId) return []; // An imported conversation about a non-user stays a source, not a new personal profile.
+  const source = await store.getRelationshipRecordForUser("chatImports", sourceId, userId);
+  if (source?.personDetached) return [];
   if (!mediator?.structured) return [];
   const session = await store.getRelationshipRecordForUser("privateAgentThreads", sessionId, userId);
   if (!session || session.ownerUserId !== userId || session.visibility !== "private" || session.intentType !== "assistant") return [];
@@ -232,29 +243,19 @@ export async function scanBroughtChat({ store, mediator, userId, sessionId, sour
     .filter((line) => line.from && line.text);
   if (!lines.length) return [];
   const scope = await memberScope(store, userId), { relationshipId, partnerId } = scope;
-  // A chat with someone they are getting to know: B is that person, and nobody else's notes are read or written (founder
-  // 11-09: the people must never be mixed up). A chat with the partner keeps the couple's notes.
-  const person = personId ? (await listPeople(store, userId)).find((item) => item.id === personId) || null : null;
-  const label = person
-    ? (subjectUserId) => subjectUserId === userId ? "A" : subjectUserId === personSubject(person.id) ? "B" : null
-    : coupleOnly((subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both");
+  const label = coupleOnly((subjectUserId) => subjectUserId === userId ? "A" : isPartner(subjectUserId, userId, partnerId) ? "B" : "both");
   const known = knownFor(await store.listRelationshipRecordsForUser("memories", userId), userId, relationshipId, label);
   // A screenshot shows times, not days: its messages carry no date, never the day it was brought (11-15: a fight from
   // days earlier was kept as "2026-11-16 …", the upload day).
   const input = { known, messages: lines.map((line) => ({ id: line.id, from: line.from, date: line.createdAt ? localDay(line.createdAt, session.timezone) : null, text: line.text, isNew: true })) };
-  const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: person ? person.name : scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
-  // What happened between them in a chat with one person (their first coffee, a cooled reply) is that person's history;
-  // dropping it left most cards empty on the founder's phone (11-09). So is what the member did with them ("帮她挑不辣的菜"),
-  // but not the member's own story told in that chat ("我去梧桐山看日出"), which stays theirs.
-  const withThem = person ? new RegExp(`[他她]|TA|对方|一起|我们|${person.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i") : null;
-  const theirs = (found) => found.subject === "B" || found.subject === "both" || (found.subject === "A" && found.category === "history" && withThem.test(found.fact));
-  const findings = verifyFacts(result?.facts, lines, () => true).map((found) => person && theirs(found) ? { ...found, subject: "B", person: person.name } : { ...found, person: "" });
+  const result = await mediator.structured({ name: "couple_profile", schema, instructions: instructions({ a: scope.a, b: scope.b, between: true }), input: JSON.stringify(input), maxOutputTokens: 900 });
+  const findings = verifyFacts(result?.facts, lines, () => true).filter((found) => found.subject === "A" || relationshipId);
   if (!findings.length) return [];
   return store.transaction(scope.lock, async (tx) => {
     if ((await memberScope(tx, userId)).relationshipId !== relationshipId) return [];
-    const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings: person ? findings.filter((found) => found.subject !== "both") : findings, channel: "private", sessionId }, person ? [person] : []);
+    const changed = await keepWithPeople(tx, { relationshipId, userId, visibility: "private", ownerUserId: userId, subjectOf: (subject) => subject === "A" ? userId : subject === "B" ? partnerId : null, findings, channel: "private", sessionId }, []);
     if (changed.length && !quiet) await tx.updateRelationshipRecordForUser("privateAgentThreads", sessionId, userId, (draft) => {
-      keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: person ? [person] : [] }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
+      keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", kind: "noted", text: notedText(session.language || "zh", changed, { userId, partnerName: scope.b, people: [] }), noted: changed.map((item) => item.id), ...notedPerson(changed), createdAt: new Date().toISOString() }]);
     });
     return Object.assign(changed, { sessionId });
   });
@@ -336,7 +337,7 @@ export async function profileContext(store, userId) {
   // there after many new preferences (founder 11-08: a month later Pinky must still remember last month's talks).
   const people = await listPeople(store, userId);
   // Standing portraits built from every note, including the old ones no longer listed below (画像层, 11-09).
-  const portraits = await readPortraits(store, userId).catch(() => ({}));
+  const portraits = await readPortraits(store, userId, partner?.userId).catch(() => ({}));
   const drawn = (key) => Boolean(portraits[key]);
   const history = records.filter((item) => isProfileFact(item) && item.category === "history" && !personOf(item.subjectUserId)).sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text)) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, drawn("us") || drawn("partner") || drawn("me") ? BRIEF.history : HISTORY_LIMIT).map(line);
   const lasting = (item) => !isProfileFact(item) || item.category !== "history";
@@ -348,11 +349,10 @@ export async function profileContext(store, userId) {
     us: pick((item) => lasting(item) && (!isProfileFact(item) || !item.subjectUserId), undefined, CONTEXT_LIMIT),
     history,
     // Someone single may be getting to know several people (founder 11-09); each one's notes stay with that person.
-    people: people.slice(0, 8).map((person) => {
-      const theirs = records.filter((item) => isProfileFact(item) && item.subjectUserId === personSubject(person.id));
-      return { id: person.id, name: person.name, ...(portraits[personSubject(person.id)] ? { portrait: portrait(personSubject(person.id)) } : {}), alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4), lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10),
-        facts: pick((item) => item.category !== "history", theirs, drawn(personSubject(person.id)) ? BRIEF.personFacts : 30, drawn(personSubject(person.id))), history: theirs.filter((item) => item.category === "history").sort((a, b) => historyDay(b.text).localeCompare(historyDay(a.text))).slice(0, drawn(personSubject(person.id)) ? BRIEF.personHistory : 20).map(line) };
-    }),
+    people: people.slice(0, 8).map((person) => ({
+      id: person.id, name: person.name, alsoCalled: (person.aliases || []).filter((alias) => alias !== person.name).slice(0, 4),
+      lastSeen: String(person.lastSeenAt || person.updatedAt).slice(0, 10), facts: [], history: [],
+    })),
   };
 }
 

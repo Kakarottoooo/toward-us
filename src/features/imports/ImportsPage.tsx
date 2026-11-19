@@ -3,6 +3,7 @@ import { ArrowRight, ChatCircleDots, ChatsCircle, Copy, Desktop, FileArrowUp, La
 import { counted, languageTag, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { useImportDisclosure } from "./ImportDisclosure";
 import { ImportCard } from "./ImportCard";
 import { importAction, listImports, uploadChatFile, type ChatImport } from "./imports";
 import "./imports.css";
@@ -18,6 +19,16 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
   const load = useCallback(async () => { try { setImports(await listImports()); } catch (caught) { setError((caught as Error).message); } }, []);
   useEffect(() => { void load(); }, [load]);
   const current = imports?.find((item) => item.id === selected) || null;
+  const [removeId, setRemoveId] = useState(""), [removing, setRemoving] = useState(false);
+  const removeSource = async (sourceId: string) => {
+    if (removeId !== sourceId) { setRemoveId(sourceId); return; }
+    setRemoving(true); setError("");
+    try {
+      await relationshipApi(`/api/imports/${encodeURIComponent(sourceId)}`, { method: "DELETE" });
+      setRemoveId(""); go("/?view=import");
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setRemoving(false); }
+  };
   if (selected && current?.status === "ready" && current.analysis) return <ImportReport item={current} user={user} paired={paired} language={language} onBack={() => go("/?view=import")} onAsk={onAsk} onChanged={load} />;
   return <div className="paper-screen relationship-shell import-screen" data-testid="imports-screen">
     <PageHeader language={language} title={t("聊天记录", "Chat history", "Historial de chat")} onBack={onBack} />
@@ -25,9 +36,14 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
       <p className="space-scope"><LockKey size={16} />{t("导入的聊天只有你能看到；想和 TA 一起看，要 TA 同意。", "Imported chats are visible only to you; looking together needs your partner's OK.", "Los chats importados solo los ves tú; verlos juntos necesita el sí de tu pareja.")}</p>
       {error && <p className="space-error" role="alert">{error}</p>}
       {selected && current && current.status !== "ready" && !current.sync && <ImportCard id={current.id} language={language} onOpen={go} onFinished={load} />}
+      {selected && current && current.ownerUserId === user.id && !current.shared && (current.sync || current.status !== "ready") && <section className="import-start">
+        {removeId === current.id && <p role="alert">{t("将永久删除这份导入及原始消息，正在使用的同步也会停止。", "This permanently deletes the import and its original messages and stops its sync.", "Se eliminarán la importación y sus mensajes originales y se detendrá su sincronización.")}</p>}
+        <button type="button" className="import-link" disabled={removing} onClick={() => void removeSource(current.id)}>{removeId === current.id ? t("确认删除", "Confirm deletion", "Confirmar eliminación") : t("删除这份导入", "Delete this import", "Eliminar esta importación")}</button>
+        {removeId === current.id && <button type="button" className="import-link" disabled={removing} onClick={() => setRemoveId("")}>{t("取消", "Cancel", "Cancelar")}</button>}
+      </section>}
       {!!imports?.length && <section className="import-list">{imports.map((item) => <button key={item.id} onClick={() => go(`/?view=import&import=${encodeURIComponent(item.id)}`)}>
         <span className="import-icon">{item.shared ? <UsersThree size={20} /> : <ChatsCircle size={20} />}</span>
-        <span><strong>{item.title || t("聊天记录", "Chat history", "Historial de chat")}</strong><small>{item.sync ? (item.sync.lastSyncAt ? t(`每小时自动同步 · ${item.messageCount} 条 · 上次 ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Syncs every hour · ${item.messageCount} · last ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Se sincroniza cada hora · ${item.messageCount} · última ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : t("等 Mac 第一次同步", "Waiting for the Mac's first sync", "Esperando la primera sincronización del Mac")) : item.status === "ready" ? `${item.messageCount} · ${item.firstAt?.slice(0, 10) || ""} – ${item.lastAt?.slice(0, 10) || ""}` : item.status === "analyzing" ? t("正在读…", "Reading…", "Leyendo…") : item.status === "failed" ? t("没读完", "Not finished", "Sin terminar") : t("等你确认", "Waiting for you", "Esperando tu respuesta")}</small></span><ArrowRight size={16} /></button>)}</section>}
+        <span><strong>{item.title || t("聊天记录", "Chat history", "Historial de chat")}</strong><small>{item.sync ? (item.sync.needsDisclosure ? t("同步已暂停。请重新设置 Mac 同步并确认资料处理方式。", "Sync paused. Set up Mac sync again to confirm how messages are processed.", "Sincronización en pausa. Vuelve a configurarla para confirmar cómo se procesan los mensajes.") : item.sync.lastSyncAt ? t(`每小时自动同步 · ${item.messageCount} 条 · 上次 ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Syncs every hour · ${item.messageCount} · last ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Se sincroniza cada hora · ${item.messageCount} · última ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : t("等 Mac 第一次同步", "Waiting for the Mac's first sync", "Esperando la primera sincronización del Mac")) : item.status === "ready" ? `${item.messageCount} · ${item.firstAt?.slice(0, 10) || ""} – ${item.lastAt?.slice(0, 10) || ""}` : item.status === "analyzing" ? t("正在读…", "Reading…", "Leyendo…") : item.status === "failed" ? t("没读完", "Not finished", "Sin terminar") : t("等你确认", "Waiting for you", "Esperando tu respuesta")}</small></span><ArrowRight size={16} /></button>)}</section>}
       <ImportStart language={language} onImported={(item) => go(`/?view=import&import=${encodeURIComponent(item.id)}`)} onAsk={onAsk} />
     </main>
   </div>;
@@ -37,17 +53,19 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
 function ImportStart({ language, onImported, onAsk }: { language: Language; onImported: (item: ChatImport) => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { ask, dialog } = useImportDisclosure(language);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [command, setCommand] = useState(""), [winCommand, setWinCommand] = useState(""), [copied, setCopied] = useState(false);
   const pick = async (file: File | undefined) => {
-    if (fileRef.current) fileRef.current.value = ""; if (!file) return;
+    if (fileRef.current) fileRef.current.value = ""; if (!file || !await ask()) return;
     setBusy(true); setError("");
     try { onImported(await uploadChatFile(file, { name: file.name, language })); } catch (caught) { setError((caught as Error).message); } finally { setBusy(false); }
   };
   // Years of iMessage without a Mac (founder 11-09): the PC's iPhone backup, read by a short command typed off the phone.
-  const windows = async () => { setError(""); setCommand(""); setCopied(false); try { setWinCommand((await relationshipApi<{ command: string }>("/api/imports/windows-command", jsonBody({ language }))).command); } catch (caught) { setError((caught as Error).message); } };
-  const mac = async () => { setError(""); setWinCommand(""); setCopied(false); try { setCommand((await relationshipApi<{ command: string }>("/api/imports/mac-sync-command", jsonBody({ language }))).command); } catch (caught) { setError((caught as Error).message); } };
+  const windows = async () => { if (!await ask()) return; setError(""); setCommand(""); setCopied(false); try { setWinCommand((await relationshipApi<{ command: string }>("/api/imports/windows-command", jsonBody({ language, importDisclosure: 1 }))).command); } catch (caught) { setError((caught as Error).message); } };
+  const mac = async () => { if (!await ask("sync")) return; setError(""); setWinCommand(""); setCopied(false); try { setCommand((await relationshipApi<{ command: string }>("/api/imports/mac-sync-command", jsonBody({ language, importDisclosure: 1 }))).command); } catch (caught) { setError((caught as Error).message); } };
   const copy = async () => { try { await navigator.clipboard.writeText(command || winCommand); setCopied(true); } catch { setCopied(false); } };
   return <section className="import-start">
+    {dialog}
     <h2 className="space-subhead">{t("导入新的聊天", "Import a chat", "Importar un chat")}</h2>
     <button className="import-way" disabled={busy} onClick={() => fileRef.current?.click()} data-testid="import-file"><FileArrowUp size={22} /><span><strong>{busy ? t("正在上传…", "Uploading…", "Subiendo…") : t("选择导出的文件", "Choose an exported file", "Elegir un archivo exportado")}</strong><small>WhatsApp · Messenger · Instagram · Telegram · LINE · iMazing · SMS Backup</small></span></button>
     <input ref={fileRef} type="file" accept=".txt,.zip,.json,.csv,.xml,.html,text/plain,application/zip,application/json" hidden onChange={(event) => void pick(event.target.files?.[0])} data-testid="import-file-input" />

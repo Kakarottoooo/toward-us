@@ -7,7 +7,7 @@ export type ChatImport = {
   id: string; title: string; platform: string; status: "needs_choice" | "needs_people" | "analyzing" | "ready" | "failed" | "waiting_sync"; error: string | null;
   shared: boolean; ownerUserId: string; createdAt: string; conversations?: Array<{ id: string; title: string; count: number; participants: string[]; lastAt: string | null }>;
   people: ImportPerson[]; messageCount: number; firstAt: string | null; lastAt: string | null; progress: { done: number; total: number } | null; sampled: boolean; rawDeleted: boolean;
-  shareRequestedAt: string | null; sharedCopyId: string | null; sync: { lastSyncAt: string | null } | null;
+  shareRequestedAt: string | null; sharedCopyId: string | null; sync: { lastSyncAt: string | null; needsDisclosure?: boolean } | null;
   stats: { perPerson: { me: PersonStats; partner: PersonStats }; monthly: Array<{ month: string; me: number; partner: number }>; silences: Array<{ from: string; to: string; days: number }>; busiestDays: Array<{ date: string; count: number }>; activeDays: number } | null;
   analysis: {
     message: string; overview: string; conflictCycle: string | null;
@@ -21,7 +21,7 @@ export type ChatImport = {
 /** Sends an exported chat file as-is; the server recognizes the format. Octet-stream keeps JSON exports away from the app-wide JSON parser. */
 export async function uploadChatFile(file: Blob, { name, language, session }: { name: string; language: Language; session?: string | null }) {
   const query = new URLSearchParams({ name, language, ...(session ? { session } : {}) });
-  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/octet-stream" }, body: file });
+  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/octet-stream", "X-Pinky-Import-Disclosure": "1" }, body: file });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || `Upload failed (${response.status})`), currentLanguage()));
   return payload.import as ChatImport;
@@ -29,7 +29,7 @@ export async function uploadChatFile(file: Blob, { name, language, session }: { 
 
 export async function importPastedChat(text: string, { language, session }: { language: Language; session?: string | null }) {
   const query = new URLSearchParams({ pasted: "1", language, ...(session ? { session } : {}) });
-  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/plain; charset=utf-8" }, body: text });
+  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/plain; charset=utf-8", "X-Pinky-Import-Disclosure": "1" }, body: text });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || `Import failed (${response.status})`), currentLanguage()));
   return payload.import as ChatImport;

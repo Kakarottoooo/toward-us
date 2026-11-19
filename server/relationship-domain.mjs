@@ -45,7 +45,12 @@ export function canViewRecord(record, userId) {
 
 export function projectRecord(record, userId) {
   if (!canViewRecord(record, userId)) return null;
+  if (record.kind === "people_reading" || (record.kind === "portrait" && (String(record.subjectKey || "").startsWith("person:") || (record.subjectKey === "partner" && !record.subjectUserId))) ||
+      (record.kind === "profile" && /^(person:|partner-of:)/.test(record.subjectUserId || ""))) return null;
   const projected = structuredClone(record);
+  if (record.kind === "person") {
+    for (const key of ["stage", "previousStage", "stageAt", "chase", "previousChase", "chaseAt"]) delete projected[key];
+  }
   // Distance cards and the short-lived touch handshake have their own member-scoped projection.
   delete projected.playDistance;
   if (projected.ownerUserId !== userId) {

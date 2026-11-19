@@ -1,6 +1,5 @@
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { readWants, writeWants } from "./people-compare.mjs";
 import { choose, markAsked, settle, stageOf, unchoose } from "./people-stages.mjs";
 
 // Pinky works for someone single too (founder 11-09: "有很多个暧昧对象……Pinky 要能识别对面是不同的人……哪个人最后评估下来是
@@ -11,7 +10,6 @@ export const PERSON_KIND = "person";
 export const personSubject = (id) => `person:${id}`;
 export const personOf = (subjectUserId) => String(subjectUserId || "").startsWith("person:") ? String(subjectUserId).slice(7) : null;
 
-const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language) ? req.query.language : req.auth.user.language || "zh";
 const squash = (value) => String(value || "").replace(/\s+/g, " ").trim();
 const clean = (value, limit) => squash(value).replace(/\0/g, "").slice(0, limit);
 /** A name as typed or shown in a chat title, compared without spaces, case, emoji or punctuation ("Lily 🌸" is "lily"). */
@@ -19,12 +17,12 @@ export const nameKey = (value) => squash(value).normalize("NFKC").toLowerCase().
 // Placeholders the screenshot reader or an export uses when a chat shows no name: never a person of their own.
 const PLACEHOLDERS = new Set(["ta", "partner", "pareja", "对方", "他", "她", "me", "我", "yo", "unknown", "未知"].map(nameKey));
 
-export const livePerson = (record, userId) => record?.kind === PERSON_KIND && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && !record.deletedAt;
+export const livePerson = (record, userId) => record?.kind === PERSON_KIND && record.visibility === "private" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && !record.deletedAt;
 
 /** The people this member is getting to know, most recently seen first. */
 export async function listPeople(db, userId, { archived = false } = {}) {
   const records = await db.listRelationshipRecordsForUser("memories", userId);
-  return records.filter((record) => record?.kind === PERSON_KIND && record.ownerUserId === userId && !record.deletedAt && record.status !== "merged" && (archived || livePerson(record, userId)))
+  return records.filter((record) => record?.kind === PERSON_KIND && record.visibility === "private" && record.ownerUserId === userId && !record.deletedAt && record.status !== "merged" && (archived || livePerson(record, userId)))
     .sort((a, b) => String(b.lastSeenAt || b.updatedAt).localeCompare(String(a.lastSeenAt || a.updatedAt)));
 }
 
@@ -50,52 +48,73 @@ export async function personFor(tx, userId, name, { at = new Date().toISOString(
 }
 
 /** One person as their owner sees them. */
-export const projectPerson = (record, facts = 0) => ({ id: record.id, version: record.version, name: record.name, aliases: record.aliases || [], archived: Boolean(record.archivedAt), lastSeenAt: record.lastSeenAt || record.updatedAt, facts, stage: record.stage || null, previousStage: record.previousStage || null, stageAt: record.stageAt || null, chase: record.chase || null, previousChase: record.previousChase || null, chaseAt: record.chaseAt || null, createdAt: record.createdAt });
-// Someone newly showing warning signs since the member last opened 我的 TA 们: the menu row shows a dot for them.
-const alerted = (person, seenAt) => person.stage === "risk" && person.stageAt && (!seenAt || person.stageAt > seenAt);
+export const projectPerson = (record) => ({ id: record.id, version: record.version, name: record.name, aliases: record.aliases || [], archived: Boolean(record.archivedAt), lastSeenAt: record.lastSeenAt || record.updatedAt, createdAt: record.createdAt });
 
-/** 我的 TA 们: list, rename, merge two that are one person, archive. Every route works on the member's own records only. */
-export function createPeopleRouter({ store, emit = () => {}, comparer = null }) {
+async function publicStage(store, userId) {
+  const { stage, chosen } = await stageOf(store, userId);
+  return { stage, chosen: chosen ? projectPerson(chosen) : null };
+}
+
+export function createPeopleRouter({ store, emit = () => {} }) {
   const router = express.Router();
   const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
   router.use("/people", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
   const owned = async (db, id, userId) => {
     const record = await db.getRelationshipRecordForUser("memories", id, userId);
-    if (!record || record.kind !== PERSON_KIND || record.ownerUserId !== userId || record.deletedAt) throw fail(404, "Not found.");
+    if (!record || record.kind !== PERSON_KIND || record.visibility !== "private" || record.ownerUserId !== userId || record.deletedAt) throw fail(404, "Not found.");
     return record;
   };
   router.get("/people", async (req, res) => {
     const userId = req.auth.user.id;
     await settle(store, userId).catch((error) => console.error("Could not settle the stage:", error?.message || error));
-    const records = await store.listRelationshipRecordsForUser("memories", userId);
-    const counts = new Map();
-    for (const record of records) if (record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && String(record.subjectUserId || "").startsWith("person:")) counts.set(personOf(record.subjectUserId), (counts.get(personOf(record.subjectUserId)) || 0) + 1);
-    const people = await listPeople(store, userId, { archived: req.query.archived === "1" }), { seenAt } = await readWants(store, userId);
-    const { stage, chosen } = await stageOf(store, userId);
+    const people = await listPeople(store, userId, { archived: req.query.archived === "1" });
     const threads = new Map((await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.personId && record.ownerUserId === userId && !record.archivedAt).map((record) => [record.personId, { id: record.id, updatedAt: record.updatedAt, lastFrom: record.messages?.at(-1)?.role || null }]));
-    res.json({ people: people.map((person) => ({ ...projectPerson(person, counts.get(person.id) || 0), thread: threads.get(person.id) || null })), alerts: stage === "together" ? 0 : people.filter((person) => alerted(person, seenAt)).length, stage, chosen: chosen ? projectPerson(chosen) : null });
-    // The reading is made ahead of time whenever their notes change, so 我的 TA 们 is ready when opened.
-    if (comparer) comparer.current(userId, languageOf(req)).catch(() => {});
+    res.json({ people: people.map((person) => ({ ...projectPerson(person), thread: threads.get(person.id) || null })), alerts: 0, ...await publicStage(store, userId) });
   });
-  // 在了解的人 (founder 11-09, third mockup): everyone at once, read by Pinky without picking anyone. Opening it clears the dot.
   router.get("/people/board", async (req, res) => {
     const userId = req.auth.user.id;
     const people = await listPeople(store, userId);
-    const reading = comparer ? await comparer.current(userId, languageOf(req)) : { status: "unavailable" };
-    if (req.query.seen === "1") await writeWants(store, userId, { seenAt: new Date().toISOString() });
-    const { stage, chosen } = await stageOf(store, userId);
-    res.json({ ...reading, people: people.map((person) => projectPerson(person)), stage, chosen: chosen ? projectPerson(chosen) : null });
+    res.json({ status: "directory", people: people.map(projectPerson), ...await publicStage(store, userId) });
   });
-  // One card: what Pinky keeps about this person, newest first, and what happened between them by date.
   router.get("/people/:id", async (req, res) => {
-    const userId = req.auth.user.id, person = await owned(store, req.params.id, userId);
-    const facts = (await store.listRelationshipRecordsForUser("memories", userId)).filter((record) => record.kind === "profile" && record.ownerUserId === userId && record.status === "active" && !record.archivedAt && record.subjectUserId === personSubject(person.id));
-    const line = (record) => ({ id: record.id, version: record.version, category: record.category || "other", text: record.text, quote: record.evidence?.quote || null, updatedAt: record.updatedAt });
-    const reading = comparer ? await comparer.current(userId, languageOf(req)).catch(() => null) : null;
-    const numbers = comparer ? await comparer.numbersFor(userId, person.id).catch(() => null) : null;
-    res.json({ person: projectPerson(person, facts.length), numbers, read: reading?.reading?.people.find((row) => row.id === person.id) || null,
-      facts: facts.filter((record) => record.category !== "history").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 40).map(line),
-      history: facts.filter((record) => record.category === "history").sort((a, b) => String(b.text).localeCompare(String(a.text))).slice(0, 30).map(line) });
+    const person = await owned(store, req.params.id, req.auth.user.id);
+    res.json({ person: projectPerson(person), numbers: null, read: null, facts: [], history: [] });
+  });
+  router.delete("/people/:id", async (req, res) => {
+    const userId = req.auth.user.id;
+    const person = await store.transaction(`user:${userId}`, async (tx) => {
+      const target = await owned(tx, req.params.id, userId);
+      if (req.body?.confirm !== target.id) throw fail(400, "Confirm this person before deleting.");
+      if (target.chosenAt) await unchoose(tx, userId);
+      const memories = (await tx.listRelationshipRecordsForUser("memories", userId)).filter((row) => row.ownerUserId === userId && row.visibility === "private");
+      // Include previous cards explicitly folded into this one, including a chain of merges.
+      const ids = new Set([target.id]);
+      for (let size = 0; size !== ids.size;) {
+        size = ids.size;
+        for (const row of memories) if (row.kind === PERSON_KIND && ids.has(row.mergedInto)) ids.add(row.id);
+      }
+      for (const row of memories) {
+        if (ids.has(row.id) || ids.has(personOf(row.subjectUserId)) || ids.has(personOf(row.subjectKey)) || row.kind === "people_reading") {
+          await tx.deleteRelationshipRecordForUser("memories", row.id, userId);
+        }
+      }
+      for (const row of await tx.listRelationshipRecordsForUser("privateAgentThreads", userId)) {
+        if (row.ownerUserId === userId && row.visibility === "private" && ids.has(row.personId)) {
+          await tx.deleteRelationshipRecordForUser("privateAgentThreads", row.id, userId);
+        }
+      }
+      for (const row of await tx.listRelationshipRecordsForUser("chatImports", userId)) {
+        if (row.ownerUserId === userId && row.visibility === "private" && ids.has(row.personId)) {
+          await tx.updateRelationshipRecordForUser("chatImports", row.id, userId, (draft) => {
+            delete draft.personId; delete draft.personNew;
+            draft.personDetached = true; draft.version += 1;
+          });
+        }
+      }
+      return target;
+    });
+    emit(person, "person.deleted", userId);
+    res.status(204).end();
   });
   router.patch("/people/:id", async (req, res) => {
     const userId = req.auth.user.id, name = clean(req.body?.name, 60);
@@ -136,13 +155,13 @@ export function createPeopleRouter({ store, emit = () => {}, comparer = null }) 
       return req.body?.chosen === false ? markAsked(tx, userId, req.params.id) : choose(tx, userId, req.params.id);
     });
     emit(chosen, "person.updated", userId);
-    res.json({ ...(await stageOf(store, userId)), person: projectPerson(chosen) });
+    res.json({ ...await publicStage(store, userId), person: projectPerson(chosen) });
   });
   // Not the one after all: the people put away for them come back.
   router.post("/people/unchoose", async (req, res) => {
     const userId = req.auth.user.id;
     await store.transaction(`user:${userId}`, (tx) => unchoose(tx, userId));
-    res.json(await stageOf(store, userId));
+    res.json(await publicStage(store, userId));
   });
   router.post("/people/:id/archive", async (req, res) => {
     const userId = req.auth.user.id, archived = req.body?.archived !== false;
