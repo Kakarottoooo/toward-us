@@ -10,7 +10,7 @@
 - **上架用的正式包**（TestFlight / App Store）用 `npm run sync:release` 或 `npm run check:ios-release`：不设 `TOWARD_US_APP_URL` 就用云端地址；设了的话只能是公网 `https://` 地址；`*.ts.net`（Tailscale，只有创始人自己的设备连得上）、`localhost`、`.local`、IP 地址都会直接报错，防止把内测地址打进正式包。
 - 连不上服务器时（没网、服务器挂了）显示包里自带的离线页（`www/offline.html`，按手机语言显示中/英/西），每 10 秒和联网时自动重试，连上就回到 App；不会白屏。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
-- iOS 图标使用 AppIcon 资源；安卓图标和两边的启动图还是 Capacitor 默认的。
+- iOS 与 Android 用 Ourever 小飞鼠图标和启动图。
 
 ## 安卓：编出 APK
 
