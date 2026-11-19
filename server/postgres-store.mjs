@@ -322,6 +322,17 @@ export async function createPostgresStore(databaseUrl) {
       const result = await pool.query(`delete from ${table} r where r.id=$1 and r.owner_user_id=$2 and ${recordScopeSql(collection, "$2")}`, [id, userId]);
       return result.rowCount > 0;
     },
+    async getFeedbackForInbox(id) {
+      return mapGraphRecord((await pool.query("select * from product_feedback where id=$1", [id])).rows[0]);
+    },
+    async countUnreadFeedback(userId) {
+      return Number((await pool.query("select count(*) from product_feedback where owner_user_id=$1 and data->>'unread'='true'", [userId])).rows[0].count);
+    },
+    async listFeedbackForInbox({ since, after, statuses, limit }) {
+      // The JSON cursor exposes milliseconds; compare exactly that key for DB-generated microsecond timestamps too.
+      const result = await pool.query("select * from product_feedback where (date_trunc(\'milliseconds\',updated_at),id)>($1::timestamptz,$2::text) and ($3::text[] is null or status=any($3)) order by date_trunc(\'milliseconds\',updated_at),id limit $4", [since, after, statuses, limit]);
+      return result.rows.map(mapGraphRecord);
+    },
     async listRelationshipsForJob() { return (await pool.query("select * from relationships")).rows.map(mapRelationship); },
     async listRecordsForJob(collection) {
       return (await pool.query(`select * from ${graphTable(collection)} order by created_at`)).rows.map(mapGraphRecord);

@@ -27,7 +27,7 @@ const items = (await load()).sort((a, b) => (severityRank[a.severity] ?? 3) - (s
 if (process.argv.includes("--json")) console.log(JSON.stringify(items, null, 2));
 else if (!items.length) console.log("No feedback yet.");
 else for (const item of items) {
-  console.log(`[${item.severity || "?"}] ${item.kind || "unsorted"} · ${item.createdAt.slice(0, 16).replace("T", " ")} · ${item.context?.view || "conversation"} · user ${item.ownerUserId?.slice(0, 8) || "demo"}${item.photoIds?.length ? ` · ${item.photoIds.length} screenshot(s)` : ""}`);
+  console.log(`[${item.severity || "?"}] ${item.kind || "unsorted"} · ${item.createdAt.slice(0, 16).replace("T", " ")} · ${item.context?.view || "conversation"} · user ${item.ownerUserId?.slice(0, 8) || "demo"}${(item.attachmentIds || item.photoIds)?.length ? ` · ${(item.attachmentIds || item.photoIds).length} screenshot(s)` : ""}`);
   if (item.summary) console.log(`  ${item.summary}`);
   console.log(`  "${item.text.replace(/\s+/g, " ").slice(0, 400)}"\n`);
 }

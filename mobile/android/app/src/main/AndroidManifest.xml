@@ -38,6 +38,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
     <!-- Voice input: the WebView asks for both when the page calls getUserMedia({ audio }). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Normal (no prompt) permission; Capacitor's WebView bridge denies audio capture without it. -->
