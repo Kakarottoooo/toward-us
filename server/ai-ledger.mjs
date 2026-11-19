@@ -22,7 +22,7 @@ export const AI_FEATURES = Object.freeze([
   "web_lookup", "reply_source_check", "demo_analysis", "demo_answer", "transcription", "realtime_voice", "voice_call",
   "chat_screenshots", "chat_history_part", "chat_history_report", "photo_memory", "character_motion",
   "couple_promises", "couple_profile", "couple_game", "couple_recap", "daily_question", "daily_reaction", "composer_suggestions",
-  "shared_translation", "feedback_triage", "agreement_commitments", "agreement_point", "conversation_summary", "memory_tidy",
+  "shared_translation", "feedback_triage", "feedback_voice", "agreement_commitments", "agreement_point", "conversation_summary", "memory_tidy",
   "people_reading", "portrait", "ludo_tasks", "pet_draw", "pet_guess", "soup_puzzle", "soup_answer", "other",
 ]);
 const featureName = (name) => AI_FEATURES.includes(name) ? name : "other";
@@ -319,7 +319,7 @@ export function meterOpenAI(client) {
   };
 }
 
-const AUDIO_FEATURES = new Set(["transcription", "realtime_voice"]);
+const AUDIO_FEATURES = new Set(["transcription", "feedback_voice", "realtime_voice"]);
 /** The mediator every router uses, with each feature call admitted by the cost controls and attributed in the ledger. */
 export function meterMediator(mediator) {
   if (!mediator || mediator.aiReady === false) return mediator;
@@ -328,7 +328,8 @@ export function meterMediator(mediator) {
     if (typeof mediator[method] !== "function") continue;
     metered[method] = (...args) => {
       const feature = featureForCall(method, args), channel = AUDIO_FEATURES.has(feature) ? "metered" : textChannel;
-      return runAiFeature({ feature, args, channel }, async () => {
+      // Raw audio has no text safety signal and must not be expanded into a JSON array of samples.
+      return runAiFeature({ feature, args: method === "transcribe" ? [] : args, channel }, async () => {
         if (feature !== "realtime_voice") return mediator[method](...args);
         // The realtime session runs between the phone and OpenAI; the server only opens it, so its cost is not known here.
         const started = Date.now(), model = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime";

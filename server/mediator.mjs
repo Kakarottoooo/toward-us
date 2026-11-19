@@ -331,7 +331,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       } catch (error) {
         if (isAiPolicyError(error)) throw error; console.error("Together mediation unavailable:", error?.message || error); return null; }
     },
-    async transcribe(buffer, mimeType = "audio/webm", language = "zh") {
+    async transcribe(buffer, mimeType = "audio/webm", language = "zh", feature) {
       if (!openai) {
         const error = new Error(localText(language, "语音转录需要配置 OPENAI_API_KEY。", "Transcription needs OPENAI_API_KEY to be configured.", "La transcripción necesita que se configure OPENAI_API_KEY."));
         error.statusCode = 503;
@@ -349,7 +349,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
         model: "gpt-4o-transcribe-diarize",
         response_format: "diarized_json",
         chunking_strategy: "auto",
-      });
+      }, feature === "feedback_voice" ? INTERACTIVE : undefined);
       await screenText([result.text, ...(result.segments || []).map((s) => s.text)].filter(Boolean).join("\n"));
       return {
         text: result.text || "",

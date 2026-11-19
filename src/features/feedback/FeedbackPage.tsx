@@ -5,6 +5,8 @@ import { KeyboardTextarea, useKeyboard } from "../../mobile";
 import { PageHeader } from "../conversation/ConversationHome";
 import { getFeedbackContext } from "./feedbackDiagnostics";
 import { FeedbackInbox } from "./FeedbackInbox";
+import { FeedbackVoice } from "./FeedbackVoice";
+import { insertVoiceText, notifyVoice, type VoiceTake } from "./feedbackVoiceQueue";
 import {
   deliveryEvent, discardFailedFeedback, enqueueFeedback, pendingFeedback, readDraft, retryFeedback, saveDraft,
   type FeedbackDraft, type FeedbackKind, type PendingFeedback,
@@ -42,6 +44,13 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
   const [initial] = useState(() => ({ from, language, file: initialFile, context: getFeedbackContext(from, language) }));
   const empty = (): FeedbackDraft => ({ text: "", kind: "bug", images: [], context: getFeedbackContext(from, language) });
   const [draft, setDraft] = useState<FeedbackDraft>({ text: "", kind: "bug", images: [], context: initial.context });
+  const latest = useRef(draft);
+  const updateDraft = (next: FeedbackDraft) => { latest.current = next; setDraft(next); };
+  const editor = useRef<HTMLDivElement>(null);
+  const beforeBack = useRef<((leave: () => void) => void) | null>(null);
+  const cursor = useRef<number | undefined>(undefined);
+  const inserted = useRef(new Set<string>());
+  const [voiceBusy, setVoiceBusy] = useState(true);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
@@ -62,11 +71,11 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
         if (restored.images.length === 4 || !accepted(file)) setNotice("invalid");
         else {
           restored.images = [...restored.images, namedFile(file)];
-          setDraft(restored);
+          updateDraft(restored);
           await saveDraft(userId, restored);
         }
       }
-      if (live) { setDraft(restored); setReady(true); }
+      if (live) { updateDraft(restored); setReady(true); }
     }).catch(() => { if (live) { setStorageError(true); setReady(true); } });
     const refresh = async () => {
       const current = ++version;
@@ -94,12 +103,42 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
     };
   }, [initial, userId]);
 
+  const persist = async (next: FeedbackDraft) => {
+    const seq = ++lastSave.current;
+    const ids = [...inserted.current];
+    try {
+      await saveDraft(userId, next, ids);
+      if (seq === lastSave.current) setStorageError(false);
+      if (ids.length) {
+        for (const id of ids) inserted.current.delete(id);
+        notifyVoice(userId);
+      }
+    } catch (error) {
+      if (seq === lastSave.current) setStorageError(true);
+      throw error;
+    }
+  };
   const edit = (next: FeedbackDraft) => {
     if (!ready || submitting.current) return;
-    setDraft(next); setNotice("");
-    const seq = ++lastSave.current;
-    void saveDraft(userId, next).then(() => { if (seq === lastSave.current) setStorageError(false); })
-      .catch(() => { if (seq === lastSave.current) setStorageError(true); });
+    updateDraft(next); setNotice("");
+    void persist(next).catch(() => {});
+  };
+  const insertTranscripts = async (takes: VoiceTake[]) => {
+    const fresh = takes.filter(take => !inserted.current.has(take.id));
+    if (!fresh.length) return;
+    let text = latest.current.text;
+    for (const take of fresh) {
+      const result = insertVoiceText(text, take);
+      text = result.text; cursor.current = result.caret;
+      inserted.current.add(take.id);
+    }
+    const next = { ...latest.current, text };
+    updateDraft(next); setNotice("");
+    requestAnimationFrame(() => {
+      const input = editor.current?.querySelector("textarea");
+      if (input && input.value === next.text && cursor.current !== undefined) input.setSelectionRange(cursor.current, cursor.current);
+    });
+    await persist(next);
   };
   const pick = (files: FileList | null) => {
     const chosen = Array.from(files || []);
@@ -108,11 +147,11 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
     edit({ ...draft, images: [...draft.images, ...chosen.map(namedFile)] });
   };
   const send = async () => {
-    if (submitting.current || !draft.text.trim() || !ready) return;
+    if (submitting.current || voiceBusy || !draft.text.trim() || draft.text.length > 4000 || !ready) return;
     keyboard.hide(); submitting.current = true; setBusy(true); setNotice("");
     try {
       await enqueueFeedback(userId, draft);
-      ++lastSave.current; setStorageError(false); setDraft(empty()); setNotice("queued");
+      ++lastSave.current; setStorageError(false); updateDraft(empty()); cursor.current = undefined; setNotice("queued");
     } catch { setStorageError(true); }
     finally { submitting.current = false; setBusy(false); }
   };
@@ -139,16 +178,19 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
   const retry = t("重试", "Retry", "Reintentar");
   const localAction = (task: Promise<void>) => void task.catch(() => setStorageError(true));
   return <div className="paper-screen relationship-shell feedback-screen">
-    <PageHeader language={language} title={t("反馈", "Feedback", "Comentarios")} onBack={onBack} />
+    <PageHeader language={language} title={t("反馈", "Feedback", "Comentarios")} onBack={() => beforeBack.current ? beforeBack.current(onBack) : onBack()} />
     <main className="relationship-main"><div className="feedback-body" data-testid="feedback-screen">
       <fieldset className="feedback-fields" disabled={!ready || busy}>
         <legend>{t("反馈类型", "Feedback type", "Tipo de comentario")}</legend>
         <div className="feedback-kinds">{kinds.map(([kind, label]) => <button type="button" key={kind} aria-pressed={draft.kind === kind} onClick={() => edit({ ...draft, kind })}>{label}</button>)}</div>
-        <label className="feedback-input"><span>{t("发生了什么？", "What happened?", "¿Qué ha ocurrido?")}</span>
-          <KeyboardTextarea aria-label={t("你的反馈", "Your feedback", "Tus comentarios")} value={draft.text} onChange={(event) => edit({ ...draft, text: event.target.value })}
+        <div className="feedback-input" ref={editor}><label htmlFor="feedback-description">{t("发生了什么？", "What happened?", "¿Qué ha ocurrido?")}</label>
+          <KeyboardTextarea id="feedback-description" onSelect={event => { cursor.current = event.currentTarget.selectionEnd; }} onBlur={event => { cursor.current = event.currentTarget.selectionEnd; keyboard.hide(); }} aria-label={t("你的反馈", "Your feedback", "Tus comentarios")} value={draft.text} onChange={event => { cursor.current = event.currentTarget.selectionEnd; edit({ ...latest.current, text: event.currentTarget.value }); }}
             rows={5} maxLength={4000} required placeholder={t("描述问题或写下你的建议…", "Describe the issue or share an idea…", "Describe el problema o comparte una idea…")} />
-          <small>{draft.text.length} / 4000</small>
-        </label>
+          <div className="feedback-character-count"><small>{draft.text.length} / 4000</small></div>
+          {draft.text.length > 4000 && <p role="alert">{t("请将反馈缩短到 4000 字以内再提交。", "Shorten your feedback to 4,000 characters before sending.", "Acorta el comentario a 4000 caracteres antes de enviarlo.")}</p>}
+          {ready && <FeedbackVoice owner={userId} language={language} online={online} beforeBack={beforeBack} onBusy={setVoiceBusy} insert={insertTranscripts}
+            position={() => { keyboard.hide(); return { base: latest.current.text, position: cursor.current ?? latest.current.text.length }; }} />}
+        </div>
         {!!draft.images.length && <div className="feedback-shots">{draft.images.map((file, i) => <Shot key={i} file={file}
           label={t("截图", "Screenshot", "Captura") + " " + (i + 1)} removeLabel={t("移除截图", "Remove screenshot", "Quitar captura") + " " + (i + 1)}
           remove={() => edit({ ...draft, images: draft.images.filter((_, index) => index !== i) })} />)}</div>}
@@ -168,7 +210,7 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
         </details>
       </fieldset>
       {!online && <p className="feedback-notice">{t("当前离线。提交后会保存在此设备，联网后自动发送。", "You’re offline. Submissions stay on this device and send when you reconnect.", "Sin conexión. Los envíos se guardan en este dispositivo y se enviarán al volver a conectarte.")}</p>}
-      <div className="card-actions"><button type="button" className="card-primary" disabled={!ready || busy || !draft.text.trim()} onClick={() => void send()} data-testid="feedback-send">
+      <div className="card-actions"><button type="button" className="card-primary" disabled={!ready || busy || voiceBusy || !draft.text.trim() || draft.text.length > 4000} onClick={() => void send()} data-testid="feedback-send">
         {busy ? t("正在提交…", "Submitting…", "Enviando…") : t("提交反馈", "Submit feedback", "Enviar comentario")}</button></div>
       {storageError && <p role="alert">{t("无法保存到此设备，内容仍在此页。请释放空间后重试。", "Couldn’t save on this device. Your changes are still on this page. Free up space and retry.", "No se pudo guardar en este dispositivo. Los cambios siguen en esta página. Libera espacio y reintenta.")} <button type="button" onClick={() => edit(draft)}>{retry}</button></p>}
       {notice && <p className="feedback-notice" role="status">{notice === "invalid" ? t("请选最多 4 张 PNG、JPEG、WebP 或 HEIC 图片，每张不超过 5 MB。", "Choose up to 4 PNG, JPEG, WebP or HEIC images, up to 5 MB each.", "Elige hasta 4 imágenes PNG, JPEG, WebP o HEIC de hasta 5 MB cada una.") :

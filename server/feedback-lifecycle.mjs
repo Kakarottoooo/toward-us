@@ -37,11 +37,13 @@ export async function ownedFeedback(store, userId, id) {
 }
 
 // Sending and deleting repeatedly must not reset the quota. Keep only the past day's timestamps, under the same user lock.
-export async function consumeFeedbackQuota(tx, userId, now) {
-  const id = "feedback-quota:" + userId, at = now().getTime(), day = 86_400_000, burst = 600_000;
+export async function consumeFeedbackQuota(tx, userId, now, { voice = false } = {}) {
+  const id = (voice ? "feedback-voice-quota:" : "feedback-quota:") + userId;
+  const at = now().getTime(), day = 86_400_000, burst = 600_000;
   const row = await tx.getRelationshipRecordForUser("accountSettings", id, userId);
-  const times = (row?.times || []).filter((time) => time > at - day), recent = times.filter((time) => time > at - burst);
-  const until = Math.max(times.length >= 20 ? times[0] + day : 0, recent.length >= 5 ? recent[0] + burst : 0);
+  const times = (row?.times || []).filter((time) => time > at - (voice ? burst : day));
+  const recent = times.filter((time) => time > at - burst);
+  const until = Math.max(!voice && times.length >= 20 ? times[0] + day : 0, recent.length >= (voice ? 10 : 5) ? recent[0] + burst : 0);
   if (until > at) throw Object.assign(feedbackError(429, "feedback_rate_limited"), { retryAfter: Math.ceil((until - at) / 1000) });
   times.push(at);
   if (row) await tx.updateRelationshipRecordForUser("accountSettings", id, userId, (draft) => { draft.times = times; });

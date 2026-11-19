@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readableConversation, conversationMessages } from "./conversation-recall.mjs";
 import { createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { feedbackContext } from "./feedback-context.mjs";
+import { feedbackVoiceRoute } from "./feedback-voice.mjs";
 import { feedbackError, feedbackParts, limitFeedbackUploads, readMultipart, removeFeedbackFiles, saveFeedbackImages } from "./feedback-images.mjs";
 import { consumeFeedbackQuota, internalFeedbackRoutes, opaque, ownedFeedback, sendAttachment, statusFor, userView } from "./feedback-lifecycle.mjs";
 
@@ -11,13 +12,14 @@ export const SEVERITIES = ["high", "medium", "low"];
 export const REPORT_ABOUT = ["partner", "pinky", "other"];
 const clean = (value, limit) => String(value ?? "").trim().slice(0, limit);
 
-export function createFeedbackRouter({ store, notify, now = () => new Date(), adminToken = () => process.env.PINKY_METRICS_ADMIN_TOKEN }) {
+export function createFeedbackRouter({ store, mediator, notify, now = () => new Date(), adminToken = () => process.env.PINKY_METRICS_ADMIN_TOKEN }) {
   const router = express.Router();
   internalFeedbackRoutes(router, { store, notify, now, adminToken });
   router.use("/feedback", (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
     return req.auth ? next() : res.status(401).json({ error: "Please sign in." });
   });
+  feedbackVoiceRoute(router, { store, mediator, now });
   router.post("/feedback/reply", async (req, res) => {
     const userId = req.auth.user.id, { channel, conversationId, messageId } = req.body || {};
     if (![conversationId, messageId].every((id) => typeof id === "string" && id.length > 0 && id.length <= 160)) return res.status(400).json({ error: "invalid_reply" });

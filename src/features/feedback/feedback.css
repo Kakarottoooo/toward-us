@@ -1,8 +1,8 @@
 .feedback-body { display: grid; gap: 16px; max-width: 640px; margin: 0 auto; overflow-wrap: anywhere; }
 .feedback-fields { display: grid; min-width: 0; gap: 12px; margin: 0; padding: 0; border: 0; }
-.feedback-fields legend, .feedback-input > span { padding: 0; font-size: 15px; font-weight: 650; }
+.feedback-fields legend, .feedback-input > label { padding: 0; font-size: 15px; font-weight: 650; }
 .feedback-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.feedback-kinds button, .feedback-attach, .feedback-sent button, .feedback-body [role=alert] button { min-height: 44px; padding: 7px 12px; border: 1px solid #b9afa4; border-radius: 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.feedback-kinds button, .feedback-voice button, .feedback-attach, .feedback-sent button, .feedback-body [role=alert] button { min-height: 44px; padding: 7px 12px; border: 1px solid #b9afa4; border-radius: 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .feedback-kinds [aria-pressed=true] { background: var(--jian-paper-bright); border-color: currentColor; font-weight: 650; }
 .feedback-kinds button:disabled, .feedback-body button:disabled { cursor: default; opacity: .6; }
 .feedback-attach { display: inline-flex; align-items: center; justify-self: start; gap: 7px; }
@@ -45,3 +45,12 @@
 .feedback-detail { display: grid; gap: 8px; margin-top: 10px; }
 .feedback-detail-shots { display: grid; gap: 5px; }
 .feedback-detail-shots img { max-width: 100%; max-height: 260px; object-fit: contain; }
+.feedback-character-count { text-align: end; }
+.feedback-voice { min-width: 0; }
+.feedback-voice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.feedback-voice button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.feedback-voice button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.feedback-voice p, .feedback-input > [role=alert] { margin: 6px 0; font-size: 14px; line-height: 1.5; }
+.feedback-voice meter { width: 54px; height: 12px; }
+.feedback-voice-time { min-width: 3ch; font-variant-numeric: tabular-nums; }
+.feedback-voice-take { margin-top: 6px; }

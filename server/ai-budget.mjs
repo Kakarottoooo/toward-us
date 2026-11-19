@@ -48,11 +48,12 @@ const METHODS = {
   checkReplySources: () => "reply_source_check",
   planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: () => "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
   continuePrivateAgentThread: () => "private_agent", summarizePerspective: () => "perspective_summary", generateDecisionOptions: () => "decision_options",
-  continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", transcribe: () => "transcription", createRealtimeSession: () => "realtime_voice",
+  continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", createRealtimeSession: () => "realtime_voice",
+  transcribe: (_buffer, _mime, _language, feature) => feature === "feedback_voice" ? feature : "transcription",
 };
 
 /** The feature a mediator method call is for, and the methods that make model calls (shared with ai-ledger's cost meter). */
-export const featureForCall = (method, args) => METHODS[method]?.(args[0]);
+export const featureForCall = (method, args) => METHODS[method]?.(...args);
 export const MODEL_METHODS = Object.freeze(Object.keys(METHODS));
 
 export const AI_LIMIT = "ai_daily_limit";
@@ -153,10 +154,10 @@ export function guardMediator(mediator, { store, caps = AI_CAPS, now = () => new
   if (!mediator || mediator.aiReady === false) return mediator; // No model configured: nothing costs anything.
   const anonymous = { day: "", count: 0 };
   const guarded = { ...mediator };
-  for (const [method, featureOf] of Object.entries(METHODS)) {
+  for (const method of MODEL_METHODS) {
     if (typeof mediator[method] !== "function") continue;
     guarded[method] = async (...args) => {
-      const who = context.getStore() || { userId: null, language: "zh" }, feature = featureOf(args[0]);
+      const who = context.getStore() || { userId: null, language: "zh" }, feature = featureForCall(method, args);
       // Background work only: the same input that already succeeded is not sent again.
       const hash = who.userId && featureKind(feature) === "background" ? digest(feature, args) : null;
       if (hash && await seenInput(store, who.userId, feature, hash).catch(() => false)) throw Object.assign(new Error("Unchanged input; skipped."), { code: AI_UNCHANGED, feature });

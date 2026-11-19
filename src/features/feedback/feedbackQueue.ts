@@ -1,3 +1,5 @@
+import { DRAFTS, OUTBOX, read, write } from "./feedbackStorage";
+import { voiceKeys, startFeedbackVoiceDelivery } from "./feedbackVoiceQueue";
 export type FeedbackKind = "bug" | "suggestion" | "other";
 export type FeedbackDraft = {
   text: string;
@@ -15,55 +17,22 @@ export type PendingFeedback = FeedbackDraft & {
   failure?: "network" | "rate" | "image" | "session" | "rejected";
 };
 
-const DRAFTS = "drafts";
-const OUTBOX = "outbox";
 export const deliveryEvent = "feedback-delivery";
-let opening: Promise<IDBDatabase> | undefined;
-function database() {
-  if (!opening) {
-    opening = new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("ourever-feedback", 1);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore(DRAFTS);
-        request.result.createObjectStore(OUTBOX, { keyPath: ["owner", "id"] }).createIndex("owner", "owner");
-      };
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const db = request.result;
-        db.onversionchange = () => { db.close(); opening = undefined; };
-        resolve(db);
-      };
-    }).catch((error) => { opening = undefined; throw error; });
-  }
-  return opening;
-}
-async function read<T>(table: string, select: (store: IDBObjectStore) => IDBRequest) {
-  const db = await database();
-  return new Promise<T>((resolve, reject) => {
-    const request = select(db.transaction(table).objectStore(table));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-async function write(tables: string[], apply: (transaction: IDBTransaction) => void) {
-  const db = await database();
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(tables, "readwrite");
-    tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error || new Error("storage"));
-    apply(tx);
-  });
-}
 export function clearFeedbackForDeletedAccount(owner: string) {
   return write([DRAFTS, OUTBOX], tx => {
     tx.objectStore(DRAFTS).delete(owner);
+    tx.objectStore(DRAFTS).delete(voiceKeys(owner));
     const store = tx.objectStore(OUTBOX);
     const keys = store.index("owner").getAllKeys(owner);
     keys.onsuccess = () => { for (const key of keys.result) store.delete(key); };
   });
 }
 export const readDraft = (owner: string) => read<FeedbackDraft | undefined>(DRAFTS, (store) => store.get(owner));
-export const saveDraft = (owner: string, draft: FeedbackDraft) => write([DRAFTS], (tx) => { tx.objectStore(DRAFTS).put(draft, owner); });
+export const saveDraft = (owner: string, draft: FeedbackDraft, inserted: string[] = []) => write([DRAFTS], (tx) => {
+  const drafts = tx.objectStore(DRAFTS);
+  drafts.put(draft, owner);
+  for (const id of inserted) drafts.delete([owner, id]);
+});
 export const pendingFeedback = (owner: string) => read<PendingFeedback[]>(OUTBOX, (store) => store.index("owner").getAll(owner));
 function notify(owner: string, sent = false) {
   window.dispatchEvent(new CustomEvent(deliveryEvent, { detail: { owner, sent } }));
@@ -73,6 +42,8 @@ export async function enqueueFeedback(owner: string, draft: FeedbackDraft) {
   const item: PendingFeedback = { ...draft, owner, id: crypto.randomUUID(), created: Date.now(), retryAt: 0, attempts: 0 };
   // Keep the draft and its Files until the entire queued submission is durable.
   await write([DRAFTS, OUTBOX], (tx) => {
+    const clips = tx.objectStore(DRAFTS).count(voiceKeys(owner));
+    clips.onsuccess = () => { if (clips.result) tx.abort(); };
     tx.objectStore(OUTBOX).add(item);
     tx.objectStore(DRAFTS).delete(owner);
   });
@@ -139,6 +110,7 @@ async function deliver(item: PendingFeedback, signal: AbortSignal) {
 
 // Mounted by the authenticated app shell, so the feedback screen may be closed during retries.
 export function startFeedbackDelivery(owner: string) {
+  const stopVoice = startFeedbackVoiceDelivery(owner);
   const controller = new AbortController();
   let busy = false, dirty = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -174,7 +146,7 @@ export function startFeedbackDelivery(owner: string) {
   document.addEventListener("visibilitychange", wake);
   void run();
   return () => {
-    controller.abort(); clearTimeout(timer);
+    stopVoice(); controller.abort(); clearTimeout(timer);
     window.removeEventListener(deliveryEvent, changed);
     window.removeEventListener("online", wake);
     document.removeEventListener("visibilitychange", wake);
