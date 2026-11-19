@@ -2,10 +2,12 @@
 
 ## App Store Connect 要填的网址
 
+下表列出当前技术地址。正式商店素材使用创始人选定的 witnora.com 子域名及相同的页面路径。配置该域名并复核页面后再填写。
+
 | 字段 | 是否必填 | 填什么 | 现在的状态 |
 |---|---|---|---|
-| 隐私政策网址（Privacy Policy URL） | 必填 | `https://toward-us-private-beta.onrender.com/privacy` | 页面已做好（PR #188，`server/legal.mjs`），正式公网地址已确定；英文以外的语言可填 `?lang=zh`、`?lang=es` |
-| 技术支持网址（Support URL） | 必填 | `https://toward-us-private-beta.onrender.com/support` | 页面已做好，正式公网地址已确定；要先设 `PINKY_SUPPORT_EMAIL` 才会显示邮箱 |
+| 隐私政策网址（Privacy Policy URL） | 必填 | `https://toward-us-private-beta.onrender.com/privacy` | 页面已做好（PR #188，`server/legal.mjs`），当前服务地址已知；英文以外的语言可填 `?lang=zh`、`?lang=es` |
+| 技术支持网址（Support URL） | 必填 | `https://toward-us-private-beta.onrender.com/support` | 页面已做好，当前服务地址已知；要先设 `PINKY_SUPPORT_EMAIL` 才会显示邮箱 |
 | 营销网址（Marketing URL） | 选填 | 可以不填，或填 `https://toward-us-private-beta.onrender.com/` | 首页就是 App 的登录页，**没有单独的营销页**；不填不影响审核 |
 | 使用条款（EULA） | 有自动续期订阅时必须在描述或 EULA 字段给出链接 | `https://toward-us-private-beta.onrender.com/terms` | 页面已做好；描述末尾已写链接 |
 

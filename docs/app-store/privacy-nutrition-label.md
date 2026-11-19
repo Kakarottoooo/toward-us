@@ -27,15 +27,16 @@ App Store Connect → App 隐私。答案要和 `mobile/ios/App/App/PrivacyInfo.
 | 用户内容 → 客户支持 | `NSPrivacyCollectedDataTypeCustomerSupport` | App 功能 | 反馈和举报 |
 | 标识符 → 用户 ID | `NSPrivacyCollectedDataTypeUserID` | App 功能 | 账号 ID |
 | 使用数据 → 产品交互 | `NSPrivacyCollectedDataTypeProductInteraction` | 分析、App 功能 | 前台与后台切换、打开次数、使用时长；已登录使用计入日活，不含内容 |
+| 标识符 → 设备 ID | `NSPrivacyCollectedDataTypeDeviceID` | 分析 | 安装时生成的随机 ID 和会话 ID 随使用事件发送，服务端仅保留两者的组合哈希用于同一次会话统计。 |
 
 ## 未关联到个人的诊断数据
 
-崩溃数据（Crash Data）。通过 Apple MetricKit 上报至 Pinky，仅用于诊断；不附带账号、聊天文本、录音或完整诊断载荷。
+崩溃数据（Crash Data，`NSPrivacyCollectedDataTypeCrashData`），用途选 App 功能。通过 Apple MetricKit 上报至 Pinky，仅用于诊断；不附带账号、聊天文本、录音或完整诊断载荷。
 
 ## 不收集
 
-精确/粗略设备定位、通讯录、浏览记录、搜索记录、设备 ID / 广告标识符、性能数据、财务信息（卡号由 Apple / Stripe 处理）、敏感信息（人脸特征只在手机上，不上传）、其他诊断数据。
+精确/粗略设备定位、通讯录、浏览记录、搜索记录、广告标识符、性能数据、财务信息（卡号由 Apple / Stripe 处理）、敏感信息（人脸特征只在手机上，不上传）、其他诊断数据。
 
 ## 第三方 AI
 
-营养标签没有单独的"AI"栏目；发给 OpenAI、Anthropic 的内容属于上表"用户内容"，由我们代为处理（App 功能），已在隐私政策和 App 内同意页写明（5.1.2(i)）。
+营养标签没有单独的"AI"栏目；发给 OpenAI、Anthropic 的内容，以及用户选择制作动态角色时发送给 Replicate 的处理后角色图片，属于上表"用户内容"，由我们代为处理（App 功能），已在隐私政策和 App 内同意页写明（5.1.2(i)）。
