@@ -9,7 +9,7 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   await expect(desktopPage.getByRole("navigation", { name: "主导航" })).toBeVisible();
   await expect(desktopPage.getByTestId("phone-frame")).toHaveCSS("width", "1440px");
   await expect(desktopPage.locator(".phone-bezel")).toBeHidden();
-  await expect(desktopPage.getByRole("heading", { name: "在争执之外，我们选择彼此。" })).toBeVisible();
+  await expect(desktopPage.getByRole("heading", { name: "不知道怎么回 TA，先问问 Pinky。" })).toBeVisible();
 
   await desktopPage.goto("/demo");
   const desktopSharedChoice = desktopPage.getByRole("button", { name: "共用一台手机 一起使用，简单快捷" });

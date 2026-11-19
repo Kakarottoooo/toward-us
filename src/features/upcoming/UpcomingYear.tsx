@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CaretLeft, CaretRight, ChatCircleDots, LockKey } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted as countOf, languageTag, localized, type Language } from "../../i18n";
 import { holidaysFor } from "./holidays";
 import "./upcoming.css";
 
@@ -51,7 +51,7 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
     const first = new Date(Date.UTC(year, index, 1)).getUTCDay(), offset = mondayFirst ? (first + 6) % 7 : first, days = new Date(Date.UTC(year, index + 1, 0)).getUTCDate();
     return [...Array.from({ length: offset }, () => null), ...Array.from({ length: days }, (_, day) => `${year}-${pad(index + 1)}-${pad(day + 1)}`)];
   };
-  const left = (day: string) => { const count = daysBetween(today, day); return count === 0 ? t("今天", "Today", "Hoy") : count === 1 ? t("明天", "Tomorrow", "Mañana") : t(`${count} 天`, `${count} days`, `${count} días`); };
+  const left = (day: string) => { const count = daysBetween(today, day); return count === 0 ? t("今天", "Today", "Hoy") : count === 1 ? t("明天", "Tomorrow", "Mañana") : t(`${count} 天`, `${countOf(count, "day", "days")}`, `${countOf(count, "día", "días")}`); };
   const dateLabel = (day: string, withYear = false) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { month: "short", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
   const tone = (kind: CalendarKind) => `kind-${kind}`;
   const strongest = (list: Placed[] | undefined) => list?.slice().sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind))[0]?.kind;
@@ -66,7 +66,7 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
   return <div className="upcoming-year" data-testid="upcoming-year">
     {next ? <section className={`upcoming-next ${tone(next.kind)}`}>
       <small>{t("下一个", "Next", "Lo próximo")}</small>
-      <div><strong>{next.title}</strong><span>{daysBetween(today, next.day) === 0 ? t("就是今天", "It's today", "Es hoy") : t(`还有 ${daysBetween(today, next.day)} 天`, `in ${daysBetween(today, next.day)} days`, `en ${daysBetween(today, next.day)} días`)}</span></div>
+      <div><strong>{next.title}</strong><span>{daysBetween(today, next.day) === 0 ? t("就是今天", "It's today", "Es hoy") : t(`还有 ${daysBetween(today, next.day)} 天`, `in ${countOf(daysBetween(today, next.day), "day", "days")}`, `en ${countOf(daysBetween(today, next.day), "día", "días")}`)}</span></div>
       <small>{dateLabel(next.day, next.day.slice(0, 4) !== String(thisYear))}{next.note ? ` · ${next.note}` : ""}</small>
     </section> : <section className="upcoming-next kind-empty"><strong>{t("还没有要记住的日子", "No dates to remember yet", "Aún no hay fechas que recordar")}</strong><small>{t("跟 Pinky 说说你们的纪念日和生日。", "Tell Pinky your anniversary and birthdays.", "Cuéntale a Pinky su aniversario y cumpleaños.")}</small></section>}
 

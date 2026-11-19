@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
+import { aiProviderFetch, meteredCall, modelFor, usageFromAnthropic } from "./ai-ledger.mjs";
 
 // Production AI: Claude through the Anthropic API, behind the same small surface the rest of the server already uses
 // (`responses.create` with a JSON schema, `lookup` for web search, `readImages` for screenshots). The model is set by
@@ -17,14 +18,16 @@ export function apiSchema(schema) {
 }
 
 export function createAnthropicClient({ apiKey = process.env.ANTHROPIC_API_KEY, model = process.env.ANTHROPIC_MODEL || "claude-opus-5-5" } = {}) {
-  const client = new Anthropic({ apiKey, maxRetries: 2 });
+  const client = new Anthropic({ apiKey, maxRetries: 2, fetch: aiProviderFetch });
   const text = (message) => message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
   const refused = (message) => message.stop_reason === "refusal";
   // A long server-tool turn can pause; hand its content back so it continues where it stopped.
   const run = async (request, options) => {
     let messages = request.messages, message;
+    // Each request is one ledger row; past a member's soft cost limit it runs on the cheaper model (not with server tools).
+    const model = request.tools ? request.model : modelFor("anthropic", request.model);
     for (let turn = 0; turn < 3; turn += 1) {
-      message = await client.messages.create({ ...request, messages }, options);
+      message = await meteredCall({ provider: "anthropic", model, requested: request.model }, () => client.messages.create({ ...request, model, messages }, options), usageFromAnthropic);
       if (message.stop_reason !== "pause_turn") break;
       messages = [...messages, { role: "assistant", content: message.content }];
     }
@@ -67,7 +70,9 @@ export function createAnthropicClient({ apiKey = process.env.ANTHROPIC_API_KEY, 
         const message = await run({
           model, max_tokens: Math.max(4000, Math.min(32000, (params.max_output_tokens || 2000) * 4)),
           output_config: { effort: long ? "medium" : "low", ...(schema ? { format: { type: "json_schema", schema: apiSchema(schema) } } : {}) },
-          ...(system ? { system } : {}), messages: messages.length ? messages : [{ role: "user", content: "(empty)" }],
+          // The system part is the same for every member and every turn (only the reply language varies), so it is cached
+          // once and read at a tenth of the price after (founder 11-10, cost pass: quality first, then cost).
+          ...(system ? { system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] } : {}), messages: messages.length ? messages : [{ role: "user", content: "(empty)" }],
         }, { timeout: options.timeout || 60_000, maxRetries: options.maxRetries });
         return { output_text: schema ? JSON.stringify(json(message)) : text(message) };
       },

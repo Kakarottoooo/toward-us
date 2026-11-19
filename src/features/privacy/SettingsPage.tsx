@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bell, Brain, CaretRight, Crown, Check, ClockCounterClockwise, DownloadSimple, Eye, Heart, Key, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
+import { Bell, Brain, CaretRight, Crown, Check, ClockCounterClockwise, DownloadSimple, Eye, FileText, Flag, Heart, Key, Lifebuoy, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
+import { counted, languageTag, localized, type Language } from "../../i18n";
+import { BottomSheet, KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
 import { PageHeader, readUsHidden, usHiddenKey } from "../conversation/ConversationHome";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { ProfilePage } from "../profile/ProfilePage";
@@ -9,15 +9,17 @@ import { NotificationSettings } from "./NotificationSettings";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { CharacterMaker } from "../character/CharacterMaker";
 import { characterError, setCharacterVisible, useCoupleCharacter } from "../character/character";
-import { MembershipPage, type Membership } from "../membership/MembershipPage";
+import { inIosApp, MembershipPage, type Membership } from "../membership/MembershipPage";
 import { FounderBeta } from "../membership/FounderBeta";
+import { AiAccess } from "./AiAccess";
+import { aiDisclosure } from "./AiConsent";
 import "./settings.css";
 
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
-type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
-type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character";
-type SettingsProps = { initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onDeleted: () => void | Promise<void> };
+type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; aiConsentAt?: string | null; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
+type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account" | "ai"; days?: number | null } | { kind: "withdraw"; summary: Summary };
+type Page = "main" | "access" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
+type SettingsProps = { initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 function downloadFile(contents: string, filename: string, type: string) {
@@ -34,10 +36,10 @@ function Row({ icon, tone = "blue", label, value, onClick, danger = false, testI
 const Group = ({ title, note, children }: { title?: string; note?: string; children: ReactNode }) => <section className="settings-group">{title && <h2>{title}</h2>}<div className="settings-card">{children}</div>{note && <p className="settings-note">{note}</p>}</section>;
 
 /** Settings: account, language, privacy and data, each one row deep; every irreversible step is confirmed in a sheet with the password. */
-export function SettingsPage({ initialPage, onAsk, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onDeleted }: SettingsProps) {
+export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
-  const [page, setPage] = useState<Page>(initialPage || "main");
+  const [page, setPage] = useState<Page>(initialPage === "membership" && inIosApp() ? "main" : initialPage || "main");
   // The couple's character: made by either of them, shown to both; showing it on this screen is each member's own choice.
   const { character, setCharacter } = useCoupleCharacter(Boolean(relationshipId));
   const [characterNotice, setCharacterNotice] = useState("");
@@ -51,19 +53,27 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
   const [data, setData] = useState<PrivacyData | null>(null);
   const [plan, setPlan] = useState<Membership["plan"] | null>(null);
   const [founder, setFounder] = useState(false);
-  useEffect(() => { void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
-  useEffect(() => { void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
+  useEffect(() => { if (inIosApp()) return; void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
+  useEffect(() => { if (inIosApp()) return; void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [password, setPassword] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState(""); const [showCode, setShowCode] = useState(false);
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
+  // 举报或求助 (App Review 1.2): what it is about and what happened; it reaches the team's queue marked urgent.
+  const [reportAbout, setReportAbout] = useState<"partner" | "pinky" | "other">(relationshipId ? "partner" : "pinky");
+  const [reportText, setReportText] = useState(""); const [reportSent, setReportSent] = useState(false);
+  const sendReport = async () => {
+    keyboard.hide(); setBusy(true); setNotice("");
+    try { await relationshipApi("/api/feedback", jsonBody({ text: reportText.trim(), report: reportAbout, context: { view: "settings-report" }, language })); setReportText(""); setReportSent(true); }
+    catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
+  };
   const load = async () => { try { setData(await relationshipApi<PrivacyData>(`/api/privacy?language=${language}`)); } catch (error) { setNotice((error as Error).message); } };
   useEffect(() => { void load(); }, [language]);
   const open = (next: Page) => { keyboard.hide(); setNotice(""); setPage(next); };
   const prepare = (action: PendingAction) => { keyboard.hide(); setPending(action); setPassword(""); setConfirmed(false); setNotice(""); };
   const close = () => { keyboard.hide(); setPending(null); setPassword(""); setConfirmed(false); };
-  const period = (value: number | null) => value === null ? t("由我手动删除", "Until I delete them", "Hasta que los borre") : t(`${value} 天没更新就删除`, `After ${value} days without changes`, `Tras ${value} días sin cambios`);
-  const actionTitle = (action: PendingAction) => ({ retention: t("更改保留期限", "Change how long private content stays", "Cambiar cuánto se conserva"), recovery: t("生成新恢复码", "Generate a new recovery code", "Generar un nuevo código"), export: t("下载我的数据", "Download my data", "Descargar mis datos"), "delete-private": t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado"), leave: t("退出当前关系", "Leave this relationship", "Salir de esta relación"), account: t("删除账号", "Delete account", "Borrar la cuenta"), withdraw: t("停止共同 AI 使用这段摘要", "Stop joint AI use of this summary", "Detener el uso de este resumen por la IA compartida") })[action.kind];
+  const period = (value: number | null) => value === null ? t("由我手动删除", "Until I delete them", "Hasta que los borre") : t(`${value} 天没更新就删除`, `After ${counted(value, "day", "days")} without changes`, `Tras ${counted(value, "día", "días")} sin cambios`);
+  const actionTitle = (action: PendingAction) => ({ retention: t("更改保留期限", "Change how long private content stays", "Cambiar cuánto se conserva"), recovery: t("生成新恢复码", "Generate a new recovery code", "Generar un nuevo código"), export: t("下载我的数据", "Download my data", "Descargar mis datos"), "delete-private": t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado"), leave: t("退出当前关系", "Leave this relationship", "Salir de esta relación"), account: t("删除账号", "Delete account", "Borrar la cuenta"), ai: t("撤回第三方 AI 同意", "Withdraw third-party AI consent", "Retirar el consentimiento de IA"), withdraw: t("停止共同 AI 使用这段摘要", "Stop joint AI use of this summary", "Detener el uso de este resumen por la IA compartida") })[action.kind];
   const actionDescription = (action: PendingAction) => {
     if (action.kind === "retention") return t(`新规则：${period(action.days ?? null)}。只影响你的私人对话、私人记忆和日常记录，清理后无法恢复。共享内容、约定、提醒和同意记录不受影响。`, `New rule: ${period(action.days ?? null)}. It applies only to your private conversations, private memories and check-ins, and deleted items cannot be restored. Shared content, agreements, reminders and consent records are not affected.`, `Nueva regla: ${period(action.days ?? null)}. Solo afecta tus conversaciones privadas, recuerdos privados y registros diarios, y lo borrado no se recupera. Lo compartido, los acuerdos, recordatorios y registros de consentimiento no cambian.`);
     if (action.kind === "recovery") return t("新码会立刻让旧码失效。完整的码只显示这一次，请存到安全的地方。", "The new code replaces the old one immediately. The full code is shown only once; keep it somewhere safe.", "El nuevo código reemplaza al anterior de inmediato. Solo se muestra una vez; guárdalo en un lugar seguro.");
@@ -71,6 +81,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
     if (action.kind === "delete-private") return t("永久删除你的私人对话、记忆、日常记录、私人提醒、照片和导入的聊天记录。账号、共同内容和同意记录保留。无法撤销，也不能让对方忘记已经看过的内容。", "Permanently deletes your private conversations, memories, check-ins, private reminders, photos and imported chats. Your account, shared content and consent records stay. This cannot be undone or erase what your partner already read.", "Borra para siempre tus conversaciones privadas, recuerdos, registros, recordatorios privados, fotos y chats importados. Tu cuenta, lo compartido y los registros de consentimiento se conservan. Es irreversible y no borra lo que tu pareja ya leyó.");
     if (action.kind === "leave") return t("不需要对方同意。你们的连接会结束，“我们俩”会关闭；以前的共同记录可以在数据下载里找到。你的私人内容留在你自己的空间。", "Your partner's approval is not needed. Your connection ends and Us closes; earlier shared records stay available in your data download. Your private content stays in your own space.", "No necesitas la aprobación de tu pareja. La conexión termina y Nosotros se cierra; el historial compartido sigue en la descarga de datos. Tu contenido privado queda en tu espacio.");
     if (action.kind === "account") return t("会结束你们的连接、退出所有设备、删除你的私人内容，并匿名化你的账号。你在“我们俩”里说过的话和已经确认的约定会保留给对方。删除后无法找回，建议先下载数据。", "This ends your connection, signs out every device, deletes your private content and anonymizes your account. What you wrote in Us and confirmed agreements stay for your partner. It cannot be recovered; consider downloading your data first.", "Termina la conexión, cierra todas las sesiones, borra tu contenido privado y anonimiza tu cuenta. Lo que escribiste en Nosotros y los acuerdos confirmados se conservan para tu pareja. No se puede recuperar; considera descargar tus datos antes.");
+    if (action.kind === "ai") return t("撤回后，Pinky 不再把你的内容发给第三方 AI 处理方，AI 功能会停下，直到你重新同意。已经处理过的内容不受影响。", "Pinky will stop sending your content to third-party AI processors, and AI features pause until you agree again. Content already processed is not affected.", "Pinky dejará de enviar tu contenido a proveedores de IA, y las funciones de IA se pausan hasta que vuelvas a aceptar. Lo ya procesado no cambia.");
     return t("以后共同 AI 不再使用这段摘要，已经确认的约定仍然有效。已经分享的内容无法收回。", "Joint AI will no longer use this summary; confirmed agreements stay valid. What was already shared cannot be taken back.", "La IA compartida dejará de usar este resumen; los acuerdos confirmados siguen vigentes. Lo ya compartido no se puede retirar.");
   };
   const destructive = pending && ["delete-private", "leave", "account"].includes(pending.kind);
@@ -84,6 +95,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       if (action.kind === "delete-private") await relationshipApi("/api/privacy/delete-private", jsonBody(body));
       if (action.kind === "leave") { await relationshipApi("/api/privacy/leave", jsonBody(body)); await onLeft(); }
       if (action.kind === "account") { await relationshipApi("/api/privacy/account", { method: "DELETE", body: JSON.stringify(body) }); setPending(null); await onDeleted(); return; }
+      if (action.kind === "ai") { const result = await relationshipApi<{ activeCallMayNeedHangup?: boolean }>("/api/privacy/ai-consent", jsonBody({ agree: false, language })); setPending(null); setData((current) => current ? { ...current, aiConsentAt: null } : current); onAiConsent?.(null); if (result.activeCallMayNeedHangup) setNotice(t("授权已撤回。请挂断其他设备上仍在进行的通话。", "Permission withdrawn. End any call still open on another device.", "Permiso retirado. Finaliza cualquier llamada que siga abierta en otro dispositivo.")); return; }
       if (action.kind === "withdraw") await relationshipApi(`/api/privacy/summaries/${action.summary.id}/withdraw`, jsonBody({ confirm: true, language, version: action.summary.version }));
       setPending(null); await load();
       setNotice(action.kind === "export" ? t("数据文件已开始下载。", "Your data file is downloading.", "Tu archivo de datos se está descargando.") : t("已完成。", "Done.", "Listo."));
@@ -94,7 +106,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), membership: t("Pinky 会员", "Pinky membership", "Membresía Pinky"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("你的内容会经过谁", "Where your content goes", "Quién procesa tu contenido"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
+  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), membership: t("Pinky 会员", "Pinky membership", "Membresía Pinky"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("AI 与数据处理方", "AI and data processors", "IA y encargados de datos"), report: t("举报或求助", "Report or get help", "Denunciar o pedir ayuda"), access: t("Pinky 能看到什么", "What Pinky can see", "Qué puede ver Pinky"), memory: t("Pinky 记得的事", "What Pinky remembers", "Lo que Pinky recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
 
   const main = <>
     <section className="settings-profile">
@@ -102,7 +114,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${partnerName} 连接`, `Connected with ${partnerName}`, `Conectado con ${partnerName}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
     <Group>
-      <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />
+      {!inIosApp() && <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />}
       {founder && <Row icon={<ListChecks size={18} weight="bold" />} tone="green" label={titles.founder} onClick={() => open("founder")} testId="settings-founder" />}
       <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
     </Group>
@@ -117,20 +129,28 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       <label className="settings-row settings-switch-row"><span className="settings-icon tone-pink"><UsersThree size={18} weight="bold" /></span><span className="settings-switch-text"><span>{t("显示“我们俩”", "Show Us", "Mostrar Nosotros")}</span></span><input type="checkbox" role="switch" className="settings-switch" checked={usShown} onChange={toggleUs} data-testid="show-us" /></label>
     </Group>
     <Group title={t("隐私", "Privacy", "Privacidad")} note={t("退出关系或管理自己的数据，都不需要对方批准。", "Leaving a relationship or managing your own data never needs your partner's approval.", "Salir de una relación o gestionar tus datos nunca requiere la aprobación de tu pareja.")}>
+      <Row icon={<Eye size={18} weight="bold" />} tone="blue" label={titles.access} onClick={() => open("access")} testId="settings-access" />
       <Row icon={<Brain size={18} weight="bold" />} tone="pink" label={titles.memory} onClick={() => open("memory")} testId="settings-memory" />
       <Row icon={<ShieldCheck size={18} weight="bold" />} tone="green" label={titles.processors} onClick={() => open("processors")} testId="settings-processors" />
       <Row icon={<ClockCounterClockwise size={18} weight="bold" />} tone="blue" label={t("私人内容保留", "Keep private content", "Conservar lo privado")} value={data ? period(data.privateRetentionDays) : ""} onClick={() => open("retention")} />
       <Row icon={<Eye size={18} weight="bold" />} tone="pink" label={titles.summaries} value={data ? String(confirmedSummaries.length) : ""} onClick={() => open("summaries")} />
       <Row icon={<ListChecks size={18} weight="bold" />} tone="gray" label={titles.history} onClick={() => open("history")} />
+      {relationshipId && onEarlierPeople && <Row icon={<Eye size={18} weight="bold" />} tone="gray" label={t("以前的档案", "Earlier people", "Personas anteriores")} onClick={onEarlierPeople} testId="settings-earlier-people" />}
     </Group>
     <Group title={t("账号与数据", "Account and data", "Cuenta y datos")}>
       <Row icon={<Key size={18} weight="bold" />} tone="gray" label={titles.recovery} value={data ? data.recoveryEnabled ? t("已设置", "On", "Activado") : t("未设置", "Off", "Desactivado") : ""} onClick={() => open("recovery")} />
       <Row icon={<DownloadSimple size={18} weight="bold" />} tone="blue" label={t("下载我的数据", "Download my data", "Descargar mis datos")} onClick={() => prepare({ kind: "export" })} />
     </Group>
-    <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${data.privateCount} private records. Each step explains what it does and asks for your password first.`, `Tienes ${data.privateCount} registros privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
+    <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${counted(data.privateCount, "private record", "private records")}. Each step explains what it does and asks for your password first.`, `Tienes ${counted(data.privateCount, "registro", "registros")} privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
       {paired && <Row icon={<LinkBreak size={18} weight="bold" />} tone="red" danger label={t("退出当前关系", "Leave this relationship", "Salir de esta relación")} onClick={() => prepare({ kind: "leave" })} />}
       <Row icon={<Trash size={18} weight="bold" />} tone="red" danger label={t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado")} onClick={() => prepare({ kind: "delete-private" })} />
       <Row icon={<UserMinus size={18} weight="bold" />} tone="red" danger label={t("删除账号", "Delete account", "Borrar la cuenta")} onClick={() => prepare({ kind: "account" })} />
+    </Group>
+    <Group title={t("帮助与条款", "Help and terms", "Ayuda y condiciones")}>
+      <Row icon={<Flag size={18} weight="bold" />} tone="red" label={titles.report} onClick={() => { setReportSent(false); open("report"); }} testId="settings-report" />
+      <Row icon={<Lifebuoy size={18} weight="bold" />} tone="blue" label={t("帮助与支持", "Help and support", "Ayuda y soporte")} onClick={() => location.assign(`/support?lang=${language}`)} testId="settings-support" />
+      <Row icon={<ShieldCheck size={18} weight="bold" />} tone="green" label={t("隐私政策", "Privacy Policy", "Política de privacidad")} onClick={() => location.assign(`/privacy?lang=${language}`)} testId="settings-privacy-policy" />
+      <Row icon={<FileText size={18} weight="bold" />} tone="gray" label={t("使用条款", "Terms of Use", "Condiciones de uso")} onClick={() => location.assign(`/terms?lang=${language}`)} testId="settings-terms" />
     </Group>
     <Group>
       <Row icon={<SignOut size={18} weight="bold" />} tone="gray" label={t("退出登录", "Sign out", "Cerrar sesión")} onClick={onLogout} testId="settings-logout" />
@@ -141,15 +161,16 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
   const processors: Array<[string, string]> = [
     [t("私聊与语音", "Private chats and voice", "Chats privados y voz"), t("由 AI 服务处理，我们要求它不保存这些内容。", "Processed by our AI provider, which we ask not to keep them.", "Los procesa nuestro proveedor de IA, al que pedimos no guardarlos.")],
     ["iMessage", t("如果你用 iMessage 和 Pinky 聊天，消息会经过 Apple 和 Sendblue。", "If you talk to Pinky over iMessage, messages pass through Apple and Sendblue.", "Si hablas con Pinky por iMessage, los mensajes pasan por Apple y Sendblue.")],
-    [t("推送通知", "Push notifications", "Notificaciones"), t("经过 Apple 或 Google，内容只有一句含糊的话，不含你们聊的细节。", "Pass through Apple or Google and say only something vague, never the details.", "Pasan por Apple o Google y solo dicen algo vago, nunca los detalles.")],
+    [t("推送通知", "Push notifications", "Notificaciones"), t("经过手机或浏览器的推送服务；每日一问等问题会写在通知里。锁屏是否显示内容取决于系统的通知预览设置。", "Pass through your phone or browser's push service; questions such as the daily question appear in the notification. Lock-screen content depends on your system's notification preview settings.", "Pasan por el servicio de notificaciones del teléfono o navegador; incluyen preguntas como la diaria. Lo que aparece en la pantalla bloqueada depende de los ajustes de vista previa del sistema.")],
     [t("“我们俩”", "Us", "Nosotros"), t("你们两人都能看到这里的全部内容。", "You both see everything in it.", "Los dos ven todo lo que hay en ella.")],
     [t("导入的聊天记录", "Imported chats", "Chats importados"), t("只有导入的人能看到；对方同意后才会有一份共享的分析。", "Only the person who imported them can see them; a shared analysis exists only after the other agrees.", "Solo los ve quien los importó; un análisis compartido existe solo si el otro acepta.")],
     [t("删除账号后", "After deleting your account", "Después de borrar la cuenta"), t("你在“我们俩”里说过的话会留给对方。", "What you wrote in Us stays for your partner.", "Lo que escribiste en Nosotros queda para tu pareja.")],
   ];
   const sub: Record<Exclude<Page, "main">, ReactNode> = {
     founder: <FounderBeta language={language} />,
+    access: <AiAccess language={language} onOpen={open} />,
     membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} />,
-    profile: <ProfilePage language={language} onAsk={onAsk} />,
+    profile: <ProfilePage language={language} relationshipId={relationshipId} />,
     notifications: <NotificationSettings language={language} />,
     character: <>
       <CharacterMaker language={language} paired={Boolean(relationshipId)} character={character} onChange={setCharacter} />
@@ -159,7 +180,23 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
       {characterNotice && <p className="settings-error" role="alert">{characterNotice}</p>}
     </>,
     memory: <><p className="settings-intro">{t("这些是 Pinky 为了更懂你们而记下的偏好和经验，比如“吵架时先安静十分钟”。你说“记住……”时它会记下；这里可以查看、修改、删除，以及决定 AI 能不能用。", "These are preferences and lessons Pinky keeps to understand you better, like “take ten quiet minutes before talking”. It keeps one when you say “remember…”; here you can review, edit or delete them and decide whether AI may use them.", "Son preferencias y aprendizajes que Pinky guarda para entenderlos mejor, como «diez minutos de calma antes de hablar». Guarda uno cuando dices «recuerda…»; aquí puedes revisarlos, editarlos o borrarlos y decidir si la IA puede usarlos.")}</p><MemoryWorkspace language={language} userId={user.id} relationshipId={relationshipId} compose={false} /></>,
-    processors: <Group>{processors.map(([title, text]) => <div key={title} className="settings-row settings-text-row"><strong>{title}</strong><p>{text}</p></div>)}</Group>,
+    processors: <>
+      <Group title={t("第三方 AI", "Third-party AI", "IA de terceros")} note={data?.aiConsentAt ? t(`你在 ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))} 同意了。`, `You agreed on ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))}.`, `Aceptaste el ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))}.`) : undefined}>
+        <div className="settings-row settings-text-row"><strong>OpenAI · Anthropic · Replicate</strong><p>{aiDisclosure(language)}</p></div>
+        {data?.aiConsentAt && <button type="button" className="settings-row settings-action" onClick={() => prepare({ kind: "ai" })} data-testid="withdraw-ai-consent">{t("撤回第三方 AI 同意", "Withdraw third-party AI consent", "Retirar el consentimiento de IA")}</button>}
+      </Group>
+      <Group>{processors.map(([title, text]) => <div key={title} className="settings-row settings-text-row"><strong>{title}</strong><p>{text}</p></div>)}</Group>
+    </>,
+    report: reportSent ? <Group note={relationshipId ? t("如果想马上停止和对方的联系，可以在“设置 → 退出当前关系”结束连接，对方将无法再看到你或给你发消息，不需要对方同意。", "To stop contact right away, use Settings → Leave this relationship: the other person can no longer see you or message you, and no approval is needed.", "Para cortar el contacto al instante, usa Ajustes → Salir de esta relación: la otra persona ya no puede verte ni escribirte, sin necesidad de su aprobación.") : undefined}>
+      <div className="settings-row settings-text-row" role="status" data-testid="report-sent"><strong>{t("收到了，谢谢你告诉我们。", "Thanks, we got it.", "Gracias, lo recibimos.")}</strong><p>{t("我们会在 24 小时内处理，必要时删除内容或停用账号。", "We act within 24 hours and remove content or suspend accounts when needed.", "Lo atendemos en 24 horas y retiramos contenido o suspendemos cuentas si hace falta.")}</p></div>
+    </Group> : <form className="report-form" onSubmit={(event) => { event.preventDefault(); if (reportText.trim()) void sendReport(); }} data-testid="report-form">
+      <fieldset><legend>{t("要举报或求助的是", "This is about", "Se trata de")}</legend>
+        {(relationshipId ? ["partner", "pinky", "other"] as const : ["pinky", "other"] as const).map((about) => <label key={about}><input type="radio" name="report-about" value={about} checked={reportAbout === about} onChange={() => setReportAbout(about)} />{about === "partner" ? t(`${partnerName || "TA"} 发的内容`, `What ${partnerName || "my partner"} sent`, `Lo que envió ${partnerName || "mi pareja"}`) : about === "pinky" ? t("Pinky 的回复", "A reply from Pinky", "Una respuesta de Pinky") : t("其他问题", "Something else", "Otra cosa")}</label>)}
+      </fieldset>
+      <KeyboardTextarea value={reportText} maxLength={4000} placeholder={t("发生了什么？可以贴上原话。", "What happened? You can paste the words.", "¿Qué pasó? Puedes pegar el texto.")} onChange={(event) => setReportText(event.target.value)} onBlur={() => keyboard.hide()} data-testid="report-text" />
+      <p>{t("只有 Pinky 团队会看到，对方不会知道是你举报的。我们会在 24 小时内处理。", "Only the Pinky team sees this; the other person is not told it was you. We act within 24 hours.", "Solo lo ve el equipo de Pinky; la otra persona no sabrá que fuiste tú. Lo atendemos en 24 horas.")}</p>
+      <button type="submit" disabled={busy || !reportText.trim()} data-testid="report-submit">{busy ? t("正在发送…", "Sending…", "Enviando…") : t("发送", "Send", "Enviar")}</button>
+    </form>,
     retention: <Group note={t("按最后一次更新的时间计算，只包括私人对话、私人记忆和日常记录。", "Counted from the last change; covers only private conversations, private memories and check-ins.", "Se cuenta desde el último cambio; solo incluye conversaciones privadas, recuerdos privados y registros diarios.")}>
       {[null, 7, 30, 90, 365].map((value) => <button key={String(value)} type="button" className="settings-row" onClick={() => value !== data?.privateRetentionDays && prepare({ kind: "retention", days: value })}><span className="settings-label">{period(value)}</span>{value === (data?.privateRetentionDays ?? null) && <Check size={18} weight="bold" className="settings-check" />}</button>)}
     </Group>,
@@ -188,9 +225,9 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
         {pending.kind === "withdraw" && <blockquote>{pending.summary.text}</blockquote>}
         {/* The checkbox comes first so the sheet opens without focusing the password field and raising the keyboard. */}
         <label className="settings-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>{t("我明白上面的影响", "I understand what this does", "Entiendo lo que hace")}</span></label>
-        {pending.kind !== "withdraw" && <label><span>{t("输入当前密码", "Enter your password", "Escribe tu contraseña")}</span><KeyboardInput type="password" autoComplete="current-password" required maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} onBlur={() => keyboard.hide()} /></label>}
+        {pending.kind !== "withdraw" && pending.kind !== "ai" && <label><span>{t("输入当前密码", "Enter your password", "Escribe tu contraseña")}</span><KeyboardInput type="password" autoComplete="current-password" required maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} onBlur={() => keyboard.hide()} /></label>}
         {notice && <p className="settings-error" role="alert">{notice}</p>}
-        <button type="submit" className={destructive ? "danger" : ""} disabled={busy || !confirmed || (pending.kind !== "withdraw" && !password)}>{busy ? t("正在处理…", "Working…", "Procesando…") : actionTitle(pending)}</button>
+        <button type="submit" className={destructive ? "danger" : ""} disabled={busy || !confirmed || (pending.kind !== "withdraw" && pending.kind !== "ai" && !password)}>{busy ? t("正在处理…", "Working…", "Procesando…") : actionTitle(pending)}</button>
         <button type="button" className="quiet" disabled={busy} onClick={close}>{t("取消", "Cancel", "Cancelar")}</button>
       </form>}
     </BottomSheet>
@@ -199,7 +236,7 @@ export function SettingsPage({ initialPage, onAsk, user, relationshipId, partner
 
 function consentLabel(eventType: string, language: Language) {
   const labels: Record<string, [string, string, string]> = {
-    "privacy.retention_changed": ["更新私人保留期限", "Private retention updated", "Conservación privada actualizada"], "privacy.private_data_deleted": ["删除私人内容", "Private content deleted", "Contenido privado borrado"], "account.recovery_code_rotated": ["生成新恢复码", "New recovery code generated", "Nuevo código generado"], "account.recovered": ["使用恢复码找回账号", "Account recovered with code", "Cuenta recuperada con código"], "relationship.left": ["退出关系", "Left relationship", "Salida de la relación"], "summary.ai_access_withdrawn": ["撤回摘要 AI 使用", "Summary AI use withdrawn", "Uso de IA del resumen retirado"],
+    "privacy.retention_changed": ["更新私人保留期限", "Private retention updated", "Conservación privada actualizada"], "privacy.ai_consent_given": ["同意第三方 AI 处理", "Agreed to third-party AI", "Aceptó la IA de terceros"], "privacy.ai_consent_withdrawn": ["撤回第三方 AI 同意", "Withdrew third-party AI consent", "Retiró el consentimiento de IA"], "privacy.private_data_deleted": ["删除私人内容", "Private content deleted", "Contenido privado borrado"], "account.recovery_code_rotated": ["生成新恢复码", "New recovery code generated", "Nuevo código generado"], "account.recovered": ["使用恢复码找回账号", "Account recovered with code", "Cuenta recuperada con código"], "relationship.left": ["退出关系", "Left relationship", "Salida de la relación"], "summary.ai_access_withdrawn": ["撤回摘要 AI 使用", "Summary AI use withdrawn", "Uso de IA del resumen retirado"],
     "memory.created": ["保存私人记忆", "Private memory saved", "Recuerdo privado guardado"], "memory.corrected": ["纠正记忆并更新授权", "Memory corrected and consent updated", "Recuerdo corregido y permiso actualizado"], "memory.shared": ["确认分享记忆候选", "Memory candidate shared", "Propuesta de recuerdo compartida"], "memory.ai_approved": ["批准当前版本的记忆 AI 使用", "Current memory version approved for AI", "Versión actual del recuerdo autorizada para IA"], "memory.ai_withdrawn": ["撤回记忆 AI 使用", "Memory AI use withdrawn", "Uso de IA del recuerdo retirado"], "memory.archived": ["归档私人记忆", "Private memory archived", "Recuerdo privado archivado"], "memory.deleted": ["删除私人记忆", "Private memory deleted", "Recuerdo privado borrado"], "checkin.created": ["保存私人日常记录", "Private check-in saved", "Registro privado guardado"], "checkin.shared": ["确认分享日常记录", "Check-in share confirmed", "Registro compartido confirmado"], "checkin.deleted": ["删除私人日常记录", "Private check-in deleted", "Registro privado borrado"],
   };
   return labels[eventType] ? localized(language, ...labels[eventType]) : localized(language, "已记录的内容或授权操作", "Recorded content or consent action", "Acción registrada de contenido o permiso");

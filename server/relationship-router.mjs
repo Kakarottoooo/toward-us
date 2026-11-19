@@ -23,7 +23,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   const router = express.Router();
   const clients = new Map();
 
-  router.use((req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
+  router.use((req, res, next) => req.auth ? next() : res.status(401).json({ error: say(languageOf(req), "请先登录。", "Please sign in first.", "Inicia sesión primero.") }));
 
   router.get("/relationship/home", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
@@ -54,7 +54,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
 
   router.get("/issues", listRoute("issues"));
   router.get("/issues/:id", async (req, res) => {
-    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" });
+    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: say(languageOf(req), "没有找到这个共同决定。", "This shared decision was not found.", "No se encontró esta decisión compartida.") });
     const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id); const graph = projectGraph(snapshot, req.auth.user.id);
     const evaluationCounts = Object.fromEntries((snapshot.proposals || []).filter((item) => item.issueId === issue.id).map((proposal) => [proposal.id, new Set((snapshot.evaluations || []).filter((item) => item.proposalId === proposal.id && !item.withdrawnAt).map((item) => item.ownerUserId)).size]));
     res.json({ issue: projectRecord(issue, req.auth.user.id), perspectives: graph.perspectives.filter((item) => item.issueId === issue.id), summaries: graph.summaries.filter((item) => item.issueId === issue.id), proposals: graph.proposals.filter((item) => item.issueId === issue.id), evaluations: graph.evaluations.filter((item) => item.issueId === issue.id), evaluationCounts, agreements: graph.agreements.filter((item) => item.sourceIssueId === issue.id) });
@@ -62,14 +62,14 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.post("/issues", async (req, res) => {
     const context = await activeRelationship(store, req, res); if (!context) return;
     const record = createRelationshipRecord({ relationshipId: context.relationship.id, userId: req.auth.user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "collecting_perspectives", title: clean(req.body?.title, 160), category: ISSUE_CATEGORIES.has(req.body?.category) ? req.body.category : "custom", sharedContext: clean(req.body?.sharedContext, 1200) });
-    if (!record.title) return res.status(400).json({ error: "请输入需要共同决定的事情。" });
+    if (!record.title) return res.status(400).json({ error: say(languageOf(req), "请输入需要共同决定的事情。", "Enter what you need to decide together.", "Escribe lo que necesitan decidir juntos.") });
     await store.createRelationshipRecord("issues", record); await audit(store, record, req.auth.user.id, "issue.created"); emit(record, "issue.updated"); void recordUsage(store, { userId: req.auth.user.id, relationshipId: record.relationshipId, action: "issue_started" }); res.status(201).json({ issue: record });
   });
   router.post("/issues/:id/perspectives", async (req, res) => {
-    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" });
-    const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id); if (snapshot.perspectives.some((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && !item.archivedAt)) return res.status(409).json({ error: "你已经提交过自己的观点，可以在后续版本中修改。" });
+    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: say(languageOf(req), "没有找到这个共同决定。", "This shared decision was not found.", "No se encontró esta decisión compartida.") });
+    const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id); if (snapshot.perspectives.some((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && !item.archivedAt)) return res.status(409).json({ error: say(languageOf(req), "你已经提交过自己的观点，可以在后续版本中修改。", "You already shared your view; you can change it in a later version.", "Ya compartiste tu punto de vista; puedes cambiarlo en una versión posterior.") });
     const perspective = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: req.auth.user.id, visibility: "private", aiAccessScope: "private", approvalPolicy: "owner", status: "submitted", issueId: issue.id, goal: clean(req.body?.goal, 1200), importance: clean(req.body?.importance, 1200), constraints: clean(req.body?.constraints, 1200), negotiables: clean(req.body?.negotiables, 1200), concerns: clean(req.body?.concerns, 1200), shareableText: clean(req.body?.shareableText, 1200), privateNotes: clean(req.body?.privateNotes, 1200), rawPerspective: clean(req.body?.privateNotes, 1200) });
-    if (!perspective.goal) return res.status(400).json({ error: "请先说明你希望得到什么。" });
+    if (!perspective.goal) return res.status(400).json({ error: say(languageOf(req), "请先说明你希望得到什么。", "First say what you would like to get.", "Primero di lo que te gustaría conseguir.") });
     await store.createRelationshipRecord("perspectives", perspective);
     const draft = await mediator.summarizePerspective(perspective, req.body?.language || "zh");
     const summary = createRelationshipRecord({ relationshipId: issue.relationshipId, userId: req.auth.user.id, visibility: "shareable_summary", aiAccessScope: "none", approvalPolicy: "owner", status: "draft", issueId: issue.id, perspectiveId: perspective.id, text: clean(draft.text, 1600), source: draft.source });
@@ -77,16 +77,16 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     res.status(201).json({ perspective: projectRecord(perspective, req.auth.user.id), summary });
   });
   router.post("/issues/:id/shareable-summary", async (req, res) => {
-    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" });
+    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: say(languageOf(req), "没有找到这个共同决定。", "This shared decision was not found.", "No se encontró esta decisión compartida.") });
     const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id); const current = snapshot.summaries.find((item) => item.issueId === issue.id && item.ownerUserId === req.auth.user.id && item.status === "draft");
-    if (!current) return res.status(404).json({ error: "没有可确认的共享摘要草稿。" });
+    if (!current) return res.status(404).json({ error: say(languageOf(req), "没有可确认的共享摘要草稿。", "There is no shareable summary draft to confirm.", "No hay un borrador de resumen compartible para confirmar.") });
     const summary = await store.updateRelationshipRecordForUser("summaries", current.id, req.auth.user.id, (draft) => { draft.text = clean(req.body?.text, 1600) || draft.text; draft.status = "confirmed"; draft.aiAccessScope = "joint"; draft.confirmedAt = new Date().toISOString(); draft.version += 1; });
     await audit(store, summary, req.auth.user.id, "shareable_summary.confirmed"); emit(issue, "issue.updated"); res.json({ summary });
   });
   router.post("/issues/:id/generate-options", async (req, res) => {
-    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: "没有找到这个共同决定。" });
+    const issue = await store.getRelationshipRecordForUser("issues", req.params.id, req.auth.user.id); if (!issue) return res.status(404).json({ error: say(languageOf(req), "没有找到这个共同决定。", "This shared decision was not found.", "No se encontró esta decisión compartida.") });
     const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id); const existing = snapshot.proposals.filter((item) => item.issueId === issue.id && !item.archivedAt); if (existing.length) return res.json({ proposals: existing.map((item) => projectRecord(item, req.auth.user.id)) }); const context = buildJointDecisionContext(snapshot, issue.id, req.auth.user.id);
-    if (!context || context.confirmedSummaries.length !== 2) return res.status(409).json({ error: "双方分别确认可共享摘要后才能生成方案。" });
+    if (!context || context.confirmedSummaries.length !== 2) return res.status(409).json({ error: say(languageOf(req), "双方分别确认可共享摘要后才能生成方案。", "Both of you need to confirm a shareable summary before options are generated.", "Los dos deben confirmar un resumen compartible antes de generar opciones.") });
     const generated = await mediator.generateDecisionOptions(context, req.body?.language || "zh");
     const result = await store.transaction(`relationship:${issue.relationshipId}`, async (tx) => {
       const current = await tx.getRelationshipRecordForUser("issues", issue.id, req.auth.user.id);
@@ -409,7 +409,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   router.use(decisionErrorHandler);
 
   function listRoute(collection) { return async (req, res) => { const records = await store.listRelationshipRecordsForUser(collection, req.auth.user.id); res.json({ items: records.map((item) => projectRecord(item, req.auth.user.id)).filter(Boolean) }); }; }
-  function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: "没有找到可归档的对象。" }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
+  function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: say(languageOf(req), "没有找到可归档的对象。", "There is nothing here to archive.", "No hay nada que archivar aquí.") }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
   function emit(record, eventType, ownerUserId = null, actorUserId = null) { if (!record) return; if (eventType === "together.updated") onTogether(record, actorUserId); const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
   router.emitRecord = emit;
   // True while the member has the App open (its live event stream is connected).
@@ -421,11 +421,14 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
 // Shared with the "together" router so channel-independent agreement errors are localized the same way everywhere.
 export function decisionErrorHandler(error, req, res, next) {
   if (!error.decisionCode) return next(error);
-  const language = req.body?.language || req.query?.language || "zh";
+  const language = languageOf(req);
   const copy = DECISION_ERRORS[error.decisionCode] || DECISION_ERRORS.not_found;
   res.status(error.statusCode || 400).json({ error: copy[language === "en" ? 1 : language === "es" ? 2 : 0], code: error.decisionCode });
 }
-async function activeRelationship(store, req, res) { const context = await store.getRelationshipContext(req.auth.user.id); if (!context || context.relationship.status !== "active" || context.members.length !== 2) { res.status(409).json({ error: "需要双方账号完成伴侣绑定。" }); return null; } return context; }
+// The reader's language: what the request says, else the member's saved interface language (the App keeps it current).
+const languageOf = (req) => [req.body?.language, req.query?.language, req.auth?.user?.language].find((value) => ["zh", "en", "es"].includes(value)) || "zh";
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+async function activeRelationship(store, req, res) { const context = await store.getRelationshipContext(req.auth.user.id); if (!context || context.relationship.status !== "active" || context.members.length !== 2) { res.status(409).json({ error: say(languageOf(req), "需要双方账号完成伴侣绑定。", "Both accounts must be paired first.", "Ambas cuentas deben vincularse primero.") }); return null; } return context; }
 function responsibilityIds(context, ownerType) { return context.members.filter((member) => ownerType === "both" || ownerType === `member_${member.role.toLowerCase()}`).map((member) => member.userId); }
 async function ensureOutcome(tx, commitment, userId, startNow = false) {
   const id = `outcome:${commitment.id}`;

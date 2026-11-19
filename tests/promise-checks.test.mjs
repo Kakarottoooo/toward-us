@@ -36,6 +36,8 @@ test("Pinky asks one member privately about their promise, at most daily and wee
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r)); t.after(() => server.close());
   const request = async (path, method = "GET", body, user = a) => { const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "x-user": user, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }); return response.json(); };
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).session;
+  // Pinky's getting-to-know-you opening question was asked on an earlier day (one Pinky question a day in Just me).
+  await store.transaction("x", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, a, (draft) => { draft.knowYouAt = "2000-01-01T00:00:00.000Z"; }));
   const opened = (await request(`/assistant/sessions/${session.id}?opened=1`)).session;
   assert.match(opened.messages.at(-1).text, /Cook together on Wednesdays/, "asks about the promise this member made");
   assert.equal((await request(`/assistant/sessions/${session.id}?opened=1`)).session.messages.length, 1, "at most one question a day");

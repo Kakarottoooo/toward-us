@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 import { createApiApp } from "../server/app.mjs";
 import { createMediator, sanitizeFollowUp } from "../server/mediator.mjs";
@@ -49,7 +49,78 @@ test("without the model Pinky only says it is unavailable, in every language, an
   });
 });
 
-test("a person waits at most about 45 seconds for a reply; only background work may take minutes", async () => {
+test("CLI interactive care uses Sonnet by default, keeps background reads cheap and honors an explicit model", async () => {
+  await withProvider({ AI_PROVIDER: "claude-cli" }, async () => {
+    const previous = process.env.CLAUDE_CLI_MODEL, background = process.env.CLAUDE_CLI_BACKGROUND_MODEL;
+    try {
+      delete process.env.CLAUDE_CLI_MODEL; delete process.env.CLAUDE_CLI_BACKGROUND_MODEL;
+      const mediator = createMediator({ apiKey: "" });
+      assert.equal(mediator.model, "claude-cli:sonnet");
+      assert.equal(mediator.backgroundModel, "claude-cli:haiku");
+      process.env.CLAUDE_CLI_MODEL = "haiku";
+      assert.equal(createMediator({ apiKey: "" }).model, "claude-cli:haiku");
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CLI_MODEL; else process.env.CLAUDE_CLI_MODEL = previous;
+      if (background === undefined) delete process.env.CLAUDE_CLI_BACKGROUND_MODEL; else process.env.CLAUDE_CLI_BACKGROUND_MODEL = background;
+    }
+  });
+});
+
+test("screenshot advice grounds the verdict in observations and unknowns in one model call", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    let calls = 0;
+    globalThis.fetch = async (_url, init) => {
+      calls += 1;
+      const schema = JSON.parse(init.body).text.format.schema;
+      assert.deepEqual(schema.required, ["observations", "uncertainties", "reply", "sendableDraft", "activityDescription"]);
+      const answer = { observations: ["Blair reports an earlier promise."], uncertainties: ["The original promise is not visible."], reply: "I cannot verify that promise from this screenshot.", sendableDraft: null, activityDescription: null };
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(answer) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const answer = await createMediator({ apiKey: "test-key" }).answerScreenshot({ question: "Who's right?", transcript: "[partner] Blair: You promised yesterday." }, "en");
+    assert.match(answer.reply, /cannot verify/);
+    assert.equal(calls, 1);
+  });
+});
+
+test("screenshot questions use the capable vision model once, while transcription alone stays cheap", async () => {
+  await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const seen = [];
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body); seen.push(body);
+      return new Response(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: JSON.stringify({ messages: [], advice: { observations: [], uncertainties: [], reply: "Private answer." } }) }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+    };
+    const mediator = createMediator({ apiKey: "" });
+    const schema = { type: "object", required: ["messages"], properties: { messages: { type: "array", items: { type: "string" } } } };
+    const input = { paths: [resolve("public/assets/brand/pinky-icon-512.png")], schema, language: "zh" };
+    const answer = await mediator.readScreenshots({ ...input, adviceFor: { question: "How do I reply?", names: { me: "Alex", partner: "Blair" } } });
+    assert.equal(answer.advice.reply, "Private answer.");
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].model, mediator.model.replace(/^anthropic:/, ""));
+    assert.ok(seen[0].output_config.format.schema.required.includes("advice"));
+    assert.match(seen[0].system, /a reported promise is not a verified promise/);
+    await mediator.readScreenshots(input);
+    assert.equal(seen[1].model, mediator.backgroundModel.replace(/^anthropic:/, ""));
+    assert.ok(!seen[1].output_config.format.schema.required.includes("advice"));
+    assert.deepEqual(schema.required, ["messages"], "the shared transcription schema is not mutated");
+  });
+});
+
+test("shared agreement drafting preserves given rules and labels reversible defaults as proposals", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    globalThis.fetch = async (_url, init) => {
+      const instructions = JSON.parse(init.body).input[0].content;
+      assert.match(instructions, /Keep each agreed rule once/);
+      assert.match(instructions, /Do not list a detail already supplied as unresolved/);
+      assert.match(instructions, /default clearly labeled as a suggestion they can change/);
+      assert.match(instructions, /Never approve anything for them/);
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Draft ready.", draftAgreement: null, actions: [], waitingFor: [] }) }] }] }), { headers: { "content-type": "application/json" } });
+    };
+    await createMediator({ apiKey: "test-key" }).continueTogether({ messages: [{ role: "member", text: "Pinky，我们说好以后周末轮流做饭" }] }, "zh");
+  });
+});
+
+// 90 s since 11-15: a complete analysis (question-playbooks.mjs) ran past 45 s and reached the user as "Pinky 暂时不可用".
+test("a person waits at most about 90 seconds for a reply; only background work may take minutes", async () => {
   await withProvider({ AI_PROVIDER: "openai" }, async () => {
     const seen = [];
     globalThis.fetch = async (_url, init) => {
@@ -60,8 +131,9 @@ test("a person waits at most about 45 seconds for a reply; only background work 
     await mediator.planAssistantTurn({ messages: [] }, "en");
     await mediator.continueTogether({ messages: [] }, "en");
     await mediator.mediateTogether({ messages: [] }, [], "en");
+    await mediator.answerScreenshot({ question: "What should I reply?", names: { me: "Alex", partner: "Sam" }, transcript: "[you] Alex: I am here." }, "en");
     await mediator.structured({ name: "daily_question", schema: { type: "object", properties: {} }, instructions: "x", input: "{}" });
-    assert.deepEqual(seen, ["45", "45", "45", "300"]);
+    assert.deepEqual(seen, ["90", "90", "90", "90", "300"]);
   });
   // Claude through the API honours the caller's limit instead of stretching every call to a minute or more.
   await withProvider({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-key" }, async () => {
@@ -69,6 +141,30 @@ test("a person waits at most about 45 seconds for a reply; only background work 
     const started = Date.now();
     await assert.rejects(createAnthropicClient().responses.create({ model: "m", input: "hi" }, { timeout: 25, maxRetries: 0 }), /timed out/i);
     assert.ok(Date.now() - started < 5_000, "a 25 ms limit is not rounded up to the client's minute");
+  });
+});
+
+test("an explicit screenshot decision starts reading even if the planner returns no actions; normal photos stay ordinary", async () => {
+  await withProvider({ AI_PROVIDER: "openai" }, async () => {
+    let readChatScreenshots = true, format;
+    globalThis.fetch = async (_url, init) => {
+      format = JSON.parse(init.body).text.format;
+      return new Response(JSON.stringify({ id: "r", object: "response", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ reply: "Reading privately", actions: [], readChatScreenshots }) }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const mediator = createMediator({ apiKey: "test-key" });
+    const context = { attachedPhotos: ["fictional-photo"], messages: [{ role: "user", text: "What should I reply to this argument?" }] };
+    const turn = await mediator.planAssistantTurn(context, "en");
+    assert.ok(format.schema.required.includes("readChatScreenshots"));
+    assert.equal(turn.actions[0].kind, "chat_import");
+    const { validateAssistantTurn } = await import("../server/assistant-agent.mjs");
+    assert.equal(validateAssistantTurn(turn), true);
+    assert.equal(Object.hasOwn(turn, "readChatScreenshots"), false);
+    readChatScreenshots = false;
+    assert.deepEqual((await mediator.planAssistantTurn(context, "en")).actions, []);
+    readChatScreenshots = undefined;
+    await assert.rejects(mediator.planAssistantTurn(context, "en"), /did not decide/, "missing routing metadata must not silently promise an import");
+    await mediator.planAssistantTurn({ messages: [] }, "en");
+    assert.ok(!format.schema.required.includes("readChatScreenshots"), "text-only requests keep their existing contract");
   });
 });
 

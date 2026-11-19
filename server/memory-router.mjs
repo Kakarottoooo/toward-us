@@ -124,7 +124,7 @@ export function createMemoryRouter({ store, emit = () => {} }) {
   function list(collection) { return async (req, res) => {
     const context = await activeContext(store, req.auth.user.id);
     const query = clean(req.query?.q, 120).toLocaleLowerCase();
-    const records = (await store.listRelationshipRecordsForUser(collection, req.auth.user.id)).filter((record) => record.kind !== "profile" && record.kind !== "cycle" && record.kind !== "cycle_settings").map((record) => projectMemoryRecord(record, req.auth.user.id, context?.relationship.id)).filter(Boolean).filter((record) => !query || record.text.toLocaleLowerCase().includes(query)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const records = (await store.listRelationshipRecordsForUser(collection, req.auth.user.id)).filter((record) => record.kind !== "profile" && record.kind !== "cycle" && record.kind !== "cycle_settings" && record.kind !== "person" && record.kind !== "dating_wants" && record.kind !== "portrait" && record.kind !== "memory_state" && record.kind !== "people_reading").map((record) => projectMemoryRecord(record, req.auth.user.id, context?.relationship.id)).filter(Boolean).filter((record) => !query || record.text.toLocaleLowerCase().includes(query)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     res.json({ [collection]: records });
   }; }
 
@@ -155,5 +155,5 @@ async function sourceFor(store, req) {
 }
 async function audit(store, record, userId, eventType) { await store.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: record.relationshipId, userId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: record.id, objectType: record.kind, eventType, sourceVersion: record.version })); }
 const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
-const message = (req, zh, en, es) => req.body?.language === "en" || req.query?.language === "en" ? en : req.body?.language === "es" || req.query?.language === "es" ? es : zh;
+const message = (req, zh, en, es) => { const language = req.body?.language || req.query?.language || req.auth?.user?.language; return language === "en" ? en : language === "es" ? es : zh; };
 function fail(req, statusCode, zh, en, es) { throw Object.assign(new Error(message(req, zh, en, es)), { statusCode }); }

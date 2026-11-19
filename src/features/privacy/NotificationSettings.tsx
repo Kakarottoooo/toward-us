@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Bell, ChatsCircle, Clock, MoonStars, Sparkle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
-import { enableNativePush, nativePushPlugin, nativePushRegistered } from "../reminders/nativePush";
+import { enableNativePush, iosPushUnavailable, nativePushPlugin, nativePushRegistered } from "../reminders/nativePush";
 import { enableWebPush, thisBrowserConnected, webPushSupport } from "../reminders/webPush";
 
 type Notify = { messages: boolean; pinky: boolean; reminders: boolean; quiet: boolean };
@@ -16,8 +16,8 @@ export function NotificationSettings({ language }: { language: Language }) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const load = () => relationshipApi<Settings>("/api/reminder-settings").then(setSettings).catch((error) => setNotice((error as Error).message));
   useEffect(() => { void load(); }, []);
-  const nativeApp = Boolean(nativePushPlugin());
-  const ready = nativeApp ? settings?.nativeConfigured : settings?.configured;
+  const nativeApp = iosPushUnavailable() || Boolean(nativePushPlugin());
+  const ready = nativeApp ? !iosPushUnavailable() && settings?.nativeConfigured : settings?.configured;
   // In a browser or installed web app, "on" means this browser itself receives the pushes.
   const on = nativeApp ? Boolean(settings?.nativeEnabled && nativePushRegistered()) : Boolean(settings?.enabled && thisBrowserConnected(settings?.devices));
   const web = nativeApp ? null : webPushSupport();
@@ -45,13 +45,13 @@ export function NotificationSettings({ language }: { language: Language }) {
       {settings && ready && !on && (nativeApp || web === "ready") && <button type="button" className="settings-row settings-action" disabled={busy} onClick={() => void connect()}>{t("打开通知", "Turn on notifications", "Activar notificaciones")}</button>}
     </div>
     {settings && ready && !on && web === "install" && <p className="settings-note">{t("在 iPhone 上，先用 Safari 的“分享 → 添加到主屏幕”把 Pinky 放到主屏幕，再从主屏幕打开它，就能在这里打开通知（需要 iOS 16.4 或更新）。", "On iPhone, first add Pinky to your Home Screen (Safari's Share → Add to Home Screen), open it from there, and turn notifications on here (iOS 16.4 or later).", "En iPhone, primero añade Pinky a la pantalla de inicio (Compartir → Añadir a pantalla de inicio en Safari), ábrela desde allí y activa aquí las notificaciones (iOS 16.4 o posterior).")}</p>}
-    {settings && !ready && <p className="settings-note">{t("推送服务正式上线后就能用；这里的选择现在就会记住。", "Push notifications arrive once the service is live; your choices here are saved now.", "Las notificaciones llegarán cuando el servicio esté activo; tus preferencias ya se guardan.")}</p>}
+    {settings && !ready && <p className="settings-note">{t("当前无法向这台设备推送。提醒仍会保存在 Pinky 中。", "Push delivery is unavailable on this device. Your reminders are saved in Pinky.", "Las notificaciones no están disponibles en este dispositivo. Pinky guarda tus recordatorios.")}</p>}
     </section>
     <section className="settings-group"><h2>{t("通知我", "Tell me about", "Avísame de")}</h2><div className="settings-card">
-      {row("messages", <ChatsCircle size={18} weight="bold" />, t("“我们俩”里的新消息", "New messages in Us", "Mensajes nuevos en Nosotros"), t("TA 或 Pinky 在“我们俩”里说了话", "When your partner or Pinky writes in Us", "Cuando tu pareja o Pinky escriben en Nosotros"))}
-      {row("pinky", <Sparkle size={18} weight="bold" />, t("Pinky 的惊喜", "Pinky's surprises", "Sorpresas de Pinky"), t("回顾卡、往年的今天", "Recap cards, on this day", "Tarjetas de recuerdos, un día como hoy"))}
+      {row("messages", <ChatsCircle size={18} weight="bold" />, t("共同消息和问题", "Shared messages and questions", "Mensajes y preguntas compartidos"), t("TA 的新消息、每日一问、看完了吗", "Partner messages, daily questions, watched-it check-ins", "Mensajes de tu pareja, preguntas diarias y sobre lo que vieron"))}
+      {row("pinky", <Sparkle size={18} weight="bold" />, t("Pinky 的惊喜", "Pinky's surprises", "Sorpresas de Pinky"), t("回顾卡、往年的今天、小家伙长大（默认关）", "Recap cards, on this day, your little one growing (off by default)", "Tarjetas de recuerdos, un día como hoy, su pequeño creciendo (apagado por defecto)"))}
       {row("reminders", <Clock size={18} weight="bold" />, t("提醒和到期的约定", "Reminders and due promises", "Recordatorios y acuerdos que vencen"), t("你设的提醒、纪念日、该复盘的约定", "Your reminders, special dates, reviews", "Tus recordatorios, fechas, revisiones"))}
-    </div></section>
+    </div><p className="settings-note notification-preview-note" data-testid="notification-preview-note">{t("每日一问等问题会写在通知里，可能出现在锁屏上。想保留通知但隐藏内容，请在手机或浏览器的通知设置里关闭预览。", "Questions, including the daily question, appear in notifications and may show on your lock screen. To keep alerts but hide their content, turn off previews in your phone or browser notification settings.", "Las preguntas, incluida la diaria, aparecen en las notificaciones y pueden verse en la pantalla bloqueada. Para recibir avisos sin mostrar su contenido, desactiva las vistas previas en los ajustes de notificaciones del teléfono o navegador.")}</p></section>
     <section className="settings-group"><div className="settings-card">
       {row("quiet", <MoonStars size={18} weight="bold" />, t("夜间免打扰", "Quiet nights", "Noches tranquilas"), t("22:00–8:00 只推你设的提醒", "10 pm–8 am: only your reminders", "22:00–8:00: solo tus recordatorios"))}
     </div></section>

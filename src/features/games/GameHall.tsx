@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CaretDown, PawPrint, Play, User, X } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { ArrowLeft, CaretDown, CaretRight, ChatsCircle, PawPrint, Play, User, X } from "@phosphor-icons/react";
+import { counted, localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { categories, gameCatalog, type CategoryId, type GameEntry } from "./catalog";
@@ -9,7 +9,7 @@ import { BOTH, PET, type Hall, type MatchView } from "./types";
 import "./games.css";
 
 /** 游戏大厅: every game by category with how to play it, games still going at the top, and each game's own screen. */
-export function GameHall({ language, userId, initialMatch = null, petPicture = null, onClose, onPlayCard }: { language: Language; userId: string; initialMatch?: string | null; petPicture?: string | null; onClose: () => void; onPlayCard: (type: "choice" | "guess" | "truth") => void }) {
+export function GameHall({ language, userId, initialMatch = null, petPicture = null, onClose, onPlayCard, onQuestions }: { language: Language; userId: string; initialMatch?: string | null; petPicture?: string | null; onClose: () => void; onPlayCard: (type: "choice" | "guess" | "truth") => void; onQuestions: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [hall, setHall] = useState<Hall | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState("");
@@ -48,7 +48,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     <button type="button" className="game-going-open" onClick={() => setOpen(match.id)} data-testid="game-going">
       <span>{catalog.find((game) => game.id === match.game)?.icon}</span>
       <b>{nameOf(match.game)}{vsPet(match) && <em> · {t(`和${petName}`, `with ${petName}`, `con ${petName}`)}</em>}</b>
-      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${daysIdle(match)} days`, `Parada ${daysIdle(match)} días`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
+      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${counted(daysIdle(match), "day", "days")}`, `Parada ${counted(daysIdle(match), "día", "días")}`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
     </button>
     <button type="button" className={`game-going-end ${ending === match.id ? "is-confirm" : ""}`} onClick={() => confirmEnd(match.id, [match.id])} onBlur={() => setEnding((value) => value === match.id ? null : value)} aria-label={ending === match.id ? t("确定结束这局", "End this game", "Terminar esta partida") : t(`结束这局${nameOf(match.game)}`, `End this game of ${nameOf(match.game)}`, `Terminar esta partida de ${nameOf(match.game)}`)} data-testid="game-going-end">
       {ending === match.id ? t("结束？", "End?", "¿Fin?") : <X size={16} weight="bold" />}
@@ -87,6 +87,13 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   return <div className="game-hall" role="dialog" aria-modal="true" aria-label={t("游戏", "Games", "Juegos")} data-testid="game-hall">
     <header className="game-top"><button type="button" className="page-back" onClick={onClose} data-testid="game-hall-close" autoFocus><ArrowLeft size={20} />{t("对话", "Chat", "Chat")}</button><h1>{t("小游戏", "Games", "Juegos")}</h1></header>
     <div className="game-stream"><MobileScroll className="game-scroll"><div className="game-body">
+      <section className="game-questions" aria-label={t("双人题卡", "Cards for two", "Cartas para dos")}>
+        <button type="button" onClick={onQuestions} data-testid="game-card-deck">
+          <ChatsCircle size={22} aria-hidden="true" />
+          <span><strong>{t("双人题卡", "Cards for two", "Cartas para dos")}</strong><small>{t("今天有一题，也可以自己挑", "Play today's question or pick a card", "Jueguen la de hoy o elijan una carta")}</small></span>
+          <CaretRight size={16} aria-hidden="true" />
+        </button>
+      </section>
       {error && <p className="space-error" role="alert">{error}</p>}
       {fresh.length > 0 && <section className="game-going" aria-label={t("还没玩完", "Still going", "En curso")}>{fresh.map((match) => row(match))}</section>}
       {stale.length > 0 && <details className="game-stale" data-testid="game-stale">

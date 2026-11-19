@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Microphone, MicrophoneSlash, PhoneDisconnect, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { ReportReply } from "../feedback/ReportReply";
+import { inIosApp } from "../membership/MembershipPage";
 import { LiveCall, type CallState, type CaptionRow } from "./liveCall";
 import "./call.css";
 
@@ -12,6 +14,8 @@ const ERRORS: Record<string, [string, string, string]> = {
   microphone_denied: ["需要麦克风权限才能通话。可以在手机设置里给 Pinky 打开麦克风。", "Pinky needs the microphone for calls. Turn it on for Pinky in your phone's settings.", "Pinky necesita el micrófono para llamar. Actívalo para Pinky en los ajustes del teléfono."],
   voice_already_active: ["已经有一通电话在进行中。", "A call is already in progress.", "Ya hay una llamada en curso."],
   voice_daily_limit: ["今天的通话时长用完了，明天再来。", "Today's call time is used up. Try again tomorrow.", "Se acabó el tiempo de llamada de hoy. Prueba mañana."],
+  voice_monthly_limit: ["这个月的 AI 用量到上限了，下个月 1 日会恢复。", "This month's AI limit is reached. It resets on the 1st of next month.", "Se alcanzó el límite de IA de este mes. Se renueva el día 1 del próximo mes."],
+  voice_paused: ["Pinky 的 AI 正在短暂维护，请稍后再试。", "Pinky's AI is briefly paused for maintenance. Please try again soon.", "La IA de Pinky está en una breve pausa de mantenimiento. Inténtalo pronto."],
   pairing_required: ["先邀请另一半加入，才能在“我们俩”里通话。", "Invite your partner before calling in Us.", "Invita a tu pareja antes de llamar en Nosotros."],
   connection_lost: ["通话断开了。", "The call dropped.", "La llamada se cortó."],
   time_limit: ["已到本次通话时长上限。", "The call reached its time limit.", "La llamada llegó a su límite de tiempo."],
@@ -25,13 +29,17 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
   const [pending, setPending] = useState(0);
   const [muted, setMuted] = useState(false), [speakerMuted, setSpeakerMuted] = useState(false), [blocked, setBlocked] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  // A member Pinky barely knows yet: the private call opens as a getting-to-know-you chat (server decides; founder 11-07).
+  const [interview, setInterview] = useState(false);
   const call = useRef<LiveCall | null>(null);
   const reason = useRef("");
   useEffect(() => {
     // Unmounting (or React's dev double-run of effects) hangs up quietly instead of reporting the call as ended.
     let disposed = false;
+    const reviewed = inIosApp();
     const live = new LiveCall({
-      start: (body) => relationshipApi(`/api/voice/start`, jsonBody({ ...body, channel: started.channel, sessionId: started.sessionId, language })),
+      reviewed, language,
+      start: async (body) => { const result = await relationshipApi<{ id: string; sdp: string; secondsLeft: number; interview?: boolean }>(`/api/voice/start`, jsonBody({ ...body, reviewed, channel: started.channel, sessionId: started.sessionId, language })); if (result.interview && !reviewed) setInterview(true); return result; },
       post: (path, body) => relationshipApi(path, jsonBody(body)),
       onState: (next, detail) => { setState(next); if (detail === "playback_blocked") setBlocked(true); else if (detail) reason.current = detail; },
       onCaptions: setRows, onTask: setPending,
@@ -51,8 +59,9 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
   const status = state === "connecting" || state === "idle" ? t("正在接通 Pinky…", "Connecting to Pinky…", "Conectando con Pinky…") : state === "connected" ? pending ? t("Pinky 正在办…", "Pinky is on it…", "Pinky está en ello…") : clock : t("正在挂断…", "Hanging up…", "Colgando…");
   return <section className="call-panel" data-testid="call-panel" aria-live="polite">
     <header><span className={`call-dot is-${state}`} aria-hidden="true" /><strong>{started.channel === "us" ? t("你们和 Pinky 通话中", "On a call with Pinky", "En llamada con Pinky") : t("和 Pinky 私下通话", "Private call with Pinky", "Llamada privada con Pinky")}</strong><span>{status}</span></header>
+    {interview && state === "connected" && !rows.length && <p className="call-hint">{t("Pinky 还不太认识你，会先问你几个问题。哪题不想答就说“跳过”；有别的事想聊，直接说就行。", "Pinky doesn't know you well yet, so it will start with a few questions. Say “skip” for any you'd rather not answer, or just say what you called about.", "Pinky aún no te conoce bien, así que empezará con unas preguntas. Di «saltar» si no quieres responder, o di de qué querías hablar.")}</p>}
     {started.channel === "us" && state === "connected" && !rows.length && <p className="call-hint">{t(`把手机放在你们中间。Pinky 会先问每个人的名字，之后谁说话它都能听到。旁边有第三个人也可以一起说。`, `Put the phone between you. Pinky will ask everyone's name first; after that it hears whoever speaks. A third person can join in too.`, `Pon el teléfono entre ustedes. Pinky preguntará primero el nombre de cada uno; después oye a quien hable. Una tercera persona también puede participar.`)}</p>}
-    {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}</li>)}</ol>}
+    {!!captions.length && <ol className="call-captions">{captions.map((row) => <li key={row.id} className={row.role === "agent" ? "from-agent" : ""}><span>{row.role === "agent" ? "Pinky" : started.channel === "us" ? t("你们", "You", "Ustedes") : t("你", "You", "Tú")}</span>{row.text}{row.conversationId && row.messageId && <ReportReply language={language} channel={started.channel} conversationId={row.conversationId} messageId={row.messageId} />}</li>)}</ol>}
     {blocked && <p className="call-hint">{t("点一下扬声器按钮，打开 Pinky 的声音。", "Tap the speaker button to hear Pinky.", "Toca el altavoz para oír a Pinky.")}</p>}
     <div className="call-controls">
       <button type="button" className={muted ? "on" : ""} aria-pressed={muted} onClick={() => setMuted(call.current?.mute() ?? false)}>{muted ? <MicrophoneSlash size={24} /> : <Microphone size={24} />}<span>{muted ? t("已静音", "Muted", "Silenciado") : t("静音", "Mute", "Silenciar")}</span></button>

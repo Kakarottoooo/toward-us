@@ -171,7 +171,7 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
   }
 
   const router = express.Router();
-  const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "请先登录。" });
+  const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") });
   router.get("/membership", auth, async (req, res, next) => { try { res.setHeader("Cache-Control", "no-store"); res.json(await view(req.auth.user.id)); } catch (error) { next(error); } });
   // Dress the couple's little one: any outfit the couple owns (all of them for members), or null to take it off.
   router.post("/membership/outfit", auth, async (req, res) => {
@@ -195,7 +195,7 @@ export function createMembershipRouter({ store, production = false, fetchImpl = 
     res.json(await view(req.auth.user.id));
   });
   router.post("/membership/stripe/checkout", auth, async (req, res) => {
-    const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : ["en", "es"].includes(req.auth.user.language) ? req.auth.user.language : "zh";
     if (!stripeOn()) return res.status(503).json({ error: say(language, "网页付款还没开通。", "Paying on the web isn't open yet.", "El pago web aún no está disponible."), code: "stripe_off" });
     const product = String(req.body?.product || ""), user = req.auth.user, origin = `${req.protocol}://${req.get("host")}`;
     const outfit = product.startsWith("outfit:") ? product.slice(7) : null;

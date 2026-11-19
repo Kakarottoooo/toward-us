@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, GlobeHemisphereWest, LockKey, Plus, Sparkle, Trash, UsersThree } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
-import { Carousel } from "../../mobile";
+import { ArrowLeft, GlobeHemisphereWest, LockKey, Plus, Trash, UsersThree } from "@phosphor-icons/react";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
 import { IdeasSection } from "./IdeasSection";
+import { WatchedShelf, type WatchedItem } from "./WatchedShelf";
 import { PhotoAlbumCard } from "./PhotoAlbumCard";
 import { photoPlugin } from "./photoAlbum";
 import { StoryViewer, type Slide } from "./StoryViewer";
@@ -13,7 +13,7 @@ import "./moments.css";
 // The map library is only loaded when someone opens the map.
 const MemoriesMap = lazy(() => import("./MemoriesMap").then((module) => ({ default: module.MemoriesMap })));
 
-type Item = { id: string; title: string; text: string; date: string | null; photoId?: string | null; idea?: number; photoEvent?: string; createdAt: string; ownerUserId: string };
+type Item = { id: string; title: string; text: string; date: string | null; done?: boolean; photoId?: string | null; idea?: number; photoEvent?: string; createdAt: string; ownerUserId: string };
 type Album = { id: string; system?: string; visibility: string; items: Item[] };
 type Checkin = { id: string; text: string; mood?: string | null; createdAt: string; ownerUserId: string; visibility: string };
 type Scale = "years" | "months" | "all";
@@ -30,6 +30,9 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const [mapOpen, setMapOpen] = useState(false);
   // 100 件小事 opens straight from the Us menu or Pinky's suggestion (/?view=moments&ideas=1).
   const [ideasOpen, setIdeasOpen] = useState(() => new URLSearchParams(location.search).get("ideas") === "1");
+  // 一起看过的 opens straight from Pinky's card (/?view=moments&watched=1).
+  const [watchedOpen, setWatchedOpen] = useState(() => new URLSearchParams(location.search).get("watched") === "1");
+  const [watched, setWatched] = useState<WatchedItem[]>([]);
   const [playing, setPlaying] = useState<{ title: string; slides: Slide[] } | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [openYear, setOpenYear] = useState("");
@@ -37,6 +40,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const load = useCallback(async () => {
     try {
       const [{ spaces }, { checkins }] = await Promise.all([relationshipApi<{ spaces: Album[] }>("/api/spaces"), relationshipApi<{ checkins: Checkin[] }>("/api/checkins").catch(() => ({ checkins: [] as Checkin[] }))]);
+      setWatched(spaces.filter((space) => space.system === "watched").flatMap((space) => space.items.map((item) => ({ id: item.id, title: item.title, text: item.text, date: item.date, done: Boolean(item.done), createdAt: item.createdAt }))));
       // Photos of one memory arrive as separate items with the same title and date; they read as one moment.
       const grouped = new Map<string, Moment>();
       for (const album of spaces.filter((space) => space.system === "moments")) for (const item of album.items) {
@@ -100,7 +104,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   };
 
   const mapLabels = { globe: t("地球", "Globe", "Globo"), flat: t("平面", "Flat", "Plano"), loading: t("正在打开地图…", "Opening the map…", "Abriendo el mapa…"), failed: t("地图没加载出来，稍后再试。", "The map didn't load. Try again later.", "El mapa no cargó. Inténtalo más tarde.") };
-  const count = (n: number) => t(`${n} 段`, `${n} memories`, `${n} recuerdos`);
+  const count = (n: number) => t(`${n} 段`, `${counted(n, "memory", "memories")}`, `${counted(n, "recuerdo", "recuerdos")}`);
   const openPlace = (place: Place) => go({ title: place.title, detail: count(place.moments.length), moments: place.moments });
   const openMoment = (moment: Moment) => go({ title: moment.title || day(moment.date, true), detail: day(moment.date, true), moments: [moment] });
   const monthTitle = (key: string) => new Date(`${key}-15T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", timeZone: "UTC" });
@@ -110,6 +114,11 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     {back}
     <header className="moments-focus-head"><h2>{focus.title}</h2>{focus.detail && <small>{focus.detail}</small>}</header>
     {timeline(focus.moments)}
+  </div>;
+
+  if (watchedOpen) return <div className="moments-page" data-testid="moments-watched">
+    <button type="button" className="moments-back" onClick={() => setWatchedOpen(false)}><ArrowLeft size={18} />{t("回忆", "Memories", "Recuerdos")}</button>
+    <WatchedShelf language={language} items={watched} onAsk={(text) => onAsk(text, "us")} />
   </div>;
 
   if (ideasOpen) return <div className="moments-page" data-testid="moments-ideas">
@@ -126,7 +135,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </Suspense> : <div className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></div>}
     <div className="moments-map-top">
       <button type="button" className="moments-map-back" onClick={() => setMapOpen(false)} aria-label={t("返回回忆", "Back to memories", "Volver a recuerdos")}><ArrowLeft size={20} weight="bold" /></button>
-      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`一起去过 ${places.length} 个地方`, `${places.length} places together`, `${places.length} lugares juntos`)}</small></div>
+      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`一起去过 ${places.length} 个地方`, `${counted(places.length, "place", "places")} together`, `${counted(places.length, "lugar", "lugares")} juntos`)}</small></div>
     </div>
   </div>;
 
@@ -171,16 +180,16 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
         <button type="button" className="moments-find" onClick={(event) => { (event.currentTarget.closest(".relationship-main") as HTMLElement | null)?.scrollTo({ top: 0 }); setMapOpen(true); }} aria-label={t("我们的足迹（地图）", "Where we've been (map)", "Donde hemos estado (mapa)")} data-testid="open-map"><GlobeHemisphereWest size={18} /><span>{t("地图", "Map", "Mapa")}</span></button>
       </div>
     </div>
-    <div className="moments-top">
-      <Carousel ariaLabel={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="story-bubbles" contentClassName="story-bubbles-track">
+    {!!bubbles.length && <div className="moments-top">
+      {/* Native sideways scrolling (founder 11-07, "还是有点卡"): the phone moves this row itself instead of following each touch in
+          code, the one exception to using Carousel; vertical swipes on it still scroll the page. */}
+      <div role="group" aria-label={t("Pinky 找到的故事", "Stories Pinky found", "Historias que encontró Pinky")} className="story-bubbles story-bubbles-native"><div className="story-bubbles-track">
         {bubbles.map((story) => <button key={story.id} type="button" className="story-bubble" onClick={() => play(story)} data-testid={`story-${story.kind}`}>
           <span className="story-bubble-ring">{photo(story.cover, "story-bubble-photo")}</span><span className="story-bubble-label">{story.title}</span>
         </button>)}
-        {paired && <button type="button" className="story-bubble" onClick={() => setIdeasOpen(true)} data-testid="open-ideas">
-          <span className="story-bubble-ring is-ideas"><Sparkle size={26} weight="fill" /></span><span className="story-bubble-label">{t("100 件小事", "100 little things", "100 cosas")}</span>
-        </button>}
-      </Carousel>
-    </div>
+        {/* 100 件小事 and 一起看过的 live in 关于我们 now (founder 11-07): this row is for photo stories only. */}
+      </div></div>
+    </div>}
     {error && <p className="space-error" role="alert">{error}</p>}
 
     {scale === "years" && !year && <div className="year-grid">{years.map((item) => <button key={item.year} type="button" onClick={() => setOpenYear(item.year)} data-testid={`year-${item.year}`}>

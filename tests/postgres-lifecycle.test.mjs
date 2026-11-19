@@ -9,6 +9,8 @@ import { createApiApp } from "../server/app.mjs";
 import { createReminderService } from "../server/reminder-service.mjs";
 import { buildMemoryContext } from "../server/memory-domain.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
+import { asAiUser } from "../server/ai-budget.mjs";
+import { aiCostReport, flushAiLedger, installAiLedger, meteredCall, pruneAiLedger, runAiFeature, usageFromAnthropic } from "../server/ai-ledger.mjs";
 
 // Explicit opt-in uses a local PostgreSQL server, never DATABASE_URL or production.
 // Every fixture creates and drops its own randomly named database.
@@ -222,4 +224,22 @@ pgTest("PostgreSQL commits an assistant turn once and rolls back the whole turn 
   assert.equal(current.title, reminders[0].title);
   assert.equal(current.version, reminders[0].version);
   assert.equal((await f.request(`/assistant/sessions/${session.id}`, { actor: a })).session.messages.length, 2);
+});
+
+pgTest("PostgreSQL keeps the AI cost ledger owner-only, rolls it up per day and month, and prunes it", async (t) => {
+  const f = await fixture(t); const a = await f.register("ledger-a"); const b = await f.register("ledger-b");
+  const relationshipId = await f.pair(a, b);
+  installAiLedger({ store: f.store, log: { log() {}, warn() {}, error() {} } }); t.after(() => installAiLedger({}));
+  const call = () => asAiUser({ userId: a.user.id }, () => runAiFeature({ feature: "assistant_turn" }, () => meteredCall({ provider: "anthropic", model: "claude-sonnet-5-5" }, async () => ({ usage: { input_tokens: 1000, output_tokens: 100 } }), usageFromAnthropic)));
+  await call(); await call();
+  await flushAiLedger();
+  const rows = (await f.store.listRecordsForJob("aiUsage")).filter((record) => record.kind === "ai_ledger");
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].relationshipId, null); assert.equal(rows[0].spaceId, relationshipId); assert.equal(rows[0].estUsd, 0.003);
+  assert.equal(await f.store.getRelationshipRecordForUser("aiUsage", rows[0].id, b.user.id), null, "the partner cannot read it");
+  const report = await aiCostReport(f.store, { days: 1 });
+  assert.equal(report.perUserDay.find((row) => row.userId === a.user.id).usd, 0.006);
+  assert.equal(report.perFeature.find((row) => row.feature === "assistant_turn").calls, 2);
+  assert.equal(await pruneAiLedger(f.store, new Date(Date.now() + 40 * 86_400_000)), 2);
+  assert.equal((await f.store.listRecordsForJob("aiUsage")).filter((record) => record.kind === "ai_ledger").length, 0);
 });

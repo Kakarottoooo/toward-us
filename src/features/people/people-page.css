@@ -1,0 +1,81 @@
+/* 在了解的人: who is chasing whom, the member's patterns, and each relationship as a mirror (founder 11-09, third mockup). */
+.people-main { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin-inline: auto; }
+.people-main h1, .people-main h2 { margin: 0; color: var(--jian-ink); }
+.people-main h2 { font-size: 16px; font-weight: 700; }
+.people-main button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+.people-muted { margin: 0; color: var(--jian-muted); line-height: 1.6; }
+.people-muted.small { font-size: 13px; }
+.people-error { margin: 0; color: #b3261e; }
+.people-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--jian-line); border-radius: 20px; background: var(--jian-paper-bright); }
+.people-card p { margin: 0; line-height: 1.7; }
+.people-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.people-card-head small { color: var(--jian-muted); font-size: 12px; white-space: nowrap; }
+.people-read { border-color: transparent; background: var(--jian-blue-soft); }
+.people-section { display: flex; flex-direction: column; gap: 10px; }
+.people-risk { margin: 0; padding: 10px 12px; border-radius: 12px; background: #fde8e6; color: #7a1b16; font-size: 14px; line-height: 1.55; }
+
+/* 谁在追谁: one row per person on the same ruler; a faded dot and an arrow show where they were two weeks ago. */
+.balance-legend, .balance-row { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 10px; }
+.balance-legend > span:last-child { display: flex; justify-content: space-between; font-size: 12px; }
+.balance-legend i { color: #8a5a2b; font-style: normal; } .balance-legend b { color: var(--jian-blue); } .balance-legend em { color: #25602f; font-style: normal; }
+.balance-row { padding: 0; border: 0; background: none; font: inherit; color: var(--jian-ink); text-align: left; cursor: pointer; }
+.balance-who { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 700; }
+.balance-who > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.balance-track { position: relative; height: 40px; }
+.balance-line { position: absolute; top: 50%; right: 0; left: 0; height: 6px; margin-top: -3px; border-radius: 3px; background: linear-gradient(90deg, #f1e2d3 0%, #dbe5fb 35%, #dbe5fb 65%, #dcebdf 100%); }
+.balance-mid { position: absolute; top: 8px; bottom: 8px; left: 50%; border-left: 2px solid #fff; }
+.balance-dot { position: absolute; top: 50%; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 3px 8px rgba(31, 29, 26, .18); transform: translate(-50%, -50%); }
+.balance-dot.ghost { opacity: .3; box-shadow: none; }
+.balance-arrow { position: absolute; top: 50%; border-top: 2px dashed; transform: translateY(-50%); }
+
+.people-insight { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--jian-line); border-radius: 16px; background: var(--jian-paper-bright); }
+.people-insight b { font-size: 15px; line-height: 1.5; }
+.people-insight span { color: var(--jian-muted); font-size: 13px; line-height: 1.6; }
+
+.people-person-card { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 14px; border: 1px solid var(--jian-line); border-radius: 18px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; box-sizing: border-box; }
+.people-person-card.kind-mutual { border-color: #c9d6f6; background: #fff; }
+.people-person-card.risk { border-color: #f1c4bf; background: #fde8e6; }
+.person-card-head, .person-top { display: flex; align-items: center; gap: 10px; }
+.person-card-head > span:nth-child(2), .person-top > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.person-card-head small, .person-top small { color: var(--jian-muted); font-size: 12px; }
+.person-top h1 { font-size: 22px; }
+.people-kind { flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.people-kind.kind-mutual { background: var(--jian-blue); color: #fff; }
+.people-kind.kind-you_chase, .people-kind.kind-faded { background: var(--jian-line); color: var(--jian-muted); }
+.people-kind.kind-risk { background: #b3261e; color: #fff; }
+.people-risk-text { display: flex; gap: 6px; color: #7a1b16; font-size: 14px; line-height: 1.55; }
+.people-traits { display: flex; flex-wrap: wrap; gap: 6px; }
+.people-traits span { padding: 3px 10px; border-radius: 999px; background: var(--jian-paper); font-size: 12px; }
+.people-quote { font-size: 13px; line-height: 1.5; }
+.people-quote small { color: var(--jian-muted); }
+
+/* The mirror: the member's share on the left in blue, theirs on the right in their colour. */
+.mirror-row { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "label label label" "me bar them"; align-items: center; gap: 4px 8px; }
+.people-person-card .mirror-row { grid-template-columns: 64px 1fr; grid-template-areas: "label bar"; }
+.mirror-label { grid-area: label; display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.people-person-card .mirror-label { flex-direction: column; gap: 0; font-size: 12px; color: var(--jian-muted); }
+.mirror-label small { color: var(--jian-muted); font-size: 12px; }
+.people-person-card .mirror-label small { display: none; }
+.mirror-me { grid-area: me; min-width: 40px; color: var(--jian-blue); font-size: 13px; }
+.mirror-them { grid-area: them; min-width: 40px; font-size: 13px; text-align: right; }
+.mirror-bar { grid-area: bar; display: flex; height: 10px; overflow: hidden; border-radius: 5px; background: var(--jian-line); }
+.mirror-bar i { display: block; height: 100%; background: var(--jian-blue); }
+.key-me, .key-them { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--jian-blue); vertical-align: -1px; }
+
+.people-turn { display: grid; grid-template-columns: 20px 1fr; gap: 10px; line-height: 1.55; }
+.people-turn > span:first-child { font-weight: 700; }
+.people-turn.up > span:first-child { color: #25602f; } .people-turn.down > span:first-child { color: #b3261e; }
+.people-turn > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.people-turn q { font-size: 14px; } .people-turn small { color: var(--jian-muted); font-size: 12px; }
+.people-trait-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.people-trait-grid div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--jian-paper); }
+.people-trait-grid span { color: var(--jian-muted); font-size: 12px; line-height: 1.45; }
+.people-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding-left: 18px; line-height: 1.5; }
+.people-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; align-self: flex-start; min-height: 48px; padding: 0 20px; border: 0; border-radius: 999px; background: var(--jian-blue); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+
+/* Three stages (founder 11-09): the quiet question under someone mutual for three weeks. */
+.people-person-wrap { display: flex; flex-direction: column; gap: 6px; }
+.people-settle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--jian-blue-soft); color: var(--jian-blue); font-size: 13px; line-height: 1.5; }
+.people-settle button { flex: 0 0 auto; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--jian-blue); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.people-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.people-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 20px; border: 1px solid var(--jian-line); border-radius: 999px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; font-weight: 700; cursor: pointer; }

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChatCircleDots, Trash } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet } from "../../mobile";
 import { relationshipApi } from "../relationship/api";
 import type { CoupleStreak, GraphRecord } from "../relationship/types";
@@ -15,7 +15,7 @@ const localDay = (iso: string) => { const date = new Date(iso); return Number.is
 
 /** Coming up for one member: the couple's shared dates and deadlines (when paired) with their own reminders, on one calendar.
  * Tapping a shared date shows its details; changes are asked of Pinky, and whoever added a date can delete it. */
-export function UpcomingPage({ language, userId = "", streak = null, partnerName = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { top?: ReactNode; language: Language; userId?: string; streak?: CoupleStreak | null; partnerName?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
+export function UpcomingPage({ clear = false, language, userId = "", streak = null, partnerName = "", milestones = [], reminders: sharedReminders = [], commitments = [], since = null, onSince, onOpenCommitment, onAsk, onChanged, top = null }: { clear?: boolean; top?: ReactNode; language: Language; userId?: string; streak?: CoupleStreak | null; partnerName?: string; milestones?: GraphRecord[]; reminders?: GraphRecord[]; commitments?: GraphRecord[]; since?: string | null; onSince?: (date: string) => Promise<void>; onOpenCommitment?: (id: string) => void; onAsk: (text: string) => void; onChanged?: () => Promise<void> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [open, setOpen] = useState<GraphRecord | null>(null);
@@ -42,8 +42,10 @@ export function UpcomingPage({ language, userId = "", streak = null, partnerName
   const meetup = milestones.filter((item) => item.type === "meetup" && !item.archivedAt && typeof item.date === "string" && String(item.date) >= today).sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
   const meetDays = meetup ? daysUntil(String(meetup.date), today) : null;
   return <div className="feature-stack">
+    {/* Save time, not kill time (founder 11-07): when nothing waits on this member, say so plainly, so they can close the app. */}
+    {clear && <p className="upcoming-clear" role="status" data-testid="nothing-needs-you">{t("✓ 现在没有需要你做的事", "✓ Nothing needs you right now", "✓ Ahora no hay nada pendiente para ti")}</p>}
     {top}
-    {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${meetDays} days to go`, `Faltan ${meetDays} días`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
+    {meetup && meetDays !== null && <button type="button" className="meetup-card" onClick={() => setOpen(meetup)} data-testid="meetup-card"><small>{t("下次见面", "Next time you meet", "La próxima vez que se ven")} · {date(String(meetup.date))}</small><strong>{meetDays === 0 ? t("就是今天！", "It's today!", "¡Es hoy!") : t(`还有 ${meetDays} 天`, `${counted(meetDays, "day", "days")} to go`, `Faltan ${counted(meetDays, "día", "días")}`)}</strong>{meetup.title && <span>{String(meetup.title)}</span>}</button>}
     {cycle.view && <CycleCard language={language} view={cycle.view} onChanged={cycle.reload} showEmpty={new URLSearchParams(location.search).get("focus") === "cycle"} />}
     {onSince && <TogetherCard language={language} since={since} onSave={onSince} streak={streak} partnerName={partnerName} />}
     <UpcomingYear language={language} entries={entries} onAsk={onAsk} counted={meetup?.id} />
@@ -52,6 +54,10 @@ export function UpcomingPage({ language, userId = "", streak = null, partnerName
       {open && <div className="upcoming-sheet">
         <dl>
           <dt>{t("日期", "Date", "Fecha")}</dt><dd>{date(String(open.date))}</dd>
+          {typeof open.sourcePlayPlanId === "string" && typeof open.dueAt === "string" && <>
+            <dt>{t("你这里的时间", "In your time zone", "En tu zona horaria")}</dt>
+            <dd>{new Date(open.dueAt).toLocaleString(languageTag(language), { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}</dd>
+          </>}
           <dt>{t("重复", "Repeats", "Se repite")}</dt><dd>{open.recurringRule === "yearly" ? t("每年", "Every year", "Cada año") : t("只有这一次", "Just once", "Solo una vez")}</dd>
           <dt>{t("提醒", "Reminder", "Aviso")}</dt><dd>{remindBefore ? t("Pinky 会在“我们俩”里提醒你们", "Pinky reminds you both in Us", "Pinky les avisa en Nosotros") : t("没有设提醒", "No reminder", "Sin aviso")}</dd>
         </dl>

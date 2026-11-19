@@ -49,7 +49,8 @@ test("a private space and its items stay with their owner", async (t) => {
   const f = await fixture(t, { planner: () => ({ reply: "Started your list.", actions: [action("space", "create", { fields: fields({ title: "Gift ideas", layout: "list" }) }), action("space_item", "create", { fields: fields({ title: "Handwritten letter" }) })] }) });
   const response = await f.turn("Start a gift ideas list with a handwritten letter");
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.equal(response.body.session.messages.at(-1).text, "Started your list.");
+  assert.match(response.body.session.messages.at(-1).text, /Created "Gift ideas", visible only to you\./);
+  assert.match(response.body.session.messages.at(-1).text, /Added\./);
   const mine = (await f.request("/spaces")).body.spaces.filter((space) => !space.system);
   assert.deepEqual(mine.map((space) => [space.visibility, space.title, space.items.map((item) => item.title)]), [["private", "Gift ideas", ["Handwritten letter"]]]);
   assert.deepEqual((await f.request("/spaces", "GET", null, f.ids[1])).body.spaces.filter((space) => !space.system), []);
@@ -97,7 +98,8 @@ test("asking privately puts the same question in each partner's own chat and now
   const mine = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages.at(-1);
   assert.deepEqual([mine.role, mine.text], ["assistant", "Where would you like to spend New Year, and why?"]);
   const theirs = (await f.request("/assistant/sessions/latest", "GET", null, f.ids[1])).body.session;
-  assert.deepEqual(theirs.messages.map((message) => message.text), ["Where would you like to spend New Year, and why?"]);
+  assert.equal(theirs.messages[0].text, "Where would you like to spend New Year, and why?");
+  assert.ok(theirs.messages.slice(1).every((message) => message.role === "assistant" && !/New Year/.test(message.text)), "only Pinky's own opening question may follow, for a member it barely knows");
   assert.ok(!JSON.stringify(theirs).includes("PRIVATE_A"));
   assert.ok(!JSON.stringify((await f.request("/together", "GET", null, f.ids[1])).body).includes("PRIVATE_A"));
 });

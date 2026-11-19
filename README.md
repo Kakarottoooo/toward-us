@@ -1,6 +1,6 @@
-# Toward Us / 彼此
+# Pinky
 
-面向恋人和夫妻的 **Multi-principal Relationship Agent**：属于两个人，帮助双方一起沟通、决定、计划、记住并履行承诺，同时不允许任何一方单独控制共同 Agent。原有 AI 调解、实时语音、扫码 demo 与长期复盘完整保留。
+Pinky（拉钩，说好就算数）是关系里的 AI：先是一个人就能用的回复教练——不知道怎么回 TA 时，把 TA 的话或截图发给 Pinky，它帮你看懂意思、写一句能直接发的回复；邀请 TA 加入后，变成属于两个人的 **Multi-principal Relationship Agent**，帮你们一起沟通、决定、计划、记住并履行承诺，任何一方都不能单独控制共同 Agent。原有 AI 调解、实时语音、扫码 demo 与长期复盘完整保留，从“更多”里都能找到。
 
 同一个公网网址会按设备自适应：电脑打开是完整宽屏网站与工作台，手机打开是无设备外壳的全屏移动体验；两端共享同一套账号、邀请、房间与历史数据。
 
@@ -31,6 +31,20 @@
 - 远程邀请默认调用手机系统分享面板发送温和文案和 `/j/{房间码}` 深链，复制链接、二维码和房间码依次作为备用；
 - 两位访客都注册并分别确认后，临时复盘可原子转换为正式共同空间和共同历史。
 - 1440px 桌面网站、393px 手机全屏界面和中间尺寸平板共用一套响应式前端；正式产品不显示演示用手机边框、状态栏或机型选择器。
+
+## 换模型回归门槛
+
+换模型、改提示词、改 harness 或升级模型相关依赖之前，必须先运行：
+
+```powershell
+npm run gate:model -- --model sonnet --channel claude
+# 只做历史回放和全部 60 题的机器检查，不调用评委：
+npm run gate:model -- --model sonnet --quick
+```
+
+只有完整运行的 `GATE: PASS` 才允许切换；`FAIL`、`UNAVAILABLE` 和仅 quick 的结果都不能作为切换批准。结果保存到 `work/model-gate/<UTC>/report.json`，退出码为 0（通过）、1（失败或证据不完整）、2（提供方拒绝、认证或额度不可用）。机器检查按相对存档退步判定：旧答通过而新答失败才 FAIL；已知缺口、改进及无存档代表题的绝对检查单列。产品超时、返回错误或写错数据属于该题失败，继续检查其余题。完整盲评每层 12 题最多允许 1 题不进入“不输”分子，有争议不算不输。
+
+练习题 40 份 Claude 产品答案已从任务 65 的 main `de725b8` 固定存档，另外每层 4 道代表题尚无 main 答案。首次正式使用前，先运行 `npm run gate:model -- --model sonnet --record-baseline`，审阅并提交补录存档；任务 66 本轮不执行补录。OpenAI 必须指定模型，当前缺少同通道 main 存档，不能拿 Claude 答案替代或退回付费 API。范围、来源与额度见 [评测说明](scripts/parity-eval/README.md)。
 
 ## 本地启动
 
@@ -94,6 +108,24 @@ npm run verify:deploy
 4. 部署完成后运行 `npm run verify:deploy`。
 
 GitHub Actions 会在每次推送和 Pull Request 上运行后端测试、生产构建和 Sites 路由测试。生产部署仍需在 Render 中导入 `render.yaml` 并在密钥存储中配置 `OPENAI_API_KEY`。
+
+## 云端部署（Render）
+
+服务器跑在 Render 的 `toward-us-private-beta`（`render.yaml`），推送到 `main` 后自动构建上线；数据在 Render 的 PostgreSQL。手机 App 默认连 `https://toward-us-private-beta.onrender.com`（`mobile/scripts/config.mjs` 的 `CLOUD_URL`）。
+
+- 构建会先装 Chromium（网页只读查询和它的测试要用），装在项目目录里（`PLAYWRIGHT_BROWSERS_PATH=0`），运行时也能找到。
+- 提醒、每日一问和伴侣推送由 GitHub Actions 的 `Deliver reminders` 定时调用服务器触发（`.github/workflows/reminders.yml`）。
+- 上线后核对：`curl https://toward-us-private-beta.onrender.com/api/health` 里的 `commit` 应是最新的 `main`。
+
+## 伴侣加入数据
+
+邀请创建、链接第一次被打开、伴侣加入三个时间点都记在邀请上（只有时间，没有名字和内容）。看漏斗：
+
+```bash
+REMINDER_RUN_SECRET=... node scripts/partner-join-report.mjs --url https://toward-us-private-beta.onrender.com --days 30
+```
+
+输出邀请数、被打开数、加入数，以及 48 小时内加入的比例（只算已满 48 小时的邀请）。
 
 ## 尚未声称完成
 

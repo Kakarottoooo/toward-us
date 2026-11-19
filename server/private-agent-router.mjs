@@ -2,8 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import { createRelationshipRecord, projectRecord } from "./relationship-domain.mjs";
 import { recordUsage } from "./usage.mjs";
+import { memberLanguage } from "./together-domain.mjs";
 
-const text = (req, zh, en, es) => (req.body?.language || req.query.language || "zh") === "zh" ? zh : (req.body?.language || req.query.language) === "es" ? es : en;
+// The request's language, else the signed-in member's saved interface language, else zh.
+const text = (req, zh, en, es) => { const language = req.body?.language || req.query.language || req.auth?.user?.language || "zh"; return language === "zh" ? zh : language === "es" ? es : en; };
+// A notice for the partner is in the partner's own language.
+const localized = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -118,7 +122,7 @@ export function createPrivateAgentRouter({ store, mediator, emit = () => {}, mem
       }
       const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", thread.id, userId, (record) => { record.status = "shared"; record.sharedObjectId = object.id; record.sharedAt = new Date().toISOString(); record.version += 1; });
       await audit(tx, updated, userId, "private_agent_thread.shared");
-      for (const member of context.members.filter((member) => member.userId !== userId)) await tx.createRelationshipRecord("notifications", createRelationshipRecord({ relationshipId: context.relationship.id, userId, ownerUserId: member.userId, visibility: "private", aiAccessScope: "none", type: intentType === "decision" ? "decision_shared" : "plan_shared", message: text(req, "有一项你可以查看的共同事项。", "A shared item is ready for you.", "Hay un asunto compartido para ti."), targetUrl: `/?view=${intentType === "decision" ? "decide" : "plans"}&${intentType === "decision" ? "issue" : "milestone"}=${object.id}` }));
+      for (const member of context.members.filter((member) => member.userId !== userId)) await tx.createRelationshipRecord("notifications", createRelationshipRecord({ relationshipId: context.relationship.id, userId, ownerUserId: member.userId, visibility: "private", aiAccessScope: "none", type: intentType === "decision" ? "decision_shared" : "plan_shared", message: localized(await memberLanguage(tx, member.userId), "有一项你可以查看的共同事项。", "A shared item is ready for you.", "Hay un asunto compartido para ti."), targetUrl: `/?view=${intentType === "decision" ? "decide" : "plans"}&${intentType === "decision" ? "issue" : "milestone"}=${object.id}` }));
       return { thread: updated, [intentType === "decision" ? "issue" : "milestone"]: object };
     });
     const object = result.issue || result.milestone;

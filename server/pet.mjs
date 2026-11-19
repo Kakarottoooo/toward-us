@@ -1,4 +1,4 @@
-import { appendTogetherMessage } from "./together-domain.mjs";
+import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
 import { MOMENTS } from "./space-domain.mjs";
 import { markShowedUp } from "./streak.mjs";
 
@@ -81,7 +81,9 @@ export async function syncPet(tx, { relationshipId, userId, zone, language = "zh
   let current = conversation;
   if (JSON.stringify(pet) !== JSON.stringify(conversation.pet || null)) current = await tx.updateRelationshipRecordForUser("togetherConversations", id, userId, (draft) => { draft.pet = pet; });
   if (leveled) {
-    const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: say(language, `🎉 你们的小家伙长到 Lv.${leveled} 了！谢谢你们一直陪着它。`, `🎉 Your little one just reached Lv.${leveled}! Thanks for looking after it together.`, `🎉 ¡Su pequeño llegó al nivel ${leveled}! Gracias por cuidarlo juntos.`), handle: `pet-level:${leveled}` });
+    // Both read it, so it carries every language (each member sees their own).
+    const i18n = togetherI18n((item) => say(item, `🎉 你们的小家伙长到 Lv.${leveled} 了！谢谢你们一直陪着它。`, `🎉 Your little one just reached Lv.${leveled}! Thanks for looking after it together.`, `🎉 ¡Su pequeño llegó al nivel ${leveled}! Gracias por cuidarlo juntos.`));
+    const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: i18n[language] || i18n.zh, i18n, handle: `pet-level:${leveled}` });
     current = posted.conversation;
   }
   return { conversation: current, view: petView(pet, current, userId, today), leveled };

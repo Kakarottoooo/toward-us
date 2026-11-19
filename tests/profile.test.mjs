@@ -6,7 +6,7 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createRelationshipRecord } from "../server/relationship-domain.mjs";
 import { buildTogetherContext } from "../server/together-domain.mjs";
-import { profileContext, scanPrivateProfile, scanTogetherProfile } from "../server/profile.mjs";
+import { pendingPartner, profileContext, scanBroughtChat, scanCall, scanPrivateProfile, scanTogetherProfile } from "../server/profile.mjs";
 
 // 喜好档案 (11-06): kept automatically from conversations, visible afterwards, each person's notes their own.
 let server, base, directory, store, counter = 0;
@@ -39,13 +39,98 @@ async function pair() {
   const context = await store.getRelationshipContext(a.user.id);
   return { a, b, relationshipId: context.relationship.id };
 }
-const fakeModel = (answer) => { const seen = []; return { seen, structured: async ({ name, input }) => { assert.equal(name, "couple_profile"); const parsed = JSON.parse(input); seen.push(parsed); return { facts: answer(parsed) }; } }; };
+const fakeModel = (answer) => { const seen = []; return { seen, structured: async ({ name, input, instructions }) => { assert.equal(name, "couple_profile"); const parsed = JSON.parse(input); seen.push(parsed); return { facts: answer(parsed, instructions) }; } }; };
 const fact = (patch) => ({ subject: "A", category: "food", replaces: "", ...patch });
 async function privateChat(userId, lines) {
   const session = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "private", intentType: "assistant", language: "zh", timezone: "UTC", messages: lines.map(([id, role, text]) => ({ id, role, text, createdAt: new Date().toISOString() })) });
   await store.createRelationshipRecord("privateAgentThreads", session);
   return session;
 }
+
+test("private interview captions preserve the full accepted turn and ground notes only in the owner's words", async () => {
+  const { a, b, relationshipId } = await pair();
+  const session = await privateChat(a.user.id, []);
+  const tail = "我的生日是六月十七号，我最想去的是格陵兰，不是冰岛";
+  const text = "我喜欢和 Mia 一起看老电影。" + "让我想一想。".repeat(230) + tail;
+  assert.ok(text.length > 1200 && text.length <= 2000, "a valid caption with facts after the former cutoff");
+  const rows = [{ role: "agent", text: "你们都想去冰岛，也都爱露营？" }, { role: "user", text }];
+  const model = fakeModel((input, instructions) => {
+    assert.equal(input.messages[1].text, text, "the scanner must read the full caption accepted by the call router");
+    assert.deepEqual(input.messages.map((line) => [line.from, line.isNew]), [["Pinky", false], ["A", true]]);
+    assert.match(instructions, /including later corrections and negations/);
+    assert.match(instructions, /"I like doing X with B" describes A's preference, subject A/);
+    assert.match(instructions, /Use subject both only when A explicitly describes a mutual/);
+    return [
+      fact({ messageId: "caption:1", quote: "我的生日是六月十七号", category: "people", fact: "生日是六月十七号" }),
+      fact({ messageId: "caption:1", quote: "我最想去的是格陵兰，不是冰岛", category: "wishes", fact: "想去格陵兰，不是冰岛" }),
+      fact({ messageId: "caption:1", quote: "我喜欢和 Mia 一起看老电影", category: "likes", fact: "喜欢和 Mia 一起看老电影" }),
+      fact({ messageId: "caption:0", quote: "都爱露营", subject: "both", category: "likes", fact: "爱露营" }),
+      fact({ messageId: "caption:1", quote: "喜欢奶茶", fact: "喜欢奶茶" }),
+    ];
+  });
+  const kept = await scanCall({ store, mediator: model, userId: a.user.id, sessionId: session.id, noteId: "caption", rows, interview: true });
+  assert.deepEqual(kept.map((item) => item.text), ["生日是六月十七号", "想去格陵兰，不是冰岛", "喜欢和 Mia 一起看老电影"]);
+  assert.ok(kept.every((item) => item.visibility === "private" && item.ownerUserId === a.user.id && item.subjectUserId === a.user.id && item.aiAccessScope === "private"));
+  assert.equal((await call(`/assistant/sessions/${session.id}`, a)).session.messages.at(-1).kind, "noted");
+  await call(`/assistant/sessions/${session.id}`, b, undefined, 404);
+  assert.equal((await call("/profile", b)).facts.length, 0);
+  assert.deepEqual((await profileContext(store, b.user.id)).me, []);
+  const shared = buildTogetherContext(await store.relationshipSnapshotForUser(b.user.id), relationshipId, { userId: b.user.id });
+  assert.ok(!/格陵兰|六月十七|老电影/.test(JSON.stringify(shared)));
+});
+
+test("before any partner joins, Pinky still learns TA privately from chats and brought screenshots, and keeps it after pairing", async () => {
+  // Reply coach (founder 11-08): Pinky works alone and gets to know her as it is used; nothing waits for an invitation.
+  const register = async (name) => {
+    const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, email: `profile-${++counter}@example.com`, password: "correct horse battery" }) });
+    assert.equal(response.status, 201); return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
+  };
+  const solo = await register("Zhou");
+  const session = await privateChat(solo.user.id, [["s1", "user", "她最讨厌我迟到，我自己不吃辣"]]);
+  const kept = await scanPrivateProfile({ store, mediator: fakeModel(() => [
+    fact({ messageId: "s1", quote: "她最讨厌我迟到", subject: "B", category: "dislikes", fact: "讨厌迟到" }),
+    fact({ messageId: "s1", quote: "我自己不吃辣", subject: "A", fact: "不吃辣" }),
+  ]), userId: solo.user.id, sessionId: session.id });
+  assert.deepEqual(kept.map((item) => [item.text, item.subjectUserId]), [["讨厌迟到", pendingPartner(solo.user.id)], ["不吃辣", solo.user.id]]);
+  assert.ok(kept.every((item) => item.visibility === "private" && item.ownerUserId === solo.user.id && item.relationshipId === null));
+  assert.match((await store.getRelationshipRecordForUser("privateAgentThreads", session.id, solo.user.id)).messages.at(-1).text, /^已记进「关于我们」：TA 讨厌迟到；你不吃辣$/);
+
+  // A brought chat: TA's own words are the evidence about TA; invented quotes are dropped.
+  const brought = await scanBroughtChat({ store, mediator: fakeModel((input, instructions) => {
+    assert.match(instructions, /brought to Pinky privately/);
+    assert.deepEqual(input.messages.map((item) => item.from), ["B", "A", "B"], "both of them count; other people do not");
+    return [fact({ messageId: "imp:2", quote: "我一直想养一只柯基", subject: "B", category: "wishes", fact: "想养一只柯基" }), fact({ messageId: "imp:0", quote: "she loves cats", subject: "B", fact: "loves cats" })];
+  }), userId: solo.user.id, sessionId: session.id, sourceId: "imp", messages: [
+    { role: "partner", text: "你又迟到了" }, { role: "me", text: "对不起，路上堵车" }, { role: "partner", text: "算了。周末陪我去看狗吧，我一直想养一只柯基" }, { role: "other", text: "群消息" },
+  ] });
+  assert.deepEqual(brought.map((item) => [item.text, item.subjectUserId]), [["想养一只柯基", pendingPartner(solo.user.id)]]);
+  assert.deepEqual((await profileContext(store, solo.user.id)).partner.map((item) => item.fact).sort(), ["想养一只柯基", "讨厌迟到"]);
+  assert.deepEqual((await call("/profile", solo)).facts.filter((item) => item.subject === "partner").map((item) => item.text).sort(), ["想养一只柯基", "讨厌迟到"]);
+
+  // After pairing it still counts as being about TA, and TA never sees it.
+  const partner = await register("Xia");
+  const invitation = await call("/partner/invitations", solo, {}, 201);
+  await call("/partner/accept", partner, { code: invitation.pairing.invitation.code });
+  assert.deepEqual((await profileContext(store, solo.user.id)).partner.map((item) => item.fact).sort(), ["想养一只柯基", "讨厌迟到"]);
+  const leaks = (value) => /迟到|柯基|不吃辣/.test(JSON.stringify(value));
+  assert.ok(!leaks(await call("/profile", partner)) && !leaks(await profileContext(store, partner.user.id)));
+});
+
+test("the question sent with screenshots is left to the screenshot scan, never read again as being about the partner", async () => {
+  // Watch 11-09: "Mia 又找我借两千" came with a screenshot of a chat with Mia（可删）, someone the member is getting to know.
+  // The screenshot scan kept it on her card; the private scan read the same line again and kept "他又找我借两千" about the
+  // partner, Mia（测试）, in About us.
+  const { a } = await pair();
+  const session = await privateChat(a.user.id, [["q1", "user", "Mia 又找我借两千"], ["r1", "assistant", "先别借。"], ["m1", "user", "我不吃香菜"]]);
+  await store.updateRelationshipRecordForUser("privateAgentThreads", session.id, a.user.id, (draft) => { draft.messages[0].screenshots = true; });
+  const model = fakeModel(() => [
+    fact({ messageId: "q1", quote: "Mia 又找我借两千", subject: "B", category: "history", fact: "2026-11-09 他又找我借两千" }),
+    fact({ messageId: "m1", quote: "我不吃香菜", fact: "不吃香菜" }),
+  ]);
+  const kept = await scanPrivateProfile({ store, mediator: model, userId: a.user.id, sessionId: session.id });
+  assert.deepEqual(kept.map((item) => [item.text, item.subjectUserId]), [["不吃香菜", a.user.id]]);
+  assert.deepEqual(model.seen[0].messages.filter((item) => item.isNew).map((item) => item.id), ["m1"]);
+});
 
 test("facts from a private chat are kept for their owner alone, noted in the chat, corrected and never duplicated", async () => {
   const { a, b, relationshipId } = await pair();
@@ -84,7 +169,9 @@ test("facts from a private chat are kept for their owner alone, noted in the cha
   // Later lines: a change replaces the old fact, a repeat adds nothing.
   await store.updateRelationshipRecordForUser("privateAgentThreads", session.id, a.user.id, (draft) => { draft.messages.push({ id: "m3", role: "user", text: "其实我现在开始吃香菜了。Mia 真的很怕别人催", createdAt: new Date().toISOString() }); });
   const cilantro = kept[0];
-  const again = fakeModel((input) => {
+  const again = fakeModel((input, instructions) => {
+    assert.match(instructions, /replacement arrangement contains only attributes confirmed by its new source quote/);
+    assert.match(instructions, /Omitted attributes are unknown/);
     assert.ok(input.known.some((item) => item.id === cilantro.id && item.subject === "A" && item.fact === "不吃香菜"), "the model sees what is already known");
     return [fact({ messageId: "m3", quote: "其实我现在开始吃香菜了", fact: "现在吃香菜了", replaces: cilantro.id }), fact({ messageId: "m3", quote: "Mia 真的很怕别人催", subject: "B", category: "dislikes", fact: "最怕别人催" })];
   });
@@ -140,4 +227,28 @@ test("what they say together in Us belongs to both, about the right person", asy
   const peanut = (await call("/profile", b)).facts.find((item) => item.text === "对花生过敏");
   await call(`/profile/${peanut.id}`, b, { expectedVersion: peanut.version }, 204, "DELETE");
   assert.ok(!(await call("/profile", a)).facts.some((item) => item.text === "对花生过敏"));
+});
+
+test("what happened between them is kept with its date, updated when it goes on, and given back newest first apart from preferences", async () => {
+  // Founder 11-08: a month later Pinky must still remember past talks, fights and experiences, kept up to date.
+  const { a } = await pair();
+  const session = await privateChat(a.user.id, [["h1", "user", "昨天我们因为我忘了结婚纪念日吵架了"], ["h2", "user", "她不吃香菜"]]);
+  let model = fakeModel((input, instructions) => {
+    assert.match(instructions, /history \(what happened between them/);
+    assert.ok(input.messages.every((line) => /^\d{4}-\d{2}-\d{2}$/.test(line.date)), "each new line carries its date");
+    return [fact({ messageId: "h1", quote: "因为我忘了结婚纪念日吵架了", subject: "both", category: "history", fact: "2026-10-07 因为忘了结婚纪念日吵架" }), fact({ messageId: "h2", quote: "她不吃香菜", subject: "B", fact: "不吃香菜" })];
+  });
+  await scanPrivateProfile({ store, mediator: model, userId: a.user.id, sessionId: session.id });
+  let known = await profileContext(store, a.user.id);
+  assert.deepEqual(known.history.map((item) => item.fact), ["2026-10-07 因为忘了结婚纪念日吵架"]);
+  assert.ok(!known.us.some((item) => item.category === "history") && known.partner.some((item) => item.fact === "不吃香菜"), "history is its own list");
+  const fight = known.history[0];
+  await store.updateRelationshipRecordForUser("privateAgentThreads", session.id, a.user.id, (draft) => { draft.messages.push({ id: "h3", role: "user", text: "后来我订了她喜欢的餐厅补过，我们和好了", createdAt: new Date().toISOString() }, { id: "h4", role: "user", text: "上周我们去了一趟大理，很开心", createdAt: new Date().toISOString() }); });
+  model = fakeModel(() => [
+    fact({ messageId: "h3", quote: "我们和好了", subject: "both", category: "history", fact: "2026-10-07 因为忘了结婚纪念日吵架，后来补过后和好", replaces: fight.id }),
+    fact({ messageId: "h4", quote: "上周我们去了一趟大理", subject: "both", category: "history", fact: "2026-11-01 一起去大理，很开心" }),
+  ]);
+  await scanPrivateProfile({ store, mediator: model, userId: a.user.id, sessionId: session.id });
+  known = await profileContext(store, a.user.id);
+  assert.deepEqual(known.history.map((item) => item.fact), ["2026-11-01 一起去大理，很开心", "2026-10-07 因为忘了结婚纪念日吵架，后来补过后和好"]);
 });

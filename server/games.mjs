@@ -1,5 +1,8 @@
-import { appendTogetherMessage } from "./together-domain.mjs";
+import { createHash } from "node:crypto";
+import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
 import { clean, decisionError } from "./agreement-actions.mjs";
+import { hideUnrevealedAnswers } from "./relationship-domain.mjs";
+import { localizedPlayLibrary } from "./play-cards.mjs";
 
 // 小游戏 (founder 11-06): games are cards in Us, never a separate page. Pinky starts one when they ask ("Pinky，来玩个游戏")
 // or from "再来一局"; each partner answers on the card, the answers stay hidden until both have answered (the same rule as
@@ -46,7 +49,7 @@ export async function startGame({ store, mediator, relationshipId, userId, type 
     if (!activePair(context, relationshipId)) return null;
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const { conversation, previous, profile } = material(snapshot, relationshipId);
-    const games = (conversation?.messages || []).filter((message) => message.kind === GAME);
+    const games = (conversation?.messages || []).filter((message) => message.kind === GAME && !message.game?.deckId);
     // Unasked, the kinds take turns.
     let kind = GAME_TYPES.includes(type) ? type : GAME_TYPES[(GAME_TYPES.indexOf(games.at(-1)?.game?.type) + 1) % GAME_TYPES.length];
 
@@ -81,29 +84,157 @@ export async function startGame({ store, mediator, relationshipId, userId, type 
   finally { inFlight.delete(key); }
 }
 
-/** One partner's answer: an option index for 二选一 and 默契问答, words for 真心话. Final once both have answered. */
+const conversationId = (relationshipId) => `together:${relationshipId}`;
+const archiveId = (conversation, seq) => `${conversation.id}:archive:${seq}`;
+const hasBothAnswers = (round) => Object.keys(round.answers || {}).length >= 2;
+
+async function locateGame(store, conversation, userId, messageId, pointer) {
+  const archived = Boolean(pointer?.archiveSeq);
+  const collection = archived ? "togetherArchives" : "togetherConversations";
+  const record = archived
+    ? await store.getRelationshipRecordForUser(collection, archiveId(conversation, pointer.archiveSeq), userId)
+    : conversation;
+  const round = record?.messages.find((item) => item.id === messageId && item.kind === GAME && item.game);
+  return round ? { collection, record, round } : null;
+}
+
+async function replaceGame(tx, conversation, userId, location, replacement, deckId = null) {
+  const { collection, record, round } = location;
+  const updated = await tx.updateRelationshipRecordForUser(collection, record.id, userId, (draft) => {
+    draft.messages = draft.messages.map((item) => item.id === round.id ? replacement : item);
+    if (deckId) draft.playRoundIndex = { ...draft.playRoundIndex, [deckId]: { messageId: round.id } };
+    draft.version += 1;
+  });
+  if (!updated) throw decisionError(409, "relationship_changed");
+  if (collection === "togetherConversations") return updated;
+  const current = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.version += 1; });
+  if (!current) throw decisionError(409, "relationship_changed");
+  return current;
+}
+
+function gameAnswer(game, choice, text) {
+  const answer = game.type === "truth"
+    ? (typeof text === "string" ? { text: clean(text, 400) } : null)
+    : Number.isInteger(choice) && choice >= 0 && choice < game.options.length ? { choice, text: game.options[choice] } : null;
+  if (!answer?.text) throw decisionError(400, "message_required");
+  return answer;
+}
+
+async function writeGameAnswer(tx, conversation, userId, location, answer, newDeckId = null) {
+  const { round } = location;
+  const existing = round.answers?.[userId];
+  if (round.game.deckId && existing?.choice === answer.choice && existing?.text === answer.text) return { conversation, changed: false };
+  if (hasBothAnswers(round)) throw decisionError(409, "already_revealed");
+  const answers = { ...(round.answers || {}), [userId]: { ...answer, at: new Date().toISOString() } };
+  let game = round.game;
+  if (Object.keys(answers).length >= 2 && game.type !== "truth") {
+    const [first, second] = Object.values(answers);
+    const match = first.choice === second.choice;
+    const earlier = conversation.messages.filter((item) => item.kind === GAME && item.id !== round.id &&
+      item.game?.result && Boolean(item.game.deckId) === Boolean(game.deckId));
+    game = { ...game, result: { match, matched: earlier.filter((item) => item.game.result.match).length + Number(match), played: earlier.length + 1 } };
+  }
+  const updated = await replaceGame(tx, conversation, userId, location, { ...round, answers, game }, newDeckId);
+  return { conversation: updated, changed: true };
+}
+
+/** Chat and the play board use the same answer store and answer-and-reveal rules. */
 export async function answerGame({ store, relationshipId, userId, messageId, choice, text, emit = () => {} }) {
   const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
-    const context = await tx.getRelationshipContext(userId);
-    if (!activePair(context, relationshipId)) throw decisionError(409, "relationship_changed");
-    const conversation = await tx.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
-    const round = conversation?.messages.find((item) => item.id === messageId && item.kind === GAME);
-    if (!round) throw decisionError(404, "not_found");
-    if (Object.keys(round.answers || {}).length >= 2) throw decisionError(409, "already_revealed");
-    const answer = round.game.type === "truth" ? { text: clean(text, 400) } : Number.isInteger(choice) && choice >= 0 && choice < round.game.options.length ? { choice, text: round.game.options[choice] } : null;
-    if (!answer?.text) throw decisionError(400, "message_required");
-    const answers = { ...(round.answers || {}), [userId]: { ...answer, at: new Date().toISOString() } };
-    let game = round.game;
-    if (Object.keys(answers).length >= 2 && game.type !== "truth") {
-      // Revealed: did they match? 默契值 counts every revealed 二选一 and 默契问答 so far.
-      const [first, second] = Object.values(answers);
-      const match = first.choice === second.choice;
-      const earlier = conversation.messages.filter((item) => item.kind === GAME && item.id !== messageId && item.game?.result);
-      game = { ...game, result: { match, matched: earlier.filter((item) => item.game.result.match).length + Number(match), played: earlier.length + 1 } };
-    }
-    const updated = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === messageId ? { ...item, answers, game } : item); draft.version += 1; });
-    return updated;
+    if (!activePair(await tx.getRelationshipContext(userId), relationshipId)) throw decisionError(409, "relationship_changed");
+    const conversation = await tx.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId);
+    const pointer = Object.values(conversation?.playRoundIndex || {}).find((entry) => entry.messageId === messageId);
+    const location = await locateGame(tx, conversation, userId, messageId, pointer);
+    if (!location) throw decisionError(404, "not_found");
+    if (!location.round.game.deckId && hasBothAnswers(location.round)) throw decisionError(409, "already_revealed");
+    return writeGameAnswer(tx, conversation, userId, location, gameAnswer(location.round.game, choice, text));
   });
-  emit(result);
-  return result;
+  if (result.changed) emit(result.conversation);
+  return result.conversation;
+}
+
+function deckCard(cardId, language) {
+  const card = localizedPlayLibrary(language).find((item) => item.id === cardId);
+  if (!card) throw decisionError(404, "not_found");
+  return card;
+}
+
+/** Read only the known round locations. The chat archive remains the source of truth. */
+export async function playTogetherView(store, { relationshipId, userId, language, readOnly = false, conversation }) {
+  const cards = localizedPlayLibrary(language);
+  if (!relationshipId) return { cards, rounds: [], version: 0, readOnly: true };
+  const current = conversation ?? await store.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId);
+  const index = current?.playRoundIndex || {};
+  const archiveSeqs = [...new Set(Object.values(index).map((pointer) => pointer.archiveSeq).filter(Boolean))];
+  const archives = new Map(await Promise.all(archiveSeqs.map(async (seq) => [
+    seq, await store.getRelationshipRecordForUser("togetherArchives", archiveId(current, seq), userId),
+  ])));
+  const messages = cards.flatMap((card) => {
+    const pointer = index[card.id];
+    if (!pointer) return [];
+    const record = pointer.archiveSeq ? archives.get(pointer.archiveSeq) : current;
+    const matching = record?.messages.find((item) => item.id === pointer.messageId && item.kind === GAME && item.game?.deckId === card.id);
+    return matching ? [matching] : [];
+  });
+  const visible = hideUnrevealedAnswers({ messages: structuredClone(messages) }, userId).messages;
+  const rounds = visible.map((message) => ({
+    id: message.id, cardId: message.game.deckId, aboutUserId: message.game.aboutUserId,
+    answers: message.answers || {}, revealed: hasBothAnswers(message), createdAt: message.createdAt,
+    replies: hasBothAnswers(message) ? message.game.replies || [] : [],
+  }));
+  return { cards, rounds, version: current?.version || 0, readOnly };
+}
+
+export async function answerPlayCard({ store, relationshipId, userId, cardId, aboutUserId, choice, text, language }) {
+  const card = deckCard(cardId, language);
+  return store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    if (!activePair(await tx.getRelationshipContext(userId), relationshipId)) throw decisionError(409, "relationship_changed");
+    let conversation = await tx.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId);
+    const pointer = conversation?.playRoundIndex?.[cardId];
+    let location = pointer ? await locateGame(tx, conversation, userId, pointer.messageId, pointer) : null;
+    if (pointer && !location) throw decisionError(404, "not_found");
+    const subject = location?.round.game.aboutUserId ?? (card.type === "guess" ? userId : null);
+    if (subject && (aboutUserId ?? userId) !== subject) throw decisionError(409, "game_subject_changed");
+    const game = location?.round.game || { deckId: cardId, type: card.type, options: card.options, aboutUserId: subject };
+    const answer = gameAnswer(game, choice, text);
+    if (!location) {
+      const i18n = togetherI18n((locale) => deckCard(cardId, locale).prompt);
+      const translations = Object.fromEntries(Object.keys(i18n).map((locale) => {
+        const entry = deckCard(cardId, locale);
+        return [locale, { text: entry.prompt, options: entry.options }];
+      }));
+      const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: GAME,
+        text: card.prompt, i18n, handle: `play:${relationshipId}:${cardId}` });
+      conversation = posted.conversation;
+      location = { collection: "togetherConversations", record: conversation, round: { ...posted.message, game, translations, answers: {} } };
+    }
+    const saved = await writeGameAnswer(tx, conversation, userId, location, answer, pointer ? null : cardId);
+    return { ...saved, started: !pointer,
+      view: await playTogetherView(tx, { relationshipId, userId, language, conversation: saved.conversation }) };
+  });
+}
+
+export async function replyToPlayCard({ store, relationshipId, userId, cardId, text, clientId, language }) {
+  deckCard(cardId, language);
+  const message = typeof text === "string" ? clean(text, 600) : "";
+  if (!message || typeof clientId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(clientId)) throw decisionError(400, "message_required");
+  return store.transaction(`relationship:${relationshipId}`, async (tx) => {
+    if (!activePair(await tx.getRelationshipContext(userId), relationshipId)) throw decisionError(409, "relationship_changed");
+    let conversation = await tx.getRelationshipRecordForUser("togetherConversations", conversationId(relationshipId), userId);
+    const pointer = conversation?.playRoundIndex?.[cardId];
+    const location = pointer ? await locateGame(tx, conversation, userId, pointer.messageId, pointer) : null;
+    if (!location || !hasBothAnswers(location.round)) throw decisionError(409, "play_waiting");
+    const { round } = location;
+    const id = createHash("sha256").update(JSON.stringify([round.id, userId, clientId])).digest("hex");
+    const replies = round.game.replies || [];
+    const duplicate = replies.find((reply) => reply.id === id);
+    if (duplicate && duplicate.text !== message) throw decisionError(409, "play_reply_conflict");
+    if (!duplicate) {
+      if (replies.length >= 100) throw decisionError(409, "play_reply_limit");
+      const reply = { id, userId, text: message, createdAt: new Date().toISOString() };
+      conversation = await replaceGame(tx, conversation, userId, location, { ...round, game: { ...round.game, replies: [...replies, reply] } });
+    }
+    return { conversation, changed: !duplicate,
+      view: await playTogetherView(tx, { relationshipId, userId, language, conversation }) };
+  });
 }

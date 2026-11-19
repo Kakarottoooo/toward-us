@@ -82,6 +82,20 @@ test("the planner contract: a handoff carries its details, and only a handoff do
   assert.equal(validateAssistantTurn(normalizeAssistantTurn({ reply: "", actions: [action({ kind: "link", operation: "create", fields: older })] })), true, "older planners without the field still pass");
 });
 
+test("empty action fields repeated at the top of a planner answer do not refuse a good reply", () => {
+  const stray = { reply: "记下了：阿凯压力大时不喜欢被追问。", actions: [], query: null, queryPeriod: "all", occurrence: null };
+  assert.deepEqual(normalizeAssistantTurn(stray), { reply: stray.reply, actions: [] });
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn(stray)), true);
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn({ ...stray, query: "阿凯" })), false, "an extra with content still fails");
+  // Use-case round 5: a screenshot import came back without fields.frequency and was refused with a 502.
+  const { frequency, ...withoutFrequency } = fields();
+  assert.equal(validateAssistantTurn(normalizeAssistantTurn({ reply: "", actions: [action({ kind: "chat_import", operation: "create", fields: withoutFrequency })] })), true);
+  // Round 6: photoId written beside the fields of a moment.
+  const beside = normalizeAssistantTurn({ reply: "", actions: [{ ...action({ kind: "space_item", operation: "create", fields: fields({ title: "海边" }) }), photoId: "photo-1" }] });
+  assert.equal(validateAssistantTurn(beside), true);
+  assert.equal(beside.actions[0].fields.photoId, "photo-1");
+});
+
 async function setup(t, plan) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "handoffs-"));

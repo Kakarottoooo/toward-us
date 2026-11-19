@@ -1,0 +1,25 @@
+{
+  "source": "work/parity-eval/task27-sample1-2026-11-11T09-43-58-566Z/all-output.jsonl",
+  "lines": [
+    8,
+    9
+  ],
+  "check": {
+    "case": "interaction-image-invitation",
+    "phase": "probe",
+    "name": "reply_source_check",
+    "model": "haiku",
+    "turns": 1,
+    "text": "{\"claims\":[{\"claim\":\"两个人一共 240 元\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"每人 120 元\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"含材料\",\"source\":\"Materials included\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"16:00 结束\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"目前没有预订\",\"source\":\"No booking has been made\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"周六\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"下午 14:00-16:00\",\"source\":\"Saturday 14:00-16:00\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"Clay Together 的陶艺活动\",\"source\":\"Clay Together\",\"supported\":false,\"issue\":\"原文只有活动名 Clay Together，没有说明是陶艺。改为：Clay Together 活动\"},{\"claim\":\"在 Studio 6\",\"source\":\"Studio 6\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"每人 120\",\"source\":\"120 CNY per person\",\"supported\":true,\"issue\":\"\"},{\"claim\":\"材料包含\",\"source\":\"Materials included\",\"supported\":true,\"issue\":\"\"}],\"deliveryIssues\":[\"sendableDraft 没有说明这是虚构活动（原文标注 FICTIONAL EVENT），却把它写成真实活动邀请朋友。若要保留草稿，应在句首注明为虚构活动示例，例如：（虚构活动示例）周六下午 14:00-16:00 有个 Clay Together 活动，在 Studio 6，每人 120，材料包含，你想一起去吗？\"]}",
+    "prompt": "{\"request\":\"这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。\",\"reply\":\"两个人一共 240 元（每人 120 元，含材料），16:00 结束。目前没有预订，下面这句只是邀约。\",\"sendableDraft\":\"周六下午 14:00-16:00 有个 Clay Together 的陶艺活动，在 Studio 6，每人 120，材料包含，你想一起去吗？\",\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"[{\\\"at\\\":null,\\\"sender\\\":\\\"TA\\\",\\\"fromMe\\\":false,\\\"text\\\":\\\"FICTIONAL EVENT\\\\nClay Together\\\\nSaturday 14:00-16:00\\\\n120 CNY per person\\\\nStudio 6\\\\nMaterials included\\\\nNo booking has been made\\\",\\\"media\\\":false,\\\"role\\\":\\\"partner\\\"}]\"}],\"checkScope\":true}"
+  },
+  "rewrite": {
+    "case": "interaction-image-invitation",
+    "phase": "probe",
+    "name": "reply_format_repair",
+    "model": "sonnet",
+    "turns": 1,
+    "text": "{\"reply\":\"两个人一共 240 元（每人 120 元，含材料），16:00 结束。这是虚构活动，目前没有预订，下面这句只是邀约。\",\"sendableDraft\":\"（虚构活动示例）周六下午 14:00-16:00 有个 Clay Together 活动，在 Studio 6，每人 120，材料包含，你想一起去吗？\"}",
+    "prompt": "{\"context\":{\"names\":{\"me\":\"小安\",\"partner\":\"TA\"}},\"sources\":[{\"kind\":\"image_transcript\",\"text\":\"[{\\\"at\\\":null,\\\"sender\\\":\\\"TA\\\",\\\"fromMe\\\":false,\\\"text\\\":\\\"FICTIONAL EVENT\\\\nClay Together\\\\nSaturday 14:00-16:00\\\\n120 CNY per person\\\\nStudio 6\\\\nMaterials included\\\\nNo booking has been made\\\",\\\"media\\\":false,\\\"role\\\":\\\"partner\\\"}]\"}],\"request\":\"这是朋友发来的虚构活动海报。两个人去一共多少钱，几点结束？帮我写一句邀约，不要预订。\",\"reply\":\"两个人一共 240 元（每人 120 元，含材料），16:00 结束。目前没有预订，下面这句只是邀约。\",\"sendableDraft\":\"周六下午 14:00-16:00 有个 Clay Together 的陶艺活动，在 Studio 6，每人 120，材料包含，你想一起去吗？\",\"issues\":[\"Claim: Clay Together 的陶艺活动; source: Clay Together; correction: 原文只有活动名 Clay Together，没有说明是陶艺。改为：Clay Together 活动\",\"sendableDraft 没有说明这是虚构活动（原文标注 FICTIONAL EVENT），却把它写成真实活动邀请朋友。若要保留草稿，应在句首注明为虚构活动示例，例如：（虚构活动示例）周六下午 14:00-16:00 有个 Clay Together 活动，在 Studio 6，每人 120，材料包含，你想一起去吗？\"]}"
+  }
+}

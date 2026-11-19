@@ -1,18 +1,34 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { rm } from "node:fs/promises";
 import express from "express";
+import { AI_NOTICE_VERSION, AI_PROVIDERS, acceptedAt } from "./ai-permission.mjs";
+export { aiConsentAt } from "./ai-permission.mjs";
 import { photoFile } from "./photo-store.mjs";
 import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
-import { createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
+import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { createEmailSender } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
-const local = (req, zh, en, es) => (req.body?.language || req.query.language || "zh") === "zh" ? zh : (req.body?.language || req.query.language) === "es" ? es : en;
+// The request's language, else the signed-in member's saved interface language, else zh.
+const local = (req, zh, en, es) => { const language = req.body?.language || req.query.language || req.auth?.user?.language || "zh"; return language === "zh" ? zh : language === "es" ? es : en; };
 const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "aiUsage"]);
 
-export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, email = createEmailSender() }) {
+// Consent to third-party AI (App Review 5.1.2(i), founder 11-12 App Store prep): before anything this person writes, says
+// or picks is sent to an outside AI provider, they agree to it explicitly; they can withdraw it in Settings. The time they
+// agreed lives on their own private account settings, and each change is a consent event in their history.
+export async function setAiConsent(tx, userId, agree, at = new Date().toISOString()) {
+  const id = `account:${userId}`;
+  const apply = (record) => { if (agree) { record.aiConsentAt = at; record.aiNoticeVersion = AI_NOTICE_VERSION; record.aiConsentProviders = AI_PROVIDERS; } else { delete record.aiConsentAt; delete record.aiNoticeVersion; delete record.aiConsentProviders; } };
+  const current = await tx.getRelationshipRecordForUser("accountSettings", id, userId);
+  if (current) await tx.updateRelationshipRecordForUser("accountSettings", id, userId, (record) => { apply(record); record.version += 1; });
+  else { const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", privateRetentionDays: null }); record.id = id; apply(record); await tx.createRelationshipRecord("accountSettings", record); }
+  await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", aiNoticeVersion: AI_NOTICE_VERSION, eventType: agree ? "privacy.ai_consent_given" : "privacy.ai_consent_withdrawn", status: "recorded" }));
+  return agree ? at : null;
+}
+
+export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onAiWithdrawal = async () => {}, email = createEmailSender() }) {
   const router = express.Router(); const attempts = new Map();
   const limited = (key) => {
     const now = Date.now(); const recent = (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000);
@@ -116,10 +132,34 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   router.get("/privacy", async (req, res) => {
     const userId = req.auth.user.id; const current = await settings(userId); const snapshot = await store.getPrivacySnapshot(userId);
     const privateCount = Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection) && collection !== "consentEvents").reduce((count, [, records]) => count + records.filter((record) => record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)).length, 0);
-    res.json({ privateRetentionDays: current?.privateRetentionDays ?? null, recoveryEnabled: Boolean(current?.recoveryCodeHash), privateCount,
+    res.json({ privateRetentionDays: current?.privateRetentionDays ?? null, recoveryEnabled: Boolean(current?.recoveryCodeHash), privateCount, aiConsentAt: acceptedAt(current), aiProviders: AI_PROVIDERS,
       relationships: snapshot.relationships,
       sharedSummaries: snapshot.graph.summaries.filter((record) => record.ownerUserId === userId).map(({ id, relationshipId, issueId, text, version, status, aiAccessScope, withdrawnAt }) => ({ id, relationshipId, issueId, text, version, status, aiAccessScope, withdrawnAt })),
       consentHistory: snapshot.graph.consentEvents.filter((record) => record.ownerUserId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(({ eventType, createdAt, objectId, sourceVersion }) => ({ eventType, createdAt, objectId, sourceVersion })),
+    });
+  });
+  // 「Pinky 能看到什么」(founder 11-07, trust you can see): counts of everything the AI can draw on for this member, in one
+  // place, with nothing of its content. The partner's private material is never counted here: it is never theirs to see.
+  router.get("/privacy/ai-access", async (req, res) => {
+    const userId = req.auth.user.id;
+    const snapshot = await store.relationshipSnapshotForUser(userId);
+    const context = await store.getRelationshipContext(userId);
+    const relationshipId = context?.relationship?.status === "active" ? context.relationship.id : null;
+    const live = (collection) => (snapshot[collection] || []).filter((record) => !record.archivedAt && !record.withdrawnAt && canViewRecord(record, userId));
+    const mine = (collection) => live(collection).filter((record) => record.ownerUserId === userId);
+    const memories = live("memories"), own = memories.filter((record) => record.ownerUserId === userId && record.visibility === "private");
+    const us = relationshipId ? (snapshot.togetherConversations || []).find((record) => record.relationshipId === relationshipId) : null;
+    res.json({
+      paired: Boolean(relationshipId),
+      facts: { used: own.filter((record) => record.aiAccessScope !== "none").length, off: own.filter((record) => record.aiAccessScope === "none").length, together: memories.filter((record) => record.visibility !== "private").length },
+      privateChat: mine("privateAgentThreads").filter((record) => record.intentType === "assistant").reduce((count, record) => count + (record.messages || []).length, 0),
+      us: us ? (us.messages || []).length : 0,
+      imports: mine("chatImports").length,
+      photos: mine("photos").length,
+      checkins: mine("checkins").length,
+      reminders: mine("reminders").length,
+      privateItems: mine("spaceItems").filter((record) => record.visibility === "private").length,
+      sharedByYou: (snapshot.consentEvents || []).filter((record) => record.ownerUserId === userId).length,
     });
   });
   router.patch("/privacy", async (req, res) => {
@@ -140,6 +180,14 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       await audit(tx, req.auth.user.id, "account.recovery_code_rotated");
     });
     res.json({ recoveryCode: code.match(/.{1,8}/g).join("-"), shownOnce: true });
+  });
+  router.post("/privacy/ai-consent", async (req, res) => {
+    if (req.body?.agree === true && req.body.noticeVersion !== AI_NOTICE_VERSION) throw fail(409, local(req, "请阅读当前版本的授权说明。", "Read the current permission notice first.", "Lee primero el aviso de permiso vigente."));
+    if (typeof req.body?.agree !== "boolean") throw fail(400, local(req, "请选择同意或不同意。", "Choose agree or not.", "Elige si aceptas o no."));
+    const at = await store.transaction(`user:${req.auth.user.id}`, (tx) => setAiConsent(tx, req.auth.user.id, req.body.agree));
+    let activeCallMayNeedHangup = false;
+    if (!req.body.agree) try { await onAiWithdrawal(req.auth.user.id); } catch { activeCallMayNeedHangup = true; }
+    res.json({ aiConsentAt: at, aiProviders: AI_PROVIDERS, activeCallMayNeedHangup });
   });
   router.post("/privacy/export", async (req, res) => {
     const snapshot = await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.getPrivacySnapshot(req.auth.user.id); });
@@ -171,6 +219,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.deleteAccount(req.auth.user.id); });
     await removeFiles(files);
     closeConnections(context?.members.map((member) => member.userId) || [req.auth.user.id]);
+    await onAiWithdrawal(req.auth.user.id).catch(() => {});
     clearSessionCookie(res, production); res.status(204).end();
   });
   router.post("/privacy/summaries/:id/withdraw", async (req, res) => {
@@ -197,7 +246,7 @@ export function privacyExport(snapshot, user) {
     const ownIds = new Set(room.participants.filter((person) => person.userId === user.id).map((person) => person.id));
     return { code: room.code, relationshipId: room.relationshipId, status: room.status, messages: room.messages.filter((message) => ownIds.has(message.participantId)), sharedAnalysis: room.status === "archived" ? room.analysis?.shared || null : null, createdAt: room.createdAt, archivedAt: room.archivedAt || null };
   });
-  return { exportedAt: new Date().toISOString(), user: { id: user.id, name: user.name, email: user.email, phone: snapshot.phone || null }, relationships: snapshot.relationships, graph, rooms };
+  return { exportedAt: new Date().toISOString(), user: { id: user.id, name: user.name, email: user.email, phone: snapshot.phone || null }, relationships: snapshot.relationships, graph, rooms, appActivityDates: snapshot.appActivityDates || [] };
 }
 
 export async function runPrivateRetention(store, now = new Date()) {

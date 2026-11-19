@@ -68,7 +68,7 @@ test("news in Us reaches App phones and installed web apps alike, once per membe
   const message = (fields) => ({ id: randomUUID(), createdAt: new Date(Date.now() + 1000).toISOString(), refs: [], ...fields });
   conversation.messages.push(message({ role: "member", actorUserId: a, kind: "text", text: "hi" }));
   await service.notifyTogether(conversation);
-  assert.deepEqual(sent.sort(), [["B", "native", "/?channel=us"], ["B", "web", "/?channel=us"]], "the partner's phone and web app, not the author");
+  assert.deepEqual(sent.sort(), [["B", "native", "/?channel=us&from=push"], ["B", "web", "/?channel=us&from=push"]], "the partner's phone and web app, not the author");
   sent.length = 0;
   conversation.messages.push(message({ role: "member", actorUserId: a, kind: "text", text: "again" }));
   await service.notifyTogether(conversation);
@@ -77,7 +77,7 @@ test("news in Us reaches App phones and installed web apps alike, once per membe
   clock.now = new Date("2099-12-01T04:20:00Z"); clock.gone = new Set([subscription(2).endpoint]);
   conversation.messages.push(message({ role: "member", actorUserId: a, kind: "text", text: "later" }));
   await service.notifyTogether(conversation);
-  assert.deepEqual(sent, [["B", "native", "/?channel=us"]]);
+  assert.deepEqual(sent, [["B", "native", "/?channel=us&from=push"]]);
   assert.deepEqual((await service.getSettings(b)).devices, []);
   assert.equal(await service.reachable(b), true, "still reachable on the phone");
   // "Turn off all reminder notifications" stops browser pushes too.
@@ -95,7 +95,7 @@ test("a browser alone (no App, no FCM configured) gets together news, and only a
   const conversation = await conversationOf(store, relationshipId, a);
   conversation.messages.push({ id: randomUUID(), createdAt: new Date(Date.now() + 1000).toISOString(), role: "member", actorUserId: a, kind: "text", text: "hi", refs: [] });
   assert.equal((await service.notifyTogether(conversation)).sent, 1);
-  assert.deepEqual(sent, [["B", "web", "/?channel=us"]]);
+  assert.deepEqual(sent, [["B", "web", "/?channel=us&from=push"]]);
 });
 
 test("a shared date is announced at 09:00 in the couple's time zone and pushed to both, once (old 12:00 UTC stamps count)", async (t) => {
@@ -111,7 +111,7 @@ test("a shared date is announced at 09:00 in the couple's time zone and pushed t
   assert.deepEqual(sent, [], "08:59 in Shanghai: not yet");
   clock.now = new Date("2099-12-25T01:00:00Z");
   await service.runDue(); await settle();
-  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us"], ["B", "web", "/?channel=us"]], "09:00 in Shanghai: both partners");
+  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us&from=push"], ["B", "web", "/?channel=us&from=push"]], "09:00 in Shanghai: both partners");
   clock.now = new Date("2099-12-25T12:30:00Z"); sent.length = 0;
   await service.runDue(); await settle();
   assert.deepEqual(sent, [], "never twice, including at the old 12:00 UTC time");
@@ -138,7 +138,7 @@ test("a promise that comes due is pushed to both partners once, and not to a par
   assert.deepEqual(sent, []);
   clock.now = new Date("2099-12-01T10:00:00Z");
   await service.runDue(); await settle();
-  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us"], ["B", "web", "/?channel=us"]]);
+  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us&from=push"], ["B", "web", "/?channel=us&from=push"]]);
   sent.length = 0; clock.now = new Date("2099-12-01T10:30:00Z");
   await service.runDue(); await settle();
   assert.deepEqual(sent, [], "announced and pushed once");
@@ -146,15 +146,17 @@ test("a promise that comes due is pushed to both partners once, and not to a par
   await store.createRelationshipRecord("commitments", promise("call mom", "2099-12-01T10:40:00.000Z"));
   clock.now = new Date("2099-12-01T10:45:00Z");
   await service.runDue(); await settle();
-  assert.deepEqual(sent, [["A", "native", "/?channel=us"]], "Blair keeps reminders off");
+  assert.deepEqual(sent, [["A", "native", "/?channel=us&from=push"]], "Blair keeps reminders off");
 });
 
-test("the daily question and a celebration card start at a sensible local hour and reach both partners once", async (t) => {
+test("the daily question and a celebration card start at a sensible local hour; the question reaches both partners once", async (t) => {
   const clock = { now: new Date("2099-12-01T11:30:00Z") }; // 19:30 in Shanghai
   const { store, service, a, b, relationshipId, sent, pending, settle, connectBrowser } = await couple(t, { clock });
   await service.updateNotify(a, { messages: true, timezone: "Asia/Shanghai" });
   await service.registerNativeDevice(a, { token: "fcm-token-alex-0001", platform: "android" });
   await connectBrowser(b, 6, "B");
+  // An English-speaking couple: a question in another language would not be posted (daily-question.mjs).
+  for (const id of [a, b]) await store.updateUserLanguage(id, "en");
   // Day 100 together is 2099-12-01 in Shanghai.
   await store.createRelationshipRecord("milestones", createRelationshipRecord({ relationshipId, userId: a, visibility: "shared", aiAccessScope: "joint", type: "relationship_started", title: "Us", date: "2099-08-24", recurringRule: "yearly" }));
   const calls = [];
@@ -167,7 +169,8 @@ test("the daily question and a celebration card start at a sensible local hour a
   clock.now = new Date("2099-12-01T01:30:00Z"); // 09:30: the celebration card
   assert.equal((await rituals()).started, 1); await settle();
   assert.equal((await posted("story")).length, 1);
-  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us"], ["B", "web", "/?channel=us"]]);
+  // Save time, not kill time (11-07): a surprise waits in Us; it pushes only for a member who turned surprises on.
+  assert.deepEqual(sent, [], "surprises do not push by default");
   sent.length = 0;
   assert.equal((await rituals()).started, 0, "one card per occasion");
   clock.now = new Date("2099-12-01T11:30:00Z"); // 19:30: no question yet
@@ -175,7 +178,7 @@ test("the daily question and a celebration card start at a sensible local hour a
   clock.now = new Date("2099-12-01T12:05:00Z"); // 20:05: today's question
   assert.equal((await rituals()).started, 1); await settle();
   assert.deepEqual((await posted("daily_question")).map((message) => message.text), ["What made you smile today?"]);
-  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us"], ["B", "web", "/?channel=us"]]);
+  assert.deepEqual(sent.sort(), [["A", "native", "/?channel=us&from=push"], ["B", "web", "/?channel=us&from=push"]]);
   sent.length = 0;
   assert.equal((await rituals()).started, 0); await settle();
   assert.deepEqual(sent, [], "never twice the same day");
@@ -224,7 +227,10 @@ test("opening Us posts the daily question and pushes only the partner, not the o
   const directory = await mkdtemp(join(base, "web-push-app-")); t.after(() => rm(directory, { recursive: true, force: true }));
   const store = await createFileStore(join(directory, "store.json"));
   const sent = [];
-  const service = createReminderService({ store, enabled: true, publicKey: "test-public-key", sendNative: async (token) => { sent.push(["native", token]); }, sendPush: async (device) => { sent.push(["web", device.endpoint]); return { statusCode: 201 }; } });
+  // Noon in Shanghai: the members' quiet night (22:00-08:00 in their own zone) would hold this push whenever the run
+  // happens during a Shanghai night, so the test pinned the wall clock instead of depending on when CI runs (11-08).
+  const noonInShanghai = () => new Date("2026-11-08T04:00:00Z");
+  const service = createReminderService({ store, enabled: true, publicKey: "test-public-key", now: noonInShanghai, sendNative: async (token) => { sent.push(["native", token]); }, sendPush: async (device) => { sent.push(["web", device.endpoint]); return { statusCode: 201 }; } });
   const server = createApiApp({ store, mediator: { aiReady: false, model: "test" }, reminderService: service }).listen(0, "127.0.0.1");
   await new Promise((done) => server.once("listening", done));
   t.after(() => new Promise((done) => { server.closeAllConnections(); server.close(done); }));

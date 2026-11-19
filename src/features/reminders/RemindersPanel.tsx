@@ -2,7 +2,7 @@ import { Bell, BellSlash, Plus } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
-import { enableNativePush, nativePushPlugin, nativePushRegistered } from "./nativePush";
+import { enableNativePush, iosPushUnavailable, nativePushPlugin, nativePushRegistered } from "./nativePush";
 import "./reminders.css";
 
 export type ReminderTarget = { kind: "issue" | "milestone" | "outcome" | "checkin" | "reminders" | "plans" | "checkins"; id?: string };
@@ -70,8 +70,8 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     } catch (error) { setNotice(errorText(error)); } finally { setBusy(false); }
   };
   // Inside the App the phone's own notifications replace browser push.
-  const nativeApp = Boolean(nativePushPlugin());
-  const pushReady = nativeApp ? settings?.nativeConfigured : settings?.configured;
+  const nativeApp = iosPushUnavailable() || Boolean(nativePushPlugin());
+  const pushReady = nativeApp ? !iosPushUnavailable() && settings?.nativeConfigured : settings?.configured;
   // "On" means what this device will actually receive: this phone's App push in the App, this browser's push elsewhere.
   const notificationsOn = nativeApp ? Boolean(settings?.nativeEnabled && nativePushRegistered()) : Boolean(settings?.enabled && settings.devices.length);
   const connectPhone = async () => {
@@ -104,7 +104,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     <header><div><Bell size={23} /><h2 id="reminders-title">{text("我的提醒", "My reminders", "Mis recordatorios")}</h2></div><p>{text("给计划、复盘或一句关心留个时间。提醒名称只对你可见：手机和浏览器通知只显示一句模糊提示，发到你自己 iMessage 的提醒会带上提醒名称。", "Make time for a plan, a review or a caring moment. Reminder names stay private: phone and browser notifications only show a vague line, while reminders sent to your own iMessage include the reminder name.", "Haz espacio para un plan, una revisión o un gesto de cariño. Los nombres son privados: las notificaciones del teléfono y del navegador solo muestran un aviso general, y los recordatorios enviados a tu propio iMessage incluyen el nombre.")}</p></header>
     <div className="reminders-settings">
       <p>{settings ? nativeApp ? notificationsOn ? text("此手机的通知已开启", "Notifications are on for this phone", "Notificaciones activadas en este teléfono") : text("此手机的通知未开启或已关闭", "Notifications for this phone are not on", "Las notificaciones de este teléfono no están activadas") : notificationsOn ? text("浏览器通知已开启", "Browser notifications are on", "Notificaciones del navegador activadas") : text("浏览器通知未连接或已关闭", "Browser notifications are disconnected or off", "Notificaciones desconectadas o desactivadas") : text("正在读取提醒…", "Loading reminders…", "Cargando recordatorios…")}</p>
-      <div className="row-actions"><button type="button" onClick={() => void (nativeApp ? connectPhone() : connect())} disabled={busy || !pushReady}>{nativeApp ? text("开启此手机通知", "Turn on phone notifications", "Activar notificaciones del teléfono") : text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>
+      <div className="row-actions">{!iosPushUnavailable() && <button type="button" onClick={() => void (nativeApp ? connectPhone() : connect())} disabled={busy || !pushReady}>{nativeApp ? text("开启此手机通知", "Turn on phone notifications", "Activar notificaciones del teléfono") : text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>}
         {(settings?.enabled || (nativeApp && notificationsOn) || settings?.imessageEnabled) && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: false, timezone, language }))}><BellSlash size={16} />{text("关闭所有提醒通知（手机、浏览器和 iMessage）", "Turn off all reminder notifications (phone, browser and iMessage)", "Desactivar todas las notificaciones (teléfono, navegador e iMessage)")}</button>}
         {settings && !settings.enabled && ((settings.devices.length > 0 && settings.configured) || (settings.imessage && !settings.imessageEnabled)) && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: true, timezone, language }))}>{text("重新开启通知", "Turn notifications back on", "Reactivar notificaciones")}</button>}
       </div>
@@ -116,9 +116,8 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     {(compose || editing) && <form className="relationship-form reminders-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <label><span>{text("提醒自己什么", "What to remind yourself about", "Qué quieres recordar")}</span><KeyboardInput value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} required /></label>
       <label><span>{text("当地日期与时间", "Local date and time", "Fecha y hora locales")}</span><KeyboardInput type="datetime-local" value={localDateTime} onChange={(event) => setLocalDateTime(event.target.value)} required /></label>
-      <label><span>{text("时区", "Time zone", "Zona horaria")}</span><KeyboardInput value={timezone} onChange={(event) => setTimezone(event.target.value)} maxLength={80} required /></label>
+      {/* Save time, not kill time (11-07): the phone already knows its time zone, and a reminder opens to itself. */}
       <label><span>{text("重复", "Repeat", "Repetir")}</span><select value={frequency} onChange={(event) => setFrequency(event.target.value)}><option value="once">{text("仅一次", "Once", "Una vez")}</option><option value="weekly">{text("每周同一时间", "Weekly at the same local time", "Cada semana a la misma hora local")}</option></select></label>
-      {!initialTarget && !editing && <label><span>{text("打开后前往", "Open to", "Abrir en")}</span><select value={targetKind} onChange={(event) => setTargetKind(event.target.value as ReminderTarget["kind"])}><option value="reminders">{text("这条提醒", "This reminder", "Este recordatorio")}</option><option value="plans">{text("共同计划", "Shared plans", "Planes compartidos")}</option><option value="checkins">{text("关心与好时刻", "Care and good moments", "Cariño y buenos momentos")}</option></select></label>}
       <div className="row-actions"><button type="submit" disabled={busy || !title.trim() || !localDateTime}><Plus size={16} />{editing ? text("保存时间修改", "Save changes", "Guardar cambios") : text("保存私人提醒", "Save private reminder", "Guardar recordatorio privado")}</button>{editing && <button type="button" disabled={busy} onClick={() => { setEditing(null); setTitle(""); setLocalDateTime(""); }}>{text("取消修改", "Cancel edit", "Cancelar edición")}</button>}</div>
       <small className="reminders-time-note">{text("每周提醒保留所选当地时间。夏令时跳过的时间会顺延，重复的时间取第一次。", "Weekly reminders keep the chosen local time. Clock-change gaps move forward; repeated times use the first occurrence.", "Los recordatorios semanales mantienen la hora local. Los huecos del cambio horario se adelantan; las horas repetidas usan la primera aparición.")}</small>
     </form>}

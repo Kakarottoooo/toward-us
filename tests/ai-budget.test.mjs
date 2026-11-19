@@ -7,6 +7,9 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createMediator } from "../server/mediator.mjs";
 import { AI_CAPS, AI_LIMIT, AI_UNCHANGED, ANONYMOUS_DAILY_CAP, aiUsageReport, asAiUser, guardMediator, usesCheaperModel } from "../server/ai-budget.mjs";
+// The cost ledger and cost controls are tested with the call counting (kept in their own file, run in this one so the
+// test:app list stays unchanged and merges cleanly with other branches).
+import "./ai-ledger.test.mjs";
 
 // Cost guard (founder, 11-04): count every model call, cap it per day, keep background work cheap and never repeated.
 let directory, store, counter = 0;
@@ -33,7 +36,7 @@ async function couple() {
 function fakeModel({ fail = () => false } = {}) {
   const calls = [];
   const run = (method) => async (...args) => { calls.push({ method, args }); if (fail(method, args)) throw new Error("model down"); return method === "structured" ? { ok: true } : { reply: "ok" }; };
-  return { calls, mediator: { structured: run("structured"), planAssistantTurn: run("planAssistantTurn"), continueTogether: run("continueTogether"), lookup: run("lookup") } };
+  return { calls, mediator: { structured: run("structured"), planAssistantTurn: run("planAssistantTurn"), answerScreenshot: run("answerScreenshot"), continueTogether: run("continueTogether"), lookup: run("lookup") } };
 }
 const small = {
   free: { person: 2, couple: 3, background: 2, chatImport: 2, features: { composer_suggestions: 1 } },
@@ -78,6 +81,19 @@ test("free caps stop one person, then the couple, with a localized 'today's limi
     assert.match(error.message, /asignación gratuita de hoy/);
   });
   assert.equal(calls.length, 3);
+});
+
+test("read-only screenshot advice uses the same per-person allowance as private replies", async () => {
+  const owner = await user("Screenshot owner");
+  const { mediator, calls } = fakeModel(), guarded = guardMediator(mediator, { store, caps: small });
+  await asAiUser({ userId: owner.id }, async () => {
+    await guarded.planAssistantTurn({ question: "read this screenshot" });
+    await guarded.answerScreenshot({ question: "who is right?", transcript: "fictional exchange" });
+    await rejectsLimit(() => guarded.answerScreenshot({ question: "one more" }), "person");
+  });
+  assert.deepEqual(calls.map((call) => call.method), ["planAssistantTurn", "answerScreenshot"]);
+  const row = (await aiUsageReport(store, { days: 1 })).find((entry) => entry.people.some((person) => person.userId === owner.id));
+  assert.equal(row.features.assistant_turn, 2);
 });
 
 test("paid users get the paid caps, and a paid member lifts the couple's caps", async () => {

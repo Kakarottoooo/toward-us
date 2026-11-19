@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, ChatCircleDots, ChatsCircle, Copy, FileArrowUp, Laptop, LockKey, Trash, UsersThree, Warning } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { ArrowRight, ChatCircleDots, ChatsCircle, Copy, Desktop, FileArrowUp, Laptop, LockKey, Trash, UsersThree, Warning } from "@phosphor-icons/react";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { useImportDisclosure } from "./ImportDisclosure";
 import { ImportCard } from "./ImportCard";
 import { importAction, listImports, uploadChatFile, type ChatImport } from "./imports";
 import "./imports.css";
@@ -18,6 +19,16 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
   const load = useCallback(async () => { try { setImports(await listImports()); } catch (caught) { setError((caught as Error).message); } }, []);
   useEffect(() => { void load(); }, [load]);
   const current = imports?.find((item) => item.id === selected) || null;
+  const [removeId, setRemoveId] = useState(""), [removing, setRemoving] = useState(false);
+  const removeSource = async (sourceId: string) => {
+    if (removeId !== sourceId) { setRemoveId(sourceId); return; }
+    setRemoving(true); setError("");
+    try {
+      await relationshipApi(`/api/imports/${encodeURIComponent(sourceId)}`, { method: "DELETE" });
+      setRemoveId(""); go("/?view=import");
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setRemoving(false); }
+  };
   if (selected && current?.status === "ready" && current.analysis) return <ImportReport item={current} user={user} paired={paired} language={language} onBack={() => go("/?view=import")} onAsk={onAsk} onChanged={load} />;
   return <div className="paper-screen relationship-shell import-screen" data-testid="imports-screen">
     <PageHeader language={language} title={t("聊天记录", "Chat history", "Historial de chat")} onBack={onBack} />
@@ -25,27 +36,36 @@ export function ImportsPage({ id, user, paired, language, onBack, onOpen, onAsk 
       <p className="space-scope"><LockKey size={16} />{t("导入的聊天只有你能看到；想和 TA 一起看，要 TA 同意。", "Imported chats are visible only to you; looking together needs your partner's OK.", "Los chats importados solo los ves tú; verlos juntos necesita el sí de tu pareja.")}</p>
       {error && <p className="space-error" role="alert">{error}</p>}
       {selected && current && current.status !== "ready" && !current.sync && <ImportCard id={current.id} language={language} onOpen={go} onFinished={load} />}
+      {selected && current && current.ownerUserId === user.id && !current.shared && (current.sync || current.status !== "ready") && <section className="import-start">
+        {removeId === current.id && <p role="alert">{t("将永久删除这份导入及原始消息，正在使用的同步也会停止。", "This permanently deletes the import and its original messages and stops its sync.", "Se eliminarán la importación y sus mensajes originales y se detendrá su sincronización.")}</p>}
+        <button type="button" className="import-link" disabled={removing} onClick={() => void removeSource(current.id)}>{removeId === current.id ? t("确认删除", "Confirm deletion", "Confirmar eliminación") : t("删除这份导入", "Delete this import", "Eliminar esta importación")}</button>
+        {removeId === current.id && <button type="button" className="import-link" disabled={removing} onClick={() => setRemoveId("")}>{t("取消", "Cancel", "Cancelar")}</button>}
+      </section>}
       {!!imports?.length && <section className="import-list">{imports.map((item) => <button key={item.id} onClick={() => go(`/?view=import&import=${encodeURIComponent(item.id)}`)}>
         <span className="import-icon">{item.shared ? <UsersThree size={20} /> : <ChatsCircle size={20} />}</span>
-        <span><strong>{item.title || t("聊天记录", "Chat history", "Historial de chat")}</strong><small>{item.sync ? (item.sync.lastSyncAt ? t(`每小时自动同步 · ${item.messageCount} 条 · 上次 ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Syncs every hour · ${item.messageCount} · last ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Se sincroniza cada hora · ${item.messageCount} · última ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : t("等 Mac 第一次同步", "Waiting for the Mac's first sync", "Esperando la primera sincronización del Mac")) : item.status === "ready" ? `${item.messageCount} · ${item.firstAt?.slice(0, 10) || ""} – ${item.lastAt?.slice(0, 10) || ""}` : item.status === "analyzing" ? t("正在读…", "Reading…", "Leyendo…") : item.status === "failed" ? t("没读完", "Not finished", "Sin terminar") : t("等你确认", "Waiting for you", "Esperando tu respuesta")}</small></span><ArrowRight size={16} /></button>)}</section>}
+        <span><strong>{item.title || t("聊天记录", "Chat history", "Historial de chat")}</strong><small>{item.sync ? (item.sync.needsDisclosure ? t("同步已暂停。请重新设置 Mac 同步并确认资料处理方式。", "Sync paused. Set up Mac sync again to confirm how messages are processed.", "Sincronización en pausa. Vuelve a configurarla para confirmar cómo se procesan los mensajes.") : item.sync.lastSyncAt ? t(`每小时自动同步 · ${item.messageCount} 条 · 上次 ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Syncs every hour · ${item.messageCount} · last ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`, `Se sincroniza cada hora · ${item.messageCount} · última ${new Date(item.sync.lastSyncAt).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : t("等 Mac 第一次同步", "Waiting for the Mac's first sync", "Esperando la primera sincronización del Mac")) : item.status === "ready" ? `${item.messageCount} · ${item.firstAt?.slice(0, 10) || ""} – ${item.lastAt?.slice(0, 10) || ""}` : item.status === "analyzing" ? t("正在读…", "Reading…", "Leyendo…") : item.status === "failed" ? t("没读完", "Not finished", "Sin terminar") : t("等你确认", "Waiting for you", "Esperando tu respuesta")}</small></span><ArrowRight size={16} /></button>)}</section>}
       <ImportStart language={language} onImported={(item) => go(`/?view=import&import=${encodeURIComponent(item.id)}`)} onAsk={onAsk} />
     </main>
   </div>;
 }
 
-/** Ways in: a file, the Mac helper for iMessage, or asking Pinky for steps for any app. */
+/** Ways in: a file, iMessage from a Mac or from a Windows PC's iPhone backup, or asking Pinky for steps for any app. */
 function ImportStart({ language, onImported, onAsk }: { language: Language; onImported: (item: ChatImport) => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [command, setCommand] = useState(""), [copied, setCopied] = useState(false);
+  const { ask, dialog } = useImportDisclosure(language);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [command, setCommand] = useState(""), [winCommand, setWinCommand] = useState(""), [copied, setCopied] = useState(false);
   const pick = async (file: File | undefined) => {
-    if (fileRef.current) fileRef.current.value = ""; if (!file) return;
+    if (fileRef.current) fileRef.current.value = ""; if (!file || !await ask()) return;
     setBusy(true); setError("");
     try { onImported(await uploadChatFile(file, { name: file.name, language })); } catch (caught) { setError((caught as Error).message); } finally { setBusy(false); }
   };
-  const mac = async () => { setError(""); try { setCommand((await relationshipApi<{ command: string }>("/api/imports/mac-sync-command", jsonBody({ language }))).command); } catch (caught) { setError((caught as Error).message); } };
-  const copy = async () => { try { await navigator.clipboard.writeText(command); setCopied(true); } catch { setCopied(false); } };
+  // Years of iMessage without a Mac (founder 11-09): the PC's iPhone backup, read by a short command typed off the phone.
+  const windows = async () => { if (!await ask()) return; setError(""); setCommand(""); setCopied(false); try { setWinCommand((await relationshipApi<{ command: string }>("/api/imports/windows-command", jsonBody({ language, importDisclosure: 1 }))).command); } catch (caught) { setError((caught as Error).message); } };
+  const mac = async () => { if (!await ask("sync")) return; setError(""); setWinCommand(""); setCopied(false); try { setCommand((await relationshipApi<{ command: string }>("/api/imports/mac-sync-command", jsonBody({ language, importDisclosure: 1 }))).command); } catch (caught) { setError((caught as Error).message); } };
+  const copy = async () => { try { await navigator.clipboard.writeText(command || winCommand); setCopied(true); } catch { setCopied(false); } };
   return <section className="import-start">
+    {dialog}
     <h2 className="space-subhead">{t("导入新的聊天", "Import a chat", "Importar un chat")}</h2>
     <button className="import-way" disabled={busy} onClick={() => fileRef.current?.click()} data-testid="import-file"><FileArrowUp size={22} /><span><strong>{busy ? t("正在上传…", "Uploading…", "Subiendo…") : t("选择导出的文件", "Choose an exported file", "Elegir un archivo exportado")}</strong><small>WhatsApp · Messenger · Instagram · Telegram · LINE · iMazing · SMS Backup</small></span></button>
     <input ref={fileRef} type="file" accept=".txt,.zip,.json,.csv,.xml,.html,text/plain,application/zip,application/json" hidden onChange={(event) => void pick(event.target.files?.[0])} data-testid="import-file-input" />
@@ -57,6 +77,15 @@ function ImportStart({ language, onImported, onAsk }: { language: Language; onIm
         <li>{t("选出和 TA 的对话编号。之后每小时自动同步，只有你能看到；Mac 合上时暂停，打开后补上。", "Pick the conversation with your partner. From then on it syncs every hour, visible only to you; it pauses while the Mac sleeps and catches up after.", "Elige la conversación con tu pareja. Desde entonces se sincroniza cada hora, solo para ti; se pausa con el Mac dormido y luego se pone al día.")}</li>
         <li>{t("最后按终端里的提示，把 /bin/zsh 也加进“完全磁盘访问权限”（只做一次），后台同步才能读到。", "Last, as Terminal says, add /bin/zsh to Full Disk Access too (once), so the background sync can read.", "Por último, como indica Terminal, añade /bin/zsh al acceso total al disco (una vez) para que la sincronización en segundo plano pueda leer.")}</li></ol>
       <code>{command}</code><button onClick={() => void copy()}><Copy size={16} />{copied ? t("已复制", "Copied", "Copiado") : t("复制命令", "Copy command", "Copiar comando")}</button>
+    </div>}
+    <button className="import-way" onClick={() => void windows()} data-testid="import-windows"><Desktop size={22} /><span><strong>{t("在 Windows 电脑上导入 iMessage", "Import iMessage on a Windows PC", "Importar iMessage en un PC con Windows")}</strong><small>{t("没有 Mac 也行：用 iPhone 在电脑上的备份，几年的记录一次导入", "No Mac needed: uses the iPhone's backup on the PC, years of history at once", "Sin Mac: usa la copia del iPhone en el PC, años de historial de una vez")}</small></span></button>
+    {winCommand && <div className="import-command" data-testid="windows-steps">
+      <ol><li>{t("用数据线把 iPhone 连到 Windows 电脑，打开“Apple 设备”App（没有就在 Microsoft Store 免费下载，用 iTunes 也行）。", "Connect the iPhone to the Windows PC with a cable and open the Apple Devices app (free in the Microsoft Store; iTunes works too).", "Conecta el iPhone al PC con un cable y abre la app Dispositivos Apple (gratis en Microsoft Store; también sirve iTunes).")}</li>
+        <li>{t("选中你的 iPhone，点“立即备份”，不要勾选“加密本地备份”，等备份完成（第一次可能要十几分钟）。", "Select the iPhone and click Back Up Now, with “Encrypt local backup” off. Wait for it to finish (the first one can take a while).", "Selecciona el iPhone y pulsa Realizar copia ahora, sin «Encriptar copia local». Espera a que termine (la primera puede tardar).")}</li>
+        <li>{t("在电脑上点“开始”，搜索 PowerShell，打开“Windows PowerShell”。", "On the PC, open Start, search for PowerShell and open Windows PowerShell.", "En el PC, abre Inicio, busca PowerShell y abre Windows PowerShell.")}</li>
+        <li>{t("照着输入下面这一行，按回车，再选出和 TA 的对话编号。只读这一段对话，别的什么都不读、不发。", "Type this one line and press Enter, then pick the conversation with them. Only that conversation is read; nothing else is read or sent.", "Escribe esta línea y pulsa Intro; luego elige la conversación. Solo se lee esa conversación; nada más se lee ni se envía.")}</li>
+        <li>{t("看到“已导入”后回到这里看分析。这一行一小时内有效，只能用一次。", "When it says imported, come back here for the analysis. The line works for an hour, once.", "Cuando diga importado, vuelve aquí para ver el análisis. La línea sirve una hora, una sola vez.")}</li></ol>
+      <code className="import-typed">{winCommand}</code><button onClick={() => void copy()}><Copy size={16} />{copied ? t("已复制", "Copied", "Copiado") : t("复制", "Copy", "Copiar")}</button>
     </div>}
     <button className="import-way" onClick={() => onAsk(t("我想导入我和 TA 的聊天记录，告诉我怎么从", "I want to import my chat history with my partner. How do I export it from ", "Quiero importar mi historial de chat con mi pareja. ¿Cómo lo exporto desde "), "me")}><ChatCircleDots size={22} /><span><strong>{t("问 Pinky 怎么导出", "Ask Pinky how to export", "Pregúntale a Pinky cómo exportar")}</strong><small>{t("微信、iPhone 短信等：Pinky 一步步教你，也可以直接发截图", "WeChat, iPhone texts and more: Pinky walks you through it, or send screenshots", "WeChat, mensajes del iPhone y más: Pinky te guía, o envía capturas")}</small></span></button>
     {error && <p className="space-error" role="alert">{error}</p>}
@@ -81,7 +110,7 @@ function ImportReport({ item, user, paired, language, onBack, onAsk, onChanged }
     <PageHeader language={language} title={t("聊天记录分析", "Chat analysis", "Análisis del chat")} onBack={onBack} />
     <main className="relationship-main import-main">
       <p className="space-scope">{item.shared ? <><UsersThree size={16} />{t("你们俩都同意了，都能看到", "You both agreed; both of you can see this", "Los dos aceptaron; ambos pueden verlo")}</> : <><LockKey size={16} />{t("只有你能看到", "Only you can see this", "Solo tú puedes verlo")}</>}</p>
-      <p className="import-meta">{item.title && <>{t(`和 ${item.title}`, `With ${item.title}`, `Con ${item.title}`)} · </>}{t(`${item.messageCount} 条消息`, `${item.messageCount} messages`, `${item.messageCount} mensajes`)} · {date(item.firstAt)} – {date(item.lastAt)}{item.sampled ? t("（太长，读了最重要的部分）", " (very long; the most important parts were read)", " (muy largo; se leyeron las partes más importantes)") : ""}</p>
+      <p className="import-meta">{item.title && <>{t(`和 ${item.title}`, `With ${item.title}`, `Con ${item.title}`)} · </>}{t(`${item.messageCount} 条消息`, `${counted(item.messageCount, "message", "messages")}`, `${counted(item.messageCount, "mensaje", "mensajes")}`)} · {date(item.firstAt)} – {date(item.lastAt)}{item.sampled ? t("（太长，读了最重要的部分）", " (very long; the most important parts were read)", " (muy largo; se leyeron las partes más importantes)") : ""}</p>
       {analysis.safety.concern && <div className="import-safety" role="note"><Warning size={20} weight="fill" /><p>{analysis.safety.note}</p></div>}
       <p className="import-overview">{analysis.overview}</p>
       {analysis.conflictCycle && <section className="import-block"><h2 className="space-subhead">{t("吵架时常见的循环", "The cycle in your arguments", "El ciclo en sus discusiones")}</h2><p>{analysis.conflictCycle}</p></section>}
@@ -97,10 +126,12 @@ function ImportReport({ item, user, paired, language, onBack, onAsk, onChanged }
           <tr><th>{t("深夜消息", "Late-night messages", "Mensajes de madrugada")}</th><td>{per.me.lateNight}%</td><td>{per.partner.lateNight}%</td></tr>
         </tbody></table>
         {stats!.monthly.length > 1 && <div className="import-months" aria-label={t("每月消息数", "Messages per month", "Mensajes por mes")}>{stats!.monthly.slice(-24).map((month) => <span key={month.month} title={`${month.month}: ${month.me + month.partner}`} style={{ height: `${Math.max(3, (month.me + month.partner) / peak * 100)}%` }} />)}</div>}
-        {!!stats!.silences.length && <p className="import-note">{t("最长的安静期：", "Longest quiet stretches: ", "Silencios más largos: ")}{stats!.silences.slice(0, 3).map((gap) => t(`${date(gap.from)} 起 ${gap.days} 天`, `${gap.days} days from ${date(gap.from)}`, `${gap.days} días desde ${date(gap.from)}`)).join("，")}</p>}
+        {!!stats!.silences.length && <p className="import-note">{t("最长的安静期：", "Longest quiet stretches: ", "Silencios más largos: ")}{stats!.silences.slice(0, 3).map((gap) => t(`${date(gap.from)} 起 ${gap.days} 天`, `${counted(gap.days, "day", "days")} from ${date(gap.from)}`, `${counted(gap.days, "día", "días")} desde ${date(gap.from)}`)).join("，")}</p>}
       </section>}
       {!!analysis.moments.length && <section className="import-block"><h2 className="space-subhead">{t("值得留下的瞬间", "Moments worth keeping", "Momentos para guardar")}</h2><ul>{analysis.moments.map((moment, index) => <li key={index}><strong>{moment.title}</strong>{moment.date && <small>{date(moment.date)}</small>}<p>{moment.text}</p></li>)}</ul>
         <button className="space-ask" onClick={() => onAsk(t("把聊天记录分析里那些值得留下的瞬间放进我们的回忆", "Save the moments worth keeping from the chat analysis into our memories", "Guarda en nuestros recuerdos los momentos del análisis del chat"), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("放进回忆", "Save to memories", "Guardar en recuerdos")}</button></section>}
+      {!!analysis.watched?.length && <section className="import-block"><h2 className="space-subhead">{t("一起看过的剧和电影", "Shows you watched together", "Lo que vieron juntos")}</h2><ul>{analysis.watched.map((show, index) => <li key={index}><strong>{show.title}</strong>{show.date && <small>{date(show.date)}</small>}{show.note && <p>{show.note}</p>}</li>)}</ul>
+        <button className="space-ask" onClick={() => onAsk(t("把聊天记录分析里我们一起看过的剧和电影放进“一起看过的”", "Put the shows from the chat analysis on our watched-together shelf", "Pon en nuestro estante lo que vimos juntos según el análisis del chat"), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("放进一起看过的", "Add to watched together", "Añadir a vistos juntos")}</button></section>}
       {!!analysis.dates.length && <section className="import-block"><h2 className="space-subhead">{t("重要的日子", "Dates to remember", "Fechas para recordar")}</h2><ul>{analysis.dates.map((entry, index) => <li key={index}><strong>{entry.title}</strong><small>{date(entry.date)}{entry.yearly ? t(" · 每年", " · yearly", " · cada año") : ""}</small></li>)}</ul></section>}
       {!!analysis.promises.length && <section className="import-block"><h2 className="space-subhead">{t("说过的承诺", "Promises made", "Promesas hechas")}</h2><ul>{analysis.promises.map((promise, index) => <li key={index} className={`is-${promise.status}`}><strong>{promise.speaker}：{promise.text}</strong><small>{[date(promise.date), promise.status === "kept" ? t("做到了", "kept", "cumplida") : promise.status === "open" ? t("还没做到", "still open", "pendiente") : t("不确定", "unclear", "no está claro")].filter(Boolean).join(" · ")}</small></li>)}</ul></section>}
       <button className="space-ask" onClick={() => onAsk(t(`关于我们的聊天记录分析，我想问：`, "About our chat history analysis: ", "Sobre el análisis de nuestro historial: "), item.shared ? "us" : "me")}><ChatCircleDots size={20} weight="fill" />{t("问 Pinky", "Ask Pinky", "Pregúntale a Pinky")}</button>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ImagesSquare, UsersThree } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { counted, localized, type Language } from "../../i18n";
 import { FindUs } from "./FindUs";
 import { askPhotoAccess, connectedAlbum, forgetAlbum, listAlbums, onPhotoProgress, syncAlbum, type PhotoAlbum, type Progress } from "./photoAlbum";
 
@@ -32,7 +32,7 @@ export function PhotoAlbumCard({ language, partnerName }: { language: Language; 
     <small>{t("里面的照片会按日子和地点整理成你们的回忆，你们俩都能看到。", "Its photos become your memories by day and place, visible to both of you.", "Sus fotos se convierten en sus recuerdos por día y lugar, visibles para ambos.")}</small>
     <ul className="photo-album-list">{choices.map((choice) => <li key={choice.id}><button type="button" onClick={() => pick(choice)}>
       <span>{choice.title || t("未命名相册", "Untitled album", "Álbum sin nombre")}{choice.shared && <em><UsersThree size={13} />{t("共享", "Shared", "Compartido")}</em>}</span>
-      <small>{t(`${choice.count} 张`, `${choice.count} photos`, `${choice.count} fotos`)}</small>
+      <small>{t(`${choice.count} 张`, `${counted(choice.count, "photo", "photos")}`, `${counted(choice.count, "foto", "fotos")}`)}</small>
     </button></li>)}</ul>
     <button type="button" className="photo-album-quiet" onClick={() => setChoices(null)}>{t("取消", "Cancel", "Cancelar")}</button>
   </section>;
@@ -40,7 +40,7 @@ export function PhotoAlbumCard({ language, partnerName }: { language: Language; 
   if (album) return <section className="photo-album" data-testid="photo-album">
     <span className="photo-album-head"><ImagesSquare size={20} weight="fill" /><strong>{t(`已连接相册「${album.title}」`, `Connected album "${album.title}"`, `Álbum conectado «${album.title}»`)}</strong></span>
     <small>{progress.running
-      ? t(`正在整理… 已整理 ${progress.made} 段回忆，还剩 ${progress.remaining} 段`, `Sorting… ${progress.made} memories made, ${progress.remaining} to go`, `Ordenando… ${progress.made} recuerdos hechos, faltan ${progress.remaining}`)
+      ? t(`正在整理… 已整理 ${progress.made} 段回忆，还剩 ${progress.remaining} 段`, `Sorting… ${counted(progress.made, "memory", "memories")} made, ${progress.remaining} to go`, `Ordenando… ${counted(progress.made, "recuerdo", "recuerdos")} hechos, faltan ${progress.remaining}`)
       : progress.error ? t("这次没整理完，下次打开 Pinky 会接着来。", "Not finished this time; it continues next time you open Pinky.", "No terminó esta vez; seguirá la próxima vez que abras Pinky.")
       : t("新照片会在你打开 Pinky 时自动整理进回忆。", "New photos are added to your memories when you open Pinky.", "Las fotos nuevas se añaden a sus recuerdos al abrir Pinky.")}</small>
     <span className="photo-album-actions">

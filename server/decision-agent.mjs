@@ -1,12 +1,16 @@
+import { screenedClient, isAiPolicyError } from "./ai-screening.mjs";
 import OpenAI from "openai";
 import { createClaudeCliClient } from "./claude-cli-client.mjs";
+import { isAiLimit } from "./ai-budget.mjs";
+import { aiProviderFetch, channelOfModel, meterOpenAI, runAiFeature } from "./ai-ledger.mjs";
 
 const clean = (value, limit) => String(value || "").trim().replace(/\0/g, "").slice(0, limit);
 const list = (value) => Array.isArray(value) ? value.slice(0, 8).map((item) => clean(item, 500)).filter(Boolean) : [];
 const pick = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
 /** This module receives only a server-built joint context, never a relationship snapshot. */
-export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4", client = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : apiKey ? new OpenAI({ apiKey }) : null } = {}) {
+export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4", client = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : apiKey ? meterOpenAI(new OpenAI({ apiKey, fetch: aiProviderFetch })) : null } = {}) {
+  const screened = screenedClient(client);
   return {
     async discuss(context, language = "zh") {
       // Without the model nothing is drafted: the person's raw words never become terms (the same rule as Us, 11-02). Any
@@ -17,7 +21,7 @@ export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model
       };
       if (!client) return fallback;
       try {
-        const response = await client.responses.create({
+        const response = await runAiFeature({ feature: "decision_discussion", args: [context], channel: channelOfModel(client.model), language }, () => screened.responses.create({
           model, store: false, max_output_tokens: 1800,
           text: { format: { type: "json_schema", name: "decision_discussion", strict: true, schema: {
             type: "object", additionalProperties: false, required: ["reply", "draft"], properties: {
@@ -29,12 +33,12 @@ export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model
           ],
         // A person is waiting on this turn: the same interactive limits as the mediator (45 s, no retries), not the SDK's
         // default of 10 minutes with two retries.
-        }, { timeout: 45_000, maxRetries: 0 });
+        }, { timeout: 45_000, maxRetries: 0 }));
         const result = JSON.parse(response.output_text);
         const draft = { title: clean(result.draft?.title, 160), summary: clean(result.draft?.summary, 1200), terms: list(result.draft?.terms), unresolvedPoints: list(result.draft?.unresolvedPoints) };
         if (!draft.title || !draft.summary || !draft.terms.length) return fallback;
         return { reply: clean(result.reply, 2400) || fallback.reply, draft, source: "openai", model };
-      } catch { return fallback; }
+      } catch (error) { if (isAiPolicyError(error)) throw error; return isAiLimit(error) ? { ...fallback, reply: error.message } : fallback; }
     },
   };
 }

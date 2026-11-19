@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
+import { migrateAppMetrics, postgresAppMetrics } from "./app-metrics-store.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
@@ -43,9 +44,11 @@ export async function createPostgresStore(databaseUrl) {
   };
   const mapCollections = async (operation) => { if (!transactions.getStore()) return Promise.all(GRAPH_COLLECTIONS.map(operation)); const results = []; for (const collection of GRAPH_COLLECTIONS) results.push(await operation(collection)); return results; };
   await migrate(pool);
+  await migrateAppMetrics(pool);
 
   const store = {
     kind: "postgres",
+    ...postgresAppMetrics(pool),
     async close() { await rawPool.end(); },
     async transaction(key, callback) {
       if (transactions.getStore()) return callback(store);
@@ -129,11 +132,12 @@ export async function createPostgresStore(databaseUrl) {
       const ids = rows.map((row) => row.id);
       const graph = Object.fromEntries(await mapCollections(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)]));
       const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
-      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId) };
+      const activity = await pool.query("select date::text from app_metric_activity where user_id=$1 order by date", [userId]);
+      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId), appActivityDates: activity.rows.map((row) => row.date) };
     },
     async deletePrivateData(userId) {
       return store.transaction(`user:${userId}`, async () => {
-        let deleted = 0;
+        let deleted = (await pool.query("delete from app_metric_activity where user_id=$1", [userId])).rowCount;
         for (const collection of GRAPH_COLLECTIONS) {
           if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;
@@ -179,6 +183,14 @@ export async function createPostgresStore(databaseUrl) {
       } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
     },
     async getInvitation(code) { return mapInvitation((await pool.query("select * from invitations where code = $1", [code])).rows[0]); },
+    // A fresh invite for a space that is still waiting for the partner (the first one expired).
+    async renewInvitation(invitation) {
+      const inserted = await pool.query("insert into invitations (code,relationship_id,created_by_user_id,created_at,expires_at) select $1,$2,$3,$4,$5 where exists (select 1 from relationships r join relationship_members m on m.relationship_id=r.id where r.id=$2 and r.status='pending' and m.user_id=$3)", [invitation.code, invitation.relationshipId, invitation.createdByUserId, invitation.createdAt, invitation.expiresAt]);
+      return inserted.rowCount ? loadRelationshipContext(pool, invitation.createdByUserId) : null;
+    },
+    // Only the first time the link is opened is kept: the inviter sees it, and the partner-join report counts it.
+    async markInvitationOpened(code, openedAt) { await pool.query("update invitations set opened_at=$2 where code=$1 and opened_at is null", [code, openedAt]); },
+    async listInvitationsForJob() { return (await pool.query("select * from invitations order by created_at")).rows.map(mapInvitation); },
     async acceptInvitation(code, userId, acceptedAt) {
       const initial = await store.getInvitation(code); if (!initial) return null;
       return store.transaction(`relationship:${initial.relationshipId}`, async () => {
@@ -235,6 +247,7 @@ export async function createPostgresStore(databaseUrl) {
       await pool.query("insert into demo_rooms (code,status,payload,expires_at,created_at,updated_at) values ($1,$2,$3,$4,$5,$6)", [room.code, room.status, room, room.expiresAt, room.createdAt, room.updatedAt]);
       return structuredClone(room);
     },
+    async createDemoReplyReport(report) { await pool.query("insert into demo_reply_reports (id, created_at, data) values ($1,$2,$3) on conflict (id) do nothing", [report.id, report.createdAt, report]); },
     async getDemoRoom(code) { return (await pool.query("select payload from demo_rooms where code=$1", [code])).rows[0]?.payload || null; },
     async updateDemoRoom(code, updater) {
       const client = await pool.connect();
@@ -342,6 +355,7 @@ async function migrate(pool) {
     create table if not exists invitations (code text primary key, relationship_id text not null references relationships(id) on delete cascade, created_by_user_id text not null references users(id), created_at timestamptz not null, expires_at timestamptz not null, accepted_at timestamptz, accepted_by_user_id text references users(id));
     create table if not exists rooms (code text primary key, relationship_id text not null references relationships(id) on delete cascade, status text not null, payload jsonb not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists rooms_relationship_status_idx on rooms(relationship_id,status,updated_at desc);
+    create table if not exists demo_reply_reports (id text primary key, created_at timestamptz not null, data jsonb not null);
     create table if not exists demo_rooms (code text primary key, status text not null, payload jsonb not null, expires_at timestamptz not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists demo_rooms_expiry_idx on demo_rooms(expires_at);
   `);
@@ -357,6 +371,7 @@ async function migrate(pool) {
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
     alter table users add column if not exists language text;
     alter table relationships add column if not exists imessage_group_id text;
+    alter table invitations add column if not exists opened_at timestamptz;
     create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
@@ -413,4 +428,4 @@ const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, p
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
-const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;
+const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;

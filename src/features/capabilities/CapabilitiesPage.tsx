@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Alarm, BookOpenText, GameController, CalendarBlank, ChatsCircle, ChatTeardropText, EnvelopeSimpleOpen, ForkKnife, Handshake, HandHeart, Heart, Images, ListChecks, MagnifyingGlass, MapTrifold, NotePencil, Scales, Sparkle, UserCircle, UsersThree } from "@phosphor-icons/react";
+import { Alarm, BookOpenText, ChatCircleDots, Drop, GameController, CalendarBlank, ChatsCircle, ChatTeardropText, EnvelopeSimpleOpen, ForkKnife, Handshake, HandHeart, Heart, Images, ListChecks, MagnifyingGlass, MapTrifold, NotePencil, Phone, Scales, Sparkle, UserCircle, UsersThree } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import "./capabilities.css";
@@ -14,6 +14,8 @@ export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onPr
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const icon = (node: ReactNode) => node;
   const me: Item[] = [
+    // Pinky's main scenario (founder 11-08): the reply coach comes first.
+    { key: "reply", icon: icon(<ChatCircleDots size={22} />), title: t("不知道怎么回 TA", "Not sure how to reply", "No sabes qué responder"), detail: t("把 TA 的话或聊天截图发过来，Pinky 帮你看懂意思，写一句能直接发的回复。", "Send what they said or a screenshot; Pinky helps you read it and writes a reply you can send as is.", "Envía lo que te dijo o una captura; Pinky te ayuda a entenderlo y escribe una respuesta lista para enviar."), say: t("TA 刚发来：", "They just sent me: ", "Me acaba de escribir: ") },
     { key: "reminder", icon: icon(<Alarm size={22} />), title: t("提醒", "Reminders", "Recordatorios"), detail: t("一次的、每周的，到点推送给你。", "Once or every week, pushed to you on time.", "Una vez o cada semana, te avisa a tiempo."), say: t("明天早上 8 点提醒我给妈妈打电话", "Remind me to call my mom tomorrow at 8am", "Recuérdame llamar a mi mamá mañana a las 8") },
     { key: "checkin", icon: icon(<NotePencil size={22} />), title: t("心情日记", "Mood diary", "Diario de ánimo"), detail: t("今天怎么样，说两句就记下，只有你能看。", "Say how today went; it is kept just for you.", "Cuenta cómo fue tu día; solo tú lo ves."), say: t("今天有点累，帮我记一下", "I'm a bit tired today, note it down", "Hoy estoy algo cansado, anótalo") },
     { key: "hard", icon: icon(<ChatTeardropText size={22} />), title: t("难开口的话", "Hard-to-say things", "Lo que cuesta decir"), detail: t("先私下理一理，再写成 TA 听得进去的话；你确认了才发。", "Sort it out privately first, then word it so your partner can hear it; it goes only when you confirm.", "Ordénalo primero en privado y luego dilo de forma que tu pareja lo escuche; solo se envía si confirmas."), say: t("我最近有点委屈，想跟 TA 说，帮我想想怎么开口", "I've been feeling hurt lately and want to tell my partner. Help me find the words", "Me he sentido dolido y quiero decírselo a mi pareja. Ayúdame a encontrar las palabras") },
@@ -40,6 +42,13 @@ export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onPr
     { key: "upcoming", icon: icon(<MapTrifold size={22} />), title: t("即将到来", "Coming up", "Próximamente"), detail: t("说好的事、提醒、纪念日、在一起多少天、未拆的信。", "What you agreed, reminders, anniversaries, days together, sealed letters.", "Lo acordado, recordatorios, aniversarios, días juntos, cartas selladas."), open: () => onOpen(paired ? "/?view=upcoming" : "/?view=reminders") },
     { key: "about", icon: icon(<UserCircle size={22} />), title: t("关于我们", "About us", "Sobre nosotros"), detail: t("Pinky 记下的你、TA 和你们俩，可改可删。", "What Pinky knows about you, your partner and you two; edit or remove anything.", "Lo que Pinky sabe de ti, tu pareja y ustedes; edita o quita lo que quieras."), open: onProfile },
   ];
+  // Everything else that has no entry of its own, so nothing is out of reach.
+  const more: Item[] = [
+    { key: "call", icon: icon(<Phone size={22} />), title: t("和 Pinky 通话", "Call Pinky", "Llamar a Pinky"), detail: t("点对话右上角的电话，直接说话；在“我们俩”里两个人可以一起说。", "Tap the phone at the top right of the chat and just talk; in Us, both of you can talk together.", "Toca el teléfono arriba a la derecha del chat y habla; en Nosotros pueden hablar los dos.") },
+    { key: "in-person", icon: icon(<UsersThree size={22} />), title: t("两个人当面说开", "Talk it through in person", "Hablarlo en persona"), detail: t("不用注册：一台手机一起用，或两台手机扫码加入，两个人各说各的，Pinky 帮你们看清分歧。", "No sign-up: share one phone or join by QR on two, each says their side, and Pinky helps you see where you differ.", "Sin registro: compartan un teléfono o únanse por QR con dos; cada quien dice lo suyo y Pinky les ayuda a ver en qué difieren."), open: () => location.assign("/demo") },
+    { key: "people", icon: icon(<UsersThree size={22} />), title: t("在了解的人", "People I'm seeing", "Las personas que conozco"), detail: t("还在了解几个人时，Pinky 分别记下你和每个人的相处，只有你能看。", "While you're getting to know someone (or a few), Pinky keeps how it's going with each, just for you.", "Mientras conoces a alguien (o a varios), Pinky guarda cómo va con cada uno, solo para ti."), open: () => onOpen("/?view=people") },
+    { key: "cycle", icon: icon(<Drop size={22} />), title: t("经期记录", "Period", "Periodo"), detail: t("在“只有我”里说一声就记下，预测只在你自己的日历里。", "Say it in Just me and it's noted; predictions stay on your own calendar.", "Dilo en Solo yo y queda anotado; las predicciones quedan en tu propio calendario."), open: () => onOpen(`/?view=${paired ? "upcoming" : "reminders"}&focus=cycle`) },
+  ];
   const row = (item: Item) => <button key={item.key} type="button" className="capability" data-testid={`capability-${item.key}`} onClick={() => item.open ? item.open() : onAsk(item.say || "", item.channel || "me")}>
     <span className="capability-icon">{item.icon}</span>
     <span className="capability-text"><strong>{item.title}</strong><small>{item.detail}</small>{item.say && <em>{t("试试说：", "Try: ", "Prueba: ")}“{item.say.replace(/[：:]\s*$/, "…")}”</em>}</span>
@@ -51,6 +60,7 @@ export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onPr
       <section><h2>{t("在“只有我”里", "In Just me", "En Solo yo")}</h2><div className="capability-list">{me.map(row)}</div></section>
       <section><h2>{t("在“我们俩”里", "In Us", "En Nosotros")}</h2>{!paired && <p className="capabilities-note">{t("邀请 TA 加入后就能用。", "Available once your partner joins.", "Disponible cuando tu pareja se una.")}</p>}<div className="capability-list">{us.map(row)}</div></section>
       <section><h2>{t("可以翻看的", "Pages to look at", "Para mirar")}</h2><div className="capability-list">{look.map(row)}</div></section>
+      <section><h2>{t("更多", "More", "Más")}</h2><div className="capability-list">{more.map(row)}</div></section>
     </div></main>
   </div>;
 }

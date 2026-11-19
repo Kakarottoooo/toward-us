@@ -1,0 +1,105 @@
+.distance-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  color: var(--jian-ink);
+  --distance-action: #a53a30;
+  --distance-focus: #773126;
+}
+
+.distance-panel :is(h2, p, ul) { margin: 0; }
+.distance-panel h2 { font-size: 1.15rem; line-height: 1.18; }
+.distance-panel button { touch-action: manipulation; }
+.distance-panel button:focus-visible { outline: 2px solid var(--distance-focus); outline-offset: 2px; }
+.distance-panel :is(.distance-composer, .distance-recent) { padding: 14px; border-radius: 14px; }
+.distance-controls { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; gap: 4px; }
+.distance-controls .distance-close { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: #554c43; }
+.distance-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: #ece5da; }
+.distance-tabs button { flex: 1; min-height: 44px; padding: 5px 8px; border: 0; border-radius: 9px; background: transparent; color: #554c43; font: inherit; }
+.distance-tabs button[aria-pressed="true"] { background: #fffdf8; color: var(--jian-ink); font-weight: 650; }
+
+.distance-touch {
+  display: grid;
+  justify-items: center;
+  gap: 13px;
+  padding: 16px 8px 9px;
+  text-align: center;
+}
+
+.distance-touch p { max-width: 24ch; min-height: 2.6em; font-size: .94rem; line-height: 1.45; color: #54483c; }
+.distance-touch small { font-variant-numeric: tabular-nums; font-weight: 700; }
+.distance-heart { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; color: var(--distance-action); background: #f3ded7; }
+.distance-touch.is-matched .distance-heart { animation: distance-meet .65s ease-out; }
+@keyframes distance-meet {
+  0% { transform: scale(.9); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .distance-touch.is-matched .distance-heart { animation: none; }
+}
+
+.distance-panel .distance-action {
+  min-height: 44px;
+  padding: 8px 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: var(--distance-action);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+}
+
+.distance-panel button:disabled { opacity: .56; }
+.distance-touch .distance-action { min-width: 140px; }
+.distance-composer { display: grid; gap: 10px; background: #fffdf8; border: 1px solid #e4dbcc; }
+.distance-composer > .distance-action { justify-self: end; }
+.distance-composer textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid #dfcbbf;
+  background: #fffcf9;
+  color: inherit;
+  font: inherit;
+}
+
+.distance-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.distance-modes button {
+  min-width: 0;
+  min-height: 44px;
+  gap: 4px;
+  padding: 5px;
+  display: grid;
+  justify-items: center;
+  border: 1px solid #e0cabf;
+  border-radius: 11px;
+  color: #4e3846;
+  background: #fffaf5;
+  font: inherit;
+  font-size: .84rem;
+}
+.distance-modes button[aria-pressed="true"] { background: #f0dee8; border-color: #9d6686; color: #58324c; font-weight: 700; }
+
+.distance-pick-photo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.distance-pick-photo img { flex: 1 1 100%; width: 100%; min-width: 0; max-height: 180px; object-fit: contain; border-radius: 11px; background: #fffcf9; }
+.distance-pick-photo small { flex: 1 1 100%; }
+.distance-status, .distance-receipt, .distance-pick-photo small { font-size: .83rem; line-height: 1.35; color: #5a4351; }
+.distance-status.is-error { color: #97374f; }
+.distance-panel .distance-text { min-height: 44px; padding: 4px 7px; border-radius: 9px; border: 1px solid #d5b9ca; background: #fffaf7; color: #693750; font: inherit; }
+
+.distance-recent { display: grid; gap: 8px; background: #fbf7f3; border: 1px solid #e9ddd4; }
+.distance-recent ul { display: grid; gap: 8px; list-style: none; padding: 0; }
+.distance-recent li { display: grid; gap: 5px; min-width: 0; padding: 10px; border: 1px solid #ebded7; border-radius: 12px; background: #fffcf9; overflow-wrap: anywhere; }
+.distance-recent header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+.distance-recent time, .distance-recent > p { font-size: .83rem; color: #6b5361; }
+.distance-recent li > p { font-size: .96rem; white-space: pre-wrap; }
+.distance-recent img { display: block; max-width: 100%; max-height: 160px; border-radius: 10px; object-fit: contain; }

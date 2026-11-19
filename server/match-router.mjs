@@ -10,7 +10,7 @@ const say = (language, zh, en, es) => language === "en" ? en : language === "es"
 // looking (see reminder-service notifyMember); `online(userId)` is true while they have the App open.
 export function createMatchRouter({ store, mediator = null, emit = () => {}, notify = async () => {}, online = () => false, petDelay = 1200 }) {
   const router = express.Router();
-  router.use("/matches", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
+  router.use("/matches", (req, res, next) => req.auth ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") }));
 
   router.get("/matches", async (req, res) => {
     const userId = req.auth.user.id, context = await store.getRelationshipContext(userId);
@@ -87,7 +87,7 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
 
   router.use((error, req, res, next) => {
     if (!error?.matchCode) return next(error);
-    const language = req.body?.language || req.query?.language || "zh";
+    const language = req.body?.language || req.query?.language || req.auth?.user?.language || "zh";
     const copy = MATCH_ERRORS[error.matchCode] || MATCH_ERRORS.invalid_action;
     res.status(error.statusCode || 400).json({ error: say(language, ...copy), code: error.matchCode });
   });

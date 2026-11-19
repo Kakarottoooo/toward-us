@@ -215,6 +215,15 @@ test("pasted text: Name: lines, WeChat-style blocks, and null for prose", () => 
   assert.equal(parsePastedText(""), null);
 });
 
+test("pasted text: a hand-tidied chat with a date line and \"HH:MM 名字：内容\" lines", () => {
+  const tidied = parsePastedText("林晓和我的聊天\n（自己整理的）\n\n2026-10-20 周一\n19:42 林晓：下班了吗\n19:43 我：刚到家\n还在换鞋\n2026-10-21 周二\n08:05 林晓：早");
+  assert.equal(tidied.platform, "text");
+  assert.deepEqual(only(tidied).messages.map((m) => [m.sender, m.text, m.at]), [
+    ["林晓", "下班了吗", "2026-10-20T19:42:00.000Z"], ["我", "刚到家\n还在换鞋", "2026-10-20T19:43:00.000Z"], ["林晓", "早", "2026-10-21T08:05:00.000Z"],
+  ]);
+  assert.equal(parsePastedText("今天下班很累。我们聊了晚饭吃什么。后来一起散步回家了。"), null);
+});
+
 test("LINE text export", () => {
   const text = "[LINE] Chat history with Alex\nSaved on: 2023/12/26 08:00\n\n2023.12.25 Monday\n21:41\tAlex\thello\n21:42\tMe\t\"multi\nline\"\n21:43\tAlex joined the chat\n21:44\tAlex\t[Sticker]\n";
   const parsed = parse("line.txt", text);

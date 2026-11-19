@@ -7,7 +7,7 @@ import { canViewRecord } from "./relationship-domain.mjs";
 // tried. What counts as tried is read from what they have already done, so nothing is shown twice once it is in use.
 export const FEATURES = {
   // channel: where the card shows; hint: what the agents may offer (cycle is never offered unprompted).
-  ideas: { channel: "us", hint: "the poster of 100 little things to do together (in the Us menu), whose squares turn into their photos once done: offer it when they wonder what to do together, are bored, or plan a weekend" },
+  ideas: { channel: "us", hint: "the poster of 100 little things to do together (in About us / 关于我们), whose squares turn into their photos once done: offer it when they wonder what to do together, are bored, or plan a weekend; use the reply language for labels, never invent an Us menu entry" },
   games: { channel: "us", hint: "little games in Us (would you rather, how well do you know me, heart to heart): say \"Pinky, let's play a game\"" },
   miss_you: { channel: "us", hint: "the heart at the top of Us sends 想你了 with floating hearts" },
   pet: { channel: "us", hint: "their little one (the little one floating at the side of Us) grows with what they do together; each can pet it once a day" },

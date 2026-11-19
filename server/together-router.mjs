@@ -1,27 +1,30 @@
 import express from "express";
+import { locateConversation } from "./conversation-recall.mjs";
 import { answerAgreementPoint, approveAgreement, phrasePoint, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
 import { projectRecord } from "./relationship-domain.mjs";
 import { decisionErrorHandler } from "./relationship-router.mjs";
 import { recordUsage } from "./usage.mjs";
 import { cachedPurchases, membershipFor } from "./membership.mjs";
+import { answerWatchCheck } from "./watched.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 import { planToCalendar } from "./plan-to-calendar.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
-import { answerGame, GAME_TYPES, startGame } from "./games.mjs";
+import { answerGame, answerPlayCard, GAME_TYPES, playTogetherView, replyToPlayCard, startGame } from "./games.mjs";
 import { careNoteFor } from "./cycle.mjs";
 import { petIt, syncPet } from "./pet.mjs";
 import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { createSharedTranslator } from "./shared-translate.mjs";
+const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
 // The App's thin HTTP entry to the shared "together" conversation. iMessage will call the same domain functions.
 export function createTogetherRouter({ store, mediator, emit = () => {}, activity = null, promises = null, profile = null }) {
   const router = express.Router();
-  router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "请先登录。" }));
+  router.use("/together", (req, res, next) => req.auth ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") }));
   const hint = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : null;
-  const language = (req) => hint(req) || "zh";
+  const language = (req) => hint(req) || (["zh", "en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh");
   const pairing = async (req) => { const context = await store.getRelationshipContext(req.auth.user.id); if (!context) throw decisionError(409, "pairing_required"); return context; };
   const writable = (context) => context.relationship.status === "active" && context.members.length === 2;
   // Pinky's lines in Us are shown in each member's own interface language (founder 11-06); see shared-translate.mjs.
@@ -52,7 +55,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       }).catch(() => {});
       // 一起养的小家伙: brought up to date with what they did since (and a new level announced once).
       const synced = await transaction(req, (tx) => syncPet(tx, { relationshipId, userId, zone: validZone(timezone) ? timezone : "UTC", language: language(req) })).catch(() => null);
-      if (synced?.leveled) emit(synced.conversation, "together.updated");
+      if (synced?.leveled) emit(synced.conversation, "together.updated", null, userId);
       pet = synced?.view || null;
       // An outfit stays on only while the couple still owns it (a lapsed membership takes the members' outfits off).
       if (pet?.outfit) { const plan = await membershipFor(store, userId, { purchases: await cachedPurchases(store) }).catch(() => null); if (!plan?.outfits.includes(pet.outfit)) pet = { ...pet, outfit: null }; }
@@ -67,7 +70,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       if (week) void composeStory({ store, mediator, relationshipId, userId, language: lang, key: week.key, week, occasion: lang === "en" ? `their week of ${week.from} to ${week.to}` : lang === "es" ? `su semana del ${week.from} al ${week.to}` : `${week.from} 到 ${week.to} 这一周`, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
       // Every day: the first one to open Us gets today's question for both of them. The opener is looking at it, so only the
       // partner is pushed about it.
-      void askDailyQuestion({ store, mediator, relationshipId, userId, language: lang, today, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
+      void askDailyQuestion({ store, mediator, relationshipId, userId, language: lang, today, rotate: true, emit: (conversation) => emit(conversation, "together.updated", null, userId) });
       // Promises said in Us through iMessage or a call are noticed here, a little after Us is opened.
       promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId);
     }
@@ -88,6 +91,13 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, context = await pairing(req);
     const limit = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.limit || ""), 10) || 50));
     res.json(await olderTogetherMessages(store, { relationshipId: context.relationship.id, userId, before: clean(String(req.query?.before || ""), 80), limit }));
+  });
+  router.get("/together/locate", async (req, res) => {
+    const context = await pairing(req);
+    const result = await locateConversation({ store, userId: req.auth.user.id, channel: "us", conversationId: String(req.query.conversationId || `together:${context.relationship.id}`),
+      messageId: clean(String(req.query.messageId || ""), 80), date: clean(String(req.query.date || ""), 10), timezone: clean(String(req.query.timezone || ""), 64) || "UTC", direction: clean(String(req.query.direction || ""), 10) });
+    const { record, ...page } = result;
+    res.json(page);
   });
 
   // 想你了: one tap that tells the partner they are being thought of. A second tap within 30 seconds is the same one.
@@ -186,8 +196,17 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
 
   router.post("/together/daily/:id/answer", async (req, res) => {
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
-    const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text: req.body?.text, language: language(req), emit: (updated) => emit(updated, "together.updated") });
+    const { text, choice, drawing } = req.body || {};
+    const conversation = await answerDailyQuestion({ store, mediator, relationshipId: initial.relationship.id, userId, messageId: req.params.id, text, choice, drawing, language: language(req), emit: (updated) => emit(updated, "together.updated") });
     void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "daily_answered" });
+    res.json({ conversation: projectRecord(conversation, userId) });
+  });
+
+  // 看完了吗: one tap answers Pinky's next-day question about a show they planned to watch together (watched.mjs).
+  router.post("/together/watched/:id/answer", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const conversation = await answerWatchCheck({ store, relationshipId: initial.relationship.id, userId, messageId: req.params.id, finished: req.body?.finished, emit: (updated) => emit(updated, "together.updated") });
+    void recordUsage(store, { userId, relationshipId: initial.relationship.id, action: "watch_answered" });
     res.json({ conversation: projectRecord(conversation, userId) });
   });
 
@@ -210,6 +229,43 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const conversation = await answerGame({ store, relationshipId: initial.relationship.id, userId, messageId: req.params.id, choice: req.body?.choice, text: req.body?.text, emit: (updated) => emit(updated, "together.updated") });
     res.json({ conversation: projectRecord(conversation, userId) });
+  });
+
+  router.get("/together/play", async (req, res) => {
+    const userId = req.auth.user.id;
+    const context = await store.getRelationshipContext(userId);
+    const relationshipId = context?.members.length === 2 ? context.relationship.id : null;
+    res.json(await playTogetherView(store, { relationshipId, userId, language: language(req), readOnly: !context || !writable(context) }));
+  });
+  router.post("/together/play/:cardId/answer", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req);
+    if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const relationshipId = initial.relationship.id;
+    const saved = await answerPlayCard({ store, relationshipId, userId, cardId: req.params.cardId,
+      aboutUserId: req.body?.aboutUserId, choice: req.body?.choice, text: req.body?.text, language: language(req) });
+    if (saved.changed) emit(saved.conversation, "together.updated", null, userId);
+    if (saved.started) void recordUsage(store, { userId, relationshipId, action: "game_started" });
+    res.status(saved.started ? 201 : 200).json(saved.view);
+  });
+  router.post("/together/play/:cardId/reply", async (req, res) => {
+    const userId = req.auth.user.id, initial = await pairing(req);
+    if (!writable(initial)) throw decisionError(409, "pairing_required");
+    const saved = await replyToPlayCard({ store, relationshipId: initial.relationship.id, userId, cardId: req.params.cardId,
+      text: req.body?.text, clientId: req.body?.clientId, language: language(req) });
+    if (saved.changed) emit(saved.conversation, "together.updated", null, userId);
+    res.status(saved.changed ? 201 : 200).json(saved.view);
+  });
+
+  const playErrors = {
+    game_subject_changed: ["这一轮换成猜 TA 的答案了，请先看更新后的题卡。", "This round is about your partner now. Open the updated card before answering.", "Ahora esta ronda es sobre tu pareja. Abre la tarjeta actualizada para responder."],
+    play_waiting: ["等你们两个人都回答后，就可以接着聊。", "You can keep chatting once you have both answered.", "Podrán seguir conversando cuando ambos hayan respondido."],
+    play_reply_conflict: ["这条回复已有一份，刷新后再试。", "This reply has already been saved. Refresh before trying again.", "Esta respuesta ya se guardó. Actualiza antes de intentarlo de nuevo."],
+    play_reply_limit: ["这道题的聊天已满，可以在「我们俩」里接着聊。", "This card's conversation is full. You can keep chatting in Us.", "La conversación de esta tarjeta está llena. Pueden seguir en Nosotros."],
+  };
+  router.use("/together/play", (error, req, res, next) => {
+    const copy = playErrors[error.decisionCode];
+    if (!copy) return next(error);
+    res.status(error.statusCode).json({ error: say(language(req), ...copy), code: error.decisionCode });
   });
 
   router.use(decisionErrorHandler);

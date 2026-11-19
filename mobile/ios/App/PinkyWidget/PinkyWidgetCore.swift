@@ -39,37 +39,26 @@ enum WidgetContent: Equatable {
     case unavailable(PinkyLanguage)
 }
 
-enum WidgetStore {
-    static let appGroup = "group.us.toward.app"
-    static let baseUrlKey = "pinky.widget.baseUrl"
-    static let tokenKey = "pinky.widget.token"
-    static let lastPayloadKey = "pinky.widget.last"
-}
-
 enum WidgetLoader {
-    /// Reads the server address and widget token the app saved in the App Group, and fetches today's numbers.
-    static func load(defaults: UserDefaults? = UserDefaults(suiteName: WidgetStore.appGroup), session: URLSession = .shared) async -> WidgetContent {
-        let device = PinkyLanguage.device
-        guard let base = defaults?.string(forKey: WidgetStore.baseUrlKey), let token = defaults?.string(forKey: WidgetStore.tokenKey), !token.isEmpty,
-              let url = URL(string: base + "/api/widget") else { return .signedOut(device) }
-        let cached = defaults?.data(forKey: WidgetStore.lastPayloadKey).flatMap { try? JSONDecoder().decode(WidgetPayload.self, from: $0) }
+    static func load() async -> WidgetContent {
+        guard let credential = WidgetStore.current(), let base = URL(string: credential.origin) else { return .signedOut(.device) }
+        let url = base.appendingPathComponent("api/widget")
+        let cached = credential.lastPayload.flatMap { try? JSONDecoder().decode(WidgetPayload.self, from: $0) }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer " + credential.token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let reply = try? await session.data(for: request), let status = (reply.1 as? HTTPURLResponse)?.statusCode {
-            let data = reply.0
-            if status == 401 {
-                defaults?.removeObject(forKey: WidgetStore.lastPayloadKey)
+        if let (data, response) = try? await URLSession.shared.data(for: request), let status = (response as? HTTPURLResponse)?.statusCode {
+            if status == 401 || status == 403 {
+                _ = WidgetStore.cache(nil, for: credential)
                 return .signedOut(PinkyLanguage(payload: cached?.language))
             }
             if status == 200, let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-                defaults?.set(data, forKey: WidgetStore.lastPayloadKey)
-                return .ready(payload)
+                return WidgetStore.cache(data, for: credential) ? .ready(payload) : .signedOut(.device)
             }
         }
-        // 404 until the server ships /api/widget, rate limits, 5xx, offline: keep the last good numbers, else a gentle prompt.
+        guard WidgetStore.current()?.token == credential.token else { return .signedOut(.device) }
         if let cached { return .ready(cached) }
-        return .unavailable(device)
+        return .unavailable(.device)
     }
 }
 

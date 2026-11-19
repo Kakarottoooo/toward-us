@@ -1,4 +1,4 @@
-import type { Language } from "../../i18n";
+import { currentLanguage, inInterfaceLanguage, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 
 export type ImportPerson = { name: string; count: number; role: "me" | "partner" | "other" };
@@ -7,13 +7,13 @@ export type ChatImport = {
   id: string; title: string; platform: string; status: "needs_choice" | "needs_people" | "analyzing" | "ready" | "failed" | "waiting_sync"; error: string | null;
   shared: boolean; ownerUserId: string; createdAt: string; conversations?: Array<{ id: string; title: string; count: number; participants: string[]; lastAt: string | null }>;
   people: ImportPerson[]; messageCount: number; firstAt: string | null; lastAt: string | null; progress: { done: number; total: number } | null; sampled: boolean; rawDeleted: boolean;
-  shareRequestedAt: string | null; sharedCopyId: string | null; sync: { lastSyncAt: string | null } | null;
+  shareRequestedAt: string | null; sharedCopyId: string | null; sync: { lastSyncAt: string | null; needsDisclosure?: boolean } | null;
   stats: { perPerson: { me: PersonStats; partner: PersonStats }; monthly: Array<{ month: string; me: number; partner: number }>; silences: Array<{ from: string; to: string; days: number }>; busiestDays: Array<{ date: string; count: number }>; activeDays: number } | null;
   analysis: {
     message: string; overview: string; conflictCycle: string | null;
     patterns: Array<{ title: string; detail: string; evidence: Array<{ date: string | null; speaker: string | null; quote: string }> }>;
     strengths: Array<{ title: string; detail: string }>; hurts: Array<{ speaker: string; detail: string }>; suggestions: Array<{ title: string; detail: string }>;
-    moments: Array<{ date: string | null; title: string; text: string }>; dates: Array<{ date: string; title: string; yearly: boolean }>;
+    moments: Array<{ date: string | null; title: string; text: string }>; watched?: Array<{ date: string | null; title: string; note: string | null }>; dates: Array<{ date: string; title: string; yearly: boolean }>;
     promises: Array<{ date: string | null; speaker: string; text: string; status: "kept" | "open" | "unclear" }>; safety: { concern: boolean; note: string | null };
   } | null;
 };
@@ -21,17 +21,17 @@ export type ChatImport = {
 /** Sends an exported chat file as-is; the server recognizes the format. Octet-stream keeps JSON exports away from the app-wide JSON parser. */
 export async function uploadChatFile(file: Blob, { name, language, session }: { name: string; language: Language; session?: string | null }) {
   const query = new URLSearchParams({ name, language, ...(session ? { session } : {}) });
-  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/octet-stream" }, body: file });
+  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/octet-stream", "X-Pinky-Import-Disclosure": "1" }, body: file });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Upload failed (${response.status})`);
+  if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || `Upload failed (${response.status})`), currentLanguage()));
   return payload.import as ChatImport;
 }
 
 export async function importPastedChat(text: string, { language, session }: { language: Language; session?: string | null }) {
   const query = new URLSearchParams({ pasted: "1", language, ...(session ? { session } : {}) });
-  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/plain; charset=utf-8" }, body: text });
+  const response = await fetch(`/api/imports?${query}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/plain; charset=utf-8", "X-Pinky-Import-Disclosure": "1" }, body: text });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Import failed (${response.status})`);
+  if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || `Import failed (${response.status})`), currentLanguage()));
   return payload.import as ChatImport;
 }
 

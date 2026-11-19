@@ -16,11 +16,30 @@ Before making substantial visual changes, use the Product Design plugin's `get-c
 - In shared-device voice mode, attribute each completed realtime turn to the participant selected when speech begins. After the shared analysis, both participants continue the same public AI conversation in-place.
 - The product UI supports Simplified Chinese, English, and Spanish as complete interface languages. Use `ZH / EN / ES` in the selector. In English or Spanish mode, do not render the Chinese tagline `拉钩，说好就算数` or other Chinese interface text. The product name is `Pinky` in every language (wordmark `PINKY`); `拉钩` appears only in Chinese tagline copy.
 - Keep shared-space navigation and home entry descriptions comfortably readable; avoid tiny, low-contrast type in these primary entry points.
+- Founder 11-08 UI rules: each card has at most one primary and one secondary button; anything tappable looks like a button; omit unnecessary explanation lines. Infer user state from stored data and use existing chat/call paths instead of adding entry points.
 - Make everyday workflows voice-first: let users express goals, fill missing details, revise, and complete actions conversationally while preserving every existing capability and text/touch path. Keep results visible and verifiable; preserve explicit private-to-shared consent, same-version approval by each authenticated principal, and required account verification.
-- The formal product is a two-principal Relationship Agent, not a relationship score or a one-sided assistant. Private material stays owner-only; only an owner-confirmed shareable summary may enter the shared agent; agreements require both principals to approve the same version.
+- The formal product is first a private coach for one person, single or not, who may be getting to know several people, and becomes a two-principal Relationship Agent once they pair with one of them (founder 11-09). It is never a relationship score or a ranking of people. Each person they are getting to know is a private card of theirs that a partner never sees. Private material stays owner-only; only an owner-confirmed shareable summary may enter the shared agent; agreements require both principals to approve the same version.
 - Preserve provenance, visibility, AI access scope, approval policy, and per-user server projection for every long-lived relationship object. Never rely on the frontend to hide another member's private data.
 
 ## Delivery and self-verification
+
+### Model swap regression gate
+
+Before changing a model, prompts, the harness, or model-related dependencies, run
+`npm run gate:model -- --model <id> --channel claude|openai`.
+Machine checks fail only on regressions from a passing archived check; known
+archive gaps and unbaselined absolute checks are listed separately. Product
+timeouts/errors fail that case; only provider rejection, authentication or quota
+failures are UNAVAILABLE. Only a full `GATE: PASS` permits switching. `FAIL`, `UNAVAILABLE`, and a quick-only
+result do not authorize a switch. `--quick` runs historical deterministic replay
+and machine checks for all 60 fixed cases without judges. Before the first full
+Claude run, record the missing representative baseline with
+`npm run gate:model -- --model sonnet --record-baseline`, review it and commit it.
+Do not record it during TASK-66. The immutable 40-answer archive comes from main
+`de725b8`; never substitute answers from rejected PR #197. OpenAI requires an
+explicit model and same-channel main answers; missing/provider-unavailable
+evidence blocks switching without paid API or credits fallback. See
+`scripts/parity-eval/README.md` for provenance, commands, and limits.
 
 - Treat a reproducible product bug report as authorization to diagnose, fix, regression-test, deploy under existing authority, and verify production unless the user explicitly asks for analysis only.
 - Before handing off a UI change, exercise the affected interaction at representative phone widths (the desktop web version is no longer maintained), including focus, keyboard, hover, disabled, and responsive states that the change can influence.
@@ -58,6 +77,7 @@ When implementing from a selected generated mock, treat that image as the source
 
 - Use `Carousel` for horizontally draggable cards, images, media, chips, or other horizontal collections. Do not recreate these with `overflow-x`, custom pointer handlers, or a generic div.
 - `Carousel` can be nested directly inside `MobileScroll`. It owns horizontal gestures and automatically yields vertical gestures to the parent.
+- Exception (founder 11-07, "这一排圆形小图标还是有点卡"): the Moments story-bubble row (`.story-bubbles-native` in `MomentsPage`) scrolls natively (`overflow-x: auto; touch-action: pan-x pan-y`, so a vertical swipe on it still scrolls the page) instead of using `Carousel`, because native compositor scrolling measured smoother. Do not convert other rows without the founder asking.
 - Never put `data-scroll-drag="ignore"` on or around a `Carousel`; doing so prevents vertical parent scrolling when a gesture begins inside it.
 - Do not add CSS scroll snapping to `Carousel`; its runtime owns momentum and release motion.
 - Use `data-scroll-drag="ignore"` only when a control must prevent parent scrolling in every drag direction.

@@ -1,0 +1,16 @@
+.play-drawing { display: grid; gap: 6px; }
+.play-sketch { display: block; width: 100%; max-height: 180px; border-radius: 12px; background: #fffcf7; }
+.play-sketch.is-editable { border: 1px solid #d9cac0; touch-action: none; cursor: crosshair; }
+.play-drawing-tools { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.play-drawing-tools :is(.play-pen, .play-drawing-icon) {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+}
+.play-pen span { width: 19px; height: 19px; border-radius: 50%; }
+.play-drawing-tools .play-pen[aria-pressed="true"] { border-color: #ad8c9e; background: #fffcf8; }
+.play-drawing small { font-size: .83rem; line-height: 1.35; color: #5a4351; }

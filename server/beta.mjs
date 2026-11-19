@@ -16,16 +16,20 @@ const say = (language, zh, en, es) => language === "en" ? en : language === "es"
 const founders = (env) => new Set(String(env.FOUNDER_EMAILS || "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));
 const DAY = 86_400_000;
 
+// Things that got done, not activity: an agreement both approved, a plan put on the calendar, a hard message actually sent,
+// a show marked watched, a letter kept, a check-in saved.
+const OUTCOMES = new Set(["agreement_approved", "plan_scheduled", "partner_message_shared", "watch_answered", "letter_kept", "checkin_saved"]);
+
 export function createBetaRouter({ store, grant, env = process.env, now = () => new Date() }) {
   const router = express.Router();
-  const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "请先登录。" });
+  const auth = (req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: say(req.body?.language || req.query?.language, "请先登录。", "Please sign in first.", "Inicia sesión primero.") });
   const isFounder = async (userId) => { const list = founders(env); if (!list.size) return false; const user = await store.getUserById(userId); return Boolean(user?.email && list.has(user.email.toLowerCase())); };
   const founderOnly = async (req, res, next) => (await isFounder(req.auth.user.id)) ? next() : res.status(404).json({ error: "Not found." });
   const attempts = new Map();
 
   // A couple redeems a code: one code, one couple (the partner of whoever redeemed it may "redeem" it again harmlessly).
   router.post("/membership/redeem", auth, async (req, res) => {
-    const userId = req.auth.user.id, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh", code = normal(req.body?.code);
+    const userId = req.auth.user.id, language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : ["en", "es"].includes(req.auth.user.language) ? req.auth.user.language : "zh", code = normal(req.body?.code);
     const recent = (attempts.get(userId) || []).filter((at) => now().getTime() - at < 3_600_000);
     if (recent.length >= 10) return res.status(429).json({ error: say(language, "试太多次了，过一会儿再试。", "Too many tries; try again later.", "Demasiados intentos; prueba más tarde."), code: "too_many" });
     attempts.set(userId, [...recent, now().getTime()]);
@@ -73,7 +77,11 @@ export function createBetaRouter({ store, grant, env = process.env, now = () => 
       couples.push({
         label: `#${index + 1}`, since: relationship.createdAt || null, beta: Boolean(code), code: code?.code || null, note: code?.note || "",
         plan: plan?.plan || "free", source: plan?.source || null, activeMembers: thisWeek?.activeMembers || 0,
-        actions: Object.values(thisWeek?.actions || {}).reduce((sum, count) => sum + count, 0), topActions: Object.entries(thisWeek?.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 5),
+        actions: Object.values(thisWeek?.actions || {}).reduce((sum, count) => sum + count, 0),
+        // Save time, not kill time (11-07): what Pinky got done for them this week, apart from how much they tapped.
+        done: Object.entries(thisWeek?.actions || {}).filter(([name]) => OUTCOMES.has(name)).reduce((sum, [, count]) => sum + count, 0),
+        // Pushes that reached them this week and how many opened the App.
+        pushes: { sent: thisWeek?.actions?.push_sent || 0, opened: thisWeek?.actions?.push_opened || 0 }, topActions: Object.entries(thisWeek?.actions || {}).sort((a, b) => b[1] - a[1]).slice(0, 5),
         aiCalls: calls.reduce((sum, row) => sum + row.total, 0), aiDays: activeDays.size, lastAiDay: calls[0]?.day || null,
         feedback: feedback.filter((item) => members.includes(item.ownerUserId) && item.createdAt >= weekAgo).length,
       });

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CalendarBlank, Microphone, PaperPlaneRight } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { counted, languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { browserSpeechAvailable, useBrowserSpeech } from "../../useBrowserSpeech";
@@ -35,7 +35,7 @@ export const isConsentPoint = (point: string) => /是否同意|同不同意|是�
 export function PlanTerms({ terms, language }: { terms: string[]; language: Language }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const plan = planByDay(terms);
-  const away = (days: number | null) => days === null ? "" : days === 0 ? t("今天", "today", "hoy") : days === 1 ? t("明天", "tomorrow", "mañana") : t(`还有 ${days} 天`, `in ${days} days`, `en ${days} días`);
+  const away = (days: number | null) => days === null ? "" : days === 0 ? t("今天", "today", "hoy") : days === 1 ? t("明天", "tomorrow", "mañana") : t(`还有 ${days} 天`, `in ${counted(days, "day", "days")}`, `en ${counted(days, "día", "días")}`);
   return <>
     {plan.days.length > 0 && <div className="agreement-days">{plan.days.map((group) => <section key={group.day} className="agreement-day">
       <h3><CalendarBlank size={15} />{group.day}{away(group.away) && <em>{away(group.away)}</em>}</h3>

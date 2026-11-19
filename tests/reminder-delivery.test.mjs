@@ -44,7 +44,7 @@ test("durable scheduler accepts each due occurrence once across repeated and con
   assert.equal(f.sent.length, 1);
   assert.ok(!JSON.stringify(f.sent[0][1]).includes("PRIVATE"));
   assert.ok(!JSON.stringify(f.sent[0][1]).includes("Alice"));
-  assert.equal(f.sent[0][1].url, `/?view=reminders&reminder=${f.reminder.id}`);
+  assert.equal(f.sent[0][1].url, `/?view=reminders&reminder=${f.reminder.id}&from=push`);
   const jobs = await f.store.listRecordsForJob("deliveryJobs");
   assert.equal(jobs[0].status, "accepted");
   assert.equal(jobs[0].attempts, 1);
@@ -168,7 +168,7 @@ test("personal reminders are owner-only and relation targets stop after relation
   f.advance("2026-09-07T12:02Z");
   await f.service.runDue();
   assert.equal(f.sent.length, 1, "only the independent personal reminder remains eligible");
-  assert.equal(f.sent[0][1].url, `/?view=reminders&reminder=${f.reminder.id}`);
+  assert.equal(f.sent[0][1].url, `/?view=reminders&reminder=${f.reminder.id}&from=push`);
 });
 
 test("reminders preserve chosen local weekly time and define DST gaps and overlaps", () => {

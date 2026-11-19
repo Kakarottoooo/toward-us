@@ -104,7 +104,7 @@ export function createCycleRouter({ store, emit = () => {} }) {
     const userId = req.auth.user.id;
     await store.transaction(await lock(userId), async (tx) => {
       const record = await tx.getRelationshipRecordForUser("checkins", req.params.id, userId);
-      if (!record || record.kind !== CYCLE || record.ownerUserId !== userId) throw fail(404, say("zh", "没有找到", "Not found", "No encontrado"));
+      if (!record || record.kind !== CYCLE || record.ownerUserId !== userId) throw fail(404, say(req.query?.language || req.auth.user.language, "没有找到", "Not found", "No encontrado"));
       await tx.deleteRelationshipRecordForUser("checkins", record.id, userId);
     });
     res.status(204).end();

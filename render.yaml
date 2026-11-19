@@ -2,15 +2,24 @@ services:
   - type: web
     name: toward-us-private-beta
     runtime: node
-    plan: free
+    plan: starter
+    numInstances: 1
+    disk:
+      name: pinky-media
+      mountPath: /var/data
+      sizeGB: 1
     region: oregon
-    buildCommand: npm ci --include=dev && npm run build && npm run test:app
+    # Chromium for the read-only web lookups (server/readonly-web.mjs) and their tests, kept inside the project
+    # (PLAYWRIGHT_BROWSERS_PATH=0) so the running service finds it too. Without it every build since #181 failed.
+    buildCommand: npm ci --include=dev && npx playwright install chromium && npm run build && npm run test:app
     startCommand: npm start
     autoDeploy: true
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
       - key: DATABASE_URL
         fromDatabase:
           name: toward-us-private-beta-db
@@ -45,12 +54,30 @@ services:
         sync: false
       - key: FCM_SERVICE_ACCOUNT_JSON
         sync: false
+      # Pinky membership and the beta board (docs/payments.zh-CN.md); the founder fills these in on Render.
+      # Public privacy / terms / support pages (server/legal.mjs): the address people write to and who runs Pinky.
+      - key: PINKY_SUPPORT_EMAIL
+        value: ziwei@witnora.com
+      - key: PINKY_OPERATOR
+        value: Witnora, Inc.
+      - key: TOWARD_US_MEDIA_DIR
+        value: /var/data/media
+      - key: PINKY_METRICS_ADMIN_TOKEN
+        sync: false
+      - key: FOUNDER_EMAILS
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
 
 databases:
   - name: toward-us-private-beta-db
     databaseName: toward_us_private_beta
     user: toward_us_app
-    plan: free
+    # The live database is on Basic-256mb; saying free here made every Blueprint sync fail
+    # ("cannot downgrade database from Basic-256mb to Free"), so build command changes never reached Render.
+    plan: basic-256mb
     region: oregon
     postgresMajorVersion: "18"
     ipAllowList: []

@@ -13,14 +13,17 @@ function run(command, args, options = {}) {
   if (result.status !== 0) process.exit(result.status || 2);
 }
 
-if (target === 'ios') {
+if (target === 'ios' || target === 'ios-release') {
   if (process.platform !== 'darwin') {
     console.error('iOS compilation requires macOS and Xcode 26+. Windows cannot run Apple Simulator. Copy this project to your Mac, then run npm run check:ios.');
     process.exit(2);
   }
   run('xcodebuild', ['-version']);
-  run('xcodebuild', ['-project', 'ios/App/App.xcodeproj', '-scheme', 'App', '-configuration', 'Debug',
-    '-destination', 'generic/platform=iOS Simulator', '-derivedDataPath', join(output, 'ios'),
+  // ios: an unsigned Debug build for the Simulator. ios-release: an unsigned Release build for real iPhones, the same
+  // compile an App Store archive does (signing happens later in Xcode with the paid team).
+  const release = target === 'ios-release';
+  run('xcodebuild', ['-project', 'ios/App/App.xcodeproj', '-scheme', 'App', '-configuration', release ? 'Release' : 'Debug',
+    '-destination', release ? 'generic/platform=iOS' : 'generic/platform=iOS Simulator', '-derivedDataPath', join(output, release ? 'ios-release' : 'ios'),
     // These Swift packages are public; avoid prompting for unrelated GitHub Keychain credentials.
     '-packageAuthorizationProvider', 'netrc',
     'CODE_SIGNING_ALLOWED=NO', 'build']);
@@ -43,6 +46,6 @@ if (target === 'ios') {
   else run('sh', ['gradlew', 'assembleDebug', '--no-daemon'], { cwd, env });
   console.log('Debug APK: ' + join(cwd, 'app/build/outputs/apk/debug/app-debug.apk'));
 } else {
-  console.error('Usage: node scripts/check-native.mjs ios|android');
+  console.error('Usage: node scripts/check-native.mjs ios|ios-release|android');
   process.exit(2);
 }

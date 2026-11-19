@@ -53,8 +53,8 @@ test("two guests scan in, consent, mediate, and preserve the review together", a
   await screenshotDevice(hostPage, "qa/demo-room-inline-analysis-mobile.png");
   await hostPage.setViewportSize({ width: 1400, height: 1200 });
 
-  expect((await host.request.post("/api/auth/register", { data: { name: "小红", email: `demo-host-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
-  expect((await partner.request.post("/api/auth/register", { data: { name: "阿蓝", email: `demo-partner-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
+  expect((await host.request.post("/api/auth/register", { data: { aiConsent: true, name: "小红", email: `demo-host-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
+  expect((await partner.request.post("/api/auth/register", { data: { aiConsent: true, name: "阿蓝", email: `demo-partner-${suffix}@example.com`, password: "correct-horse-battery" } })).status()).toBe(201);
   await hostPage.reload();
   await partnerPage.reload();
   await hostPage.locator(".analysis-tabs").getByRole("button", { name: "共同反馈" }).click();

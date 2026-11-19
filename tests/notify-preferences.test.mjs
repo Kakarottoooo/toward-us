@@ -19,8 +19,9 @@ test("each member hears only the kinds of news they keep on, and only reminders 
   const service = createReminderService({ store, now: () => clock, sendNative: async (token, payload) => { sent.push([token, payload.body]); } });
   await service.registerNativeDevice(a, { token: "fcm-token-alex-0001", platform: "ios" });
   await service.registerNativeDevice(b, { token: "fcm-token-blair-0002", platform: "ios" });
-  assert.deepEqual((await service.getSettings(a)).notify, { messages: true, pinky: true, reminders: true, quiet: false });
-  await service.updateNotify(b, { pinky: false });
+  // Save time, not kill time (11-07): surprises are off and nights quiet unless a member chooses otherwise.
+  assert.deepEqual((await service.getSettings(a)).notify, { messages: true, pinky: false, reminders: true, quiet: true });
+  await service.updateNotify(a, { pinky: true });
   let at = 0; const message = (fields) => ({ id: randomUUID(), createdAt: new Date(Date.parse("2099-12-01T04:00:00Z") + (at += 1000)).toISOString(), refs: [], ...fields });
   const conversation = { id: `together:${relationshipId}`, relationshipId, createdByUserId: a, messages: [] };
   conversation.messages.push(message({ role: "agent", kind: "story", text: "100 days", handle: "story:x:day-100" }));

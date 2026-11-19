@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "仅在你点按麦克风时使用，用来把你说的话实时转成文字。";
-"NSPhotoLibraryUsageDescription" = "在你选择要发送的照片，或连接一个相册让 Pinky 整理成你们的回忆时使用。";
+"NSPhotoLibraryUsageDescription" = "在你选择要发送的照片、连接一个相册让 Pinky 整理成你们的回忆，或让 Pinky 找出你们俩的合照时使用（人脸只在手机上比对，不会上传）。";
+"NSCameraUsageDescription" = "仅在你选择拍照发送给 Pinky 时使用。";
+"NSSpeechRecognitionUsageDescription" = "仅在你点按麦克风时使用，在手机上把你说的话转成文字。";

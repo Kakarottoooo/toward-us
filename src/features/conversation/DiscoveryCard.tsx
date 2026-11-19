@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle, X } from "@phosphor-icons/react";
+import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
@@ -15,9 +15,10 @@ const save = (userId: string, memory: Memory) => { try { localStorage.setItem(ke
 
 /** 主动展示功能 (founder 11-06): at the end of each conversation, one thing this member has not tried yet, with a button that
  * does it (or starts the sentence for it). A new one at most once a day per conversation; tried or "知道了" and it goes. */
-export function DiscoveryCard({ userId, channel, paired, language, partnerName, refreshKey, onAction }: { userId: string; channel: Channel; paired: boolean; language: Language; partnerName: string; refreshKey: number; onAction: (key: DiscoverKey) => void }) {
+export function DiscoveryCard({ userId, channel, paired, language, partnerName, refreshKey, onAction, used: known }: { userId: string; channel: Channel; paired: boolean; language: Language; partnerName: string; refreshKey: number; onAction: (key: DiscoverKey) => void; used?: string[] | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [used, setUsed] = useState<Set<string> | null>(null);
+  // What the conversation already fetched while it opened, so the card is there with everything else (11-08).
+  const [used, setUsed] = useState<Set<string> | null>(() => known ? new Set(known) : null);
   const [memory, setMemory] = useState<Memory>(() => load(userId));
   useEffect(() => { relationshipApi<{ used: string[] }>("/api/discover").then((result) => setUsed(new Set(result.used))).catch(() => setUsed(null)); }, [userId, refreshKey]);
   const today = new Date().toLocaleDateString("en-CA");
@@ -54,6 +55,5 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
     <span className="discovery-icon">{card.icon}</span>
     <div><small><Sparkle size={12} weight="fill" />{t("试试看", "Try this", "Prueba esto")}</small><strong>{card.title}</strong><p>{card.text}</p>
       <span className="discovery-actions">{card.button && <button type="button" className="discovery-go" onClick={() => { done(key!); onAction(key!); }}>{card.button}</button>}<button type="button" className="discovery-later" onClick={() => done(key!)}>{t("知道了", "Got it", "Entendido")}</button></span></div>
-    <button type="button" className="discovery-close" aria-label={t("关闭", "Close", "Cerrar")} onClick={() => done(key!)}><X size={16} /></button>
   </article>;
 }

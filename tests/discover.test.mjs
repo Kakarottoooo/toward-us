@@ -23,6 +23,10 @@ test("主动展示功能: what each member has tried is read from what they did;
   assert.deepEqual([...(await featuresUsed(store, ids[0])).used], [], "a new couple has tried nothing");
   const offered = await notTriedYet(store, ids[0], "us");
   assert.ok(offered.length > 0 && offered.every((item) => item.what && item.feature !== "cycle"));
+  const ideas = offered.find((item) => item.feature === "ideas").what;
+  assert.match(ideas, /in About us/);
+  assert.doesNotMatch(ideas, /in the Us menu/);
+  assert.match(ideas, /use the reply language for labels/);
 
   // Ziwei sends 想你了 and a game round happens in Us; Mia did not send the heart.
   await store.transaction(`relationship:${relationshipId}`, async (tx) => {

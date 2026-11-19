@@ -1,4 +1,14 @@
-import { profileContext } from "./profile.mjs";
+import { screenText } from "./ai-screening.mjs";
+import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
+import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
+import { prepareSourceReply } from "./source-reply.mjs";
+import { checkPlanConstraints } from "./plan-constraints.mjs";
+import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
+import { gettingToKnow, profileContext } from "./profile.mjs";
+import { markAsked, togetherWith } from "./people-stages.mjs";
+import { asksToRecall, prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
+import { citedReply, locateConversation, readableConversation, conversationMessages } from "./conversation-recall.mjs";
+import { listPeople, livePerson } from "./people.mjs";
 import { cycleContext, isCycleRecord, logPeriod } from "./cycle.mjs";
 import { notTriedYet } from "./discover.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -13,7 +23,10 @@ import { prepareHandoff } from "./handoffs.mjs";
 import { appendTogetherMessage, memberLanguage } from "./together-domain.mjs";
 import { recordUsage } from "./usage.mjs";
 import { importContext } from "./chat-import.mjs";
+import { draftAgreementFromTogether } from "./together-domain.mjs";
 import { askAboutPromise, openPromises } from "./promise-checks.mjs";
+import { answerDateCheck, askAfterDate } from "./date-checks.mjs";
+import { askToKnow } from "./know-you.mjs";
 import { isAiLimit } from "./ai-budget.mjs";
 
 const collections = { reminder: "reminders", checkin: "checkins", memory: "memories", plan: "privateAgentThreads", milestone: "milestones", agreement: "agreements", commitment: "commitments", space: "spaces", space_item: "spaceItems" };
@@ -43,13 +56,23 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   };
   const output = async (session) => {
     const records = await available(store, session.ownerUserId);
-    return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, messages: session.messages.map((message) => ({
-      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(message.kind === "noted" ? { kind: "noted" } : {}), ...(message.call ? { call: message.call } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+    const validSources = new Map();
+    for (const source of session.messages.flatMap((message) => message.sources || [])) {
+      const key = `${source.channel}:${source.conversationId}`;
+      if (!validSources.has(key)) validSources.set(key, await readableConversation(store, session.ownerUserId, source.channel, source.conversationId)
+        .then((record) => conversationMessages(store, session.ownerUserId, source.channel, record)).then((messages) => new Set(messages.map((message) => message.id))).catch(() => new Set()));
+    }
+    return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), earlierPages: session.earlier?.length || 0, messages: session.messages.map((message) => ({
+      ...(message.sources?.length ? { sources: message.sources.filter((source) => validSources.get(`${source.channel}:${source.conversationId}`)?.has(source.messageId)) } : {}),
+      id: message.id, role: message.role, text: message.text, createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
-        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.kind === "date" ? "/?view=upcoming" : share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}`, ...(share.kind === "date" ? { shareKind: "date" } : {}) } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
+        if (reference.kind === "space_share") { const share = (session.pendingShares || []).find((item) => item.cardId === reference.id); return share ? { id: share.cardId, kind: "space_share", version: 1, title: share.spaceTitle, text: [share.title, share.text, share.date].filter(Boolean).join(" · "), photoId: share.photoId || null, digest: share.digest, status: share.sharedAt ? "shared" : "draft", url: share.kind === "date" ? "/?view=upcoming" : share.kind === "agreement" ? "/?channel=us" : share.album === "moments" ? "/?view=moments" : `/?view=space&space=${encodeURIComponent(share.spaceId)}`, ...(["date", "agreement"].includes(share.kind) ? { shareKind: share.kind } : {}) } : { id: reference.id, kind: "space_share", version: 1, status: "unavailable", title: "" }; }
         if (reference.kind === "partner_message") return { id: reference.id, kind: "partner_message", version: reference.version, title: say(session.language, "想对TA说的话", "Message for your partner", "Mensaje para tu pareja"), text: reference.text, digest: reference.digest, ...(reference.openOn ? { openOn: reference.openOn } : {}), status: session.partnerMessage?.cardId !== reference.id ? "superseded" : session.partnerMessage.sharedAt ? "shared" : "draft" };
+        // Undone in one tap (founder 11-07, save time): the record is archived and the card says so.
+        const undone = (session.undone || []).find((item) => item.id === reference.id);
+        if (undone) return { id: reference.id, kind: reference.kind, version: reference.version, status: "undone", title: say(session.language, `已撤销：${undone.title}`, `Undone: ${undone.title}`, `Deshecho: ${undone.title}`) };
         const current = records.find(({ kind, record }) => kind === reference.kind && record.id === reference.id);
         if (!current && reference.title) return { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, `已移走：${reference.title}`, `Removed: ${reference.title}`, `Quitado: ${reference.title}`) };
         return current ? card(current.kind, current.record, session.language) : { id: reference.id, kind: reference.kind, version: reference.version, status: "unavailable", title: say(session.language, "记录已归档或不可用", "Record archived or unavailable", "Registro archivado o no disponible") };
@@ -57,9 +80,9 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     })) };
   };
   // `channel` marks a session owned by a channel adapter (iMessage keeps one running session per member and language).
-  const createSession = async (userId, { language, timezone, channel = null }) => {
+  const createSession = async (userId, { language, timezone, channel = null, personId = null }) => {
     try { new Intl.DateTimeFormat("en", { timeZone: timezone }); } catch { throw fail(400, "Invalid IANA time zone."); }
-    const session = privateRecord(userId, { intentType: "assistant", language, timezone, messages: [], aiAccessScope: "private", ...(channel ? { channel } : {}) });
+    const session = privateRecord(userId, { intentType: "assistant", language, timezone, messages: [], aiAccessScope: "private", ...(channel ? { channel } : {}), ...(personId ? { personId } : {}) });
     await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const sessions = (await tx.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && !record.archivedAt);
@@ -70,19 +93,45 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   };
   router.post("/assistant/sessions", async (req, res) => {
     const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "zh";
+    // A person's own conversation: one per person, reopened rather than made twice. Only someone this member is getting to know.
+    const personId = clean(req.body?.personId, 80);
+    if (personId) {
+      const userId = req.auth.user.id;
+      const person = (await listPeople(store, userId)).find((item) => item.id === personId && livePerson(item, userId));
+      if (!person) throw fail(404, "Not found.");
+      const existing = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).find((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.personId === personId && !record.archivedAt && record.status === "active");
+      return res.status(existing ? 200 : 201).json({ session: await output(existing || await createSession(userId, { language, timezone: clean(req.body?.timezone, 64) || "UTC", personId })) });
+    }
     const session = await createSession(req.auth.user.id, { language, timezone: clean(req.body?.timezone, 64) || "UTC" });
-    res.status(201).json({ session: await output(session) });
+    // Made because they opened Just me (not because they started typing): if Pinky barely knows them yet (judged from what it
+    // has kept), it speaks first with its opening question.
+    res.status(201).json({ session: await output((req.body?.opened === true && await askToKnow(store, { userId: req.auth.user.id, session }).catch(() => null)) || session) });
   });
   // The member's most recent App conversation, for a device that has not remembered one (it may hold a question from Us).
   router.get("/assistant/sessions/latest", async (req, res) => {
-    const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel);
+    const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.personId && !record.channel);
     const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!latest) throw fail(404, "No conversation yet.");
-    res.json({ session: await output((await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
+    res.json({ session: await output((await askToKnow(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
+  });
+  // The earlier pages of a long conversation (oldest first within a page); page 1 is the most recent page.
+  router.get("/assistant/sessions/:id/earlier", async (req, res) => {
+    const session = await owned(store, req.params.id, req.auth.user.id);
+    const pages = session.earlier || [], page = Math.max(1, Math.min(pages.length, Number(req.query.page) || 1));
+    if (!pages.length) return res.json({ messages: [], pages: 0 });
+    const shown = await output({ ...session, earlier: [], messages: pages[pages.length - page].messages });
+    res.json({ messages: shown.messages, page, pages: pages.length });
+  });
+  router.get("/assistant/sessions/:id/locate", async (req, res) => {
+    const result = await locateConversation({ store, userId: req.auth.user.id, channel: "me", conversationId: req.params.id,
+      messageId: clean(req.query.messageId, 80), date: clean(req.query.date, 10), timezone: clean(req.query.timezone, 64) || "UTC", direction: clean(req.query.direction, 10) });
+    const shown = await output({ ...result.record, messages: result.messages });
+    const { record, ...page } = result;
+    res.json({ ...page, messages: shown.messages, ...(record.personId ? { personId: record.personId } : {}) });
   });
   router.get("/assistant/sessions/:id", async (req, res) => {
     const session = await owned(store, req.params.id, req.auth.user.id);
-    res.json({ session: await output((req.query.opened === "1" && await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null)) || session) });
+    res.json({ session: await output((req.query.opened === "1" && ((await askToKnow(store, { userId: req.auth.user.id, session }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session }).catch(() => null)) || await askAboutPromise(store, { userId: req.auth.user.id, session }).catch(() => null))) || session) });
   });
   // Each promise's own latest answer, for the Agreements page; private to this member.
   router.get("/assistant/promises", async (req, res) => {
@@ -114,7 +163,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     text: record.text || record.draft?.shareableSummary || record.summary || (kind === "space" ? record.description : null) || null, status: record.status, version: record.version,
     // The memory albums open as Moments, under their own name in every language.
     ...(kind === "space" && record.system === "moments" ? { title: say(language, "回忆", "Moments", "Momentos") } : {}),
-    url: record.system === "moments" || record.album === "moments" ? "/?view=moments" : kind === "space" ? `/?view=space&space=${encodeURIComponent(record.id)}` : kind === "space_item" ? `/?view=space&space=${encodeURIComponent(record.spaceId)}` : kind === "reminder" ? `/?view=reminders&reminder=${encodeURIComponent(record.id)}` : ["agreement", "commitment"].includes(kind) ? `/?view=decide&issue=${encodeURIComponent(record.issueId || "")}` : kind === "milestone" ? `/?view=plans&milestone=${encodeURIComponent(record.id)}` : kind === "plan" ? `/?view=plans&thread=${encodeURIComponent(record.id)}` : `/?view=${kind === "memory" ? "memories" : "checkins"}`,
+    ...(kind === "space" && record.system === "watched" ? { title: say(language, "一起看过的", "Watched together", "Vistos juntos") } : {}),
+    url: record.system === "watched" || record.album === "watched" ? "/?view=moments&watched=1" : record.system === "moments" || record.album === "moments" ? "/?view=moments" : kind === "space" ? `/?view=space&space=${encodeURIComponent(record.id)}` : kind === "space_item" ? `/?view=space&space=${encodeURIComponent(record.spaceId)}` : kind === "reminder" ? `/?view=reminders&reminder=${encodeURIComponent(record.id)}` : ["agreement", "commitment"].includes(kind) ? `/?view=decide&issue=${encodeURIComponent(record.issueId || "")}` : kind === "milestone" ? `/?view=plans&milestone=${encodeURIComponent(record.id)}` : kind === "plan" ? `/?view=plans&thread=${encodeURIComponent(record.id)}` : `/?view=${kind === "memory" ? "memories" : "checkins"}`,
     ...(kind === "reminder" ? { localDateTime: localTime(record.dueAt, record.timezone), timezone: record.timezone, frequency: record.frequency, nextOccurrenceOnly: Boolean(record.occurrenceOriginalDueAt), weeklyTime: record.localTime } : {}),
     ...(kind === "plan" ? { date: record.draft?.date } : {}),
   });
@@ -126,74 +176,144 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       const result = await runTurn(userId, sessionId, body, { ...options, progress });
       // A promise said here stays this member's alone; it is noticed in the background once the chat goes quiet.
       if (!result.duplicate) { promises?.notePrivate(userId, sessionId); profile?.notePrivate(userId, sessionId); }
+      if ((result.session.earlier?.length || 0) > (result.session.summarizedPages || 0)) void summarizeEarlier({ store, mediator, userId, sessionId }).catch((error) => console.error("Could not summarise the earlier conversation:", error?.message || error));
+      // "我和阿杰在一起了": the one moment Pinky asks whether someone is the one (founder 11-09, three stages).
+      if (!result.duplicate) {
+        const person = await togetherWith(store, userId, body?.text).catch(() => null);
+        if (person) {
+          await store.transaction(`user:${userId}`, (tx) => markAsked(tx, userId, person.id));
+          const name = person.name.replace(/[（(][^）)]*[）)]/g, "").trim() || person.name;
+          const asked = await postNote(userId, { sessionId: result.session.id, language: result.session.language, kind: "together_ask", personId: person.id, text: say(result.session.language, `听起来你和${name}确定了？`, `Sounds like you and ${name} are together?`, `¿Parece que tú y ${name} están juntos?`) }).catch(() => null);
+          if (asked) result.session = asked;
+        }
+      }
       return result;
     } finally { progress(null); }
   };
-  const runTurn = async (userId, sessionId, body, { channel = "app", progress }) => {
+  const runTurn = async (userId, sessionId, body, { channel = "app", progress, transcript = false }) => {
     const session = await owned(store, sessionId, userId);
     const text = clean(body?.text, 2000); const itemId = clean(body?.itemId, 120);
     const photoIds = Array.isArray(body?.photoIds) ? [...new Set(body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
     if ((!text && !photoIds.length) || !itemId) throw fail(400, "Text and a unique itemId are required.");
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId); if (photo.ownerUserId !== userId || photo.visibility !== "private") throw fail(400, "Send photos from this conversation."); }
     if (session.messages.some((message) => message.itemId === itemId)) return { session, duplicate: true };
-    if (session.messages.length >= 200) throw fail(409, say(session.language, "这段对话已满，请开始新对话。", "Start a new conversation to continue.", "Inicia una nueva conversación para continuar."));
+    await screenText(text);
     const records = await available(store, userId);
     await ensureMomentSpaces(store, userId);
     const userMessage = { id: randomUUID(), role: "user", text, itemId, ...(photoIds.length ? { photoIds } : {}), createdAt: new Date().toISOString() };
-    const context = {
+    let context = {
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
       // A voice call appears as its captions, so the user can refer back to what was said on the call.
-      messages: [...session.messages.map(({ role, text, call }) => ({ role, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
-      records: records.slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}), ...(kind === "checkin" ? { date: localTime(record.createdAt, session.timezone).slice(0, 10) } : {}) })),
+      messages: [...session.messages.map(({ role, text, call, createdAt }) => ({ role, createdAt, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
+      // Notes kept about people are already in context.profile with their ids; Pinky's own bookkeeping (people, portraits,
+      // tidy state, what the member wants) is never a record to act on (scale test 11-09: after years these crowded out the rest).
+      records: records.filter(({ kind, record }) => kind !== "memory" || !record.kind || record.kind === "memory").slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}), ...(kind === "checkin" ? { date: localTime(record.createdAt, session.timezone).slice(0, 10) } : {}) })),
       partnerDraft: session.partnerMessage && !session.partnerMessage.sharedAt ? { cardId: session.partnerMessage.cardId, text: session.partnerMessage.text, openOn: session.partnerMessage.openOn || null } : null,
       recentCards: ([...session.messages].reverse().find((message) => message.cards?.length)?.cards || []).map(({ id, kind, version }) => ({ id, kind, version })),
       webSearch: Boolean(mediator.webSearch), attachedPhotos: photoIds,
+      ...(session.earlierSummary ? { earlier: session.earlierSummary } : {}),
       openPromises: await openPromises(store, userId, session).catch(() => []),
       notTriedYet: await notTriedYet(store, userId, "me").catch(() => []),
+      gettingToKnow: await gettingToKnow(store, userId).catch(() => false),
       cycle: await cycleContext(store, userId, localTime(new Date(), session.timezone).slice(0, 10)).catch(() => null),
-      profile: await profileContext(store, userId).catch(() => ({ me: [], partner: [], us: [] })),
+      profile: await profileContext(store, userId).then((profile) => session.personId ? { ...profile, people: (profile.people || []).filter((person) => person.id === session.personId) } : profile).catch(() => ({ me: [], partner: [], us: [] })),
+      // A person's own conversation (founder 11-09): everything here is about this one person.
+      ...(session.personId ? { focus: await listPeople(store, userId, { archived: true }).then((people) => { const person = people.find((item) => item.id === session.personId); return person ? { personId: person.id, name: person.name } : null; }).catch(() => null) } : {}),
       chatImports: chatImports ? importContext((await store.listRelationshipRecordsForUser("chatImports", userId)).filter((record) => canViewRecord(record, userId))) : [],
+      screenshotConversation: chatImports?.screenshotContext ? await chatImports.screenshotContext(userId, session.id) : null,
       spaces: await (async () => { const all = await listSpaces(store, userId); return [...spaceContext(all, { shared: false }).map((space) => ({ ...space, shared: false })), ...spaceContext(all, { shared: true }).map((space) => ({ ...space, shared: true }))]; })(),
     };
     // Pinky answers in the interface language this member picked, whatever language they type in (founder 11-06: one language everywhere, the one each member picked).
     const language = await memberLanguage(store, userId, body?.language);
     const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
-    let plan;
+    let plan; const recallSources = [], replySources = [];
+    const boundaryIndex = session.messages.filter((message) => message.role === "assistant" && isPrivateBoundaryReply(message.text)).length;
+    const normalizePlan = (value) => normalizeAssistantTurn(value, language, boundaryIndex);
+    // These are the same owner-projected inputs the planner saw, not another member's history.
+    const history = session.messages.slice(-29).map(({ role, text, createdAt, call }) => ({ role, text, createdAt, ...(call ? { call: call.rows } : {}) })), historySources = [];
+    if (history.length) historySources.push({ kind: "conversation", text: JSON.stringify(history) });
+    if (Object.values(context.profile).some((value) => Array.isArray(value) ? value.length : Boolean(value))) historySources.push({ kind: "visible_memory", text: JSON.stringify(context.profile) });
+    if (context.screenshotConversation?.transcript) replySources.push({ kind: "import", text: context.screenshotConversation.transcript });
+    if (transcript || /^(?:这是.{0,12})?(?:语音转写|语音的转写|voice transcript|transcripci[oó]n)/iu.test(text)) replySources.push({ kind: "transcript", text });
+    if (replySources.some((source) => source.kind === "transcript")) context.sourceTranscript = text;
+    const webTurn = createWebTurn({ reader: mediator.readonlyWeb, failures: session.webFailures });
+
+    const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
+    if (recalled) { context.lookups = [...(context.lookups || []), recallLookup(recalled, text)]; recallSources.push(...recalled.sources); replySources.push({ kind: "recall", text: recalled.findings }); }
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
-    plan = normalizeAssistantTurn(plan);
-    if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
+    plan = normalizePlan(plan);
+    // A plan with no words and no action was shown as the generic "你想创建、查找还是修改什么？" (use-case regression 11-09:
+    // asked what to bring to meet her parents). The model is asked once more before that fallback can appear.
+    if (validateAssistantTurn(plan) && !clean(plan.reply, 1200) && !clean(plan.sendableDraft, 1200) && !plan.actions.length) {
+      try { plan = normalizePlan(await mediator.planAssistantTurn(context, language)); }
+      catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
+    }
+    // A malformed answer is asked for once more before the member sees an error (memory eval 11-09: an old question
+    // after a long history came back as a 502 about one time in three).
+    if (!validateAssistantTurn(plan)) {
+      try { plan = normalizePlan(await mediator.planAssistantTurn(context, language)); }
+      catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
+    }
+    // The shape only (keys, kinds, operations), never what anyone wrote: enough to find why a planner answer failed.
+    if (!validateAssistantTurn(plan)) { console.error("Invalid planner turn:", JSON.stringify({ keys: Object.keys(plan || {}), actions: Array.isArray(plan?.actions) ? plan.actions.map((action) => ({ keys: Object.keys(action || {}), kind: action?.kind, operation: action?.operation, fields: Object.keys(action?.fields || {}) })) : typeof plan?.actions })); throw fail(502, "The assistant could not prepare a valid action. Nothing was changed."); }
     // A turn that needs the outside world: look it up, then plan once more with the findings. Searches never run twice.
-    const searches = plan.actions.filter((action) => action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports).slice(0, 3);
+    const searches = webTurn.results.length ? [] : plan.actions.filter((action) => action.kind === "web_read" || action.kind === "web_search" && mediator.lookup || action.kind === "chat_search" && chatImports || action.kind === "memory_search" && !recalled).slice(0, 3);
     if (searches.length) {
-      const web = searches.find((action) => action.kind === "web_search");
+      const web = searches.find((action) => ["web_search", "web_read"].includes(action.kind));
       progress(web ? "searching_web" : "searching_chats", web?.query || null);
       // Chat searches read only imports this member can see; the shared copy of a couple's import is searchable by both.
-      const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
+      const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
+        ? await searchMemoryResults({ store, userId, query: action.query || "", date: action.fields?.date || "", personId: session.personId || null }).then((result) => { recallSources.push(...result.sources); replySources.push({ kind: "recall", text: result.findings }); return recallLookup(result, `${action.query || ""} ${action.fields?.date || ""}`.trim()); }).catch(() => ({ query: action.query, findings: "The search failed. Say the search failed, not that no record exists." }))
+        : action.kind === "chat_search"
         ? { query: `chat history ${action.query || ""} ${action.fields?.date || ""}`.trim(), findings: await chatImports.search(userId, action.targetId, { query: action.query || "", date: action.fields?.date || "" }).catch(() => "This chat history is not available.") }
+        : action.kind === "web_read" ? { query: action.query, findings: action.query }
         : { query: action.query, findings: await mediator.lookup(action.query, language).catch(() => "No results: the search failed.") }));
+      const urls = lookups.filter((_, index) => ["web_search", "web_read"].includes(searches[index].kind)).flatMap((row) => pageUrls(row.findings));
+      for (let index = 0; index < searches.length; index++) if (searches[index].kind === "chat_search") replySources.push({ kind: "import_search", text: typeof lookups[index].findings === "string" ? lookups[index].findings : JSON.stringify(lookups[index].findings) });
+      if (urls.length) context.webPages = await webTurn.read(urls);
+      if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
       progress("writing");
-      try { plan = normalizeAssistantTurn(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
+      context = { ...context, lookups };
+      try { plan = normalizePlan(await mediator.planAssistantTurn({ ...context, lookups }, language)); }
       catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
       if (!validateAssistantTurn(plan)) throw fail(502, "The assistant could not prepare a valid action. Nothing was changed.");
     }
-    // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
-    if (chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import")) {
-      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language: session.language })
-        .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
+    // Check proposed plans before any write. One repair attempt is bounded; a
+    // second contradiction is an honest non-completion, never a claimed success.
+    let checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
+    if (!checked.ok) {
+      progress("writing");
+      try {
+        plan = normalizePlan(await mediator.planAssistantTurn({ ...context, constraintErrors: checked.issues, rejectedPlan: plan,
+          correction: "Revise the proposal to satisfy these code checks. Preserve all requested deliverables. Do not perform actions for a plan that is still invalid." }, language));
+      } catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
+      if (!validateAssistantTurn(plan)) throw unavailable();
+      checked = checkPlanConstraints(plan.planConstraints, { context, reply: clean(plan.reply, 1200) });
+      if (!checked.ok) plan = { reply: say(language, "这份安排还没通过预算或条件核对，我暂时不能把它当作可执行方案；相关价格、地点、日期和安全条件仍需核实。", "This plan has not passed the budget or constraint checks, so I cannot present it as ready to use; its prices, location, dates and safety conditions still need verification.", "El plan aún no supera la comprobación de presupuesto o condiciones; faltan por verificar precios, lugar, fechas y seguridad."), actions: [] };
     }
-    plan = { ...plan, actions: plan.actions.filter((action) => !["web_search", "chat_search", "chat_import"].includes(action.kind)) };
+    // A short conversational acknowledgement is not consent to create a mood
+    // card; an explicit diary/recording request still keeps its normal action.
+    if (wantsOneSentence(text) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
+    if (webTurn.results.length) plan = { ...plan, actions: [] };
+    // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
+    const readingScreenshots = Boolean(chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import"));
+    if (readingScreenshots) userMessage.screenshots = true;
+    // Untrusted public pages can inform an answer, never grant a write. A later
+    // explicit user turn can use the ordinary confirmation/action path.
+    plan = { ...plan, actions: webTurn.results.length ? [] : plan.actions.filter((action) => !["web_read", "web_search", "chat_search", "memory_search", "chat_import"].includes(action.kind)) };
     if (plan.actions.length) progress(plan.actions.every((action) => action.operation === "query") ? "checking_records" : "acting");
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
-    const updated = await store.transaction("reminder-delivery", async (tx) => {
+    let delivery;
+    let updated = await store.transaction("reminder-delivery", async (tx) => {
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
       if (latest.version !== session.version) throw fail(409, say(session.language, "已有新消息，请刷新后重试。", "A new message arrived. Refresh and retry.", "Hay un mensaje nuevo. Actualiza y vuelve a intentarlo."));
       const currentRecords = await available(tx, userId);
-      const cards = []; const replies = []; let createdSpace = null; const handoffLines = []; let askBack = "";
+      const cards = []; const replies = []; let createdSpace = null; const handoffLines = []; let askBack = ""; const searched = [];
       for (const action of plan.actions) {
         if (action.kind === "promise") {
           if (!context.openPromises.some((promise) => promise.id === action.targetId)) throw fail(404, "This promise is no longer open.");
@@ -232,7 +352,8 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
             return action.queryPeriod === "upcoming" ? date >= today : action.queryPeriod === "this_week" ? date >= monday.toISOString().slice(0, 10) && date <= sunday.toISOString().slice(0, 10) : true;
           }).slice(0, 20);
           cards.push(...results.map(({ kind, record }) => card(kind, record, session.language)));
-          replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, `Found ${results.length} records you can view.`, `Se encontraron ${results.length} registros que puedes ver.`)); continue;
+          searched.push(results.length);
+          replies.push(say(session.language, `找到 ${results.length} 条你可以查看的记录。`, results.length === 1 ? "Found 1 record you can view." : `Found ${results.length} records you can view.`, results.length === 1 ? "Se encontró 1 registro que puedes ver." : `Se encontraron ${results.length} registros que puedes ver.`)); continue;
         }
         // Just me is where everything can start (founder 11-06): a plan or date for the two of them prepares a card, and only the
         // member's confirmation puts it on their shared calendar (space-confirm), like a shared memory.
@@ -245,6 +366,18 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           share.digest = shareDigest(share); pendingShares.push(share);
           cards.push({ id: share.cardId, kind: "space_share", version: 1 });
           replies.push(say(session.language, "要放进你们俩的日历吗？点一下确认，前一天我会提醒你们俩。", "Put it on your shared calendar? Tap to confirm; I'll remind you both the day before.", "¿Lo pongo en su calendario compartido? Confírmalo y les aviso a los dos un día antes.")); continue;
+        }
+        // A lasting agreement can start in Just me too (founder 11-07): a card the member confirms, which then drafts it in Us
+        // for both of them to approve. Nothing reaches the partner before that tap.
+        if (action.kind === "agreement" && action.operation === "create") {
+          const values = action.fields, title = clean(values.title, 120), text = clean(values.text, 1000);
+          if (!title || !text) throw fail(400, say(session.language, "想和 TA 说好什么？说说具体怎么做。", "What do you want to agree on? Tell me how it would work.", "¿Qué quieren acordar? Cuéntame cómo sería."));
+          const pair = await tx.getRelationshipContext(userId);
+          if (!(pair?.relationship?.status === "active" && pair.members.length === 2)) { replies.push(say(session.language, "等 TA 加入后，你们才能一起定约定；我先记在你这里。", "Agreements start once your partner joins; I'll keep this here for you.", "Los acuerdos empiezan cuando tu pareja se una; lo guardo aquí.")); continue; }
+          const share = { cardId: randomUUID(), kind: "agreement", spaceId: null, spaceTitle: say(session.language, "我们俩的约定", "an agreement in Us", "un acuerdo en Nosotros"), title, text, date: null };
+          share.digest = shareDigest(share); pendingShares.push(share);
+          cards.push({ id: share.cardId, kind: "space_share", version: 1 });
+          replies.push(say(session.language, "要在“我们俩”里把它起草成约定吗？点一下确认，TA 也同意了才算数。", "Draft it as an agreement in Us? Tap to confirm; it counts once your partner agrees too.", "¿Lo redacto como acuerdo en Nosotros? Confírmalo; cuenta cuando tu pareja también acepte.")); continue;
         }
         if (["agreement", "commitment", "milestone"].includes(action.kind)) throw fail(502, "Shared records require their existing confirmation flow. Nothing was changed.");
         if (action.kind === "link") {
@@ -275,7 +408,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
             if (!space) throw fail(400, say(session.language, "要放进哪个空间？", "Which space should this go in?", "¿En qué espacio lo guardo?"));
             if (space.visibility !== "private") {
               // Nothing said here reaches a shared space until the member confirms this exact card.
-              const share = { cardId: randomUUID(), spaceId: space.id, spaceTitle: space.system === "moments" ? say(session.language, "回忆", "memories", "recuerdos") : space.title, ...(space.system ? { album: space.system } : {}), title: clean(values.title, 160), text: clean(values.text, 2000), date: values.date && /^\d{4}-\d{2}-\d{2}$/.test(values.date) ? values.date : null, photoId: values.photoId ? (await visiblePhoto(tx, values.photoId, userId)).id : null, createdAt: new Date().toISOString(), sharedAt: null };
+              const share = { cardId: randomUUID(), spaceId: space.id, spaceTitle: space.system === "moments" ? say(session.language, "回忆", "memories", "recuerdos") : space.system === "watched" ? say(session.language, "你们一起看过的", "what you've watched together", "lo que han visto juntos") : space.title, ...(space.system ? { album: space.system } : {}), title: clean(values.title, 160), text: clean(values.text, 2000), date: values.date && /^\d{4}-\d{2}-\d{2}$/.test(values.date) ? values.date : null, photoId: values.photoId ? (await visiblePhoto(tx, values.photoId, userId)).id : null, createdAt: new Date().toISOString(), sharedAt: null };
               if (!share.title && !share.text && !share.photoId) throw fail(400, "Say what to add.");
               share.digest = shareDigest(share); pendingShares.push(share);
               cards.push({ id: share.cardId, kind: "space_share", version: 1 });
@@ -344,20 +477,62 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           replies.push(action.operation === "archive" ? say(session.language, "已暂停这条个人提醒。", "This personal reminder is paused.", "Este recordatorio personal está pausado.") : record.occurrenceOriginalDueAt ? say(session.language, `已保存个人提醒：${record.title}。仅下次为 ${at}，后续仍按原来的每周安排。`, `Saved personal reminder: ${record.title}. Only the next occurrence is ${at}; later reminders keep the original weekly schedule.`, `Recordatorio personal guardado: ${record.title}. Solo la próxima vez será ${at}; las siguientes mantienen el horario semanal original.`) : say(session.language, `已保存个人提醒：${record.title}，${at}${record.frequency === "weekly" ? "，每周重复" : ""}。`, `Saved personal reminder: ${record.title}, ${at}${record.frequency === "weekly" ? ", every week" : ""}.`, `Recordatorio personal guardado: ${record.title}, ${at}${record.frequency === "weekly" ? ", cada semana" : ""}.`));
         } else replies.push(action.operation === "archive" ? say(session.language, "已归档这条私人记录。", "This private record is archived.", "Este registro privado está archivado.") : action.kind === "plan" ? say(session.language, "已保存私人计划草稿，尚未分享。", "Saved a private plan draft. It has not been shared.", "Se guardó un borrador de plan privado. No se ha compartido.") : say(session.language, "已保存私人记录，未授权 AI 在其他对话中使用。", "Saved privately, without permission for AI use in other conversations.", "Se guardó en privado, sin autorizar el uso de la IA en otras conversaciones."));
       }
-      // The model's own words lead; the server's receipts stand in when it gave none. A failed action never reaches here.
+      // Commit actions and a receipt-safe initial answer atomically. Audit only after commit,
+      // outside the storage lock; retries of itemId can never execute the actions again.
       // A prepared booking or purchase is summarized by the server from what it actually prepared, never by the model, which
       // tends to restate the details or call it booked.
-      const own = handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : clean(plan.reply, 1200) || replies.join("\n");
+      // A turn that only looked things up and found nothing says so plainly: the model's own line often promised results
+      // ("我来找找…结果会直接显示给你"), which left the person waiting for nothing, or invited a made-up memory (founder 11-07).
+      const foundNothing = searched.length && searched.length === plan.actions.length && searched.every((count) => count === 0);
+      const writeReceipts = plan.actions.some(action => action.operation !== "query") ? replies : [];
+      const own = foundNothing ? say(session.language, "我这里没有找到这件事的记录，不想凭印象乱说。你愿意的话，跟我讲讲当时发生了什么，我帮你记下来。", "I have no record of that, and I'd rather not guess. If you like, tell me what happened and I'll keep it.", "No tengo ningún registro de eso y prefiero no inventar. Si quieres, cuéntame qué pasó y lo guardo.")
+        : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, formatChecked: true, receipts: writeReceipts, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
-      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: reply, cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
+      const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+      await screenText(cited.reply, "output");
+      const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
+      delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
       return saved;
     });
+    if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
+      const receipts = { messages: delivery.replies, records: delivery.cards, changes: changes.map(({ kind, record }) => ({ kind, id: record.id, version: record.version, status: record.status })) };
+      const unrelated = !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
+      // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
+      const draftOnly = wantsDraftOnly(text) && typeof plan.sendableDraft === "string" && plan.sendableDraft.trim();
+      const audited = await prepareSourceReply(draftOnly ? "" : plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+        sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
+          ...(unrelated ? [] : historySources),
+          ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, check: false });
+      const own = finishReply(audited, { request: text, language, receipts: delivery.writeReceipts,
+        reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
+      const reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, delivery.askBack].filter(Boolean).join("\n");
+      const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+      await screenText(cited.reply, "output");
+      if (cited.reply) updated = await store.transaction("reminder-delivery", async tx => {
+        await liveUser(tx, userId, true);
+        const latest = await owned(tx, session.id, userId);
+        // Another turn or deletion wins; never overwrite its state with a stale audit.
+        if (latest.version !== updated.version) return latest;
+        return tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, draft => {
+          const message = draft.messages.find(message => message.id === delivery.messageId);
+          if (!message) return;
+          message.text = cited.reply;
+          if (cited.sources.length) message.sources = cited.sources;
+          else delete message.sources;
+          draft.version += 1;
+        });
+      });
+    }
+    if (readingScreenshots && !raced) {
+      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
+        .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, replacesScreenshotReplyTo: userMessage.id, text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
+    }
     for (const { kind, record } of changes) emit(record, `${kind === "plan" ? "private_agent_thread" : kind}.updated`, userId);
     void recordUsage(store, { userId, action: "private_message", channel });
     return { session: updated, duplicate: raced };
   };
-  const append = async (req, res) => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body)).session) });
+  const append = async (req, res) => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body, { transcript: req.path.endsWith("/transcripts") })).session) });
   // Only an explicit confirm of the current card's digest moves the polished text (never the member's raw words) into the shared conversation.
   const confirmShare = async (userId, sessionId, body, { channel = "app" } = {}) => {
     const session = await owned(store, sessionId, userId);
@@ -407,6 +582,15 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       const latest = await owned(tx, session.id, userId); const share = (latest.pendingShares || []).find((item) => item.cardId === cardId);
       if (!share || share.digest !== digest || shareDigest(share) !== digest) throw fail(409, say(session.language, "内容已经变了，请确认最新的版本。", "This changed. Review and confirm the latest version.", "Esto cambió. Revisa y confirma la última versión."));
       if (share.sharedAt) return { session: latest, item: null };
+      if (share.kind === "agreement") {
+        const terms = String(share.text || "").split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean).slice(0, 8);
+        let agreement;
+        try { agreement = await draftAgreementFromTogether(tx, { relationshipId: initial.relationship.id, userId, values: { title: share.title, summary: share.text || share.title, terms: terms.length ? terms : [share.title] }, language: session.language }); }
+        catch (error) { if (error?.code === "one_pending_agreement") throw fail(409, say(session.language, "“我们俩”里已经有一个约定在等你们点头，先处理完那个，再起草这个。", "There's already an agreement waiting for you both in Us. Settle that one first.", "Ya hay un acuerdo esperando a los dos en Nosotros. Resuelvan ese primero.")); throw error; }
+        await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: agreement.id, objectType: "agreement", eventType: "agreement.drafted_from_private", sourceVersion: latest.version }));
+        const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
+        return { session: saved, item: null, agreement };
+      }
       if (share.kind === "date") {
         // On their shared calendar, with Pinky's reminder in Us the day before, and a line in Us so the other one knows.
         const milestone = privateRecord(userId, { relationshipId: initial.relationship.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", status: "active", type: "custom", title: share.title, date: share.date, timezone: "UTC", recurringRule: "once", jointlyConfirmed: false, notes: "", provenanceSource: "member_confirmed" });
@@ -430,9 +614,42 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
       return { session: saved, item };
     });
     if (result.item) emit(result.item, "space.updated");
-    if (result.milestone) emit(result.milestone, "milestone.updated");
+    if (result.agreement) {
+      emit(result.agreement, "agreement.updated");
+      let conversation = null; try { conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${result.agreement.relationshipId}`, userId); } catch { conversation = null; }
+      if (conversation) emit(conversation, "together.updated", null, userId);
+    }
+    if (result.milestone) { emit(result.milestone, "milestone.updated"); void recordUsage(store, { userId, relationshipId: result.milestone.relationshipId, action: "plan_scheduled" }); }
     if (result.conversation) emit(result.conversation, "together.updated", null, req.auth.user.id);
     res.json({ session: await output(result.session) });
+  });
+  // One tap takes back a private record Pinky made in this conversation (founder 11-07): it is archived, never deleted
+  // outright, and only the member's own private records can be undone this way. Shared ones keep their own flows.
+  const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
+  router.post("/assistant/sessions/:id/undo", async (req, res) => {
+    const userId = req.auth.user.id, cardId = clean(req.body?.cardId, 80), kind = clean(req.body?.kind, 20);
+    if (!UNDOABLE.has(kind)) throw fail(400, "This can't be undone here.");
+    const saved = await store.transaction("reminder-delivery", async (tx) => {
+      await liveUser(tx, userId, true);
+      const session = await owned(tx, req.params.id, userId);
+      const made = session.messages.some((message) => message.role === "assistant" && (message.cards || []).some((item) => item.id === cardId && item.kind === kind));
+      if (!made) throw fail(404, say(session.language, "没有找到这条记录。", "That record wasn't found.", "No se encontró ese registro."));
+      if ((session.undone || []).some((item) => item.id === cardId)) return session;
+      const record = await tx.getRelationshipRecordForUser(collections[kind], cardId, userId);
+      if (!record || record.ownerUserId !== userId || record.visibility !== "private") throw fail(409, say(session.language, "这条已经分享了，要在原来的地方改。", "This one is shared now; change it where it lives.", "Esto ya está compartido; cámbialo donde está."));
+      const title = String(record.title || record.text || record.description || "").slice(0, 60);
+      if (!record.archivedAt) await tx.updateRelationshipRecordForUser(collections[kind], record.id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; });
+      return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => { draft.undone = [...(draft.undone || []), { id: cardId, kind, title }].slice(-100); draft.version += 1; });
+    });
+    res.json({ session: await output(saved) });
+  });
+  // 约会之后问一句: the one-tap answer to "how was it?", kept as the member's own private note.
+  router.post("/assistant/sessions/:id/date-check", async (req, res) => {
+    const userId = req.auth.user.id;
+    await owned(store, req.params.id, userId);
+    const saved = await answerDateCheck(store, { userId, sessionId: req.params.id, messageId: clean(req.body?.messageId, 80), rating: clean(req.body?.rating, 10), told: req.body?.told === true });
+    if (!req.body?.told) { const context = await store.getRelationshipContext(userId); if (context?.relationship) emit({ id: saved.id, relationshipId: context.relationship.id }, "profile.updated", userId); }
+    res.json({ session: await output(saved) });
   });
   router.post("/assistant/sessions/:id/share-confirm", async (req, res) => {
     const result = await confirmShare(req.auth.user.id, req.params.id, req.body);
@@ -447,12 +664,19 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
   });
   // Background work (a finished chat import) reports into the member's App conversation: the one it started from if it
   // still exists, else their latest, else a new one.
-  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null }) {
+  async function postNote(userId, { sessionId = null, language = "zh", text, card = null, cards = null, call = null, kind = null, personId = null, replacesScreenshotReplyTo = null }) {
     let session = sessionId ? await owned(store, sessionId, userId).catch(() => null) : null;
     if (!session) session = (await store.listRelationshipRecordsForUser("privateAgentThreads", userId)).filter((record) => record.intentType === "assistant" && record.ownerUserId === userId && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (!session) session = await createSession(userId, { language, timezone: "UTC" });
     const saved = await store.transaction("reminder-delivery", (tx) => tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
-      draft.messages = [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(cards?.length ? { cards } : card ? { cards: [card] } : {}), ...(call ? { call } : {}), createdAt: new Date().toISOString() }].slice(-200); draft.version += 1;
+      const pending = replacesScreenshotReplyTo && draft.messages.find((message) => message.role === "assistant" && message.screenshotReplyTo === replacesScreenshotReplyTo);
+      if (pending) {
+        pending.text = clean(text, 2000); pending.cards = cards?.length ? cards : card ? [card] : [];
+        delete pending.screenshotReplyTo;
+        draft.version += 1;
+        return;
+      }
+      keepMessages(draft, [...draft.messages, { id: randomUUID(), role: "assistant", text: clean(text, 2000), ...(cards?.length ? { cards } : card ? { cards: [card] } : {}), ...(call ? { call } : {}), ...(kind ? { kind } : {}), ...(personId ? { personId } : {}), createdAt: new Date().toISOString() }]); draft.version += 1;
     }));
     // Private sessions carry no relationship id; route the event through the member's couple so their open app refreshes.
     const context = await store.getRelationshipContext(userId);

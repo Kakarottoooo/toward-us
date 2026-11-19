@@ -1,0 +1,69 @@
+/* The same stylesheet is packaged with iOS so a cached welcome page also stays readable. */
+:root { --pinky-welcome-layout: 1; }
+
+@media (max-width: 899px) {
+  .home-screen .mobile-home-composition {
+    position: relative;
+    isolation: isolate;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-rows: auto minmax(min-content, 1fr) auto auto;
+    align-items: center;
+    justify-items: center;
+    gap: clamp(12px, 2.5vh, 24px);
+    height: 100%;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+
+  .mobile-home-composition .home-art {
+    z-index: -2;
+    pointer-events: none;
+  }
+
+  .mobile-home-composition::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(to right, transparent, var(--jian-paper) 19%, var(--jian-paper) 81%, transparent);
+    pointer-events: none;
+  }
+
+  .mobile-home-composition .language-switch {
+    position: static;
+    justify-self: end;
+    align-self: start;
+  }
+
+  .mobile-home-composition .language-switch button {
+    min-width: 36px;
+    min-height: 44px;
+  }
+
+  .home-screen .mobile-home-composition .home-statement {
+    position: static;
+    width: min(76%, 28rem);
+    transform: none;
+    text-align: center;
+  }
+
+  .home-screen .mobile-home-composition .home-statement h1 {
+    margin: 0;
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    font-family: var(--jian-serif);
+    font-size: clamp(1.5rem, 6.8vw, 2.125rem);
+    font-weight: 500;
+    line-height: 1.32;
+    letter-spacing: 0;
+    word-break: normal;
+    overflow-wrap: normal;
+    text-wrap: balance;
+  }
+
+  .mobile-home-composition .home-statement .pause-mark { margin-top: 16px; }
+  .mobile-home-composition .home-wordmark,
+  .mobile-home-composition .home-actions { position: static; transform: none; }
+  .mobile-home-composition .home-actions { width: min(84%, 23rem); }
+}

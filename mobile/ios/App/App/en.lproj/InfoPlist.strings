@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "Used only when you tap the microphone, to turn your speech into text in real time.";
-"NSPhotoLibraryUsageDescription" = "Used when you choose photos to send, or connect an album so Pinky can turn it into your memories.";
+"NSPhotoLibraryUsageDescription" = "Used when you choose photos to send, connect an album so Pinky can turn it into your memories, or ask Pinky to find photos of the two of you (faces are matched on your phone and never uploaded).";
+"NSCameraUsageDescription" = "Used only when you choose to take a photo to send in Pinky.";
+"NSSpeechRecognitionUsageDescription" = "Used only when you tap the microphone, to turn your speech into text on your phone.";

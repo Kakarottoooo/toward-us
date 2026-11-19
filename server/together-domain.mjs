@@ -1,8 +1,15 @@
+import { screenText, isAiPolicyError } from "./ai-screening.mjs";
+import { keepMessages } from "./thread-pages.mjs";
+import { checkPlanConstraints } from "./plan-constraints.mjs";
+import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
+import { finishReply } from "./reply-contract.mjs";
+import { prefetchRecall, recallLookup, searchMemoryResults } from "./memory-search.mjs";
+import { citedReply } from "./conversation-recall.mjs";
 import { randomUUID } from "node:crypto";
 import { agreementValues, audit, clean, decisionError, markCommitmentsForRenegotiation } from "./agreement-actions.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
 import { createRelationshipRecord, hideUnrevealedAnswers } from "./relationship-domain.mjs";
-import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
+import { addSpaceItem, archiveSpaceRecord, createSpace, ensureMomentSpaces, MOMENTS, WATCHED, updateSpace, updateSpaceItem, visibleSpace } from "./space-domain.mjs";
 import { handoffUrl, isCalendar } from "./handoff.mjs";
 import { importContext, searchImport } from "./chat-import.mjs";
 import { composeStory } from "./story.mjs";
@@ -14,7 +21,7 @@ import { markShowedUp } from "./streak.mjs";
 // channel adapters stay thin and every privacy rule lives here once.
 const SOURCES = new Set(["app", "imessage", "relay", "voice"]);
 // "nudge" is 想你了: one tap, no words (founder 11-06).
-const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter", "game", "match_invite"]);
+const KINDS = new Set(["text", "relay", "agreement_card", "reminder", "review", "call", "story", "daily_question", "nudge", "letter_sealed", "letter", "game", "match_invite", "watch_check"]);
 const AGENT_CALL = /\bpinky\b|@agent/i;
 const LANGUAGES = new Set(["zh", "en", "es"]);
 // The conversation record carries at most MESSAGE_LIMIT messages (the working set every read and prompt sees). What falls off
@@ -37,10 +44,21 @@ export function openCheckIn(messages, actorUserId, now = Date.now()) {
   return messages.slice(index + 1).some((item) => item.role === "member" && item.actorUserId === actorUserId) ? null : messages[index];
 }
 
-/** `repliedTo` is the message `message.replyTo` points at: Pinky answers a reply to its last message or to a check-in. */
-export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null } = {}) {
+/** Pinky's latest message, when it is waiting to hear from this member (founder 11-07: Pinky asked to hear Mia's side, Mia
+ * answered, and Pinky stayed silent because she did not @ it). Open for the same window as a check-in, until the member
+ * has written once after it. `earlier` are the messages before the member's new one. */
+export function awaitedBy(earlier, actorUserId, now = Date.now()) {
+  const index = earlier.findLastIndex((item) => item.role === "agent");
+  const asked = index >= 0 ? earlier[index] : null;
+  if (!asked || !actorUserId || !(asked.awaiting || []).includes(actorUserId) || now - Date.parse(asked.createdAt) > CHECK_IN_REPLY_MS) return null;
+  return earlier.slice(index + 1).some((item) => item.role === "member" && item.actorUserId === actorUserId) ? null : asked;
+}
+
+/** `repliedTo` is the message `message.replyTo` points at: Pinky answers a reply to its last message or to a check-in, and
+ * the member it is waiting to hear from (`awaited`). */
+export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null, awaited = null } = {}) {
   if (!message || message.role !== "member") return false;
-  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo));
+  return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo)) || Boolean(awaited);
 }
 
 /** Reads only the shared conversation, shared agreements/commitments and jointly approved memories. Never private threads,
@@ -64,7 +82,7 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
     noticedPromises: (snapshot.commitments || []).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && item.origin === "conversation" && item.status === "noticed" && !item.archivedAt).slice(0, 20).map(({ id, description, whenText, ownerType }) => ({ id, description, when: whenText || "", ownerType })),
     authorizedMemories: userId ? buildMemoryContext(snapshot.memories || [], { userId, relationshipId, scope: "joint", query }).memories : [],
     spaces: (snapshot.spaces || []).filter((space) => space.relationshipId === relationshipId && space.visibility === "shared" && !space.archivedAt).slice(0, 30).map((space) => ({
-      id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
+      id: space.id, title: space.system === MOMENTS ? "memories (回忆 / recuerdos)" : space.system === WATCHED ? "watched together (一起看过的 / vistos juntos)" : space.title, layout: space.layout, ...(space.system ? { system: space.system } : {}),
       items: (snapshot.spaceItems || []).filter((item) => item.spaceId === space.id && item.visibility === "shared" && !item.archivedAt).slice(-15).map((item) => ({ id: item.id, title: item.title || String(item.text || "").slice(0, 80), date: item.date, done: item.done })),
     })),
     // Chat-history analyses only as the shared copies both partners approved; never a member's private import.
@@ -90,7 +108,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
 // `answersCheckIn`: a member's turn without a `replyTo` of its own answers an open check-in (see openCheckIn).
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, answersCheckIn = false }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, awaiting = null, answersCheckIn = false }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -108,6 +126,10 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
     // A finished voice call keeps its captions on the message; both partners were part of it.
     ...(kind === "call" && call ? { call } : {}),
     ...(kind === "story" && story ? { story } : {}),
+    // 看完了吗: the show they planned to watch together, asked about the next day (watched.mjs).
+    ...(kind === "watch_check" && watch ? { watch } : {}),
+    // Members Pinky asked to hear from; their next message reaches Pinky without @ (awaitedBy).
+    ...(!actorUserId && Array.isArray(awaiting) && awaiting.length ? { awaiting: awaiting.slice(0, 2) } : {}),
   };
   const appended = await tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = [...(draft.messages || []), message];
@@ -139,6 +161,10 @@ async function archiveOldestMessages(tx, conversation, userId) {
   return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => {
     draft.messages = draft.messages.slice(moving.length);
     draft.archived = { chunks: seq, messages: (draft.archived?.messages || 0) + moving.length };
+    for (const message of moving) {
+      const pointer = draft.playRoundIndex?.[message.game?.deckId];
+      if (pointer?.messageId === message.id) pointer.archiveSeq = seq;
+    }
   });
 }
 
@@ -165,15 +191,18 @@ export async function olderTogetherMessages(store, { relationshipId, userId, bef
 
 /** The daily questions asked so far, oldest first: those still in the working set, then as many archive chunks back as it
  * takes to reach `limit`, so a question is never repeated just because the conversation moved past it. */
-export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120 }) {
-  const conversation = await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
+export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120, since = 0, withDetails = false, conversation: existing }) {
+  const conversation = existing ?? await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
   if (!conversation) return [];
-  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question").map((item) => item.text);
+  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question" && (!since || Date.parse(item.createdAt) >= since));
   let found = asked(conversation.messages);
   for (let seq = conversation.archived?.chunks || 0; seq >= 1 && found.length < limit; seq -= 1) {
-    found = [...asked((await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId))?.messages), ...found];
+    const archive = await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId);
+    if (since && Date.parse(archive?.lastAt) < since) break;
+    found = [...asked(archive?.messages), ...found];
   }
-  return found.slice(-limit);
+  const recent = found.slice(-limit);
+  return withDetails ? recent : recent.map((item) => item.text);
 }
 
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
@@ -186,6 +215,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
     return action(tx);
   });
+  await screenText(text);
   const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, answersCheckIn: true }));
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
@@ -193,7 +223,8 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const answered = (conversation) => conversation.messages.find((item) => item.role === "agent" && item.replyTo === message.id);
   if (!saved.duplicate) emit(saved.conversation);
   const repliedTo = message.replyTo ? messages.find((item) => item.id === message.replyTo) || null : null;
-  if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  const awaited = awaitedBy(messages.slice(0, messages.findIndex((item) => item.id === message.id)), message.actorUserId);
+  if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo, awaited }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
   // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
   progress("thinking");
   await ensureMomentSpaces(store, actorUserId);
@@ -208,25 +239,48 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   // Today in the writer's time zone, with its weekday, so "this Sunday" becomes the right date on the calendar (founder 11-06).
   const zone = await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, actorUserId)).catch(() => null) || "UTC";
   const today = `${new Date().toLocaleDateString("en-CA", { timeZone: zone })} (${new Date().toLocaleDateString("en-US", { weekday: "long", timeZone: zone })})`;
-  let turn = await mediator.continueTogether({ ...context, today, webSearch: Boolean(mediator.webSearch) }, language);
+  // Each member's own time zone (异地), so a plan to watch together can name the time on both sides.
+  const zones = Object.fromEntries((await Promise.all(members.map(async (member) => [member.name, await import("./reminder-service.mjs").then((module) => module.memberTimezone(store, member.id)).catch(() => null)]))).filter(([, value]) => value));
+  const recalled = await prefetchRecall({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id }, text).catch(() => null);
+  if (recalled) context.lookups = [recallLookup(recalled, text)];
+  const webTurn = createWebTurn({ reader: mediator.readonlyWeb, failures: saved.conversation.webFailures });
+
+  let turn = await mediator.continueTogether({ ...context, today, ...(Object.keys(zones).length ? { timezones: zones } : {}), webSearch: Boolean(mediator.webSearch) }, language);
   // Real-world questions: look them up, then let the Agent answer once more with the findings. Searches never run twice.
-  const searches = (turn.actions || []).filter((action) => action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId)).slice(0, 3);
+  const recallSources = recalled?.sources || [];
+  const searches = webTurn.results.length ? [] : (turn.actions || []).filter((action) => action.kind === "web_read" && action.text || action.kind === "web_search" && action.text && mediator.lookup || action.kind === "chat_search" && context.chatHistory.some((item) => item.id === action.targetId) || action.kind === "memory_search" && !recalled).slice(0, 3);
   if (searches.length) {
-    const web = searches.find((action) => action.kind === "web_search");
+    const web = searches.find((action) => ["web_search", "web_read"].includes(action.kind));
     progress(web ? "searching_web" : "searching_chats", web?.text || null);
     const sharedImport = async (id) => (await store.relationshipSnapshotForUser(actorUserId)).chatImports?.find((item) => item.id === id && item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt);
-    const lookups = await Promise.all(searches.map(async (action) => action.kind === "chat_search"
+    const lookups = await Promise.all(searches.map(async (action) => action.kind === "memory_search"
+      ? await searchMemoryResults({ store, userId: actorUserId, channel: "us", excludeMessageId: message.id, query: action.text || "", date: action.date || "" }).then((result) => { recallSources.push(...result.sources); return recallLookup(result, action.text || action.date || ""); }).catch(() => ({ query: action.text, findings: "The search failed. Say the search failed, not that no record exists." }))
+      : action.kind === "chat_search"
       ? { query: `chat history ${action.text || ""} ${action.date || ""}`.trim(), findings: await sharedImport(action.targetId).then((record) => record ? searchImport(record, { query: action.text || "", date: action.date || "" }) : "Not available.").catch(() => "Not available.") }
+      : action.kind === "web_read" ? { query: action.text, findings: action.text }
       : { query: action.text, findings: await mediator.lookup(action.text, language).catch(() => "No results: the search failed.") }));
+    const urls = lookups.filter((_, index) => ["web_search", "web_read"].includes(searches[index].kind)).flatMap((row) => pageUrls(row.findings));
+    if (urls.length) context.webPages = await webTurn.read(urls);
+    if (context.webPages) lookups.push({ query: "Public page verification", findings: "See context.webPages for observed public data." });
     progress("writing");
+    context.lookups = lookups;
     turn = await mediator.continueTogether({ ...context, today, webSearch: true, lookups }, language);
   }
-  turn = { ...turn, actions: (turn.actions || []).filter((action) => !["web_search", "chat_search"].includes(action.kind)) };
+  let checked = checkPlanConstraints(turn.planConstraints, { context, reply: turn.reply });
+  if (!checked.ok) {
+    turn = await mediator.continueTogether({ ...context, today, timezones: zones, webSearch: Boolean(mediator.webSearch), constraintErrors: checked.issues,
+      rejectedPlan: turn, correction: "Revise the proposal to satisfy these code checks before any action. Preserve the requested deliverables." }, language);
+    checked = checkPlanConstraints(turn.planConstraints, { context, reply: turn.reply });
+    if (!checked.ok) turn = { actions: [], draftAgreement: null, reply: language === "en" ? "This plan still needs its budget and conditions verified before it can be used." : language === "es" ? "Falta verificar el presupuesto y las condiciones antes de usar este plan." : "这份安排的预算和条件仍未通过核对，暂时不能当作可执行方案。" };
+  }
+  turn = webTurn.results.length ? { ...turn, actions: [], draftAgreement: null } : { ...turn, actions: (turn.actions || []).filter((action) => !["web_read", "web_search", "chat_search", "memory_search"].includes(action.kind)) };
   // Mediation: a shared reflection replaces the reply, and each partner gets private feedback in their own chat.
   if (turn.actions.some((action) => action.kind === "mediate") && mediator.mediateTogether) {
     progress("mediating");
     const mediation = await mediator.mediateTogether(context, members, language);
-    if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
+    // A partner who has not said anything yet in this exchange is who the reflection waits to hear from.
+    const quiet = members.filter((member) => member.id !== actorUserId && !messages.slice(-12).some((item) => item.role === "member" && item.actorUserId === member.id)).map((member) => member.id);
+    if (mediation) turn = { ...turn, reply: mediation.shared, i18n: null, awaiting: quiet, actions: [...turn.actions, { kind: "private_notes", notes: mediation.feedback }] };
   }
   // A recap card is made after the reply, in the background (it takes a little while), and posted here when ready.
   const recaps = turn.actions.filter((action) => action.kind === "recap");
@@ -238,7 +292,14 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
     const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked, timezone, language });
-    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: outcome.reply, i18n: outcome.i18n || null, refs: [...made, ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
+    const awaiting = outcome.awaiting || (outcome.waitingFor || []).map((name) => members.find((member) => member.name && member.name.toLowerCase() === String(name).toLowerCase())?.id).filter(Boolean);
+    // Shared write receipts remain transaction-backed. A no-action answer cannot
+    // claim it saved a memory merely because related context was retrieved.
+    const ownReply = made.length || outcome.draftAgreement ? outcome.reply : finishReply(outcome.reply, { request: text, language });
+    const cited = citedReply([ownReply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+    await screenText(cited.reply, "output");
+    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId: actorUserId, source, kind: "text", text: cited.reply, i18n: outcome.i18n || null, awaiting, refs: [...made, ...cited.sources.map((item) => ({ type: "conversation", id: item.messageId, ...item })), ...context.authorizedMemories.map(({ id, version }) => ({ type: "memory", id, version }))], replyTo: message.id });
+    if (webTurn.results.length) result.conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.webFailures = webTurn.failures; draft.version += 1; });
     if (!outcome.draftAgreement) return result;
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.draftAgreement = { ...outcome.draftAgreement, messageId: result.message.id, source: outcome.source, createdAt: new Date().toISOString() }; draft.version += 1; });
     return { ...result, conversation };
@@ -249,7 +310,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   let replied;
   try { replied = await reply(turn); }
   catch (error) {
-    if (!turn.actions?.length) throw error;
+    if (isAiPolicyError(error) || !turn.actions?.length) throw error;
     asked.length = 0;
     const failed = { zh: "抱歉，这件事我没能办成，什么都没有改动。可以换个说法再试一次。", en: "Sorry, I couldn't do that, and nothing was changed. Try saying it another way.", es: "Lo siento, no pude hacerlo y no se cambió nada. Prueba a decirlo de otra forma." };
     replied = await reply({ reply: failed[language] || failed.zh, i18n: failed, actions: [], draftAgreement: null, source: "local" });
@@ -283,7 +344,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
         const session = await privateSessionFor(tx, note.memberId);
         const header = { zh: "Pinky 给你的私下反馈（只有你能看到）", en: "Private feedback from Pinky (only you can see this)", es: "Comentario privado de Pinky (solo tú puedes verlo)" }[session.language] || "Pinky 给你的私下反馈（只有你能看到）";
         const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, note.memberId, (draft) => {
-          draft.messages = [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: `${header}\n\n${clean(note.text, 2000)}`, askedFrom: "mediation", createdAt: new Date().toISOString() }].slice(-200);
+          keepMessages(draft, [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: `${header}\n\n${clean(note.text, 2000)}`, askedFrom: "mediation", createdAt: new Date().toISOString() }]);
           draft.version += 1;
         });
         asked.push({ id: updated.id, version: updated.version, ownerUserId: note.memberId, relationshipId });
@@ -298,7 +359,7 @@ async function applyTogetherActions(tx, { relationshipId, userId, actions, asked
         const session = await privateSessionFor(tx, member.userId);
         if (!session) continue;
         const updated = await tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, member.userId, (draft) => {
-          draft.messages = [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: question, askedFrom: "together", plannerQuestion: true, createdAt: new Date().toISOString() }].slice(-200);
+          keepMessages(draft, [...(draft.messages || []), { id: randomUUID(), role: "assistant", text: question, askedFrom: "together", plannerQuestion: true, createdAt: new Date().toISOString() }]);
           draft.version += 1;
         });
         asked.push({ id: updated.id, version: updated.version, ownerUserId: member.userId, relationshipId });

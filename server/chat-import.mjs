@@ -1,6 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mediaDirectory } from "./media-dir.mjs";
+import { finishReply, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
+import { prepareSourceReply } from "./source-reply.mjs";
+import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
 import { ImportFormatError, parseChatExport, parsePastedText } from "./chat-import-parsers.mjs";
@@ -8,6 +11,8 @@ import { canViewRecord, createRelationshipRecord } from "./relationship-domain.m
 import { appendTogetherMessage, memberLanguage, togetherI18n } from "./together-domain.mjs";
 import { photoFile, visiblePhoto } from "./photo-store.mjs";
 import { asAiUser, isAiLimit } from "./ai-budget.mjs";
+import { profileContext, scanBroughtChat } from "./profile.mjs";
+import { personFor } from "./people.mjs";
 
 // Chat-history import: a member brings years of messages with their partner from another app so Pinky can help them see
 // their patterns. Guarantees live here; reading and interpreting is the model's job.
@@ -16,6 +21,8 @@ import { asAiUser, isAiLimit } from "./ai-budget.mjs";
 // - The parsed messages live in one file beside the data file; deleting removes the file, not just a flag.
 const COLLECTION = "chatImports";
 const MAX_BYTES = 120 * 1024 * 1024, IMPORT_LIMIT = 20;
+// Letters and digits that cannot be mistaken for each other when typed from a phone screen.
+const CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
 // The synced history is read once it has this many messages, and read again only after a week with this many new ones.
 export const SYNC_FIRST = 50, SYNC_MORE = 300, SYNC_EVERY_MS = 7 * 86_400_000;
@@ -25,12 +32,12 @@ export function dueForAnalysis(record, now = Date.now()) {
   if (!record.analysis) return (record.messageCount || 0) >= SYNC_FIRST;
   return (record.messageCount || 0) - (record.analyzedCount || 0) >= SYNC_MORE && now - Date.parse(record.analyzedAt || 0) >= SYNC_EVERY_MS;
 }
-const mediaDirectory = () => process.env.TOWARD_US_DATA_FILE ? `${process.env.TOWARD_US_DATA_FILE}.media` : join(tmpdir(), "pinky-media");
 const fileFor = (record) => join(mediaDirectory(), `${record.fileId}.chat.json`);
 /** Where an import's messages are on disk, for account and private-data deletion. */
 export const importFile = fileFor;
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 const clean = (value, limit) => typeof value === "string" ? value.trim().replace(/\0/g, "").slice(0, limit) : "";
 const activePair = (context) => context?.relationship.status === "active" && context.members.length === 2;
 const day = (at) => at ? at.slice(0, 10) : null;
@@ -46,7 +53,7 @@ export function importView(record) {
     progress: record.progress || null, stats: record.stats || null, analysis: record.analysis || null, sampled: Boolean(record.sampled),
     rawDeleted: Boolean(record.rawDeleted), shareRequestedAt: record.shareRequest?.requestedAt || null, sharedCopyId: record.sharedCopyId || null,
     // Never the token or its hash: only whether this import is the Mac sync and when it last arrived.
-    sync: record.sync ? { lastSyncAt: record.sync.lastSyncAt || null } : null,
+    sync: record.sync ? { lastSyncAt: record.sync.lastSyncAt || null, needsDisclosure: record.sync.importDisclosure !== 1 } : null,
   };
 }
 
@@ -56,7 +63,7 @@ export function importContext(records) {
   // with enough new messages. Until then the agents only learn it exists and search it.
   const analysed = (record) => record.analysis ? {
     overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle, patterns: record.analysis.patterns.map(({ title, detail }) => ({ title, detail })),
-    strengths: record.analysis.strengths, hurts: record.analysis.hurts, moments: record.analysis.moments, dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
+    strengths: record.analysis.strengths, hurts: record.analysis.hurts, moments: record.analysis.moments, watched: record.analysis.watched || [], dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
     analysedThrough: day(record.analyzedThrough || record.lastAt),
   } : {};
   const synced = records.filter((record) => record.sync && record.status === "ready" && !record.rawDeleted).map((record) => ({ ...analysed(record),
@@ -69,7 +76,7 @@ export function importContext(records) {
     me: record.people?.find((person) => person.role === "me")?.name || null, partner: record.people?.find((person) => person.role === "partner")?.name || null,
     canSearch: !record.rawDeleted, overview: record.analysis.overview, conflictCycle: record.analysis.conflictCycle,
     patterns: record.analysis.patterns.map(({ title, detail }) => ({ title, detail })), strengths: record.analysis.strengths, hurts: record.analysis.hurts,
-    moments: record.analysis.moments, dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
+    moments: record.analysis.moments, watched: record.analysis.watched || [], dates: record.analysis.dates, promises: record.analysis.promises, safety: record.analysis.safety,
     stats: record.stats ? { perPerson: record.stats.perPerson, silences: record.stats.silences?.slice(0, 3) } : null,
   }))];
 }
@@ -162,6 +169,8 @@ const list = (items, maxItems) => ({ type: "array", maxItems, items });
 const chunkSchema = object({
   episodes: list(object({ date: nstr, kind: { type: "string", enum: ["conflict", "repair", "affection", "care", "hurt", "milestone", "promise", "plan", "other"] }, title: str, summary: str, speaker: nstr, quote: nstr }), 12),
   themes: list(str, 6), tone: str,
+  // 一起看过的 (founder 11-07): shows and films the two of them watched or followed together, so the shelf need not start empty.
+  shows: list(object({ date: nstr, title: str }), 10),
 });
 const reportSchema = object({
   message: str, overview: str, conflictCycle: nstr,
@@ -172,6 +181,7 @@ const reportSchema = object({
   moments: list(object({ date: nstr, title: str, text: str }), 12),
   dates: list(object({ date: str, title: str, yearly: { type: "boolean" } }), 8),
   promises: list(object({ date: nstr, speaker: str, text: str, status: { type: "string", enum: ["kept", "open", "unclear"] } }), 8),
+  watched: list(object({ date: nstr, title: str, note: nstr }), 20),
   safety: object({ concern: { type: "boolean" }, note: nstr }),
 });
 const screenshotSchema = object({ messages: list(object({ mine: { type: "boolean" }, name: nstr, time: nstr, text: str }), 400) });
@@ -180,13 +190,13 @@ const ground = (names) => `The two people are ${names.me} (who imported this his
 
 function chunkInstructions(names, language) {
   return `You read one part of a couple's chat history so their relationship assistant can later help them understand their patterns. ${ground(names)}
-Extract the episodes that matter for understanding the relationship: conflicts (what set them off, how each person responded, how it ended), repair attempts, moments of affection or care, hurts, milestones (first dates, trips, anniversaries, moving in), promises one made to the other, plans. Skip logistics and small talk unless they show a pattern. date is YYYY-MM-DD from the transcript headings. quote is at most one short verbatim line (under 100 characters) copied exactly from the transcript, or null. Be fair to both people and describe behavior, not character. Write title, summary, themes and tone in ${outputLanguage(language)}; keep quotes in their original language.`;
+Extract the episodes that matter for understanding the relationship: conflicts (what set them off, how each person responded, how it ended), repair attempts, moments of affection or care, hurts, milestones (first dates, trips, anniversaries, moving in), promises one made to the other, plans. Also list in shows the films, series and shows they clearly watched or followed together (title as usually called, date YYYY-MM-DD if known). Skip logistics and small talk unless they show a pattern. date is YYYY-MM-DD from the transcript headings. quote is at most one short verbatim line (under 100 characters) copied exactly from the transcript, or null. Be fair to both people and describe behavior, not character. Write title, summary, themes and tone in ${outputLanguage(language)}; keep quotes in their original language.`;
 }
 
 function reportInstructions(names, language) {
   return `You are Pinky, a warm relationship assistant. You have notes from every part of a couple's chat history plus exact statistics computed by code. ${ground(names)}
 Write an honest, kind analysis that helps them understand themselves, not a score and not a verdict on who is right. Ground every pattern in evidence (dates and short verbatim quotes taken only from the notes). Describe recurring cycles (for example one person pursues while the other withdraws), what each person seems to need, what already works between them, and small concrete things to try. Use the statistics only as facts given (who starts conversations, reply times, quiet periods); do not invent numbers.
-moments are warm or important memories worth keeping; dates are recurring dates worth remembering (anniversary, birthdays) with yearly true when they repeat; promises are things one promised the other, with whether the history shows them kept.
+watched lists the films, series and shows the two of them clearly watched or followed together (from the notes' shows; together in person or each on their own screen at the same time), once each by its usual name, with the date it was first watched or finished if known and note as at most one short line (where or how, the episode they reached), never inventing any; leave it empty when none. moments are warm or important memories worth keeping; dates are recurring dates worth remembering (anniversary, birthdays) with yearly true when they repeat; promises are things one promised the other, with whether the history shows them kept.
 Safety first: if the history shows threats, intimidation, controlling behavior, coercion, stalking or violence, set safety.concern true, explain briefly and kindly in safety.note, do not frame it as a mutual communication problem, and do not suggest compromise with the harm.
 overview is 3 to 4 plain sentences about the relationship as a whole, without repeating the statistics (the app shows them separately). message is what ${names.me} reads first in their private chat with you: 3 to 5 short sentences addressed to them as "you", naming two or three of the most useful findings specifically, then inviting them to ask about anything. No Markdown. Everything except quotes is in ${outputLanguage(language)}.`;
 }
@@ -195,7 +205,7 @@ overview is 3 to 4 plain sentences about the relationship as a whole, without re
 export function createChatImportRouter({ store, mediator, appendAssistantMessage }) {
   const router = express.Router();
   const jobs = new Map(), macTokens = new Map();
-  const publicPaths = /^\/imports\/(mac-helper\.sh|mac-sync\.sh|upload\/|sync\/)/;
+  const publicPaths = /^\/imports\/(mac-helper\.sh|mac-sync\.sh|windows-helper\.ps1|w\/|upload\/|sync\/)/;
   router.use("/imports", (req, res, next) => req.auth || publicPaths.test(`/imports${req.path}`) ? next() : res.status(401).json({ error: "Please sign in." }));
 
   const owned = async (db, id, userId) => {
@@ -206,26 +216,31 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const update = (record, userId, change) => store.transaction(`user:${record.ownerUserId}`, (tx) => tx.updateRelationshipRecordForUser(COLLECTION, record.id, userId, (draft) => { change(draft); draft.version += 1; }));
 
   /** Creates the import from parsed conversations and moves it as far as it can go without asking the member. */
-  async function createImport(user, parsed, { sessionId = null, language = "zh" } = {}) {
+  async function createImport(user, parsed, { sessionId = null, language = "zh", messageId = null, screenshotAdvice = null } = {}) {
     const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).filter((record) => record.ownerUserId === user.id && !record.archivedAt);
     if (existing.length >= IMPORT_LIMIT) throw fail(409, say(language, "导入的聊天已经很多了，请先删掉一些旧的。", "You have many imports already. Delete an old one first.", "Ya tienes muchas importaciones. Borra alguna antigua primero."));
     const conversations = parsed.conversations.filter((conversation) => conversation.messages.length).sort((a, b) => b.messages.length - a.messages.length);
     const record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "needs_choice", platform: parsed.platform, title: conversations[0]?.title || parsed.platform, fileId: randomUUID(), language, sessionId, conversations: conversations.slice(0, 30).map((conversation) => ({ id: conversation.id, title: conversation.title, count: conversation.messages.length, participants: conversation.participants.slice(0, 8), lastAt: conversation.messages.at(-1)?.at || null })) });
+    // A pointer to the owner's request, never included in views, model reports or shared copies.
+    if (parsed.platform === "screenshots" && messageId) record.screenshotMessageId = messageId;
     await mkdir(mediaDirectory(), { recursive: true });
     // Until the member picks one conversation, every conversation stays in the private file; afterwards only the chosen one.
     await writeFile(fileFor(record), JSON.stringify({ conversations }));
     await store.transaction(`user:${user.id}`, (tx) => tx.createRelationshipRecord(COLLECTION, record));
-    const saved = conversations.length === 1 ? await choose(user, record, conversations[0].id) : record;
+    const saved = conversations.length === 1 ? await choose(user, record, conversations[0].id, screenshotAdvice) : record;
     // Every way in (file, paste, screenshots, Mac) shows up in the private conversation as a card that carries the next step.
     const count = saved.messageCount, period = saved.firstAt && saved.lastAt ? ` (${day(saved.firstAt)} – ${day(saved.lastAt)})` : "";
     const text = saved.status === "needs_choice" ? say(language, `这个文件里有 ${conversations.length} 段对话，选一下哪一段是你和 TA 的。`, `This file has ${conversations.length} conversations. Pick the one with your partner.`, `Este archivo tiene ${conversations.length} conversaciones. Elige la de tu pareja.`)
-      : saved.status === "needs_people" ? say(language, `收到了 ${count} 条消息${period}。告诉我哪个名字是你、哪个是 TA，我就开始读。`, `Got ${count} messages${period}. Tell me which name is you and which is your partner, and I'll start reading.`, `Recibí ${count} mensajes${period}. Dime qué nombre eres tú y cuál tu pareja, y empiezo a leer.`)
-      : say(language, `收到了 ${count} 条消息${period}，我开始读了。大概要几分钟，读完会在这里告诉你。原文只有你能看到。`, `Got ${count} messages${period}. I'm reading them now; it takes a few minutes and I'll tell you here when I'm done. Only you can see them.`, `Recibí ${count} mensajes${period}. Los estoy leyendo; tardaré unos minutos y te avisaré aquí. Solo tú puedes verlos.`);
-    await appendAssistantMessage(user.id, { sessionId, language, text, card: { id: saved.id, kind: "chat_import", version: 1, title: saved.title } }).catch((error) => console.error("Could not post the import note:", error?.message || error));
+      : saved.status === "needs_people" ? say(language, `收到了 ${count} 条消息${period}。告诉我哪个名字是你、哪个是 TA，我就开始读。`, `Got ${plural(count, "message", "messages")}${period}. Tell me which name is you and which is your partner, and I'll start reading.`, `Recibí ${plural(count, "mensaje", "mensajes")}${period}. Dime qué nombre eres tú y cuál tu pareja, y empiezo a leer.`)
+      : say(language, `收到了 ${count} 条消息${period}，我开始读了。大概要几分钟，读完会在这里告诉你。原文只有你能看到。`, `Got ${plural(count, "message", "messages")}${period}. I'm reading them now; it takes a few minutes and I'll tell you here when I'm done. Only you can see them.`, `Recibí ${plural(count, "mensaje", "mensajes")}${period}. Los estoy leyendo; tardaré unos minutos y te avisaré aquí. Solo tú puedes verlos.`);
+    // Screenshots sent with a question get the answer itself in seconds (it carries the same card), so a "this takes a few
+    // minutes" receipt beside it only contradicts it (founder 11-08, reply coach). A step the member must take still posts.
+    const answering = record.screenshotMessageId && !["needs_choice", "needs_people"].includes(saved.status);
+    if (!answering) await appendAssistantMessage(user.id, { sessionId, language, text, card: { id: saved.id, kind: "chat_import", version: 1, title: saved.title } }).catch((error) => console.error("Could not post the import note:", error?.message || error));
     return saved;
   }
 
-  async function choose(user, record, conversationId) {
+  async function choose(user, record, conversationId, screenshotAdvice = null) {
     const data = JSON.parse(await readFile(fileFor(record), "utf8"));
     const conversation = data.conversations?.find((item) => item.id === conversationId);
     if (!conversation) throw fail(404, "Conversation not found.");
@@ -236,31 +251,73 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const pairing = await store.getRelationshipContext(user.id);
     const partnerName = norm(pairing?.members?.find((member) => member.userId !== user.id)?.user?.name);
     const people = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count, role: fromMe.has(name) || ["me", "我", "yo"].includes(norm(name)) || norm(name) === norm(user.name) ? "me" : partnerName && norm(name) === partnerName ? "partner" : null }));
+    // The screenshot reader knows which bubbles are the member's (their side of the screen). When only the other person
+    // speaks in them (an ex asking to meet, a partner venting), the rest is the member, so there is nobody to ask about
+    // (use-case test, 11-08: "哪个名字是你、哪个是 TA" after an ex's three messages).
+    if (record.platform === "screenshots" && !people.some((person) => person.role === "me")) people.unshift({ name: user.name || "Me", count: 0, role: "me" });
     const others = people.filter((person) => person.role !== "me"), total = conversation.messages.length;
     if (people.some((person) => person.role === "me") && !people.some((person) => person.role === "partner")) {
       const main = others.filter((person) => person.count >= total * 0.05);
       if (main.length === 1) main[0].role = "partner";
+      // A group chat in screenshots has several others; the one who says most is who the question is usually about,
+      // and the rest stay [other] (use-case test, 11-08: a hiking group got "哪个名字是你" instead of an answer).
+      else if (record.platform === "screenshots" && others.length) others[0].role = "partner";
     }
     await writeFile(fileFor(record), JSON.stringify({ conversation }));
     const ready = people.some((person) => person.role === "me") && people.some((person) => person.role === "partner");
     const saved = await update(record, user.id, (draft) => { draft.conversations = []; draft.title = conversation.title || draft.title; draft.people = people.map((person) => ({ ...person, role: person.role || "other" })); draft.messageCount = total; draft.firstAt = conversation.messages.find((message) => message.at)?.at || null; draft.lastAt = [...conversation.messages].reverse().find((message) => message.at)?.at || null; draft.status = ready ? "analyzing" : "needs_people"; draft.progress = null; });
-    if (ready) start(saved);
-    return saved;
+    if (!ready) return saved;
+    const attached = await attachPerson(user, saved);
+    start(attached, screenshotAdvice);
+    return attached;
+  }
+
+  // Someone single may bring chats with several people (founder 11-09): a chat with anyone but the paired partner belongs to
+  // that person's own card, found by the name the chat shows or made the first time it is seen. A synced iMessage history is
+  // the chat with the partner and keeps no person.
+  async function attachPerson(user, record) {
+    if (record.sync || record.personId || record.personDetached) return record;
+    return store.transaction(`user:${user.id}`, async (tx) => {
+      const current = await tx.getRelationshipRecordForUser(COLLECTION, record.id, user.id);
+      if (!current || current.archivedAt || current.personId || current.personDetached) return current || record;
+      const thread = current.sessionId ? await tx.getRelationshipRecordForUser("privateAgentThreads", current.sessionId, user.id) : null;
+      if (current.sessionId && (!thread || thread.ownerUserId !== user.id)) return current;
+      let person = null;
+      if (thread?.personId) {
+        person = await tx.getRelationshipRecordForUser("memories", thread.personId, user.id);
+        if (!person || person.ownerUserId !== user.id || person.kind !== "person" || person.deletedAt) return current;
+      } else {
+        const name = current.people?.find((participant) => participant.role === "partner")?.name;
+        if (!name) return current;
+        const pairing = await tx.getRelationshipContext(user.id);
+        const partnerName = pairing?.relationship?.status === "active" ? pairing.members?.find((member) => member.userId !== user.id)?.user?.name : null;
+        if (partnerName && norm(partnerName) === norm(name)) return current;
+        person = await personFor(tx, user.id, name);
+      }
+      if (!person) return current;
+      return tx.updateRelationshipRecordForUser(COLLECTION, current.id, user.id, (draft) => {
+        draft.personId = person.id;
+        if (!thread?.personId && person.version === 1) draft.personNew = person.name;
+        draft.version += 1;
+      });
+    });
   }
 
   async function assignPeople(user, record, { me, partner }) {
     const names = new Set(record.people.map((person) => person.name));
     if (!names.has(me) || !names.has(partner) || me === partner) throw fail(400, "Pick who is you and who is your partner.");
-    const saved = await update(record, user.id, (draft) => { draft.people = draft.people.map((person) => ({ ...person, role: person.name === me ? "me" : person.name === partner ? "partner" : "other" })); draft.status = "analyzing"; draft.progress = null; draft.error = null; });
+    const saved = await attachPerson(user, await update(record, user.id, (draft) => { draft.people = draft.people.map((person) => ({ ...person, role: person.name === me ? "me" : person.name === partner ? "partner" : "other" })); draft.status = "analyzing"; draft.progress = null; draft.error = null; }));
     start(saved);
     return saved;
   }
 
-  function start(record) {
+  function start(record, screenshotAdvice = null) {
     if (jobs.has(record.id)) return;
     // Counted as the owner's, whichever way the import came in (the Mac upload has no signed-in request).
     // The report is written in the owner's interface language at the time it is read, not the one the import began in (founder 11-06: one language everywhere, the one each member picked).
-    const job = memberLanguage(store, record.ownerUserId).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record)); }).catch(async (error) => {
+    // Screenshots carry the language the member was just talking in; without it a member who never picked one was
+    // answered in Chinese in an English conversation (use-case test, 11-08).
+    const job = memberLanguage(store, record.ownerUserId, record.platform === "screenshots" ? record.language : null).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
       await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
       if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
@@ -268,12 +325,45 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     jobs.set(record.id, job);
   }
 
-  async function analyze(record) {
+  async function analyze(record, screenshotAdvice = null) {
     const source = JSON.parse(await readFile(fileFor(record), "utf8"));
     const roleOf = new Map(record.people.map((person) => [person.name, person.role]));
     const names = { me: record.people.find((person) => person.role === "me").name, partner: record.people.find((person) => person.role === "partner").name };
     const messages = source.conversation.messages.map((message) => ({ ...message, role: roleOf.get(message.sender) || "other" }));
     const data = { messages, names: { me: names.me, partner: names.partner } };
+    // A screenshot question needs the original exchange, not a full history report. Answer first; keep the existing
+    // shareable analysis in this job afterwards. Neither the private question nor its reply enters that analysis.
+    let answeredScreenshot = false;
+    if (record.screenshotMessageId && record.sessionId) {
+      const session = await store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, record.ownerUserId);
+      const request = session?.ownerUserId === record.ownerUserId && session.messages?.find((message) => message.id === record.screenshotMessageId && message.role === "user");
+      if (request?.text) {
+        let text;
+        try {
+          const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
+          if (typeof answer?.reply !== "string" || !(answer.reply.trim() || answer.sendableDraft?.trim())) throw new Error("Empty screenshot answer");
+          // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
+          const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : answer.reply.trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+            sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
+          text = finishReply(reply, { request: request.text, language: record.language });
+        } catch (error) {
+          text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
+        }
+        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
+        answeredScreenshot = true;
+        // No filing notes ("已为…建档", "已记进…档案") under an answer to someone who is upset (11-15: under a comfort answer
+        // they read as paperwork). The person's file is still kept and shows in their people list.
+        const quietNotes = wantsOneSentence(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text)
+          || /难受|难过|伤心|委屈|想哭|心痛|安慰|崩溃|upset|it hurts|so sad|comfort me|triste|me duele/i.test(request.text);
+        if (record.personNew && record.personId && !quietNotes) {
+          await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
+          await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
+        }
+        // After the answer: keep what this exchange shows about the two of them, privately (reply coach, founder 11-08).
+        void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages, personId: record.personId || null, quiet: quietNotes })
+          .catch((error) => console.error("Could not keep notes from the screenshots:", error?.message || error));
+      }
+    }
     const stats = computeStats(messages);
     const { chunks, sampled } = chunkMessages(data);
     await update(record, record.ownerUserId, (draft) => { draft.stats = stats; draft.sampled = sampled; draft.progress = { done: 0, total: chunks.length + 1 }; });
@@ -291,28 +381,67 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     await Promise.all(Array.from({ length: Math.min(PARALLEL, chunks.length) }, worker));
     if (!notes.some(Boolean)) throw new Error("No part of the history could be read.");
     const input = JSON.stringify({ period: [day(record.firstAt), day(record.lastAt)], messageCount: record.messageCount, sampled, statistics: { ...stats, perPerson: { [names.me]: stats.perPerson.me, [names.partner]: stats.perPerson.partner } }, notes: notes.filter(Boolean) });
-    const analysis = await mediator.structured({ name: "chat_history_report", schema: reportSchema, instructions: reportInstructions(names, record.language), input: input.slice(0, 400_000), maxOutputTokens: 6000 });
+    const analysis = { ...await mediator.structured({ name: "chat_history_report", schema: reportSchema, instructions: reportInstructions(names, record.language), input: input.slice(0, 400_000), maxOutputTokens: 6000 }) };
+    if (!answeredScreenshot && (!record.sync || !record.analysis)) analysis.message = await prepareSourceReply(analysis.message, {
+      request: "Summarize the imported conversation briefly.", language: record.language,
+      sources: [{ kind: "import", text: chunks.join("\n").slice(0, 400_000) + sourceChronology(messages) }], context: { names }, mediator,
+    });
     const first = !record.analysis;
     const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); draft.analyzedAt = draft.completedAt; draft.analyzedCount = record.messageCount; draft.analyzedThrough = record.lastAt || null; draft.analysisError = null; });
     // A refresh of the synced history updates what Pinky understands quietly; only the first reading is posted.
     if (record.sync && !first) return;
-    await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
+    if (!answeredScreenshot) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
   }
 
   /** Screenshots (WeChat, or any app) become an import after the model transcribes them, oldest first. */
-  async function importScreenshots(user, photoIds, { sessionId, language }) {
+  // What Pinky already knows privately about the two of them helps the reply coach answer like someone who knows her
+  // (founder 11-08: "用得越多越懂她"). Only the member's own view; empty when nothing is known yet.
+  // A chat with someone they are getting to know gets that person's notes as the partner's and nobody else's; before the
+  // person is known (the screenshots are being read), each person's notes come apart, by name (founder 11-09).
+  const knownAbout = async (userId, personId) => {
+    const known = await profileContext(store, userId).catch(() => null);
+    if (!known) return {};
+    const facts = (list) => (list || []).slice(0, 20).map((item) => item.fact);
+    const view = { me: facts(known.me), partner: personId ? [] : facts(known.partner), history: personId ? [] : facts(known.history) };
+    return view.me.length || view.partner.length || view.history.length ? { known: view } : {};
+  };
+  async function importScreenshots(user, photoIds, { sessionId, language, messageId, question = "" }) {
     if (!user.name) user = { ...user, name: (await store.getUserById(user.id))?.name || "" };
     const photos = [];
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
-    const result = await mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
+    // Reading and answering in one call failed about one time in ten in the 11-15 practice runs (the user then got
+    // "截图没能读出来"). Then read only; the import answers the question in its own call (answerScreenshot).
+    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
+    const result = await read().catch((error) => {
+      if (!question || isAiLimit(error) || error?.statusCode === 503) throw error;
+      console.warn("[screenshots] read-and-answer failed; reading only:", String(error?.message || error).slice(0, 120));
+      return mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
+    });
     const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
-    if (messages.length < 2) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
+    // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
+    if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
-    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language });
+    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
   }
   router.importScreenshots = importScreenshots;
 
-  const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : "zh";
+  // Legacy name shared with screenshot follow-ups. Pasted/exported chats are already readable before their report finishes.
+  // Keep the actual exchange scoped to its owner's session, not just the lossy pattern notes.
+  router.screenshotContext = async (userId, sessionId) => {
+    const record = (await store.listRelationshipRecordsForUser(COLLECTION, userId))
+      .filter((item) => item.ownerUserId === userId && item.visibility === "private" && !item.archivedAt && item.sessionId === sessionId && !item.sync)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!record) return null;
+    const names = { me: record.people.find((person) => person.role === "me")?.name, partner: record.people.find((person) => person.role === "partner")?.name };
+    // Transcription is already complete even while the separate report is running (or if that report later fails).
+    const source = names.me && names.partner && !record.rawDeleted ? JSON.parse(await readFile(fileFor(record), "utf8").catch(() => "null")) : null;
+    // Reporting's 400-character line preview can omit the very words the user needs judged. Keep full lines here.
+    const full = source?.conversation?.messages.map((message) => `${message.sender === names.me ? "[you]" : message.sender === names.partner ? "[partner]" : "[other]"} ${message.at ? `${message.at.slice(0, 19).replace("T", " ")} ` : ""}${message.sender}: ${message.text || "[media]"}`).join("\n") || "";
+    const transcript = full ? full.slice(0, 40_000) + sourceChronology(source.conversation.messages.filter(message => full.slice(0, 40_000).includes(message.text))) : null;
+    return { status: transcript ? "ready" : record.status, names, transcript, truncated: full.length > 40_000 };
+  };
+
+  const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : ["en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh";
   // Behind a TLS proxy (Tailscale, Render) the app sees plain http; only a local address keeps it.
   const originOf = (req) => { const host = req.get("x-forwarded-host") || req.get("host"); return `${req.get("x-forwarded-proto") || (/^(localhost|127.|[::1])/.test(host) ? req.protocol : "https")}://${host}`; };
   const hashToken = (token) => createHash("sha256").update(String(token)).digest("hex");
@@ -328,6 +457,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // A Windows checkout may have turned its line endings into CRLF, which bash on the Mac cannot run.
     res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-helper.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
   });
+  // Windows (founder 11-09: years of iMessage without a Mac): reads one conversation from the iPhone backup on the PC.
+  router.get("/imports/windows-helper.ps1", async (_req, res) => {
+    res.type("text/plain; charset=utf-8").send(await readFile(new URL("./pinky-imessage-windows.ps1", import.meta.url), "utf8"));
+  });
   router.get("/imports/mac-sync.sh", async (_req, res) => {
     res.type("text/x-shellscript").send((await readFile(new URL("./pinky-imessage-sync.sh", import.meta.url), "utf8")).replace(/\r\n/g, "\n"));
   });
@@ -337,7 +470,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   });
   // A file from the composer, the Files picker or the iOS share sheet (sent as octet-stream so the app-wide JSON parser
   // leaves it alone), or plain text pasted into the conversation with ?pasted=1.
-  router.post("/imports", raw, async (req, res) => {
+  function disclosed(req, res, next) {
+    if (req.get("X-Pinky-Import-Disclosure") === "1" || req.body?.importDisclosure === 1) return next();
+    return res.status(409).json({ code: "import_disclosure_required", error: say(languageOf(req), "请先在 Pinky 中确认可以提交其他人的消息供 AI 处理。", "Confirm in Pinky that you may submit other people's messages for AI processing.", "Confirma en Pinky que puedes enviar los mensajes de otras personas para su tratamiento con IA.") });
+  }
+  router.post("/imports", disclosed, raw, async (req, res) => {
     const language = languageOf(req), sessionId = clean(String(req.query.session || ""), 80) || null;
     let parsed;
     if (req.query.pasted === "1") {
@@ -396,7 +533,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!activePair(context)) throw fail(409, say(language, "先邀请另一半加入，再一起看。", "Invite your partner first.", "Invita primero a tu pareja."));
     const period = `${day(record.firstAt) || "?"} – ${day(record.lastAt) || "?"}`;
     const result = await store.transaction(`relationship:${context.relationship.id}`, async (tx) => {
-      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: say(language, `我想和你一起看我们聊天记录的分析（${period}，${record.messageCount} 条）。你同意后，分析会放进“我们俩”，我们都能看、都能问 Pinky。`, `I'd like us to look at the analysis of our chat history together (${period}, ${record.messageCount} messages). If you agree, it goes into Us and we can both read it and ask Pinky about it.`, `Me gustaría que viéramos juntos el análisis de nuestro historial de chat (${period}, ${record.messageCount} mensajes). Si aceptas, pasa a Nosotros y los dos podremos leerlo y preguntarle a Pinky.`), handle: `chat_import_request:${record.id}:${record.version}`, refs: [{ type: "chat_import_request", id: record.id, ownerUserId: userId }] });
+      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, actorUserId: userId, source: "app", text: say(language, `我想和你一起看我们聊天记录的分析（${period}，${record.messageCount} 条）。你同意后，分析会放进“我们俩”，我们都能看、都能问 Pinky。`, `I'd like us to look at the analysis of our chat history together (${period}, ${plural(record.messageCount, "message", "messages")}). If you agree, it goes into Us and we can both read it and ask Pinky about it.`, `Me gustaría que viéramos juntos el análisis de nuestro historial de chat (${period}, ${plural(record.messageCount, "mensaje", "mensajes")}). Si aceptas, pasa a Nosotros y los dos podremos leerlo y preguntarle a Pinky.`), handle: `chat_import_request:${record.id}:${record.version}`, refs: [{ type: "chat_import_request", id: record.id, ownerUserId: userId }] });
       await tx.updateRelationshipRecordForUser(COLLECTION, record.id, userId, (draft) => { draft.shareRequest = { requestedAt: new Date().toISOString(), relationshipId: context.relationship.id, messageId: sent.message.id }; draft.version += 1; });
       return sent;
     });
@@ -418,7 +555,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       await tx.createRelationshipRecord(COLLECTION, copy);
       await tx.updateRelationshipRecordForUser(COLLECTION, source.id, owner.userId, (draft) => { draft.sharedCopyId = copy.id; draft.version += 1; });
       for (const memberId of [owner.userId, userId]) await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: context.relationship.id, userId: memberId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: copy.id, objectType: "chat_import", eventType: memberId === userId ? "chat_import.share_approved" : "chat_import.share_requested", sourceVersion: source.version }));
-      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId, source: "app", text: say(language, `${req.auth.user.name} 同意了。聊天记录的分析现在你们俩都能看，也可以直接问我。`, `${req.auth.user.name} agreed. You can both read the chat history analysis now, and ask me about it here.`, `${req.auth.user.name} aceptó. Ahora los dos pueden leer el análisis del historial y preguntarme aquí.`), refs: [{ type: "chat_import", id: copy.id, requestFor: source.id }] });
+      const i18n = togetherI18n((lang) => say(lang, `${req.auth.user.name} 同意了。聊天记录的分析现在你们俩都能看，也可以直接问我。`, `${req.auth.user.name} agreed. You can both read the chat history analysis now, and ask me about it here.`, `${req.auth.user.name} aceptó. Ahora los dos pueden leer el análisis del historial y preguntarme aquí.`));
+      const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId, source: "app", text: i18n[language], i18n, refs: [{ type: "chat_import", id: copy.id, requestFor: source.id }] });
       return { copy, conversation: sent.conversation };
     });
     if (result.conversation) router.emitTogether?.(result.conversation, userId);
@@ -438,24 +576,41 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   });
 
   // iMessage from a Mac: a one-time command the member pastes into Terminal. It reads one conversation locally and uploads it.
-  router.post("/imports/mac-command", async (req, res) => {
+  router.post("/imports/mac-command", disclosed, async (req, res) => {
     for (const [token, entry] of macTokens) if (entry.expiresAt < Date.now()) macTokens.delete(token);
     const token = randomBytes(24).toString("base64url");
     macTokens.set(token, { userId: req.auth.user.id, language: languageOf(req), sessionId: clean(req.body?.session, 80) || null, expiresAt: Date.now() + 30 * 60_000 });
     const origin = originOf(req);
     res.json({ command: `curl -fsSL ${origin}/api/imports/mac-helper.sh | bash -s -- ${origin} ${token}`, expiresInMinutes: 30 });
   });
+  // The same one-time upload from a Windows PC, for PowerShell: it reads the iPhone backup there (no Mac needed). The member
+  // reads the command off their phone and types it on the PC, so it is short: an 8-character code instead of a long token.
+  router.post("/imports/windows-command", disclosed, async (req, res) => {
+    for (const [token, entry] of macTokens) if (entry.expiresAt < Date.now()) macTokens.delete(token);
+    let code = "";
+    while (!code || macTokens.has(code)) code = Array.from(randomBytes(8), (byte) => CODE_LETTERS[byte % CODE_LETTERS.length]).join("");
+    macTokens.set(code, { userId: req.auth.user.id, language: languageOf(req), sessionId: clean(req.body?.session, 80) || null, expiresAt: Date.now() + 60 * 60_000 });
+    res.json({ command: `irm ${originOf(req)}/api/imports/w/${code} | iex`, expiresInMinutes: 60 });
+  });
+  // The script with this code filled in, so `irm … | iex` needs no arguments. An unknown or expired code gets one line.
+  router.get("/imports/w/:code", async (req, res) => {
+    const entry = macTokens.get(String(req.params.code).toUpperCase());
+    res.type("text/plain; charset=utf-8");
+    if (!entry || entry.expiresAt < Date.now()) return res.send("Write-Host '这条命令已经过期，请回到 Pinky 重新获取。 / This command expired. Get a new one in Pinky.'\n");
+    const script = await readFile(new URL("./pinky-imessage-windows.ps1", import.meta.url), "utf8");
+    res.send(script.replace(/^param\([^\n]*\)/, `$Base = '${originOf(req)}'; $Token = '${String(req.params.code).toUpperCase()}'`));
+  });
 
   // Continuous iMessage sync (11-05): one import per member that every run on the Mac appends new messages to. It is kept,
   // not analysed; Pinky searches it when its owner asks. The command keeps working until a new one is made or the import is
   // deleted; only the token's hash is stored.
-  router.post("/imports/mac-sync-command", async (req, res) => {
+  router.post("/imports/mac-sync-command", disclosed, async (req, res) => {
     const user = req.auth.user, language = languageOf(req), token = randomBytes(24).toString("base64url");
     const existing = (await store.listRelationshipRecordsForUser(COLLECTION, user.id)).find((record) => record.ownerUserId === user.id && record.sync?.kind === "imessage" && !record.archivedAt);
     let record;
-    if (existing) record = await update(existing, user.id, (draft) => { draft.sync = { ...draft.sync, tokenHash: hashToken(token) }; });
+    if (existing) record = await update(existing, user.id, (draft) => { draft.sync = { ...draft.sync, importDisclosure: 1, tokenHash: hashToken(token) }; });
     else {
-      record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "waiting_sync", platform: "imessage", title: "iMessage", fileId: randomUUID(), language, people: [], messageCount: 0, sync: { kind: "imessage", tokenHash: hashToken(token), lastSyncAt: null } });
+      record = createRelationshipRecord({ relationshipId: null, userId: user.id, visibility: "private", aiAccessScope: "private", status: "waiting_sync", platform: "imessage", title: "iMessage", fileId: randomUUID(), language, people: [], messageCount: 0, sync: { kind: "imessage", importDisclosure: 1, tokenHash: hashToken(token), lastSyncAt: null } });
       await store.transaction(`user:${user.id}`, (tx) => tx.createRelationshipRecord(COLLECTION, record));
     }
     const origin = originOf(req);
@@ -466,6 +621,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const record = (await store.listRecordsForJob(COLLECTION)).find((item) => item.sync?.tokenHash === hash && !item.archivedAt);
     const user = record ? await store.getUserById(record.ownerUserId) : null;
     if (!record || !user || user.disabledAt || user.deletedAt) return res.status(401).type("text/plain").send("This sync command no longer works. Open Pinky and copy a new one.\n");
+    if (record.sync.importDisclosure !== 1) return res.status(409).type("text/plain").send("Open Pinky, confirm the chat import notice and copy a new Mac sync command.\n");
     let parsed;
     try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read these messages.\n"); }
     const language = await memberLanguage(store, user.id);
@@ -496,7 +652,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       const result = await store.transaction(`relationship:${context.relationship.id}`, (tx) => appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId: user.id, source: "app", handle: `imessage-sync:${record.id}`, i18n: togetherI18n((lang) => say(lang, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`)), text: say(language, `${name} 打开了 iMessage 同步：你们在 iMessage 里的聊天会存进 ${name} 自己的 Pinky，只有 ${name} 能看到。`, `${name} turned on iMessage sync: your iMessage chat is kept in ${name}'s own Pinky, visible only to ${name}.`, `${name} activó la sincronización de iMessage: su chat de iMessage se guarda en el Pinky de ${name}, solo ${name} lo ve.`) })).catch((error) => { console.error("Could not tell the partner about iMessage sync:", error?.message || error); return null; });
       if (result && !result.duplicate) router.emitTogether?.(result.conversation, null);
     }
-    res.type("text/plain").send(`${say(language, `已同步 ${fresh.length} 条新消息，一共 ${messages.length} 条。只有你能看到。`, `Synced ${fresh.length} new messages, ${messages.length} in all. Only you can see them.`, `Se sincronizaron ${fresh.length} mensajes nuevos, ${messages.length} en total. Solo tú los ves.`)}\n`);
+    res.type("text/plain").send(`${say(language, `已同步 ${fresh.length} 条新消息，一共 ${messages.length} 条。只有你能看到。`, `Synced ${plural(fresh.length, "new message", "new messages")}, ${messages.length} in all. Only you can see them.`, `${fresh.length === 1 ? "Se sincronizó 1 mensaje nuevo" : `Se sincronizaron ${fresh.length} mensajes nuevos`}, ${messages.length} en total. Solo tú los ves.`)}\n`);
   });
   router.post("/imports/upload/:token", raw, async (req, res) => {
     const entry = macTokens.get(req.params.token);
@@ -507,7 +663,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     try { parsed = parseChatExport({ name: "imessage.json", bytes: req.body }); } catch { return res.status(422).type("text/plain").send("Pinky could not read this conversation.\n"); }
     macTokens.delete(req.params.token);
     const record = await createImport(user, parsed, { sessionId: entry.sessionId, language: entry.language });
-    res.type("text/plain").send(`${say(entry.language, `已导入 ${parsed.conversations[0]?.messages.length || 0} 条消息。回到 Pinky 看分析进度。`, `Imported ${parsed.conversations[0]?.messages.length || 0} messages. Go back to Pinky to follow the analysis.`, `Se importaron ${parsed.conversations[0]?.messages.length || 0} mensajes. Vuelve a Pinky para ver el análisis.`)}\n${record.id}\n`);
+    res.type("text/plain").send(`${say(entry.language, `已导入 ${parsed.conversations[0]?.messages.length || 0} 条消息。回到 Pinky 看分析进度。`, `Imported ${plural(parsed.conversations[0]?.messages.length || 0, "message", "messages")}. Go back to Pinky to follow the analysis.`, `${(parsed.conversations[0]?.messages.length || 0) === 1 ? "Se importó 1 mensaje" : `Se importaron ${parsed.conversations[0]?.messages.length || 0} mensajes`}. Vuelve a Pinky para ver el análisis.`)}\n${record.id}\n`);
   });
 
   router.use((error, req, res, next) => error.statusCode ? res.status(error.statusCode).json({ error: error.message }) : error.type === "entity.too.large" ? res.status(413).json({ error: say(languageOf(req), "文件太大了。导出时选“不含媒体”，或只导出文字。", "This file is too large. Export without media, or text only.", "El archivo es demasiado grande. Exporta sin archivos multimedia.") }) : next(error));

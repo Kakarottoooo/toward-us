@@ -37,9 +37,11 @@ struct PinkyWidgetEntryView: View {
         let accessory = family == .accessoryCircular || family == .accessoryRectangular
         if #available(iOSApplicationExtension 17.0, *) {
             PinkyWidgetContent(content: entry.content, family: family)
+                .privacySensitive()
                 .containerBackground(for: .widget) { accessory ? Color.clear : PinkyPalette.ivory }
         } else {
             PinkyWidgetContent(content: entry.content, family: family)
+                .privacySensitive()
                 .padding(accessory ? 0 : 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(accessory ? Color.clear : PinkyPalette.ivory)

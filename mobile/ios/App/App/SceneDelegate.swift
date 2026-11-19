@@ -20,6 +20,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for context in connectionOptions.urlContexts where context.url.isFileURL { ChatImportUploader.shared.receive(context.url, window: window) }
     }
 
+    func sceneWillEnterForeground(_ scene: UIScene) { PinkyTelemetry.shared.foreground() }
+    func sceneDidEnterBackground(_ scene: UIScene) { PinkyTelemetry.shared.background() }
+
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         // Files shared to Pinky (WhatsApp "Export chat", Files, Mail) are chat-history imports; other links go to Capacitor.
         let files = URLContexts.filter { $0.url.isFileURL }
@@ -39,44 +42,89 @@ final class ChatImportUploader {
     static let shared = ChatImportUploader()
 
     func receive(_ file: URL, window: UIWindow?, attempt: Int = 0) {
-        guard let webView = (window?.rootViewController as? CAPBridgeViewController)?.webView, let page = webView.url, page.scheme?.hasPrefix("http") == true, !webView.isLoading else {
+        guard let webView = (window?.rootViewController as? CAPBridgeViewController)?.webView, let page = webView.url, PinkyOrigin.matches(page), !webView.isLoading else {
             // A cold start: wait for the app's page to load (and its sign-in cookie to be readable) before uploading.
             if attempt < 40 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.receive(file, window: window, attempt: attempt + 1) } }
             return
         }
+        webView.evaluateJavaScript("localStorage.getItem('toward-us.language')") { value, _ in
+            let language = (value as? String) ?? "en"
+            let title: String, message: String, proceed: String, cancel: String
+            switch language {
+            case "zh":
+                (title, message, proceed, cancel) = ("导入这份聊天记录？", "记录也包含对方的消息，分析时这些内容会发送给 OpenAI 或 Anthropic。请只导入你有权分享的对话。", "确认导入", "取消")
+            case "es":
+                (title, message, proceed, cancel) = ("¿Importar esta conversación?", "El archivo también contiene mensajes de la otra persona. Su contenido se envía a OpenAI o Anthropic para analizarlo. Importa solo conversaciones que tengas permiso para compartir.", "Importar", "Cancelar")
+            default:
+                (title, message, proceed, cancel) = ("Import this conversation?", "The file also contains the other person’s messages. Its contents are sent to OpenAI or Anthropic for analysis. Only import conversations you have permission to share.", "Import", "Cancel")
+            }
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: cancel, style: .cancel) { _ in self.removeInboxCopy(file) })
+            alert.addAction(UIAlertAction(title: proceed, style: .default) { _ in
+                guard PinkyOrigin.matches(webView.url) else { return }
+                self.upload(file, page: page, language: language, webView: webView, window: window)
+            })
+            window?.rootViewController?.present(alert, animated: true)
+        }
+    }
+
+    private func removeInboxCopy(_ file: URL) {
+        let inbox = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Inbox")
+        if file.standardizedFileURL.deletingLastPathComponent().path == inbox.standardizedFileURL.path {
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
+
+    private func upload(_ file: URL, page: URL, language: String, webView: WKWebView, window: UIWindow?) {
         let access = file.startAccessingSecurityScopedResource()
         let data = try? Data(contentsOf: file)
         if access { file.stopAccessingSecurityScopedResource() }
-        if file.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: file) }
-        guard let data = data, !data.isEmpty else { return }
-        webView.evaluateJavaScript("localStorage.getItem('toward-us.language')") { value, _ in
-            let language = ["zh", "en", "es"].contains(value as? String ?? "") ? value as! String : "zh"
-            var components = URLComponents(url: page, resolvingAgainstBaseURL: false)!
-            components.path = "/api/imports"; components.fragment = nil
-            components.queryItems = [URLQueryItem(name: "name", value: file.lastPathComponent), URLQueryItem(name: "language", value: language)]
-            guard let endpoint = components.url, let host = page.host else { return }
-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                var request = URLRequest(url: endpoint)
-                request.httpMethod = "POST"
-                request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-                let mine = cookies.filter { cookie in let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain; return host == domain || host.hasSuffix("." + domain) }
-                for (name, value) in HTTPCookie.requestHeaderFields(with: mine) { request.setValue(value, forHTTPHeaderField: name) }
-                URLSession.shared.uploadTask(with: request, from: data) { body, response, _ in
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-                    let id = (json?["import"] as? [String: Any])?["id"] as? String
-                    DispatchQueue.main.async {
-                        if status == 201, let id = id, let target = URL(string: "/?view=import&import=\(id)", relativeTo: page) {
-                            webView.load(URLRequest(url: target))
-                        } else {
-                            let message = json?["error"] as? String ?? (status == 401 ? "Please open Pinky and sign in first." : "Pinky could not import this file.")
-                            let alert = UIAlertController(title: "Pinky", message: message, preferredStyle: .alert)
-                            alert.addAction(UIAlertAction(title: "OK", style: .default))
-                            window?.rootViewController?.present(alert, animated: true)
-                        }
+        removeInboxCopy(file)
+        guard let data, !data.isEmpty else { return }
+        var components = URLComponents(url: page, resolvingAgainstBaseURL: false)!
+        components.path = "/api/imports"; components.fragment = nil
+        components.queryItems = [URLQueryItem(name: "name", value: file.lastPathComponent), URLQueryItem(name: "language", value: language)]
+        guard let endpoint = components.url, let host = page.host else { return }
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("1", forHTTPHeaderField: "X-Pinky-Import-Disclosure")
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            let mine = cookies.filter { cookie in let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain; return host == domain || host.hasSuffix("." + domain) }
+            for (name, value) in HTTPCookie.requestHeaderFields(with: mine) { request.setValue(value, forHTTPHeaderField: name) }
+            URLSession.shared.uploadTask(with: request, from: data) { body, response, _ in
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let id = (json?["import"] as? [String: Any])?["id"] as? String
+                DispatchQueue.main.async {
+                    if status == 201, let id = id, let target = URL(string: "/?view=import&import=\(id)", relativeTo: page) {
+                        webView.load(URLRequest(url: target))
+                    } else {
+                        let message = json?["error"] as? String ?? (status == 401 ? "Please open Pinky and sign in first." : "Pinky could not import this file.")
+                        let alert = UIAlertController(title: "Pinky", message: message, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        window?.rootViewController?.present(alert, animated: true)
                     }
-                }.resume()
-            }
+                }
+            }.resume()
+        }
+    }
+}
+
+private final class PinkyLanguagePreference: NSObject, WKScriptMessageHandlerWithReply {
+    private let key = "PinkyInterfaceLanguage"
+    private let choices = ["en", "es", "zh"]
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
+                               replyHandler: @escaping (Any?, String?) -> Void) {
+        guard message.frameInfo.isMainFrame, let url = message.frameInfo.request.url else { replyHandler(nil, "Unavailable"); return }
+        if PinkyOrigin.matches(url), let language = message.body as? String, choices.contains(language) {
+            UserDefaults.standard.set(language, forKey: key)
+            replyHandler(language, nil)
+        } else if url.scheme == "capacitor", url.host == "localhost", url.lastPathComponent == "offline.html" {
+            replyHandler(UserDefaults.standard.string(forKey: key) ?? "en", nil)
+        } else {
+            replyHandler(nil, "Unavailable")
         }
     }
 }
@@ -87,6 +135,59 @@ class PinkyBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
         bridge?.registerPluginInstance(PinkyStorePlugin())
         bridge?.registerPluginInstance(PinkyWidgetPlugin())
+        // Render pages already carrying this revision own their own styles. The bundled fallback also
+        // covers a welcome screen mounted later by client-side navigation in an older cached document.
+        guard let config = bridge?.config.getPluginConfig("PinkyWelcome"),
+              let production = config.getString("productionOrigin"), let origin = URL(string: production),
+              origin.scheme == "https", PinkyOrigin.matches(origin),
+              let file = Bundle.main.url(forResource: "welcome-layout", withExtension: "css"),
+              let css = try? String(contentsOf: file, encoding: .utf8),
+              let stylesheet = try? JSONEncoder().encode(css),
+              let encodedOrigin = try? JSONEncoder().encode(production) else { return }
+        let controller = webView?.configuration.userContentController
+        controller?.addScriptMessageHandler(PinkyLanguagePreference(), contentWorld: .defaultClient, name: "pinkyLanguage")
+        let languageScript = """
+        (() => {
+            const save = window.webkit.messageHandlers.pinkyLanguage;
+            if (location.origin === \(String(decoding: encodedOrigin, as: UTF8.self))) {
+                try {
+                    const key = 'toward-us.language';
+                    if (!['en', 'zh', 'es'].includes(localStorage.getItem(key))) localStorage.setItem(key, 'en');
+                    const sync = () => save.postMessage(localStorage.getItem(key)).catch(() => {});
+                    const observe = () => {
+                        sync();
+                        new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+                    };
+                    if (document.documentElement) observe();
+                    else document.addEventListener('DOMContentLoaded', observe, { once: true });
+                } catch {}
+            } else if (location.protocol === 'capacitor:' && location.hostname === 'localhost' && location.pathname.endsWith('/offline.html')) {
+                save.postMessage(null).then(value => {
+                    if (['en', 'zh', 'es'].includes(value)) {
+                        localStorage.setItem('toward-us.language', value);
+                        document.dispatchEvent(new Event('pinky-language-ready'));
+                    }
+                }).catch(() => {});
+            }
+        })();
+        """
+        controller?.addUserScript(WKUserScript(source: languageScript, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
+        let script = """
+        if (location.origin === \(String(decoding: encodedOrigin, as: UTF8.self))) {
+            const applyWelcomeLayout = () => {
+                if (!getComputedStyle(document.documentElement).getPropertyValue('--pinky-welcome-layout').trim()) {
+                    const style = document.createElement('style');
+                    style.id = 'pinky-native-welcome-layout';
+                    style.textContent = \(String(decoding: stylesheet, as: UTF8.self));
+                    document.head.append(style);
+                }
+            };
+            applyWelcomeLayout();
+        }
+        """
+        webView?.configuration.userContentController.addUserScript(
+            WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
+        )
     }
 }
 
