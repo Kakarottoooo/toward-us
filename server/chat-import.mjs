@@ -1,3 +1,4 @@
+import { withoutScreenshotPreamble, screenshotTurnMessages } from "./screenshot-turn.mjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
 import { finishReply, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
@@ -236,7 +237,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // Screenshots sent with a question get the answer itself in seconds (it carries the same card), so a "this takes a few
     // minutes" receipt beside it only contradicts it (founder 11-08, reply coach). A step the member must take still posts.
     const answering = record.screenshotMessageId && !["needs_choice", "needs_people"].includes(saved.status);
-    if (!answering) await appendAssistantMessage(user.id, { sessionId, language, text, card: { id: saved.id, kind: "chat_import", version: 1, title: saved.title } }).catch((error) => console.error("Could not post the import note:", error?.message || error));
+    if (!answering) await appendAssistantMessage(user.id, { sessionId, language, text, ...(record.screenshotMessageId ? { replacesScreenshotReplyTo: record.screenshotMessageId, screenshotOutcome: "needs_input" } : {}), card: { id: saved.id, kind: "chat_import", version: 1, title: saved.title } }).catch((error) => console.error("Could not post the import note:", error?.message || error));
     return saved;
   }
 
@@ -320,7 +321,13 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const job = memberLanguage(store, record.ownerUserId, record.platform === "screenshots" ? record.language : null).then((language) => { record = { ...record, language }; return asAiUser({ userId: record.ownerUserId, language }, () => analyze(record, screenshotAdvice)); }).catch(async (error) => {
       console.error("Chat import analysis failed:", error?.message || error);
       await update(record, record.ownerUserId, (draft) => { if (draft.sync) { draft.analysisError = isAiLimit(error) ? "daily_limit" : "analysis_failed"; draft.progress = null; } else { draft.status = "failed"; draft.error = isAiLimit(error) ? "daily_limit" : "analysis_failed"; } }).catch(() => {});
-      if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
+      if (record.screenshotMessageId && record.sessionId) {
+        // A history-report failure must not replace the direct answer that was already delivered.
+        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language,
+          replacesScreenshotReplyTo: record.screenshotMessageId, screenshotOutcome: "error",
+          text: isAiLimit(error) ? error.message : say(record.language, "截图分析未完成，可以从分析卡重试。", "The analysis couldn’t finish. Retry from the analysis card.", "No se pudo terminar el análisis. Reinténtalo desde la tarjeta."),
+          card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } }).catch(() => {});
+      } else if (isAiLimit(error) && !record.sync) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: error.message }).catch(() => {});
     }).finally(() => jobs.delete(record.id));
     jobs.set(record.id, job);
   }
@@ -336,20 +343,24 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     let answeredScreenshot = false;
     if (record.screenshotMessageId && record.sessionId) {
       const session = await store.getRelationshipRecordForUser("privateAgentThreads", record.sessionId, record.ownerUserId);
-      const request = session?.ownerUserId === record.ownerUserId && session.messages?.find((message) => message.id === record.screenshotMessageId && message.role === "user");
-      if (request?.text) {
-        let text;
+      const turns = session?.ownerUserId === record.ownerUserId ? screenshotTurnMessages(session) : [];
+      const request = turns.find((message) => message.id === record.screenshotMessageId && message.role === "user");
+      answeredScreenshot = turns.some((message) => message.screenshotAnswerTo === record.screenshotMessageId && message.screenshotOutcome === "answered");
+      if (request?.text && !answeredScreenshot) {
+        let text, screenshotOutcome = "answered";
         try {
-          const answer = screenshotAdvice?.language === record.language ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
-          if (typeof answer?.reply !== "string" || !(answer.reply.trim() || answer.sendableDraft?.trim())) throw new Error("Empty screenshot answer");
+          const usable = (answer) => typeof answer?.reply === "string" && (withoutScreenshotPreamble(answer.reply).trim() || answer.sendableDraft?.trim());
+          const answer = screenshotAdvice?.language === record.language && usable(screenshotAdvice) ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
+          if (!usable(answer)) throw new Error("No substantive screenshot answer");
           // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
-          const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : answer.reply.trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+          const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
           text = finishReply(reply, { request: request.text, language: record.language });
         } catch (error) {
+          screenshotOutcome = "error";
           text = isAiLimit(error) ? error.message : say(record.language, "截图已经读好了，但这次没能回答你的问题。你可以在这里再问一次，不用重新上传。", "I've read the screenshots, but couldn't answer your question this time. Ask again here; you don't need to upload them again.", "Ya leí las capturas, pero esta vez no pude responder tu pregunta. Vuelve a preguntar aquí; no hace falta subirlas de nuevo.");
         }
-        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
+        await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text, replacesScreenshotReplyTo: record.screenshotMessageId, screenshotOutcome, card: { id: record.id, kind: "chat_import", version: record.version, title: record.title } });
         answeredScreenshot = true;
         // No filing notes ("已为…建档", "已记进…档案") under an answer to someone who is upset (11-15: under a comfort answer
         // they read as paperwork). The person's file is still kept and shows in their people list.
@@ -390,7 +401,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const saved = await update(record, record.ownerUserId, (draft) => { draft.analysis = analysis; draft.status = "ready"; draft.progress = { done: chunks.length + 1, total: chunks.length + 1 }; draft.completedAt = new Date().toISOString(); draft.analyzedAt = draft.completedAt; draft.analyzedCount = record.messageCount; draft.analyzedThrough = record.lastAt || null; draft.analysisError = null; });
     // A refresh of the synced history updates what Pinky understands quietly; only the first reading is posted.
     if (record.sync && !first) return;
-    if (!answeredScreenshot) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
+    if (!answeredScreenshot) await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, text: analysis.message, ...(record.screenshotMessageId ? { replacesScreenshotReplyTo: record.screenshotMessageId } : {}), card: { id: saved.id, kind: "chat_import", version: saved.version, title: saved.title } }).catch((error) => console.error("Could not post the import result:", error?.message || error));
   }
 
   /** Screenshots (WeChat, or any app) become an import after the model transcribes them, oldest first. */

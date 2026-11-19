@@ -8,6 +8,7 @@ export type AgentActivity = { step: string; detail?: string | null } | null;
 export function agentStepLabel(step: string, language: Language) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   switch (step) {
+    case "reading_screenshot": return t("正在分析截图", "Analyzing screenshots", "Analizando capturas");
     case "searching_web": return t("正在搜索", "Searching the web", "Buscando en internet");
     case "searching_chats": return t("正在翻聊天记录", "Reading your chat history", "Revisando el historial");
     case "checking_records": return t("正在查日程和记录", "Checking your calendar and notes", "Revisando calendario y notas");

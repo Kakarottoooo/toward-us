@@ -1,12 +1,12 @@
 import { ReportReply } from "../feedback/ReportReply";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarBlank, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { languageTag, localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
 export type ConversationSource = { channel: "me" | "us"; conversationId: string; messageId: string; date: string; personId?: string };
-type HistoryMessage = { id: string; role: string; text: string; createdAt: string; actorUserId?: string; photoIds?: string[] };
+type HistoryMessage = { cards?: Array<{ id: string; kind: string }>; id: string; role: string; text: string; createdAt: string; actorUserId?: string; photoIds?: string[] };
 type HistoryPage = { channel: "me" | "us"; conversationId: string; messageId: string; messages: HistoryMessage[]; before: string | null; after: string | null };
 
 export function RecallLinks({ sources, language, busy, onJump }: { sources?: ConversationSource[]; language: Language; busy: boolean; onJump: (source: ConversationSource) => void }) {
@@ -16,7 +16,7 @@ export function RecallLinks({ sources, language, busy, onJump }: { sources?: Con
   </button>)}</div>;
 }
 
-export function useConversationRecall({ channel, sessionId, language, userId, members, photos }: { channel: "me" | "us"; sessionId?: string; language: Language; userId: string; members: Array<{ id: string; name: string }>; photos: (ids: string[]) => ReactNode }) {
+export function useConversationRecall({ channel, sessionId, language, userId, members, photos, importCard }: { channel: "me" | "us"; sessionId?: string; language: Language; userId: string; members: Array<{ id: string; name: string }>; photos: (ids: string[]) => ReactNode; importCard: (id: string) => ReactNode }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [page, setPage] = useState<HistoryPage | null>(null);
@@ -64,9 +64,15 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
     {page && <div className="recall-toolbar"><span>{page.channel === "us" ? t("我们俩 · 历史对话", "Us · Earlier conversation", "Nosotros · Conversación anterior") : t("只有我 · 历史对话", "Just me · Earlier conversation", "Solo yo · Conversación anterior")}</span><button type="button" onClick={close} data-testid="recall-latest">{t("回到最新", "Back to latest", "Volver al presente")}</button></div>}
     {error && <p className="recall-error" role="alert">{error}</p>}
   </>;
+  const importAt = new Map(page?.channel === "me" ? page.messages.flatMap((message) =>
+    (message.cards || []).filter(card => card.kind === "chat_import").map(card => [card.id, message.id] as const)) : []);
   const history = page && <>
     {page.before && <button type="button" className="conversation-earlier" disabled={busy} onClick={() => browse(page.before!, "before")}><ArrowLeft size={16} />{t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
     {page.messages.map((message) => {
+      const cards = message.cards?.filter(card => importAt.get(card.id) === message.id).map(card => importCard(card.id));
+      if (page.channel === "me" && message.role === "assistant" && !message.text?.trim() && !message.photoIds?.length) {
+        return cards?.length ? <section key={message.id} ref={message.id === page.messageId ? target : undefined} tabIndex={-1} data-message-id={message.id}>{cards}</section> : null;
+      }
       const mine = message.role === "user" || message.actorUserId === userId;
       const agent = message.role === "assistant" || message.role === "agent";
       const author = agent ? "Ourever" : members.find((member) => member.id === message.actorUserId)?.name || t("我", "Me", "Yo");
@@ -77,7 +83,7 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
       </article>;
       return agent && page.channel === "us" ? <div key={message.id} className="shared-reportable">{row}
         <ReportReply messageMenu replyText={message.text} language={language} channel="us" conversationId={page.conversationId} messageId={message.id} />
-      </div> : row;
+      </div> : cards?.length ? <Fragment key={message.id}>{row}{cards}</Fragment> : row;
     })}
     {page.after && <button type="button" className="conversation-earlier" disabled={busy} onClick={() => browse(page.after!, "after")}>{t("较新的消息", "Newer messages", "Mensajes más recientes")}<ArrowRight size={16} /></button>}
   </>;
