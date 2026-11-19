@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
+import { migrateAppMetrics, postgresAppMetrics } from "./app-metrics-store.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
@@ -43,9 +44,11 @@ export async function createPostgresStore(databaseUrl) {
   };
   const mapCollections = async (operation) => { if (!transactions.getStore()) return Promise.all(GRAPH_COLLECTIONS.map(operation)); const results = []; for (const collection of GRAPH_COLLECTIONS) results.push(await operation(collection)); return results; };
   await migrate(pool);
+  await migrateAppMetrics(pool);
 
   const store = {
     kind: "postgres",
+    ...postgresAppMetrics(pool),
     async close() { await rawPool.end(); },
     async transaction(key, callback) {
       if (transactions.getStore()) return callback(store);
@@ -129,11 +132,12 @@ export async function createPostgresStore(databaseUrl) {
       const ids = rows.map((row) => row.id);
       const graph = Object.fromEntries(await mapCollections(async (collection) => [collection, (await pool.query(`select * from ${graphTable(collection)} where relationship_id=any($1::text[]) or owner_user_id=$2`, [ids, userId])).rows.map(mapGraphRecord)]));
       const rooms = (await pool.query("select payload from rooms where relationship_id=any($1::text[])", [ids])).rows.map((row) => row.payload);
-      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId) };
+      const activity = await pool.query("select date::text from app_metric_activity where user_id=$1 order by date", [userId]);
+      return { relationships: rows.map(mapRelationship), graph, rooms, phone: await store.getPhoneForUser(userId), appActivityDates: activity.rows.map((row) => row.date) };
     },
     async deletePrivateData(userId) {
       return store.transaction(`user:${userId}`, async () => {
-        let deleted = 0;
+        let deleted = (await pool.query("delete from app_metric_activity where user_id=$1", [userId])).rowCount;
         for (const collection of GRAPH_COLLECTIONS) {
           if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
           deleted += (await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1 and visibility in ('private','private_surprise')`, [userId])).rowCount;

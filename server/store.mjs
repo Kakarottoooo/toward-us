@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { fileAppMetrics } from "./app-metrics-store.mjs";
 import { createPostgresStore } from "./postgres-store.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
@@ -10,6 +11,9 @@ const EMPTY_STATE = () => ({
   users: {},
   userByEmail: {},
   sessions: {},
+  appMetricSessions: {},
+  appMetricActivity: {},
+  appMetricCrashes: {},
   relationships: {},
   memberships: {},
   formerMemberships: {},
@@ -191,6 +195,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
 
   const implementation = {
     kind: "file",
+    ...fileAppMetrics(state, persist),
     transaction,
     async ping() { return true; },
     getUserByEmail(email) {
@@ -260,10 +265,14 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
         graph: Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, Object.values(state().relationshipGraph[collection]).filter((record) => ids.has(record.relationshipId) || record.ownerUserId === userId).map((record) => structuredClone(record))])),
         rooms: Object.values(state().rooms).filter((room) => ids.has(room.relationshipId)).map((room) => structuredClone(room)),
         phone: implementation.getPhoneForUser(userId),
+        appActivityDates: Object.values(state().appMetricActivity).filter((row) => row.userId === userId).map((row) => row.date).sort(),
       };
     },
     async deletePrivateData(userId) {
       let deleted = 0;
+      for (const [key, row] of Object.entries(state().appMetricActivity)) {
+        if (row.userId === userId) { delete state().appMetricActivity[key]; deleted++; }
+      }
       for (const collection of GRAPH_COLLECTIONS) {
         if (["accountSettings", "deliveryPreferences", "consentEvents", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"].includes(collection)) continue;
         for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)) { delete state().relationshipGraph[collection][id]; deleted += 1; }
