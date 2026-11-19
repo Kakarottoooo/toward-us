@@ -1,3 +1,4 @@
+import { useTestMedia } from "./helpers/media.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
@@ -20,13 +21,7 @@ const report = { watched: [{ date: "2025-03-02", title: "Reply 1988", note: "eac
 async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), screenshots = [], screenshotAdvice = null, rewrite, sourceCheck = () => ({ claims: [], newUnauthorizedStance: false, lostDeliverables: false, deliveryIssues: [] }), beforeStructured = async () => {} } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "imports-"));
-  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
-  const media = join(directory, "media");
-  process.env.TOWARD_US_MEDIA_DIR = media;
-  t.after(() => {
-    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
-    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
-  });
+  const media = useTestMedia(t, directory);
   const store = await createFileStore(join(directory, "store.json"));
   const people = [{ id: randomUUID(), name: "Alex" }, { id: randomUUID(), name: "Blair" }];
   for (const person of people) await store.createUser({ ...person, email: `${person.id}@example.invalid`, passwordHash: "test", createdAt: new Date().toISOString() });

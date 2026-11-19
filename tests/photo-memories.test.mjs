@@ -1,3 +1,4 @@
+import { useTestMedia } from "./helpers/media.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -30,13 +31,7 @@ test("photos become one memory per day and place, with a few spread across it", 
 test("the phone gets the next memories to make; each is made once, in the shared album, and the partner is told once", async (t) => {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "photo-memories-"));
-  const media = join(directory, "media");
-  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
-  process.env.TOWARD_US_MEDIA_DIR = media;
-  t.after(() => {
-    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
-    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
-  });
+  useTestMedia(t, directory);
   const store = await createFileStore(join(directory, "store.json"));
   const ids = [randomUUID(), randomUUID()];
   for (const id of ids) await store.createUser({ id, email: `${id}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
@@ -91,13 +86,7 @@ test("a photo can be fetched small for bubbles and walls, made once and kept", a
   const { readdir } = await import("node:fs/promises");
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "photo-thumbs-"));
-  const media = join(directory, "media");
-  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
-  process.env.TOWARD_US_MEDIA_DIR = media;
-  t.after(() => {
-    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
-    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
-  });
+  const media = useTestMedia(t, directory);
   const store = await createFileStore(join(directory, "store.json"));
   const userId = randomUUID();
   await store.createUser({ id: userId, email: `${userId}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });

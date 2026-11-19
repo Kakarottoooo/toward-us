@@ -1,3 +1,4 @@
+import { useTestMedia } from "./helpers/media.mjs";
 import assert from "node:assert/strict";
 // The moments albums every member and couple get automatically are left out: these tests are about spaces Pinky builds.
 import { test } from "node:test";
@@ -20,6 +21,7 @@ const together = (patch = {}) => ({ kind: "space", operation: "create", targetId
 async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared = () => ({ reply: "ok", draftAgreement: null, actions: [] }), mediate = null, structured = null } = {}) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "spaces-"));
+  useTestMedia(t, directory);
   const store = await createFileStore(join(directory, "store.json"));
   const ids = [randomUUID(), randomUUID()];
   for (const id of ids) await store.createUser({ id, email: `${id}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
@@ -40,7 +42,11 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
     return { status: response.status, body: response.status === 204 ? null : await response.json() };
   };
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
-  const upload = async (scope, userId = ids[0]) => (await fetch(`http://127.0.0.1:${server.address().port}/api/photos?scope=${scope}`, { method: "POST", headers: { "x-user": userId, "content-type": "image/jpeg" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]) })).json();
+  const upload = async (scope, userId = ids[0]) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/photos?scope=${scope}`, { method: "POST", headers: { "x-user": userId, "content-type": "image/jpeg" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]) });
+    assert.equal(response.status, 201, "fixture photo upload");
+    return response.json();
+  };
   const photo = async (id, userId = ids[0]) => (await fetch(`http://127.0.0.1:${server.address().port}/api/photos/${id}`, { headers: { "x-user": userId } })).status;
   return { ids, store, request, session, upload, photo, turn: (text) => request(`/assistant/sessions/${session.id}/messages`, "POST", { text, itemId: randomUUID() }) };
 }

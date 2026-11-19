@@ -1,3 +1,4 @@
+import { useTestMedia } from "./helpers/media.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
@@ -22,13 +23,7 @@ async function couple(store, ids) {
 async function fixture(t) {
   const base = resolve("work"); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, "character-"));
-  const media = join(directory, "media");
-  const previousMedia = process.env.TOWARD_US_MEDIA_DIR;
-  process.env.TOWARD_US_MEDIA_DIR = media;
-  t.after(() => {
-    if (previousMedia === undefined) delete process.env.TOWARD_US_MEDIA_DIR;
-    else process.env.TOWARD_US_MEDIA_DIR = previousMedia;
-  });
+  useTestMedia(t, directory);
   const store = await createFileStore(join(directory, "store.json"));
   const [a, b, c, d, e] = Array.from({ length: 5 }, () => randomUUID());
   for (const id of [a, b, c, d, e]) await store.createUser({ id, email: `${id}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
