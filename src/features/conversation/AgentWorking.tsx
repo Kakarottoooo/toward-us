@@ -33,5 +33,5 @@ export function AgentTyping({ activity, language, inUs }: { activity: NonNullabl
   const bubble = <article className="conversation-message from-agent agent-typing" role="status" data-testid="agent-typing">
     <span>Ourever</span><p><Dots /><span>{activity.detail ? localized(language, `${label}：${activity.detail}`, `${label}: ${activity.detail}`, `${label}: ${activity.detail}`) : label}</span></p>
   </article>;
-  return inUs ? <div className="us-row from-agent"><i className="us-avatar is-pinky" aria-hidden="true">O</i>{bubble}</div> : bubble;
+  return inUs ? <div className="us-row from-agent"><i className="us-avatar is-pinky" aria-hidden="true" />{bubble}</div> : bubble;
 }

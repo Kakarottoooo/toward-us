@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
+export const defaultMascot = "/assets/brand/ourever-mascot.webp";
+
 // The couple's own character (server/character.mjs): one per couple, seen by both, made from one member's photo.
 export type MakingState = "cutting" | "moving" | "failed";
 export type Character = {

@@ -1,7 +1,7 @@
 // Ourever's installed web app: notifications, plus an offline page. It never caches the app, an API response or anything
 // private: the only cached file is the static /offline.html, shown when a page navigation finds no network.
 // A new cache version refreshes the branded offline page for previously installed apps.
-const SHELL = "ourever-shell-v3";
+const SHELL = "ourever-shell-v4";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {
@@ -32,7 +32,7 @@ self.addEventListener("push", (event) => {
   // Every push must show something (Safari revokes a subscription that receives silent pushes); the body is always vague.
   const body = typeof payload?.body === "string" ? payload.body.slice(0, 160) : "Ourever";
   event.waitUntil(self.registration.showNotification("Ourever", {
-    body, tag: String(payload?.tag || "toward-us-reminder").slice(0, 64), icon: "/assets/brand/pinky-icon-192.png",
+    body, tag: String(payload?.tag || "toward-us-reminder").slice(0, 64), icon: "/assets/brand/pinky-icon-192.png?v=heart2",
     data: { url: safeDestination(payload?.url) }, renotify: false,
   }));
 });

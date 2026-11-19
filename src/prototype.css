@@ -1,6 +1,7 @@
 @import "./welcome-layout.css";
 
 :root {
+  --ourever-avatar: url("/assets/brand/pinky-icon-192.png?v=heart2");
   --jian-paper: #f4efe6;
   --jian-paper-bright: #fbf7ef;
   --jian-ink: #252525;

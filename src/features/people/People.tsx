@@ -61,7 +61,7 @@ export function PeopleRow({ language, people, current, unread, brainUnread, onBr
   if (!people.length) return null;
   // Founder 11-09: "点击一个人，然后自动是一个会话……还有一个主会话，就算大脑，可以问所有人的关系".
   return <Carousel ariaLabel={t("对话", "Conversations", "Conversaciones")} className="people-row" contentClassName="people-row-track">
-    <button type="button" className={`person-chip ${current === null ? "current" : ""}`} onClick={onBrain} aria-current={current === null ? "true" : undefined} data-testid="thread-brain"><span className="person-avatar brain">O</span>{brainUnread && current !== null && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>Ourever</small></button>
+    <button type="button" className={`person-chip ${current === null ? "current" : ""}`} onClick={onBrain} aria-current={current === null ? "true" : undefined} data-testid="thread-brain"><span className="person-avatar brain" aria-hidden="true" />{brainUnread && current !== null && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>Ourever</small></button>
     {people.map((person) => <button key={person.id} type="button" className={`person-chip ${current === person.id ? "current" : ""}`} onClick={() => onOpen(person)} aria-current={current === person.id ? "true" : undefined} data-testid="person-chip"><Avatar name={person.name} />{unread.includes(person.id) && <i className="chip-dot" aria-label={t("有新消息", "New message", "Mensaje nuevo")} />}<small>{person.name}</small></button>)}
     <button type="button" className="person-chip" onClick={onAdd} data-testid="person-add"><span className="person-avatar add"><Plus size={18} /></span><small>{t("新的人", "Someone new", "Alguien nuevo")}</small></button>
   </Carousel>;
