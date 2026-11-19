@@ -162,7 +162,7 @@ function AccountPrototype() {
   const screenFor = (url: string): Screen => url.includes("game=") ? "conversation" : url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen;
   const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
-  const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
+  const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}${channel === "us" ? "&recipient=assistant" : ""}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
   // No AI work for anyone who hasn't agreed to third-party AI yet: they see the consent screen first (accounts made before
   // sign-up asked for it). Declining signs them out; Settings can withdraw it later, which brings this screen back.
   const renderScreen = () => {

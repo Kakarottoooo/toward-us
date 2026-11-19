@@ -311,3 +311,23 @@
 .invite-wait button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
 .invite-wait button:disabled { opacity: .5; cursor: not-allowed; }
 .conversation-invite .invite-status { margin-top: 8px; color: #5d574f; font-size: 15px; line-height: 1.5; }
+
+/* In Us, each visible assistant reply owns its adjacent overflow menu. */
+.shared-reportable { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: start; gap: 2px; }
+.shared-reportable > :first-child { min-width: 0; }
+.shared-reportable .recall-original { max-width: 100%; }
+.shared-question { display: grid; gap: 6px; width: 100%; min-width: 0; padding: 12px 14px; border: 1px solid var(--jian-line); border-radius: 14px; background: var(--jian-paper-bright); color: var(--jian-ink); font: inherit; text-align: start; cursor: pointer; }
+.shared-question strong { white-space: normal; overflow-wrap: anywhere; font-size: 16px; line-height: 1.45; }
+.shared-question-meta, .shared-question-footer { color: #5d574f; font-size: 14px; line-height: 1.45; }
+.shared-question-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.shared-question-footer b { display: inline-flex; align-items: center; gap: 4px; color: var(--jian-blue); }
+.shared-partner-name { display: inline-flex; min-width: 0; align-items: center; gap: 7px; color: var(--jian-ink); overflow-wrap: anywhere; }
+.shared-partner-name > span { display: grid; flex: 0 0 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--jian-blue-soft); color: var(--jian-blue); }
+.distance-bar:has(.shared-partner-name) { align-items: center; }
+.shared-recipient { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; margin-inline: 4px; }
+.shared-recipient button, .connect-poster { display: inline-flex; align-items: center; min-height: 44px; gap: 6px; border: 0; background: transparent; color: var(--jian-blue); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+.shared-recipient button[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
+.shared-recipient span { flex: 1 1 130px; font-size: 13px; line-height: 1.4; color: #514b43; }
+.connect-poster { display: flex; justify-content: center; width: 100%; border-top: 1px solid var(--jian-line); margin-top: 10px; }
+.shared-retry > span { min-width: 0; display: grid; overflow-wrap: anywhere; }
+.shared-retry > span > span { white-space: pre-wrap; max-height: 4.5em; overflow: auto; }

@@ -9,9 +9,9 @@ export type GameAnswers = Record<string, { choice?: number; text: string; at: st
 
 // 小游戏: one round on a card in Us. The server sends the partner's answer only once both have answered, so the card shows
 // what it was given: pick or write yours, wait for theirs, or both together with whether they matched.
-export function GameCard({ questionId, prompt, game, answers, userId, members, language, onAnswer, onAgain, onOpenDeck }: {
+export function GameCard({ questionId, prompt, game, answers, userId, members, language, onAnswer, onAgain, onOpenDeck, readOnly = false }: {
   questionId: string; prompt: string; game: GameRound; answers: GameAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language;
-  onAnswer: (answer: { choice?: number; text?: string }) => Promise<boolean>; onAgain: () => void; onOpenDeck?: () => void;
+  onAnswer: (answer: { choice?: number; text?: string }) => Promise<boolean>; onAgain: () => void; onOpenDeck?: () => void; readOnly?: boolean;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
@@ -40,7 +40,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
   const aboutName = members.find((member) => member.id === game.aboutUserId)?.name || partnerName;
   const label = game.type === "choice" ? t("二选一", "Would you rather", "¿Qué prefieres?") : game.type === "guess" ? t(`默契问答 · 关于${aboutMe ? "你" : ` ${aboutName}`}`, `How well do you know ${aboutMe ? "me" : aboutName}?`, `¿Cuánto conoces a ${aboutMe ? "mí" : aboutName}?`) : t("真心话", "Heart to heart", "De corazón");
   const hint = game.type === "guess" ? (aboutMe ? t(`选你自己的答案，看 ${partnerName} 能不能猜中`, `Pick your own answer and see if ${partnerName} guesses it`, `Elige tu respuesta y mira si ${partnerName} acierta`) : t(`猜猜 ${aboutName} 会选哪个`, `Guess what ${aboutName} picked`, `Adivina qué eligió ${aboutName}`)) : "";
-  const send = async (answer: { choice?: number; text?: string }) => { if (busy) return; keyboard.hide(); setBusy(true); try { if (await onAnswer(answer)) setDraft(""); } finally { setBusy(false); } };
+  const send = async (answer: { choice?: number; text?: string }) => { if (busy || readOnly) return; keyboard.hide(); setBusy(true); try { if (await onAnswer(answer)) setDraft(""); } finally { setBusy(false); } };
   const who = (index: number) => [mine?.choice === index ? t("你", "You", "Tú") : "", theirs?.choice === index ? partnerName : ""].filter(Boolean).join(" · ");
   const outcome = () => {
     if (!game.result) return null;
@@ -48,6 +48,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
     const line = game.type === "guess" ? (game.result.match ? t("猜中了！", "Guessed right!", "¡Acertaste!") : t("没猜中～", "Not quite!", "¡Casi!")) : game.result.match ? t("心有灵犀！", "Same pick!", "¡Misma elección!") : t("选得不一样～", "Different picks!", "¡Elecciones distintas!");
     return <p className={`game-result ${game.result.match ? "is-match" : ""}`}><Sparkle size={16} weight="fill" />{line}{!game.deckId && <small>{score}</small>}</p>;
   };
+  if (readOnly && !mine && !revealed) return <article className="conversation-card game-card"><header>{label}</header><strong>{prompt}</strong></article>;
   if (deferred && !mine && !revealed) return <article className="conversation-card game-card" data-testid="game-card">
     <header><GameController size={16} />{t("小游戏 · 已在此设备收起", "Game · Hidden on this device", "Juego · Oculto en este dispositivo")}</header>
     <div className="card-actions"><button type="button" onClick={() => defer(false)} data-testid="game-resume">{t("重新展开", "Show question", "Mostrar pregunta")}</button></div>
@@ -68,7 +69,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
     {!mine && !revealed && <div className="card-actions"><button type="button" disabled={busy} onClick={() => defer(true)} data-testid="game-defer">{t("这题先不玩", "Pass on this question", "Pasar esta pregunta")}</button></div>}
     {mine && !revealed && <small className="game-wait"><LockKey size={14} />{t(`等 ${partnerName} 也答完，一起揭晓`, `Revealed together once ${partnerName} answers`, `Se revela cuando ${partnerName} también responda`)}</small>}
     {revealed && outcome()}
-    {revealed && <div className="card-actions">{onOpenDeck
+    {revealed && !readOnly && <div className="card-actions">{onOpenDeck
       ? <button type="button" onClick={onOpenDeck} data-testid="game-open-deck"><ChatCircleDots size={16} />{t("接着聊这题", "Keep talking", "Seguir hablando")}</button>
       : <button type="button" onClick={onAgain} data-testid="game-again"><ArrowsClockwise size={16} />{t("再来一局", "Play again", "Otra ronda")}</button>}</div>}
   </article>;
