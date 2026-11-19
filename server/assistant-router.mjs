@@ -1,3 +1,4 @@
+import { screenText } from "./ai-screening.mjs";
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
 import { finishReply, isPrivateBoundaryReply, renderReply, requiresReplyScopeCheck, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
@@ -196,6 +197,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if ((!text && !photoIds.length) || !itemId) throw fail(400, "Text and a unique itemId are required.");
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId); if (photo.ownerUserId !== userId || photo.visibility !== "private") throw fail(400, "Send photos from this conversation."); }
     if (session.messages.some((message) => message.itemId === itemId)) return { session, duplicate: true };
+    await screenText(text);
     const records = await available(store, userId);
     await ensureMomentSpaces(store, userId);
     const userMessage = { id: randomUUID(), role: "user", text, itemId, ...(photoIds.length ? { photoIds } : {}), createdAt: new Date().toISOString() };
@@ -487,6 +489,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         : handoffLines.length ? [...replies, ...handoffLines].filter(Boolean).join("\n") : finishReply(renderReply(plan), { request: text, language, formatChecked: true, receipts: writeReceipts, reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || replies.join("\n");
       const reply = (askBack && !cards.length ? askBack : [own, askBack].filter(Boolean).join("\n")) || say(session.language, "你想创建、查找还是修改什么？", "What would you like to create, find, or change?", "¿Qué quieres crear, buscar o cambiar?");
       const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+      await screenText(cited.reply, "output");
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
@@ -505,6 +508,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
         reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
       const reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, delivery.askBack].filter(Boolean).join("\n");
       const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);
+      await screenText(cited.reply, "output");
       if (cited.reply) updated = await store.transaction("reminder-delivery", async tx => {
         await liveUser(tx, userId, true);
         const latest = await owned(tx, session.id, userId);

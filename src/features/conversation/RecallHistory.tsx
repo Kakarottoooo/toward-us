@@ -1,3 +1,4 @@
+import { ReportReply } from "../feedback/ReportReply";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarBlank, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { KeyboardInput, useKeyboard } from "../../mobile";
@@ -72,7 +73,7 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
       return <article key={message.id} ref={message.id === page.messageId ? target : undefined} tabIndex={-1} data-message-id={message.id} data-highlighted={highlight === message.id ? "true" : undefined}
         className={`conversation-message ${mine ? "from-me" : agent ? "from-agent" : "from-partner"} recall-original${highlight === message.id ? " is-highlighted" : ""}`}>
         <span>{author}</span><time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleString(languageTag(language), { dateStyle: "medium", timeStyle: "short" })}</time>
-        {!!message.photoIds?.length && photos(message.photoIds)}{message.text && <p>{message.text}</p>}
+        {!!message.photoIds?.length && photos(message.photoIds)}{message.text && <p>{message.text}</p>}{agent && <ReportReply language={language} channel={page.channel} conversationId={page.conversationId} messageId={message.id} />}
       </article>;
     })}
     {page.after && <button type="button" className="conversation-earlier" disabled={busy} onClick={() => browse(page.after!, "after")}>{t("较新的消息", "Newer messages", "Mensajes más recientes")}<ArrowRight size={16} /></button>}

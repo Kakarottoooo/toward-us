@@ -1,3 +1,4 @@
+import { screenImage } from "./ai-screening.mjs";
 import { spawn } from "node:child_process";
 import { mediaDirectory } from "./media-dir.mjs";
 import { randomUUID } from "node:crypto";
@@ -8,7 +9,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
-import { meteredCall, runAiFeature } from "./ai-ledger.mjs";
+import { aiProviderFetch, meteredCall, runAiFeature } from "./ai-ledger.mjs";
 
 // The couple's own character (the founder, 11-03): a photo of their pet, a screenshot or any figure they like is cut out,
 // checked to be whole, and given a short idle motion by Seedance; it floats at the top of the conversation for both.
@@ -179,7 +180,7 @@ function step(...args) {
 }
 
 async function replicate(url, key, body) {
-  const response = await fetch(url, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "user-agent": AGENT }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000) });
+  const response = await aiProviderFetch(url, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "user-agent": AGENT }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000) });
   if (!response.ok) throw new Error(`Replicate answered ${response.status}`);
   return response.json();
 }
@@ -189,7 +190,9 @@ async function seedance(firstFrame, clip) {
   const key = (await readFile(KEY_FILE, "utf8")).trim();
   if (!key) throw new Error("No Replicate token");
   // Only the first frame: the same picture as the last frame too is refused (E006).
-  let run = await replicate(`${REPLICATE}/models/${SEEDANCE_MODEL}/predictions`, key, { input: { prompt: PROMPT, image: `data:image/png;base64,${(await readFile(firstFrame)).toString("base64")}`, duration: SEEDANCE_SECONDS, resolution: "480p" } });
+  const frame = await readFile(firstFrame);
+  await screenImage(frame, "image/png");
+  let run = await replicate(`${REPLICATE}/models/${SEEDANCE_MODEL}/predictions`, key, { input: { prompt: PROMPT, image: `data:image/png;base64,${frame.toString("base64")}`, duration: SEEDANCE_SECONDS, resolution: "480p" } });
   const deadline = Date.now() + 15 * 60_000;
   while (Date.now() < deadline) {
     if (run.status === "succeeded") {

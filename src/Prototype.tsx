@@ -4,7 +4,7 @@ import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
 import { SettingsPage } from "./features/privacy/SettingsPage";
-import { AiConsentScreen, LegalLinks, OfflineBanner, aiDisclosure } from "./features/privacy/AiConsent";
+import { AiConsentScreen, LegalLinks, OfflineBanner } from "./features/privacy/AiConsent";
 import { BETA_KEY, inIosApp } from "./features/membership/MembershipPage";
 import { FeedbackPage } from "./features/feedback/FeedbackPage";
 import { PasswordResetForm } from "./features/privacy/PasswordReset";
@@ -166,7 +166,7 @@ function AccountPrototype() {
   // No AI work for anyone who hasn't agreed to third-party AI yet: they see the consent screen first (accounts made before
   // sign-up asked for it). Declining signs them out; Settings can withdraw it later, which brings this screen back.
   const renderScreen = () => {
-    if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => void logout()} />;
+    if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery", "privacy"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
     if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={(from) => { setFeedbackFrom(from); setScreen("feedback"); }} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onAccessChanged={reloadIdentity} /></>;
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
@@ -230,7 +230,7 @@ function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecov
   const submit = async () => {
     keyboard.hide(); setBusy(true); setNotice("");
     // Creating an account right under the AI disclosure is the explicit consent to third-party AI (recorded by the server).
-    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed, aiConsent: true }) })); }
+    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed }) })); }
     catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); }
   };
   return <MobileScroll className="paper-screen auth-screen" data-testid="auth-screen">
@@ -242,7 +242,7 @@ function AuthScreen({ initialMode, language, onLanguage, onBack, onAuth, onRecov
       <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" /><small>{t.passwordHint}</small></label>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
-      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{aiDisclosure(language)} {localized(language, "点“创建账号”即表示你同意这一点，以及", "By tapping Create account you agree to this and to the", "Al tocar Crear cuenta aceptas esto y la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
+      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
       {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
       <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} testId="auth-submit" />
       <button className="auth-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>

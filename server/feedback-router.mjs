@@ -1,5 +1,7 @@
 import express from "express";
-import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { createHash } from "node:crypto";
+import { readableConversation, conversationMessages } from "./conversation-recall.mjs";
+import { createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { visiblePhoto } from "./photo-store.mjs";
 
 // Feedback about Pinky itself: what someone writes (plus screenshots) and where they were in the app. The model reads
@@ -21,6 +23,34 @@ const triageInstructions = `You sort feedback that a user of Pinky, a couples' a
 export function createFeedbackRouter({ store, mediator }) {
   const router = express.Router();
   router.use("/feedback", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.post("/feedback/reply", async (req, res) => {
+    const userId = req.auth.user.id, { channel, conversationId, messageId } = req.body || {};
+    if (![conversationId, messageId].every((id) => typeof id === "string" && id.length > 0 && id.length <= 160)) return res.status(400).json({ error: "invalid_reply" });
+    let messages;
+    if (channel === "private-workspace" || channel === "decision") {
+      const record = projectRecord(await store.getRelationshipRecordForUser(channel === "decision" ? "issues" : "privateAgentThreads", conversationId, userId), userId);
+      if (channel === "decision") {
+        const pairing = await store.getRelationshipContext(userId);
+        if (record && record.relationshipId === pairing?.relationship.id && record.visibility === "shared") messages = record.discussion;
+      } else if (record?.ownerUserId === userId && record.visibility === "private" && ["decision", "plan"].includes(record.intentType)) messages = record.messages;
+    } else {
+      const record = await readableConversation(store, userId, channel, conversationId);
+      const current = record.messages?.find((m) => m.id === messageId);
+      messages = current ? hideUnrevealedAnswers({ messages: [structuredClone(current)] }, userId).messages : await conversationMessages(store, userId, channel, record);
+    }
+    const reply = messages?.find((m) => m.id === messageId && ["assistant", "agent"].includes(m.role));
+    if (!reply) return res.status(404).json({ error: "reply_not_found" });
+    const lang = ["en", "es"].includes(req.body.language) ? req.body.language : "zh";
+    const text = reply.i18n?.[lang] || reply.translations?.[lang]?.text || reply.text || (reply.call?.rows || []).filter((r) => r.role === "agent").map((r) => r.text).join("\n") || reply.kind || "Pinky reply";
+    const id = "report:" + createHash("sha256").update(JSON.stringify([userId, conversationId, messageId])).digest("hex");
+    await store.transaction(`user:${userId}`, async (tx) => {
+      if (await tx.getRelationshipRecordForUser("feedback", id, userId)) return;
+      const report = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", status: "new", text: clean(text, 4000), photoIds: [], context: { view: "conversation-" + channel, channel, conversationId, messageId, report: "pinky", language: lang }, kind: "report", severity: "high", summary: "Reported Pinky reply" });
+      report.id = id;
+      await tx.createRelationshipRecord("feedback", report);
+    });
+    res.json({ reported: true });
+  });
   router.post("/feedback", async (req, res) => {
     const userId = req.auth.user.id, text = clean(req.body?.text, 4000);
     const photoIds = Array.isArray(req.body?.photoIds) ? [...new Set(req.body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];

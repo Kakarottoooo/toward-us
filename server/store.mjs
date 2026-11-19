@@ -22,6 +22,7 @@ const EMPTY_STATE = () => ({
   phoneLinks: {},
   rooms: {},
   demoRooms: {},
+  demoReplyReports: {},
   relationshipGraph: Object.fromEntries(GRAPH_COLLECTIONS.map((collection) => [collection, {}])),
 });
 
@@ -384,6 +385,9 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
         .filter((room) => room.relationshipId === relationshipId && (!status || room.status === status))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((room) => structuredClone(room));
+    },
+    async createDemoReplyReport(report) {
+      if (!state().demoReplyReports[report.id]) { state().demoReplyReports[report.id] = structuredClone(report); await persist(); }
     },
     async createDemoRoom(room) {
       state().demoRooms[room.code] = structuredClone(room);

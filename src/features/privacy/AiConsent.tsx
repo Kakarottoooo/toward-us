@@ -5,17 +5,13 @@ import { MobileScroll } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./ai-consent.css";
 
-// Third-party AI consent (App Review 5.1.2(i), founder 11-12 App Store prep). Everything a person writes, says or picks
-// for Pinky goes to outside AI providers; they agree to that explicitly first. New accounts agree on the sign-up screen
-// (the sentence sits right above the button); accounts made before this see AiConsentScreen once. Settings can withdraw.
-export const AI_PROVIDER_NAMES = "OpenAI, Anthropic";
+export const AI_NOTICE_VERSION = "2026-11-18";
 
-/** What is sent to which AI provider and why: one sentence, used on sign-up, on the consent screen and in Settings. */
 export function aiDisclosure(language: Language) {
   return localized(language,
-    "Pinky 用第三方 AI（OpenAI、Anthropic）来回复你、把语音转成文字、看懂图片：你发给 Pinky 的文字、语音和你选择的照片会发送给它们处理，按它们的 API 条款默认不会用来训练模型。",
-    "Pinky uses third-party AI (OpenAI, Anthropic) to reply, turn voice into text and understand images: the text, voice and photos you send to Pinky are sent to them for processing, and under their API terms are not used to train their models by default.",
-    "Pinky usa IA de terceros (OpenAI, Anthropic) para responder, convertir la voz en texto y entender imágenes: el texto, la voz y las fotos que envías a Pinky se les envían para procesarlos y, según sus condiciones de API, no se usan para entrenar sus modelos por defecto.");
+    "Pinky 会把与你的请求相关的聊天记录、截图、所选照片和语音发送给 OpenAI 或 Anthropic，用来回复、转录、理解图片及检查内容安全。导入另一人的聊天或截图时，其中对方的消息也会发送。请只提交有权分享的内容。",
+    "Pinky sends relevant chat history, screenshots, selected photos and voice recordings to OpenAI or Anthropic for replies, transcription, image understanding and safety screening. Imported chats and screenshots can include the other person’s messages. Only submit material you have permission to share.",
+    "Pinky envía el historial de chat pertinente, capturas, fotos elegidas y grabaciones de voz a OpenAI o Anthropic para responder, transcribir, interpretar imágenes y revisar la seguridad. Los chats y capturas importados pueden incluir mensajes de la otra persona. Comparte solo contenido que tengas permiso para enviar.");
 }
 
 /** Links to the public privacy policy and terms, in the reader's language. */
@@ -33,23 +29,23 @@ export function AiConsentScreen({ language, onAgreed, onDecline }: { language: L
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
   const agree = async () => {
     setBusy(true); setNotice("");
-    try { const { aiConsentAt } = await relationshipApi<{ aiConsentAt: string }>("/api/privacy/ai-consent", jsonBody({ agree: true, language })); onAgreed(aiConsentAt); }
+    try { const { aiConsentAt } = await relationshipApi<{ aiConsentAt: string }>("/api/privacy/ai-consent", jsonBody({ agree: true, noticeVersion: AI_NOTICE_VERSION, language })); onAgreed(aiConsentAt); }
     catch (error) { setNotice((error as Error).message); setBusy(false); }
   };
   return <MobileScroll className="paper-screen ai-consent-screen" data-testid="ai-consent">
     <main className="ai-consent">
       <span className="ai-consent-icon" aria-hidden="true"><ShieldCheck size={30} weight="fill" /></span>
-      <h1>{t("开始前，确认一件事", "Before you start", "Antes de empezar")}</h1>
+      <h1>{t("允许第三方 AI 处理内容？", "Allow third-party AI processing?", "¿Permitir el procesamiento con IA de terceros?")}</h1>
       <p>{aiDisclosure(language)}</p>
       <ul>
-        <li>{t("只有你主动发给 Pinky 的内容才会发送；你的私人内容另一半看不到。", "Only what you send to Pinky is sent; your partner never sees your private content.", "Solo se envía lo que mandas a Pinky; tu pareja nunca ve lo tuyo privado.")}</li>
+        <li>{t("如果使用照片生成动态角色，处理后的角色图片会发送给 Replicate。", "If you animate a character, the processed character image is sent to Replicate.", "Si animas un personaje, la imagen procesada se envía a Replicate.")}</li>
         <li>{t("不做广告，不卖数据，不跨 App 追踪。", "No ads, no selling data, no tracking across apps.", "Sin anuncios, sin vender datos, sin rastreo entre apps.")}</li>
         <li>{t("随时可以在“设置 → AI 与数据处理方”里撤回。", "Withdraw any time in Settings → AI and data processors.", "Retíralo cuando quieras en Ajustes → IA y encargados de datos.")}</li>
       </ul>
       <LegalLinks language={language} />
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       <button type="button" className="primary-action" disabled={busy} onClick={() => void agree()} data-testid="ai-consent-agree">{busy ? t("正在保存…", "Saving…", "Guardando…") : t("同意并继续", "Agree and continue", "Aceptar y continuar")}</button>
-      <button type="button" className="secondary-action" disabled={busy} onClick={onDecline} data-testid="ai-consent-decline">{t("不同意，退出登录", "Don't agree, sign out", "No acepto, cerrar sesión")}</button>
+      <button type="button" className="secondary-action" disabled={busy} onClick={onDecline} data-testid="ai-consent-decline">{t("暂不同意，进入账号设置", "Not now, open account settings", "Ahora no, abrir ajustes de cuenta")}</button>
     </main>
   </MobileScroll>;
 }

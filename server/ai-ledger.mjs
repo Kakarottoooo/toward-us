@@ -2,6 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { AsyncResource } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
+import { requireAiPermission } from "./ai-permission.mjs";
 import { AI_LIMIT, MODEL_METHODS, currentAiUser, featureForCall, isPaidAiUser } from "./ai-budget.mjs";
 import { currentAiCall, runInAiCall } from "./ai-call-context.mjs";
 import { claudeResult } from "./model-call-budget.mjs";
@@ -210,6 +211,7 @@ export async function runAiFeature({ feature, args = [], channel = "metered", us
   if (!ledger) return work();
   const who = currentAiUser(), userId = explicitUser ?? who?.userId ?? null;
   const language = ["zh", "en", "es"].includes(explicitLanguage) ? explicitLanguage : who?.language || "zh";
+  await requireAiPermission(ledger.store, userId, language, feature);
   const name = featureName(feature), config = aiCostConfig(), now = ledger.now();
   const exempt = config.exemptFeatures?.includes(name) ? "consent" : safetySignal(args) ? "safety" : null;
   const spaceId = userId ? await spaceOf(ledger.store, userId) : null;
@@ -249,8 +251,22 @@ export function modelFor(provider, model) {
   return currentAiCall()?.degrade && CHEAPER[provider] ? CHEAPER[provider]() : model;
 }
 
+export const servingAiAccounts = () => Boolean(ledger);
+export async function checkCurrentAiPermission() {
+  if (!ledger) return; // Standalone model evaluation does not serve application accounts.
+  const who = currentAiUser();
+  await requireAiPermission(ledger.store, currentAiCall()?.userId || who?.userId, who?.language, currentAiCall()?.feature);
+}
+
+// SDKs can retry internally. Check again immediately before each network attempt.
+export async function aiProviderFetch(...args) {
+  await checkCurrentAiPermission();
+  return fetch(...args);
+}
+
 export async function meteredCall({ provider, model, requested = null }, execute, usageOf = () => ({})) {
   if (!ledger) return execute();
+  await checkCurrentAiPermission();
   const started = Date.now();
   const usage = (value) => { try { return usageOf(value) || {}; } catch { return {}; } };
   try {

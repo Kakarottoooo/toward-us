@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import { meteredCall, modelFor, usageFromAnthropic } from "./ai-ledger.mjs";
+import { aiProviderFetch, meteredCall, modelFor, usageFromAnthropic } from "./ai-ledger.mjs";
 
 // Production AI: Claude through the Anthropic API, behind the same small surface the rest of the server already uses
 // (`responses.create` with a JSON schema, `lookup` for web search, `readImages` for screenshots). The model is set by
@@ -18,7 +18,7 @@ export function apiSchema(schema) {
 }
 
 export function createAnthropicClient({ apiKey = process.env.ANTHROPIC_API_KEY, model = process.env.ANTHROPIC_MODEL || "claude-opus-5-5" } = {}) {
-  const client = new Anthropic({ apiKey, maxRetries: 2 });
+  const client = new Anthropic({ apiKey, maxRetries: 2, fetch: aiProviderFetch });
   const text = (message) => message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
   const refused = (message) => message.stop_reason === "refusal";
   // A long server-tool turn can pause; hand its content back so it continues where it stopped.

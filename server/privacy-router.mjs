@@ -1,6 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { rm } from "node:fs/promises";
 import express from "express";
+import { AI_NOTICE_VERSION, AI_PROVIDERS, acceptedAt } from "./ai-permission.mjs";
+export { aiConsentAt } from "./ai-permission.mjs";
 import { photoFile } from "./photo-store.mjs";
 import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
@@ -16,21 +18,17 @@ const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deli
 // Consent to third-party AI (App Review 5.1.2(i), founder 11-12 App Store prep): before anything this person writes, says
 // or picks is sent to an outside AI provider, they agree to it explicitly; they can withdraw it in Settings. The time they
 // agreed lives on their own private account settings, and each change is a consent event in their history.
-export const AI_PROVIDERS = ["OpenAI", "Anthropic"];
-export async function aiConsentAt(store, userId) {
-  return (await store.getRelationshipRecordForUser("accountSettings", `account:${userId}`, userId))?.aiConsentAt || null;
-}
 export async function setAiConsent(tx, userId, agree, at = new Date().toISOString()) {
   const id = `account:${userId}`;
-  const apply = (record) => { if (agree) { record.aiConsentAt = at; record.aiConsentProviders = AI_PROVIDERS; } else { delete record.aiConsentAt; delete record.aiConsentProviders; } };
+  const apply = (record) => { if (agree) { record.aiConsentAt = at; record.aiNoticeVersion = AI_NOTICE_VERSION; record.aiConsentProviders = AI_PROVIDERS; } else { delete record.aiConsentAt; delete record.aiNoticeVersion; delete record.aiConsentProviders; } };
   const current = await tx.getRelationshipRecordForUser("accountSettings", id, userId);
   if (current) await tx.updateRelationshipRecordForUser("accountSettings", id, userId, (record) => { apply(record); record.version += 1; });
   else { const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", privateRetentionDays: null }); record.id = id; apply(record); await tx.createRelationshipRecord("accountSettings", record); }
-  await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", eventType: agree ? "privacy.ai_consent_given" : "privacy.ai_consent_withdrawn", status: "recorded" }));
+  await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", aiNoticeVersion: AI_NOTICE_VERSION, eventType: agree ? "privacy.ai_consent_given" : "privacy.ai_consent_withdrawn", status: "recorded" }));
   return agree ? at : null;
 }
 
-export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, email = createEmailSender() }) {
+export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onAiWithdrawal = async () => {}, email = createEmailSender() }) {
   const router = express.Router(); const attempts = new Map();
   const limited = (key) => {
     const now = Date.now(); const recent = (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000);
@@ -134,7 +132,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   router.get("/privacy", async (req, res) => {
     const userId = req.auth.user.id; const current = await settings(userId); const snapshot = await store.getPrivacySnapshot(userId);
     const privateCount = Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection) && collection !== "consentEvents").reduce((count, [, records]) => count + records.filter((record) => record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)).length, 0);
-    res.json({ privateRetentionDays: current?.privateRetentionDays ?? null, recoveryEnabled: Boolean(current?.recoveryCodeHash), privateCount, aiConsentAt: current?.aiConsentAt || null, aiProviders: AI_PROVIDERS,
+    res.json({ privateRetentionDays: current?.privateRetentionDays ?? null, recoveryEnabled: Boolean(current?.recoveryCodeHash), privateCount, aiConsentAt: acceptedAt(current), aiProviders: AI_PROVIDERS,
       relationships: snapshot.relationships,
       sharedSummaries: snapshot.graph.summaries.filter((record) => record.ownerUserId === userId).map(({ id, relationshipId, issueId, text, version, status, aiAccessScope, withdrawnAt }) => ({ id, relationshipId, issueId, text, version, status, aiAccessScope, withdrawnAt })),
       consentHistory: snapshot.graph.consentEvents.filter((record) => record.ownerUserId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(({ eventType, createdAt, objectId, sourceVersion }) => ({ eventType, createdAt, objectId, sourceVersion })),
@@ -184,9 +182,12 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     res.json({ recoveryCode: code.match(/.{1,8}/g).join("-"), shownOnce: true });
   });
   router.post("/privacy/ai-consent", async (req, res) => {
+    if (req.body?.agree === true && req.body.noticeVersion !== AI_NOTICE_VERSION) throw fail(409, local(req, "请阅读当前版本的授权说明。", "Read the current permission notice first.", "Lee primero el aviso de permiso vigente."));
     if (typeof req.body?.agree !== "boolean") throw fail(400, local(req, "请选择同意或不同意。", "Choose agree or not.", "Elige si aceptas o no."));
     const at = await store.transaction(`user:${req.auth.user.id}`, (tx) => setAiConsent(tx, req.auth.user.id, req.body.agree));
-    res.json({ aiConsentAt: at, aiProviders: AI_PROVIDERS });
+    let activeCallMayNeedHangup = false;
+    if (!req.body.agree) try { await onAiWithdrawal(req.auth.user.id); } catch { activeCallMayNeedHangup = true; }
+    res.json({ aiConsentAt: at, aiProviders: AI_PROVIDERS, activeCallMayNeedHangup });
   });
   router.post("/privacy/export", async (req, res) => {
     const snapshot = await store.transaction(`user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.getPrivacySnapshot(req.auth.user.id); });
@@ -218,6 +219,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.deleteAccount(req.auth.user.id); });
     await removeFiles(files);
     closeConnections(context?.members.map((member) => member.userId) || [req.auth.user.id]);
+    await onAiWithdrawal(req.auth.user.id).catch(() => {});
     clearSessionCookie(res, production); res.status(204).end();
   });
   router.post("/privacy/summaries/:id/withdraw", async (req, res) => {
@@ -244,7 +246,7 @@ export function privacyExport(snapshot, user) {
     const ownIds = new Set(room.participants.filter((person) => person.userId === user.id).map((person) => person.id));
     return { code: room.code, relationshipId: room.relationshipId, status: room.status, messages: room.messages.filter((message) => ownIds.has(message.participantId)), sharedAnalysis: room.status === "archived" ? room.analysis?.shared || null : null, createdAt: room.createdAt, archivedAt: room.archivedAt || null };
   });
-  return { exportedAt: new Date().toISOString(), user: { id: user.id, name: user.name, email: user.email, phone: snapshot.phone || null }, relationships: snapshot.relationships, graph, rooms };
+  return { exportedAt: new Date().toISOString(), user: { id: user.id, name: user.name, email: user.email, phone: snapshot.phone || null }, relationships: snapshot.relationships, graph, rooms, appActivityDates: snapshot.appActivityDates || [] };
 }
 
 export async function runPrivateRetention(store, now = new Date()) {

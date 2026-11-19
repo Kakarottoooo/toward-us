@@ -247,6 +247,7 @@ export async function createPostgresStore(databaseUrl) {
       await pool.query("insert into demo_rooms (code,status,payload,expires_at,created_at,updated_at) values ($1,$2,$3,$4,$5,$6)", [room.code, room.status, room, room.expiresAt, room.createdAt, room.updatedAt]);
       return structuredClone(room);
     },
+    async createDemoReplyReport(report) { await pool.query("insert into demo_reply_reports (id, created_at, data) values ($1,$2,$3) on conflict (id) do nothing", [report.id, report.createdAt, report]); },
     async getDemoRoom(code) { return (await pool.query("select payload from demo_rooms where code=$1", [code])).rows[0]?.payload || null; },
     async updateDemoRoom(code, updater) {
       const client = await pool.connect();
@@ -354,6 +355,7 @@ async function migrate(pool) {
     create table if not exists invitations (code text primary key, relationship_id text not null references relationships(id) on delete cascade, created_by_user_id text not null references users(id), created_at timestamptz not null, expires_at timestamptz not null, accepted_at timestamptz, accepted_by_user_id text references users(id));
     create table if not exists rooms (code text primary key, relationship_id text not null references relationships(id) on delete cascade, status text not null, payload jsonb not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists rooms_relationship_status_idx on rooms(relationship_id,status,updated_at desc);
+    create table if not exists demo_reply_reports (id text primary key, created_at timestamptz not null, data jsonb not null);
     create table if not exists demo_rooms (code text primary key, status text not null, payload jsonb not null, expires_at timestamptz not null, created_at timestamptz not null, updated_at timestamptz not null);
     create index if not exists demo_rooms_expiry_idx on demo_rooms(expires_at);
   `);
