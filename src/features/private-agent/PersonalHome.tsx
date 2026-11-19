@@ -20,7 +20,7 @@ export function PersonalHome({ user, relationshipId, language, onShared, onBack,
   const refresh = useCallback(async () => { try { const data = await relationshipApi<{ threads: GraphRecord[] }>("/api/private-agent/threads"); setThreads(data.threads); setError(""); } catch (caught) { setError((caught as Error).message); } }, []);
   useEffect(() => { void refresh(); const focus = () => void refresh(); window.addEventListener("focus", focus); return () => window.removeEventListener("focus", focus); }, [refresh]);
   const title = view === "reminders" ? localized(language, "即将到来", "Coming up", "Próximamente") : view === "plans" ? localized(language, "计划", "Plans", "Planes") : localized(language, "回忆", "Moments", "Momentos");
-  return <div className="paper-screen relationship-shell personal-shell" data-testid="personal-screen">
+  return <div className="paper-screen relationship-shell personal-shell" data-testid="personal-screen" data-feedback-view={view}>
     <PageHeader language={language} title={title} onBack={onBack} />
     <main className="relationship-main">
       {error && <p role="alert">{error}</p>}

@@ -520,6 +520,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   // The home-screen widget reads with its own Bearer token (no cookie), so it is mounted before any router that turns away
   // requests without a session.
   app.use("/api", createAppMetricsRouter({ store }));
+  app.use("/api", createFeedbackRouter({ store, notify: (userId, message) => reminders.notifyMember?.(userId, message) }));
   app.use("/api", createWidgetRouter({ store }));
   // Every published "我们俩" change is mirrored to the couple's iMessage group and, without one, nudges the other member's phone.
   const relationshipRouter = createRelationshipRouter({ store, mediator, onTogether: (conversation, actorUserId) => {
@@ -569,7 +570,6 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", createPhotoRouter({ store }));
   app.use("/api", createHandoffRouter());
   app.use("/api", createSuggestionsRouter({ store, mediator }));
-  app.use("/api", createFeedbackRouter({ store, mediator }));
   app.use(createLegalRouter());
   app.use("/api", createCharacterRouter({ store, emit }));
   app.use("/api", membership.router);

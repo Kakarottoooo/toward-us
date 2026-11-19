@@ -19,7 +19,7 @@ type Summary = { id: string; relationshipId?: string; issueId: string; text: str
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; aiConsentAt?: string | null; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account" | "ai"; days?: number | null } | { kind: "withdraw"; summary: Summary };
 type Page = "main" | "access" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
-type SettingsProps = { initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
+type SettingsProps = { onFeedback?: () => void; initialPage?: "character" | "profile" | "membership"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 function downloadFile(contents: string, filename: string, type: string) {
@@ -36,7 +36,7 @@ function Row({ icon, tone = "blue", label, value, onClick, danger = false, testI
 const Group = ({ title, note, children }: { title?: string; note?: string; children: ReactNode }) => <section className="settings-group">{title && <h2>{title}</h2>}<div className="settings-card">{children}</div>{note && <p className="settings-note">{note}</p>}</section>;
 
 /** Settings: account, language, privacy and data, each one row deep; every irreversible step is confirmed in a sheet with the password. */
-export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
+export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [page, setPage] = useState<Page>(initialPage === "membership" && inIosApp() ? "main" : initialPage || "main");
@@ -147,6 +147,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
       <Row icon={<UserMinus size={18} weight="bold" />} tone="red" danger label={t("删除账号", "Delete account", "Borrar la cuenta")} onClick={() => prepare({ kind: "account" })} />
     </Group>
     <Group title={t("帮助与条款", "Help and terms", "Ayuda y condiciones")}>
+      {onFeedback && <Row icon={<Flag size={18} />} tone="gray" label={t("应用反馈", "App feedback", "Comentarios sobre la app")} onClick={onFeedback} testId="settings-feedback" />}
       <Row icon={<Flag size={18} weight="bold" />} tone="red" label={titles.report} onClick={() => { setReportSent(false); open("report"); }} testId="settings-report" />
       <Row icon={<Lifebuoy size={18} weight="bold" />} tone="blue" label={t("帮助与支持", "Help and support", "Ayuda y soporte")} onClick={() => location.assign(`/support?lang=${language}`)} testId="settings-support" />
       <Row icon={<ShieldCheck size={18} weight="bold" />} tone="green" label={t("隐私政策", "Privacy Policy", "Política de privacidad")} onClick={() => location.assign(`/privacy?lang=${language}`)} testId="settings-privacy-policy" />
@@ -212,7 +213,7 @@ export function SettingsPage({ initialPage, onAsk, onEarlierPeople, user, relati
     </>,
   };
 
-  return <div className="paper-screen relationship-shell settings-screen">
+  return <div className="paper-screen relationship-shell settings-screen" data-feedback-view={page === "main" ? "settings" : "settings-" + page}>
     {/* A page opened straight from the conversation (the character, from the tour) goes back there; others go back to Settings. */}
     <PageHeader language={language} title={titles[page]} {...(page === "main" || page === initialPage ? { onBack } : { onBack: () => open("main"), backLabel: titles.main })} />
     <main className="relationship-main settings-main"><div className="settings-body" data-testid="settings-screen">

@@ -1,0 +1,14 @@
+.feedback-launch, .feedback-screenshot {
+  position: absolute;
+  z-index: 69;
+  right: 4px;
+  top: 58%;
+  color: #532c49;
+  background: #fff9f7;
+  border: 1px solid #cdbbc6;
+  box-shadow: 0 2px 7px #3b17361a;
+}
+.feedback-launch { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; }
+.feedback-launch small { position: absolute; right: -1px; top: -5px; background: #792c50; color: white; padding: 2px 5px; border-radius: 10px; font: 600 11px system-ui; }
+.feedback-screenshot { top: auto; bottom: 17%; display: flex; border-radius: 12px; padding: 3px 6px; }
+.feedback-screenshot button { border: 0; background: transparent; color: inherit; padding: 8px; min-height: 44px; cursor: pointer; }

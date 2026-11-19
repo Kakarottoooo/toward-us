@@ -130,8 +130,38 @@ private final class PinkyLanguagePreference: NSObject, WKScriptMessageHandlerWit
 }
 
 /// The bridge with Ourever's own native plugins registered (Capacitor 8 has no auto-registration for app-target plugins).
+@objc(OureverFeedbackPlugin)
+final class OureverFeedbackPlugin: CAPPlugin, CAPBridgedPlugin {
+    let identifier = "OureverFeedbackPlugin"
+    let jsName = "OureverFeedback"
+    let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "info", returnType: CAPPluginReturnPromise)]
+
+    override func load() {
+        NotificationCenter.default.addObserver(self, selector: #selector(screenshotTaken),
+            name: UIApplication.userDidTakeScreenshotNotification, object: nil)
+    }
+
+    @objc private func screenshotTaken() {
+        guard PinkyOrigin.matches(bridge?.webView?.url) else { return }
+        notifyListeners("screenshot", data: [:])
+    }
+
+    @objc func info(_ call: CAPPluginCall) {
+        guard PinkyOrigin.matches(bridge?.webView?.url) else { call.reject("Unavailable"); return }
+        var system = utsname()
+        uname(&system)
+        let machine = withUnsafeBytes(of: &system.machine) { bytes in
+            String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+        call.resolve(["app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+                      "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+                      "device_model": machine, "os_version": UIDevice.current.systemVersion])
+    }
+}
+
 class PinkyBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(OureverFeedbackPlugin())
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
         bridge?.registerPluginInstance(PinkyWidgetPlugin())
         // Render pages already carrying this revision own their own styles. The bundled fallback also

@@ -458,6 +458,15 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       if (!accessibleRecord(collection, record, userId) || record.ownerUserId !== userId) return false;
       delete state().relationshipGraph[collection][id]; await persist(); return true;
     },
+    getFeedbackForInbox(id) { return copyEntry(state().relationshipGraph.feedback[id] || null); },
+    countUnreadFeedback(userId) {
+      return Object.values(state().relationshipGraph.feedback).filter((row) => row.ownerUserId === userId && row.unread === true).length;
+    },
+    listFeedbackForInbox({ since, after, statuses, limit }) {
+      return Object.values(state().relationshipGraph.feedback)
+        .filter((row) => (!statuses || statuses.includes(row.status)) && (row.updatedAt > since || (row.updatedAt === since && row.id > after)))
+        .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || (a.id < b.id ? -1 : 1)).slice(0, limit).map(copyEntry);
+    },
     async listRelationshipsForJob() { return Object.values(state().relationships).map((relationship) => ({ ...relationship })); },
     async listRecordsForJob(collection) { assertCollection(collection); return Object.values(state().relationshipGraph[collection]).map(copyEntry); },
     async relationshipSnapshotForUser(userId) {
