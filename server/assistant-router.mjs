@@ -296,7 +296,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     // A short conversational acknowledgement is not consent to create a mood
     // card; an explicit diary/recording request still keeps its normal action.
-    if (wantsOneSentence(text) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
+    // Nor is pain a request to journal it (11-15: "别给我分析，我就是难受" got a mood-diary card under the comfort).
+    if ((wantsOneSentence(text) || /难受|难过|伤心|委屈|想哭|心痛|崩溃|别给我分析|安慰我|it hurts|so sad|comfort me|me duele|triste/i.test(text)) && !/记下|记录|日记|打卡|journal|diary|record|log\b|diario|registr/i.test(text)) plan = { ...plan, actions: plan.actions.filter((action) => action.kind !== "checkin") };
     if (webTurn.results.length) plan = { ...plan, actions: [] };
     // Screenshots to import are read in the background (minutes); the finished analysis is posted back here.
     const readingScreenshots = Boolean(chatImports && photoIds.length && plan.actions.some((action) => action.kind === "chat_import"));

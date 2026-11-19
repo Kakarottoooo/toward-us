@@ -35,7 +35,20 @@ export async function renderAsset(item, root) {
   if (!["image", "screenshot"].includes(item.modality)) return null;
   const { default: sharp } = await import("sharp");
   const escape = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-  const lines = (item.assetText || "Synthetic image").split("\n").flatMap((line) => line.match(/.{1,66}/g) || [""]);
+  // Wrap by drawn width, not character count: at 25 px a Chinese character is about twice as wide as a Latin letter, and
+  // 66 Chinese characters ran off the 1000 px image (11-15: a complaint at the end of a long line was cut off, so the
+  // product never saw it while competitors also received the text).
+  const wrap = (line) => {
+    const out = []; let current = "", width = 0;
+    for (const char of line) {
+      const w = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u.test(char) ? 26 : 14;
+      if (width + w > 920 && current) { out.push(current); current = ""; width = 0; }
+      current += char; width += w;
+    }
+    out.push(current);
+    return out;
+  };
+  const lines = (item.assetText || "Synthetic image").split("\n").flatMap(wrap);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="${Math.max(360, lines.length * 40 + 100)}"><rect width="100%" height="100%" fill="white"/>${lines.map((line, index) => `<text x="30" y="${60 + 40 * index}" font-family="Arial,Microsoft YaHei" font-size="25" fill="black">${escape(line)}</text>`).join("")}</svg>`;
   const path = join(root, "synthetic.png");
   await sharp(Buffer.from(svg)).png().toFile(path);

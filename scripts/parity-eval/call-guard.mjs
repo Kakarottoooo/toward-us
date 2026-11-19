@@ -31,7 +31,8 @@ export function installCallGuard({ directory, context, maxClaudeCalls = 120, max
   };
   childProcess.spawn = function (command, args = [], options) {
     const provider = /(?:^|[\\/])claude(?:\.exe|\.cmd)?$/i.test(command) ? "claude" : args.some((arg) => /codex[\\/]bin[\\/]codex\.js$/.test(arg)) || /(?:^|[\\/])codex$/.test(command) ? "codex" : null;
-    if (provider === "claude" && disallowClaude) stop("Claude product transport forbidden in Codex evaluation");
+    // The product must not reach Claude in a Codex evaluation; the blind Claude judge may (judged Codex runs, 11-15).
+    if (provider === "claude" && disallowClaude && !String(context?.getStore()?.phase || "").startsWith("judge")) stop("Claude product transport forbidden in Codex evaluation");
     if (provider && calls.length >= maxCalls) stop("total model call budget reached");
     if (provider === "claude" && calls.filter((call) => call.provider === "claude").length >= maxClaudeCalls) stop("evaluation Claude call budget reached");
     const child = original(command, args, options);
