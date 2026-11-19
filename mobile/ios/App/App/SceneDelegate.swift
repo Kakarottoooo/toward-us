@@ -163,6 +163,7 @@ class PinkyBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(OureverFeedbackPlugin())
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
+        bridge?.registerPluginInstance(PinkyStorePlugin())
         bridge?.registerPluginInstance(PinkyWidgetPlugin())
         // Render pages already carrying this revision own their own styles. The bundled fallback also
         // covers a welcome screen mounted later by client-side navigation in an older cached document.

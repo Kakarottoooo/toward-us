@@ -27,6 +27,9 @@
 		7B0610000000000000000B03 /* PinkyWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A04 /* PinkyWidget.swift */; };
 		7B0610000000000000000B04 /* PinkyWidgetCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A05 /* PinkyWidgetCore.swift */; };
 		7B0610000000000000000B05 /* PinkyWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A09 /* PinkyWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7B0610000000000000000B01 /* PinkyStorePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A01 /* PinkyStorePlugin.swift */; };
+		7B0610000000000000000B06 /* PinkyStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A0A /* PinkyStoreTests.swift */; };
+		7B0610000000000000000B09 /* Pinky.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A08 /* Pinky.storekit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,6 +39,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7B0610000000000000000D01;
 			remoteInfo = PinkyWidgetExtension;
+		};
+		7B0610000000000000000E05 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -80,6 +90,10 @@
 		7B0610000000000000000A06 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7B0610000000000000000A07 /* PinkyWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PinkyWidget.entitlements; sourceTree = "<group>"; };
 		7B0610000000000000000A09 /* PinkyWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PinkyWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B0610000000000000000A01 /* PinkyStorePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyStorePlugin.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A08 /* Pinky.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Pinky.storekit; sourceTree = "<group>"; };
+		7B0610000000000000000A0A /* PinkyStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyStoreTests.swift; sourceTree = "<group>"; };
+		7B0610000000000000000A0C /* AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +106,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7B0610000000000000000D04 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B0610000000000000000D14 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -116,6 +137,7 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				7B0610000000000000000A09 /* PinkyWidgetExtension.appex */,
+				7B0610000000000000000A0C /* AppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -139,6 +161,7 @@
 				7A0510000000000000000002 /* InfoPlist.strings */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				7B0610000000000000000A01 /* PinkyStorePlugin.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -153,6 +176,14 @@
 				7B0610000000000000000A07 /* PinkyWidget.entitlements */,
 			);
 			path = PinkyWidget;
+			sourceTree = "<group>";
+		};
+		7B0610000000000000000C02 /* AppTests */ = {
+			isa = PBXGroup;
+			children = (
+				7B0610000000000000000A0A /* PinkyStoreTests.swift */,
+			);
+			path = AppTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -196,6 +227,24 @@
 			productName = PinkyWidgetExtension;
 			productReference = 7B0610000000000000000A09 /* PinkyWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		7B0610000000000000000D11 /* AppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7B0610000000000000000D12 /* Build configuration list for PBXNativeTarget "AppTests" */;
+			buildPhases = (
+				7B0610000000000000000D13 /* Sources */,
+				7B0610000000000000000D14 /* Frameworks */,
+				7B0610000000000000000D15 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7B0610000000000000000E04 /* PBXTargetDependency */,
+			);
+			name = AppTests;
+			productName = AppTests;
+			productReference = 7B0610000000000000000A0C /* AppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -246,6 +295,7 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				7B0610000000000000000D01 /* PinkyWidgetExtension */,
+				7B0610000000000000000D11 /* AppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -275,6 +325,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B0610000000000000000D15 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B0610000000000000000B09 /* Pinky.storekit in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -287,6 +345,7 @@
 				7B0610000000000000000B02 /* PinkyWidgetPlugin.swift in Sources */,
 				7B0610000000000000000B20 /* PinkyTelemetry.swift in Sources */,
 				7B0610000000000000000B22 /* WidgetStore.swift in Sources */,
+				7B0610000000000000000B01 /* PinkyStorePlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -300,6 +359,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B0610000000000000000D13 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B0610000000000000000B06 /* PinkyStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -307,6 +374,11 @@
 			isa = PBXTargetDependency;
 			target = 7B0610000000000000000D01 /* PinkyWidgetExtension */;
 			targetProxy = 7B0610000000000000000E03 /* PBXContainerItemProxy */;
+		};
+		7B0610000000000000000E04 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = 7B0610000000000000000E05 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -543,6 +615,42 @@
 			};
 			name = Release;
 		};
+		7B0610000000000000000D16 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = us.toward.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Debug;
+		};
+		7B0610000000000000000D17 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = us.toward.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -569,6 +677,15 @@
 			buildConfigurations = (
 				7B0610000000000000000D06 /* Debug */,
 				7B0610000000000000000D07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7B0610000000000000000D12 /* Build configuration list for PBXNativeTarget "AppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7B0610000000000000000D16 /* Debug */,
+				7B0610000000000000000D17 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
