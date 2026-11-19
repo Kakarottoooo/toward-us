@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, Eye, EyeSlash } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
@@ -24,6 +24,7 @@ import { brandLabel, inInterfaceLanguage, initialLanguage, languageTag, language
 import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
+import "./ourever-plum.css";
 
 type Screen = "booting" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type AuthMode = "login" | "register";
@@ -198,12 +199,14 @@ function AccountPrototype() {
 
 function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; onSignIn: () => void; t: typeof copy.zh }) {
   return <div className="home-screen" data-testid="home-screen">
-    <div className="mobile-home-composition">
-      <img className="home-art" src="/assets/brand/editorial-columns-background.png" alt="" aria-hidden="true" draggable={false} />
+    <div className="mobile-home-composition plum-welcome">
       <LanguageSwitch language={language} onLanguage={onLanguage} />
-      <div className={`home-statement ${language === "zh" ? "chinese" : "english"}`}><h1>{t.homeLine}</h1><PauseMark /></div>
-      <Wordmark language={language} />
-      <div className="home-actions"><SplitButton label={t.start} onClick={onStart} testId="start-button" /><button type="button" className="home-sign-in" onClick={onSignIn}>{t.login}</button><p>{t.homeFooter}</p></div>
+      <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" alt="" draggable={false} />
+      <h1>{language === "en" ? <>Not sure how to<br />reply to them?<br />Ask Ourever first.</> : t.homeLine}</h1>
+      <div className="welcome-entry-actions">
+        <button type="button" className="plum-primary" data-testid="start-button" onClick={onStart}>{t.start}</button>
+        <button type="button" className="welcome-sign-in" onClick={onSignIn}>{t.login}</button>
+      </div>
     </div>
     <div className="desktop-home-composition" data-testid="desktop-home">
       <DesktopBrandHeader language={language} onLanguage={onLanguage} onLogin={onSignIn} />
@@ -230,25 +233,31 @@ function AuthScreen({ mode, onModeChange, language, onLanguage, onBack, onAuth, 
 }) {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [adultConfirmed, setAdultConfirmed] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const keyboard = useKeyboard();
   const submit = async () => {
     keyboard.hide(); setBusy(true); setNotice("");
     try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed }) })); }
     catch (error) { setNotice(accountError((error as Error).message, language)); } finally { setBusy(false); }
   };
-  return <MobileScroll className="paper-screen auth-screen" data-testid="auth-screen">
+  return <MobileScroll className="paper-screen auth-screen plum-auth" data-testid="auth-screen">
     <header className="editorial-top"><button onClick={onBack} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="auth-art red-column" aria-hidden="true" />
-    <main className="auth-content"><div className="vertical-title"><h1>{mode === "login" ? t.welcome : t.register}</h1><PauseMark /></div><Wordmark language={language} />
+    <main className="auth-content">{mode === "login" && <div className="auth-brand"><img src="/assets/brand/ourever-mascot.webp" alt="" />Ourever</div>}<div className="vertical-title"><h1>{mode === "login" ? t.welcome : t.register}</h1><PauseMark /></div><Wordmark language={language} />
       {mode === "register" && <p className="auth-hint">{t.registerHint}</p>}
       {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput value={name} onChange={(event) => setName(event.target.value)} maxLength={24} data-testid="register-name" /></label>}
       <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
-      <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" /><small>{t.passwordHint}</small></label>
+      <div className="editorial-field auth-password-field">
+        <label htmlFor="auth-password">{t.password}</label>
+        <div className="password-input-wrap"><KeyboardInput id="auth-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" />
+          <button type="button" aria-label={localized(language, "显示密码", "Show password", "Mostrar contraseña")} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}</button>
+        </div>{mode === "register" && <small>{t.passwordHint}</small>}
+      </div>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
       {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
       <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} testId="auth-submit" />
-      <button className="auth-switch" type="button" onClick={() => { keyboard.hide(); onModeChange(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
+      <button className="auth-switch" type="button" onClick={() => { keyboard.hide(); setShowPassword(false); onModeChange(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
       {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
     </main>
   </MobileScroll>;
