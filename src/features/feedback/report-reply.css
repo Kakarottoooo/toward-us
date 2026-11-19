@@ -8,4 +8,11 @@
 .reply-report-menu .reply-report-panel { grid-column: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 0 8px; width: max-content; max-width: min(224px, calc(100vw - 64px)); padding: 2px 10px; border: 1px solid var(--jian-line); border-radius: 12px; background: var(--jian-paper-bright); box-shadow: 0 3px 12px rgba(37,37,37,.12); }
 .reply-report-menu .reply-report-panel.is-confirming { padding: 10px 12px 2px; }
 .reply-report-menu .reply-report-panel > span { width: 100%; line-height: 1.4; }
-.reply-report-menu > [role="status"] { width: max-content; max-width: 112px; padding: 4px; text-align: end; }
+.reply-report-options { display: grid; width: 100%; }
+.reply-report-options button { text-align: start; }
+.reply-report-options button + button { border-top: 1px solid var(--jian-line); }
+.reply-report-options svg { flex: none; }
+.reply-report-menu button[aria-disabled="true"] { cursor: default; }
+.reply-report-menu .reply-report-receipt:not(:empty) { padding-block: 4px; }
+.reply-report-menu .reply-report-panel p, .reply-report-menu .reply-report-panel blockquote { width: 100%; margin: 0 0 6px; color: inherit; font: inherit; line-height: 1.4; }
+.reply-report-menu .reply-report-panel blockquote { padding-inline-start: 8px; border-inline-start: 2px solid var(--jian-line); overflow-wrap: anywhere; }
