@@ -58,6 +58,7 @@ export function awaitedBy(earlier, actorUserId, now = Date.now()) {
  * the member it is waiting to hear from (`awaited`). */
 export function shouldAgentSpeak(message, { agentLastMessageId = null, repliedTo = null, awaited = null } = {}) {
   if (!message || message.role !== "member") return false;
+  if (message.recipient) return message.recipient === "assistant";
   return AGENT_CALL.test(String(message.text || "")) || Boolean(agentLastMessageId && message.replyTo === agentLastMessageId) || Boolean(message.replyTo && repliedTo?.id === message.replyTo && isCheckIn(repliedTo)) || Boolean(awaited);
 }
 
@@ -108,7 +109,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
 // `answersCheckIn`: a member's turn without a `replyTo` of its own answers an open check-in (see openCheckIn).
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, awaiting = null, answersCheckIn = false }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, awaiting = null, recipient = null, answersCheckIn = false }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -119,6 +120,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   const repliesTo = replyTo && conversation.messages.some((item) => item.id === replyTo) ? replyTo : answersCheckIn && actorUserId ? openCheckIn(conversation.messages, actorUserId)?.id || null : null;
   const message = {
     id: randomUUID(), role: actorUserId ? "member" : "agent", actorUserId: actorUserId || null, source, kind, text: body,
+    ...(recipient ? { recipient } : {}),
     refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: repliesTo, createdAt: new Date().toISOString(),
     ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
     ...(photoIds.length ? { photoIds: photoIds.slice(0, 6) } : {}),
@@ -208,7 +210,7 @@ export async function previousDailyQuestions(store, { relationshipId, userId, li
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {}, progress = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, recipient = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {}, progress = () => {} }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
@@ -216,7 +218,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     return action(tx);
   });
   await screenText(text);
-  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, answersCheckIn: true }));
+  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, recipient, answersCheckIn: recipient !== "partner" }));
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
   const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;

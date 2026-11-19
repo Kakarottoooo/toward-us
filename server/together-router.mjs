@@ -117,6 +117,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id, text = clean(req.body?.text, 2000), itemId = clean(req.body?.itemId, 120);
     const photoIds = Array.isArray(req.body?.photoIds) ? [...new Set(req.body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
     if (!text && !photoIds.length) throw decisionError(400, "message_required");
+    const recipient = req.body?.recipient;
+    if (recipient != null && recipient !== "partner" && recipient !== "assistant") throw decisionError(400, "invalid_recipient");
     const initial = await pairing(req); if (!writable(initial)) throw decisionError(409, "pairing_required");
     const relationshipId = initial.relationship.id;
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, userId).catch(() => null); if (!photo || photo.visibility !== "shared" || photo.relationshipId !== relationshipId) throw decisionError(400, "message_required"); }
@@ -126,7 +128,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     if (req.body?.speaker === "partner" && !partner) throw decisionError(409, "pairing_required");
     // Both of them see Pinky's current step while it answers in Us; it ends with the reply, or with the failure.
     const progress = activity ? activity.forCouple(relationshipId) : () => {};
-    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, recipient, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
     if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId); }
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
   });
