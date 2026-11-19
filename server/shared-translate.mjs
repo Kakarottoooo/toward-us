@@ -15,7 +15,7 @@ const latin = (text) => (String(text || "").match(/\p{Script=Latin}/gu) || []).l
 export const needsTranslation = (text, language) => language === "zh" ? latin(text) >= 6 && han(text) * 3 < latin(text) : han(text) >= 1 && han(text) * 3 >= latin(text);
 
 const schema = { type: "object", additionalProperties: false, required: ["text", "options"], properties: { text: { type: "string" }, options: { type: "array", items: { type: "string" } } } };
-const instructions = (language) => `Translate this message from Pinky, a couple's companion, into ${LABEL[language]}. Keep its warmth, meaning, names, emoji, line breaks and URLs exactly; do not add or explain anything. options are the answer choices of a little game shown with the message: translate each one in order and keep them just as short (return [] when there are none).`;
+const instructions = (language) => `Translate this message from Ourever, a couple's companion, into ${LABEL[language]}. Keep its warmth, meaning, names, emoji, line breaks and URLs exactly; do not add or explain anything. options are the answer choices of a little game shown with the message: translate each one in order and keep them just as short (return [] when there are none).`;
 
 /** Messages a viewer in `language` would otherwise read in another script. */
 export function untranslated(messages, language) {

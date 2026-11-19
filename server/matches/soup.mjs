@@ -296,7 +296,7 @@ async function answerEntry(state, entry, mediator, languages) {
   const facts = state.puzzle.facts.map((item, index) => ({ index, fact: item.text[first] || Object.values(item.text)[0] }));
   const history = state.log.filter((item) => item.answer && item.kind === "ask").slice(-20).map((item) => ({ question: item.text, answer: item.answer }));
   const known = { surface: state.puzzle.surface[first] || Object.values(state.puzzle.surface)[0], truth: state.puzzle.truth[first] || Object.values(state.puzzle.truth)[0], keyFacts: facts, alreadyFound: state.found, earlier: history };
-  const host = `You are Pinky, the warm host of a 海龟汤 (lateral-thinking puzzle) that a couple is solving together. You know the hidden truth and its numbered key facts; the players only know the surface. ${languageRule(languages)}`;
+  const host = `You are Ourever, the warm host of a 海龟汤 (lateral-thinking puzzle) that a couple is solving together. You know the hidden truth and its numbered key facts; the players only know the surface. ${languageRule(languages)}`;
   try {
     if (entry.kind === "ask") {
       const result = await mediator.structured({ name: "soup_answer", schema: answerSchema(languages), maxOutputTokens: 400, input: JSON.stringify({ ...known, question: entry.text }),

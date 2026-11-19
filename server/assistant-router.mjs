@@ -205,7 +205,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
       now: new Date().toISOString(), timezone: session.timezone, localDateTime: localTime(new Date(), session.timezone),
       // The whole recent exchange, so the model sees what it already did; only the last message is the new request.
       // A voice call appears as its captions, so the user can refer back to what was said on the call.
-      messages: [...session.messages.map(({ role, text, call, createdAt }) => ({ role, createdAt, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Pinky" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
+      messages: [...session.messages.map(({ role, text, call, createdAt }) => ({ role, createdAt, text: call ? `[Voice call] ${call.rows.map((row) => `${row.role === "agent" ? "Ourever" : "User"}: ${row.text}`).join("\n")}`.slice(-3000) : role === "assistant" ? String(text || "").slice(0, 600) : text })), userMessage].slice(-30),
       // Notes kept about people are already in context.profile with their ids; Pinky's own bookkeeping (people, portraits,
       // tidy state, what the member wants) is never a record to act on (scale test 11-09: after years these crowded out the rest).
       records: records.filter(({ kind, record }) => kind !== "memory" || !record.kind || record.kind === "memory").slice(0, 200).map(({ kind, record }) => ({ id: record.id, kind, version: record.version, status: record.status, ...(kind === "reminder" ? { frequency: record.frequency } : {}), ...(kind === "checkin" ? { date: localTime(record.createdAt, session.timezone).slice(0, 10) } : {}) })),
@@ -226,7 +226,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     };
     // Pinky answers in the interface language this member picked, whatever language they type in (founder 11-06: one language everywhere, the one each member picked).
     const language = await memberLanguage(store, userId, body?.language);
-    const unavailable = () => fail(503, say(language, "Pinky 暂时不可用，什么都没有改动。请稍后再试。", "Pinky is unavailable right now. Nothing was changed; please try again later.", "Pinky no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
+    const unavailable = () => fail(503, say(language, "Ourever 暂时不可用，什么都没有改动。请稍后再试。", "Ourever is unavailable right now. Nothing was changed; please try again later.", "Ourever no está disponible ahora. No se cambió nada; inténtalo de nuevo más tarde."));
     let plan; const recallSources = [], replySources = [];
     const boundaryIndex = session.messages.filter((message) => message.role === "assistant" && isPrivateBoundaryReply(message.text)).length;
     const normalizePlan = (value) => normalizeAssistantTurn(value, language, boundaryIndex);

@@ -184,7 +184,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const password = req.body?.password;
     if (!validEmail(email)) return res.status(400).json({ error: "请输入有效邮箱。" });
     if (!validPassword(password)) return res.status(400).json({ error: "密码需要 10–128 个字符。" });
-    if (req.body?.adultConfirmed !== true) return res.status(400).json({ error: "Pinky requires confirmation that you are 18 or older." });
+    if (req.body?.adultConfirmed !== true) return res.status(400).json({ error: "Ourever requires confirmation that you are 18 or older." });
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
     const created = await store.createUser(user);
     if (!created) return res.status(409).json({ error: "这个邮箱已经注册。" });
@@ -318,7 +318,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (!reply) return res.status(404).json({ error: "reply_not_found" });
     // The invitation code and participant token stay in the room. A report persists after its room expires.
     await store.createDemoReplyReport({ id: sessionId(JSON.stringify([actor.participant.id, id])), createdAt: new Date().toISOString(), kind: "report", severity: "high", status: "new",
-      summary: "Reported Pinky demo reply", context: { view: "demo", report: "pinky", messageId: id }, text: (typeof reply === "string" ? reply : JSON.stringify(reply)).slice(0, 4000) });
+      summary: "Reported Ourever demo reply", context: { view: "demo", report: "pinky", messageId: id }, text: (typeof reply === "string" ? reply : JSON.stringify(reply)).slice(0, 4000) });
     res.json({ reported: true });
   });
 

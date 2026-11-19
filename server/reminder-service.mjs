@@ -306,8 +306,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const browsers = pushOn && preference?.enabled && active(preference) ? (await owned(store, "pushSubscriptions", userId)).filter((item) => active(item) && item.subscription) : [];
       let sent = 0;
       const link = fromPush(url);
-      for (const device of phones) { try { await sendNative(device.token, { title: "Pinky", body: text, url: link }); sent += 1; } catch (error) { console.error("member native push failed", error?.code || "error"); } }
-      for (const device of browsers) { try { const receipt = await sendPush(device.subscription, { title: "Pinky", body: text, url: link, tag }, { dedupeKey: tag }); if (receipt?.statusCode >= 200 && receipt.statusCode < 300) sent += 1; } catch (error) { console.error("member web push failed", error?.code || error?.statusCode || "error"); } }
+      for (const device of phones) { try { await sendNative(device.token, { title: "Ourever", body: text, url: link }); sent += 1; } catch (error) { console.error("member native push failed", error?.code || "error"); } }
+      for (const device of browsers) { try { const receipt = await sendPush(device.subscription, { title: "Ourever", body: text, url: link, tag }, { dedupeKey: tag }); if (receipt?.statusCode >= 200 && receipt.statusCode < 300) sent += 1; } catch (error) { console.error("member web push failed", error?.code || error?.statusCode || "error"); } }
       if (sent) void recordUsage(store, { userId, action: "push_sent" });
       return { sent };
     },
@@ -512,10 +512,10 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     });
     const language = phones.length || browsers.length ? await memberLanguage(store, userId) : "zh";
     const asked = ask ? String(ask.i18n?.[language] || ask.text || "").replace(/\s+/g, " ").trim().slice(0, 140) : "";
-    const body = asked ? asked : missYou ? say(language, "TA 想你了 💗", "Your partner is thinking of you 💗", "Tu pareja está pensando en ti 💗") : surprise ? say(language, "Pinky 给你们准备了一点东西。", "Pinky made something for you two.", "Pinky les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
+    const body = asked ? asked : missYou ? say(language, "TA 想你了 💗", "Your partner is thinking of you 💗", "Tu pareja está pensando en ti 💗") : surprise ? say(language, "Ourever 给你们准备了一点东西。", "Ourever made something for you two.", "Ourever les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
     for (const device of phones) {
-      try { await sendNative(device.token, { title: "Pinky", body, url: fromPush("/?channel=us") }); sent += 1; }
+      try { await sendNative(device.token, { title: "Ourever", body, url: fromPush("/?channel=us") }); sent += 1; }
       catch (error) {
         console.error("together native push failed", error?.code || "error");
         if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });
@@ -524,7 +524,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     // One tag and topic per member: a newer nudge replaces an unread one instead of piling up on the lock screen.
     for (const device of browsers) {
       try {
-        const receipt = await sendPush(device.subscription, { title: "Pinky", body, url: fromPush("/?channel=us"), tag: "pinky-us" }, { dedupeKey: `together:${userId}` });
+        const receipt = await sendPush(device.subscription, { title: "Ourever", body, url: fromPush("/?channel=us"), tag: "pinky-us" }, { dedupeKey: `together:${userId}` });
         if (Number.isInteger(receipt?.statusCode) && receipt.statusCode >= 200 && receipt.statusCode < 300) sent += 1;
       } catch (error) {
         console.error("together web push failed", error?.code || error?.statusCode || "error");
@@ -620,7 +620,7 @@ function reminderText(reminder, language) { return say(language, `提醒：「${
 function reminderPayload(reminder, language, key) {
   const target = reminder.target;
   const url = target?.kind === "issue" ? `/?view=decide&issue=${encodeURIComponent(target.id)}` : target?.kind === "outcome" ? `/?view=decide&outcome=${encodeURIComponent(target.id)}` : target?.kind === "commitment" ? "/?view=agreements" : target?.kind === "milestone" || reminder.milestoneId ? `/?view=plans&milestone=${encodeURIComponent(target?.id || reminder.milestoneId)}` : target?.kind === "checkin" || target?.kind === "checkins" ? "/?view=checkins" : target?.kind === "plans" ? "/?view=plans" : `/?view=reminders&reminder=${encodeURIComponent(reminder.id)}`;
-  return { title: "Pinky", url: fromPush(url), body: language === "en" ? "You have a reminder. Open Pinky when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Pinky cuando quieras." : "你有一条提醒，方便时打开 Pinky 查看。", tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
+  return { title: "Ourever", url: fromPush(url), body: language === "en" ? "You have a reminder. Open Ourever when you are ready." : language === "es" ? "Tienes un recordatorio. Abre Ourever cuando quieras." : "你有一条提醒，方便时打开 Ourever 查看。", tag: createHash("sha256").update(key).digest("base64url").slice(0, 32) };
 }
 
 export function localDateTimeToInstant(localDateTime, timeZone, gapPolicy = "reject") {
