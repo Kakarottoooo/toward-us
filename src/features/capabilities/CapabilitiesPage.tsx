@@ -1,7 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Alarm, BookOpenText, ChatCircleDots, Drop, GameController, CalendarBlank, ChatsCircle, ChatTeardropText, EnvelopeSimpleOpen, ForkKnife, Handshake, HandHeart, Heart, Images, ListChecks, MagnifyingGlass, MapTrifold, NotePencil, Phone, Scales, Sparkle, UserCircle, UsersThree } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
+import { relationshipApi } from "../relationship/api";
+import { inNativeApp, nativePushAvailable, type NativeSettings } from "../reminders/nativePush";
+import { webPushSupport } from "../reminders/webPush";
 import "./capabilities.css";
 
 type Channel = "me" | "us";
@@ -12,11 +15,24 @@ type Item = { key: string; icon: ReactNode; title: string; detail: string; say?:
  * there to look at open directly. */
 export function CapabilitiesPage({ language, paired, onBack, onAsk, onOpen, onProfile }: { language: Language; paired: boolean; onBack: () => void; onAsk: (text: string, channel: Channel) => void; onOpen: (url: string) => void; onProfile: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  const [pushAvailable, setPushAvailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    relationshipApi<NativeSettings & { configured: boolean }>("/api/reminder-settings", { signal: controller.signal })
+      .then(settings => setPushAvailable(inNativeApp()
+        ? nativePushAvailable(settings)
+        : settings.configured && webPushSupport() === "ready"))
+      .catch(() => { /* Keep the in-app description when settings are unavailable. */ });
+    return () => controller.abort();
+  }, []);
+  const reminderDetail = pushAvailable
+    ? t("创建一次或每周重复的提醒。开启通知后，到点会收到提醒。", "Set a one-time or weekly reminder. Turn on notifications to be alerted when it’s due.", "Crea un recordatorio único o semanal. Activa las notificaciones para recibir un aviso a la hora indicada.")
+    : t("创建一次或每周重复的提醒，随时在应用里查看。", "Set a one-time or weekly reminder and view it in the app.", "Crea un recordatorio único o semanal y consúltalo en la app.");
   const icon = (node: ReactNode) => node;
   const me: Item[] = [
     // Ourever's main scenario (founder 11-08): the reply coach comes first.
     { key: "reply", icon: icon(<ChatCircleDots size={22} />), title: t("不知道怎么回 TA", "Not sure how to reply", "No sabes qué responder"), detail: t("把 TA 的话或聊天截图发过来，Ourever 帮你看懂意思，写一句能直接发的回复。", "Send what they said or a screenshot; Ourever helps you read it and writes a reply you can send as is.", "Envía lo que te dijo o una captura; Ourever te ayuda a entenderlo y escribe una respuesta lista para enviar."), say: t("TA 刚发来：", "They just sent me: ", "Me acaba de escribir: ") },
-    { key: "reminder", icon: icon(<Alarm size={22} />), title: t("提醒", "Reminders", "Recordatorios"), detail: t("一次的、每周的，到点推送给你。", "Once or every week, pushed to you on time.", "Una vez o cada semana, te avisa a tiempo."), say: t("明天早上 8 点提醒我给妈妈打电话", "Remind me to call my mom tomorrow at 8am", "Recuérdame llamar a mi mamá mañana a las 8") },
+    { key: "reminder", icon: icon(<Alarm size={22} />), title: t("提醒", "Reminders", "Recordatorios"), detail: reminderDetail, say: t("明天早上 8 点提醒我给妈妈打电话", "Remind me to call my mom tomorrow at 8am", "Recuérdame llamar a mi mamá mañana a las 8") },
     { key: "checkin", icon: icon(<NotePencil size={22} />), title: t("心情日记", "Mood diary", "Diario de ánimo"), detail: t("今天怎么样，说两句就记下，只有你能看。", "Say how today went; it is kept just for you.", "Cuenta cómo fue tu día; solo tú lo ves."), say: t("今天有点累，帮我记一下", "I'm a bit tired today, note it down", "Hoy estoy algo cansado, anótalo") },
     { key: "hard", icon: icon(<ChatTeardropText size={22} />), title: t("难开口的话", "Hard-to-say things", "Lo que cuesta decir"), detail: t("先私下理一理，再写成 TA 听得进去的话；你确认了才发。", "Sort it out privately first, then word it so your partner can hear it; it goes only when you confirm.", "Ordénalo primero en privado y luego dilo de forma que tu pareja lo escuche; solo se envía si confirmas."), say: t("我最近有点委屈，想跟 TA 说，帮我想想怎么开口", "I've been feeling hurt lately and want to tell my partner. Help me find the words", "Me he sentido dolido y quiero decírselo a mi pareja. Ayúdame a encontrar las palabras") },
     { key: "letter", icon: icon(<EnvelopeSimpleOpen size={22} />), title: t("情书 · 时光胶囊", "Letters · time capsules", "Cartas · cápsulas del tiempo"), detail: t("写好先存着，TA 完全不知道；到那天 Ourever 提醒你，一键用短信或邮件发给 TA。", "Write it now and keep it secret; on the day Ourever reminds you and you send it in one tap by text or email.", "Escríbela ahora y guárdala en secreto; ese día Ourever te avisa y la envías con un toque por mensaje o correo."), say: t("帮我给 TA 写一封信，纪念日那天发给 TA", "Help me write my partner a letter to send on our anniversary", "Ayúdame a escribirle una carta a mi pareja para enviar en nuestro aniversario") },
