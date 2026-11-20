@@ -2,7 +2,7 @@ import { ReportReply } from "../feedback/ReportReply";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Copy, PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
-import { counted, inInterfaceLanguage, languageTag, localized, type Language } from "../../i18n";
+import { apiErrorText, counted, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
 import { browserSpeechAvailable, useBrowserSpeech } from "../../useBrowserSpeech";
@@ -589,7 +589,7 @@ ${text}` : text, target);
         const blob = await shrink(file);
         const response = await fetch(`/api/photos?scope=${scope}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "image/jpeg" }, body: blob });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(inInterfaceLanguage(String(payload.error || t("照片没传上去。", "The photo did not upload.", "La foto no se subió.")), language));
+        if (!response.ok) throw new Error(apiErrorText(payload, response.status, language));
         setAttachments((items) => items.map((item) => item.key === key ? { ...item, id: payload.photo.id } : item));
       } catch (error) { setAttachments((items) => items.map((item) => item.key === key ? { ...item, failed: true } : item)); setNotice((error as Error).message); }
     }
