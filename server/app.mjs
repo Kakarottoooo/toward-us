@@ -60,7 +60,6 @@ import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
-import statusCodes from "../shared/http-error-status.json" with { type: "json" };
 import { remainingInteractiveCalls } from "./ai-budget.mjs";
 import { createMembershipRouter } from "./membership.mjs";
 import { createBetaRouter } from "./beta.mjs";
@@ -101,18 +100,6 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
-  app.use("/api", (_req, res, next) => {
-    const send = res.json.bind(res);
-    res.json = payload => {
-      if (res.statusCode >= 400 && payload && typeof payload === "object" && !Array.isArray(payload) && !payload.code) {
-        const code = typeof payload.error === "string" && /^[a-z][a-z0-9_]+$/.test(payload.error)
-          ? payload.error : statusCodes[res.statusCode] || "service_unavailable";
-        return send({ ...payload, code });
-      }
-      return send(payload);
-    };
-    next();
-  });
   app.set("trust proxy", 1);
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use((req, res, next) => {
