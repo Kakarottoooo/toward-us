@@ -122,7 +122,7 @@ private final class PinkyLanguagePreference: NSObject, WKScriptMessageHandlerWit
             UserDefaults.standard.set(language, forKey: key)
             replyHandler(language, nil)
         } else if url.scheme == "capacitor", url.host == "localhost", url.lastPathComponent == "offline.html" {
-            replyHandler(UserDefaults.standard.string(forKey: key) ?? "en", nil)
+            replyHandler(UserDefaults.standard.string(forKey: key) ?? Locale.preferredLanguages.compactMap { $0.split(separator: "-").first.map(String.init) }.first(where: choices.contains) ?? "en", nil)
         } else {
             replyHandler(nil, "Unavailable")
         }
@@ -134,7 +134,8 @@ private final class PinkyLanguagePreference: NSObject, WKScriptMessageHandlerWit
 final class OureverFeedbackPlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "OureverFeedbackPlugin"
     let jsName = "OureverFeedback"
-    let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "info", returnType: CAPPluginReturnPromise)]
+    let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "info", returnType: CAPPluginReturnPromise),
+                                            CAPPluginMethod(name: "shareExport", returnType: CAPPluginReturnPromise)]
 
     override func load() {
         NotificationCenter.default.addObserver(self, selector: #selector(screenshotTaken),
@@ -144,6 +145,33 @@ final class OureverFeedbackPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc private func screenshotTaken() {
         guard PinkyOrigin.matches(bridge?.webView?.url) else { return }
         notifyListeners("screenshot", data: [:])
+    }
+
+    @objc func shareExport(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard PinkyOrigin.matches(self.bridge?.webView?.url),
+                  let presenter = self.bridge?.viewController, presenter.presentedViewController == nil,
+                  let contents = call.getString("contents") else { call.reject("export_unavailable"); return }
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let file = directory.appendingPathComponent("ourever-export.json")
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try Data(contents.utf8).write(to: file, options: [.atomic, .completeFileProtection])
+            } catch {
+                try? FileManager.default.removeItem(at: directory)
+                call.reject("export_unavailable")
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+            sheet.popoverPresentationController?.sourceView = presenter.view
+            sheet.popoverPresentationController?.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+            sheet.completionWithItemsHandler = { _, completed, _, error in
+                try? FileManager.default.removeItem(at: directory)
+                if error != nil { call.reject("export_unavailable") }
+                else { call.resolve(["completed": completed]) }
+            }
+            presenter.present(sheet, animated: true)
+        }
     }
 
     @objc func info(_ call: CAPPluginCall) {
@@ -181,7 +209,10 @@ class PinkyBridgeViewController: CAPBridgeViewController {
             if (location.origin === \(String(decoding: encodedOrigin, as: UTF8.self))) {
                 try {
                     const key = 'toward-us.language';
-                    if (!['en', 'zh', 'es'].includes(localStorage.getItem(key))) localStorage.setItem(key, 'en');
+                    if (!['en', 'zh', 'es'].includes(localStorage.getItem(key))) {
+                        const preferred = navigator.languages.map(tag => tag.toLowerCase().split('-')[0]);
+                        localStorage.setItem(key, preferred.find(lang => ['en', 'zh', 'es'].includes(lang)) || 'en');
+                    }
                     const sync = () => save.postMessage(localStorage.getItem(key)).catch(() => {});
                     const observe = () => {
                         sync();

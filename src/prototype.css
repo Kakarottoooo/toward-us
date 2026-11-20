@@ -28,7 +28,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .home-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; user-select: none; }
 .language-switch { position: absolute; z-index: 2; top: 56px; right: 24px; display: flex; align-items: center; gap: 7px; color: #aaa49e; font-weight: 650; font-size: 16px; letter-spacing: .04em; }
 .language-switch > span { display: flex; align-items: center; gap: 7px; }
-.language-switch button { padding: 0 0 4px; border: 0; border-bottom: 1.5px solid transparent; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
+.language-switch button { min-width: 44px; min-height: 44px; padding: 0 0 4px; border: 0; border-bottom: 1.5px solid transparent; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
 .language-switch button.active { color: var(--jian-red); border-bottom-color: currentColor; }
 .language-switch i { font-style: normal; color: #aaa49e; }
 .home-statement { display: flex; flex-direction: column; align-items: center; }
@@ -49,7 +49,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .paper-screen { background-color: var(--jian-paper); }
 .simple-header { position: sticky; top: 0; z-index: 5; min-height: 104px; padding: 51px 22px 14px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; background: rgba(244, 239, 230, .96); border-bottom: 1px solid var(--jian-line); }
-.simple-header > button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; color: var(--jian-ink); cursor: pointer; }
+.simple-header > button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .simple-header > span { text-align: center; font-size: 12px; letter-spacing: .19em; font-weight: 700; }
 .simple-header .compact-language { font-size: 12px; font-weight: 800; color: var(--jian-red); }
 .simple-header > i { display: block; }
@@ -73,7 +73,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .loading-screen p { color: var(--jian-muted); font-size: 13px; }
 .room-shell { position: relative; overflow: hidden; }
 .room-header { position: absolute; z-index: 6; top: 0; left: 0; right: 0; height: 101px; padding: 49px 20px 10px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; background: var(--jian-paper); border-bottom: 1px solid var(--jian-line); }
-.room-header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; }
+.room-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; }
 .room-header > div { text-align: center; }
 .room-header > div span { display: block; color: var(--jian-muted); font-size: 12px; letter-spacing: .14em; }
 .room-header > div strong { font-size: 18px; letter-spacing: .16em; }

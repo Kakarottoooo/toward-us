@@ -1,0 +1,11 @@
+{
+  "400": "invalid_input",
+  "401": "auth_required",
+  "403": "forbidden",
+  "404": "not_found",
+  "409": "conflict",
+  "413": "upload_too_large",
+  "415": "unsupported_format",
+  "422": "invalid_input",
+  "429": "rate_limited"
+}

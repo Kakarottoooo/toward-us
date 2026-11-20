@@ -1,3 +1,5 @@
+import statusCodes from "../shared/http-error-status.json";
+
 export type Language = "zh" | "en" | "es";
 
 export const languages: Language[] = ["zh", "en", "es"];
@@ -9,10 +11,15 @@ export function isLanguage(value: string | null): value is Language {
 export function initialLanguage(): Language {
   try {
     const stored = localStorage.getItem("toward-us.language");
-    return isLanguage(stored) ? stored : "en";
-  } catch {
-    return "en";
+    if (isLanguage(stored)) return stored;
+  } catch { /* Storage can be unavailable on first launch. */ }
+  if (typeof navigator !== "undefined") {
+    for (const tag of navigator.languages?.length ? navigator.languages : [navigator.language]) {
+      const language = tag?.toLowerCase().split(/[-_]/)[0];
+      if (isLanguage(language)) return language;
+    }
   }
+  return "en";
 }
 
 export function languageTag(language: Language) {
@@ -57,6 +64,41 @@ export function inInterfaceLanguage(message: string, language: Language) {
   const known = KNOWN_ERRORS[message.trim()];
   if (known) return language === "es" ? known[1] : known[0];
   return localized(language, message, "Something went wrong. Please try again.", "Algo salió mal. Inténtalo de nuevo.");
+}
+
+const errorCopy: Record<string, [string, string, string]> = {
+  "invalid_email": ["请输入有效邮箱。", "Enter a valid email address.", "Introduce un correo electrónico válido."],
+  "invalid_password_length": ["密码需要 10–128 个字符。", "Use a password with 10–128 characters.", "Usa una contraseña de 10 a 128 caracteres."],
+  "adult_confirmation_required": ["请确认你已年满 18 岁。", "Confirm that you are at least 18 years old.", "Confirma que tienes al menos 18 años."],
+  "email_registered": ["这个邮箱已经注册。", "This email is already registered. Sign in to continue.", "Este correo ya está registrado. Inicia sesión para continuar."],
+  "rate_limited": ["尝试次数过多，请稍后再试。", "Too many attempts. Try again later.", "Demasiados intentos. Inténtalo más tarde."],
+  "invalid_credentials": ["邮箱或密码不正确。", "The email or password is incorrect.", "El correo o la contraseña son incorrectos."],
+  "invalid_display_name": ["名字需要 1–24 个字符。", "Use a name with 1–24 characters.", "Usa un nombre de 1 a 24 caracteres."],
+  "current_password_required": ["请使用当前密码确认。", "Confirm with your current password.", "Confirma con tu contraseña actual."],
+  "language_required": ["请选择一种支持的语言。", "Choose a supported language.", "Elige un idioma compatible."],
+  "room_not_found": ["找不到这个房间。", "This room could not be found.", "No se encontró esta sala."],
+  "reply_not_found": ["找不到这条回复。", "This reply could not be found.", "No se encontró esta respuesta."],
+  "not_found": ["找不到此内容。", "This item could not be found.", "No se encontró este elemento."],
+  "auth_required": ["请先登录。", "Sign in to continue.", "Inicia sesión para continuar."],
+  "forbidden": ["此账号无权进行此操作。", "Your account does not have permission for this action.", "Tu cuenta no tiene permiso para esta acción."],
+  "invalid_input": ["请检查输入的内容后重试。", "Check what you entered and try again.", "Revisa lo que escribiste e inténtalo de nuevo."],
+  "conflict": ["内容已更改，请刷新后重试。", "This item has changed. Refresh and try again.", "El contenido ha cambiado. Actualiza y vuelve a intentarlo."],
+  "upload_too_large": ["文件过大，请选择较小的文件。", "Choose a smaller file to upload.", "Elige un archivo más pequeño."],
+  "unsupported_format": ["请选择支持的文件格式。", "Choose a supported file format.", "Elige un formato de archivo compatible."],
+  "service_unavailable": ["服务暂时无法完成请求，请稍后重试。", "The service could not complete this request. Try again shortly.", "El servicio no pudo completar la solicitud. Inténtalo más tarde."],
+  "referral_not_found": ["邀请链接无效或已过期。", "This invitation is invalid or has expired.", "Esta invitación no es válida o ya caducó."],
+  "network_unavailable": ["无法连接服务器，请检查网络后重试。", "Check your connection and try again.", "Comprueba la conexión e inténtalo de nuevo."]
+};
+
+export function apiErrorText(payload: { code?: string; error?: string }, status: number, language: Language) {
+  const code = payload.code || "";
+  const fallback = (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
+  // Legacy routes can already supply a specific translated explanation. Keep it over the HTTP category.
+  const message = typeof payload.error === "string" ? payload.error : "";
+  const readable = message && !/^[a-z][a-z0-9_]*$/.test(message) && (language === "zh" || !CJK.test(message) || KNOWN_ERRORS[message]);
+  if (code !== fallback && errorCopy[code]) return localized(language, ...errorCopy[code]);
+  if (readable) return inInterfaceLanguage(message, language);
+  return localized(language, ...(errorCopy[code] || errorCopy[fallback]));
 }
 
 /** The interface language saved on this device, for code outside React state (API helpers, hooks). */

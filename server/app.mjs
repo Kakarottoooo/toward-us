@@ -60,6 +60,8 @@ import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
 import { createCharacterRouter } from "./character.mjs";
+import statusCodes from "../shared/http-error-status.json" with { type: "json" };
+import { remainingInteractiveCalls } from "./ai-budget.mjs";
 import { createMembershipRouter } from "./membership.mjs";
 import { createBetaRouter } from "./beta.mjs";
 import { createIMessageChannel } from "./channels/imessage.mjs";
@@ -99,6 +101,18 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
+  app.use("/api", (_req, res, next) => {
+    const send = res.json.bind(res);
+    res.json = payload => {
+      if (res.statusCode >= 400 && payload && typeof payload === "object" && !Array.isArray(payload) && !payload.code) {
+        const code = typeof payload.error === "string" && /^[a-z][a-z0-9_]+$/.test(payload.error)
+          ? payload.error : statusCodes[res.statusCode] || "service_unavailable";
+        return send({ ...payload, code });
+      }
+      return send(payload);
+    };
+    next();
+  });
   app.set("trust proxy", 1);
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use((req, res, next) => {
@@ -180,6 +194,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   });
   app.use(aiUserMiddleware);
 
+  app.get("/api/membership/allowance", requireAuth, async (req, res) => {
+    res.set("Cache-Control", "no-store").json({ remaining: await remainingInteractiveCalls(store, req.auth.user.id) });
+  });
   app.get("/api/referrals/me", requireAuth, async (req, res) => {
     res.json(await referralPage(store, req.auth.user.id, { installId: req.get("x-install-id") }));
   });
@@ -205,9 +222,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     const email = normalizeEmail(req.body?.email);
     const name = cleanName(req.body?.name, "我");
     const password = req.body?.password;
-    if (!validEmail(email)) return res.status(400).json({ error: "请输入有效邮箱。" });
-    if (!validPassword(password)) return res.status(400).json({ error: "密码需要 10–128 个字符。" });
-    if (req.body?.adultConfirmed !== true) return res.status(400).json({ error: "Ourever requires confirmation that you are 18 or older." });
+    if (!validEmail(email)) return res.status(400).json({ code: "invalid_email", error: "请输入有效邮箱。" });
+    if (!validPassword(password)) return res.status(400).json({ code: "invalid_password_length", error: "密码需要 10–128 个字符。" });
+    if (req.body?.adultConfirmed !== true) return res.status(400).json({ code: "adult_confirmation_required", error: "Ourever requires confirmation that you are 18 or older." });
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
     const { referralCode, installId = req.get("x-install-id") } = req.body || {};
     // A signed-in principal cannot open a second account through their own invitation.
@@ -235,7 +252,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     } else {
       created = await store.createUser(user);
     }
-    if (!created) return res.status(409).json({ error: "这个邮箱已经注册。" });
+    if (!created) return res.status(409).json({ code: "email_registered", error: "这个邮箱已经注册。" });
 
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
@@ -245,14 +262,14 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.post("/api/auth/login", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const key = `${req.ip}:${email}`;
-    if (isRateLimited(key)) return res.status(429).json({ error: "尝试次数过多，请稍后再试。" });
+    if (isRateLimited(key)) return res.status(429).json({ code: "rate_limited", error: "尝试次数过多，请稍后再试。" });
     const candidate = await store.getUserByEmail(email);
     const authenticated = candidate && await store.transaction(`user:${candidate.id}`, async (tx) => {
       const user = await tx.getUserForUpdate(candidate.id);
       if (!user || user.email !== email || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) return null;
       return { user, ...(await issueSession(tx, user.id)) };
     });
-    if (!authenticated) { recordFailedAttempt(key); return res.status(401).json({ error: "邮箱或密码不正确。" }); }
+    if (!authenticated) { recordFailedAttempt(key); return res.status(401).json({ code: "invalid_credentials", error: "邮箱或密码不正确。" }); }
     loginAttempts.delete(key);
     const { token, user } = authenticated;
     setSessionCookie(res, token, production);
