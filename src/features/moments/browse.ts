@@ -7,7 +7,7 @@ import { counted } from "../../i18n";
 
 export type Moment = {
   key: string; date: string; title: string; text: string; photos: string[]; ids: string[]; shared: boolean; mine: boolean;
-  mood?: string | null; idea?: number; lat?: number; lon?: number;
+  version?: number; mood?: string | null; idea?: number; lat?: number; lon?: number;
 };
 export type Milestone = { title?: unknown; date?: unknown; recurringRule?: unknown; type?: unknown; archivedAt?: unknown };
 export type Story = { id: string; kind: "trip" | "holiday" | "anniversary" | "year" | "first"; title: string; detail: string; moments: Moment[]; cover: string | null };

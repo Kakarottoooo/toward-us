@@ -58,7 +58,7 @@ export function FindUs({ language, partnerName, onClose }: { language: Language;
     {step === "finding" && <small role="status">{t(`正在看照片… ${progress.done} / ${progress.total}`, `Looking through photos… ${progress.done} / ${progress.total}`, `Revisando fotos… ${progress.done} / ${progress.total}`)}</small>}
     {step === "choose" && !!found.length && <>
       <small>{t("这些可能是你们俩的合照，点一下选中真的是的。只有选中的会放进你们的回忆。", "These may be photos of the two of you; tap the ones that are. Only those go into your memories.", "Estas pueden ser fotos de ustedes dos; toca las que sí lo son. Solo esas van a sus recuerdos.")}</small>
-      <div className="find-us-grid">{found.map((item) => <button key={item.id} type="button" className={chosen.has(item.id) ? "is-chosen" : ""} aria-pressed={chosen.has(item.id)} onClick={() => toggle(item.id)} data-testid="find-us-photo">
+      <div className="find-us-grid">{found.map((item, index) => <button key={item.id} type="button" className={chosen.has(item.id) ? "is-chosen" : ""} aria-label={t(`${item.day} 候选合照 ${index + 1}`, `Possible photo together, ${item.day}, ${index + 1}`, `Posible foto juntos, ${item.day}, ${index + 1}`)} aria-pressed={chosen.has(item.id)} onClick={() => toggle(item.id)} data-testid="find-us-photo">
         {thumbs[item.id] ? <img src={thumbs[item.id]} alt="" draggable={false} /> : <span />}{chosen.has(item.id) && <CheckCircle size={22} weight="fill" />}
       </button>)}</div>
       <span className="photo-album-actions">

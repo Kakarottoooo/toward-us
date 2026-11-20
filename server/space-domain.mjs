@@ -97,9 +97,47 @@ export async function addSpaceItem(tx, { userId, space, title = "", text = "", d
   return record;
 }
 
+// Older photo imports use one row per picture, joined by owner, album, date and title.
+// Give those rows a stable group on first edit so renaming does not merge two memories.
+export async function changeMoment(tx, { userId, id, action, fields, version }) {
+  const first = await tx.getRelationshipRecordForUser("spaceItems", id, userId);
+  if (!first || first.ownerUserId !== userId) throw fail(404, "Moment not found.");
+  const space = await visibleSpace(tx, first.spaceId, userId);
+  if (space.system !== MOMENTS) throw fail(404, "Moment not found.");
+  if (space.relationshipId) {
+    const context = await tx.getRelationshipContext(userId);
+    if (context?.relationship.id !== space.relationshipId || context.relationship.status !== "active") throw fail(409, "Shared album is read-only.");
+  }
+  if (version !== first.version) throw fail(409, "Moment changed. Reload it and try again.");
+  if (action === "restore" ? !first.momentGroup || !first.archivedAt || Date.now() - Date.parse(first.archivedAt) > 60000 : !canViewRecord(first, userId)) throw fail(409, "Moment is no longer available.");
+  if (action === "edit" && (!clean(fields.title, 160) || !isDate(fields.date) || new Date(`${fields.date}T12:00:00Z`).toISOString().slice(0, 10) !== fields.date)) throw fail(400, "Enter a title and a valid date.");
+  const day = (item) => item.date || item.createdAt.slice(0, 10);
+  const group = (await tx.listRelationshipRecordsForUser("spaceItems", userId)).filter((item) =>
+    item.ownerUserId === userId && item.spaceId === first.spaceId &&
+    (action === "restore" ? item.archivedAt === first.archivedAt : canViewRecord(item, userId)) &&
+    (first.momentGroup ? item.momentGroup === first.momentGroup : !item.momentGroup && day(item) === day(first) && (item.title || item.id) === (first.title || first.id)));
+  const now = new Date().toISOString();
+  let result;
+  for (const item of group) {
+    const updated = await tx.updateRelationshipRecordForUser("spaceItems", item.id, userId, (draft) => {
+      draft.momentGroup = first.momentGroup || first.id;
+      if (action === "edit") {
+        draft.title = clean(fields.title, 160); draft.text = clean(fields.text, 2000); draft.date = fields.date;
+      } else {
+        draft.archivedAt = action === "archive" ? now : null;
+        draft.status = action === "archive" ? "archived" : "active";
+      }
+      draft.provenance = { ...draft.provenance, editedByUserId: userId, editedAt: now };
+      draft.version += 1;
+    });
+    if (item.id === id) result = updated;
+  }
+  return result;
+}
+
 export async function updateSpaceItem(tx, { userId, id, fields }) {
   const item = await tx.getRelationshipRecordForUser("spaceItems", clean(id, 80), userId);
-  if (!item || !canViewRecord(item, userId)) throw fail(404, "Item not found.");
+  if (!item || !canViewRecord(item, userId) || (item.album === MOMENTS && item.ownerUserId !== userId)) throw fail(404, "Item not found.");
   return tx.updateRelationshipRecordForUser("spaceItems", item.id, userId, (draft) => {
     if (typeof fields.title === "string") draft.title = clean(fields.title, 160);
     if (typeof fields.text === "string") draft.text = clean(fields.text, 2000);
@@ -121,7 +159,7 @@ export async function updateSpace(tx, { userId, id, fields }) {
 
 export async function archiveSpaceRecord(tx, { userId, collection, id }) {
   const record = await tx.getRelationshipRecordForUser(collection, clean(id, 80), userId);
-  if (!record || !canViewRecord(record, userId)) throw fail(404, "Not found.");
+  if (!record || !canViewRecord(record, userId) || (record.album === MOMENTS && record.ownerUserId !== userId)) throw fail(404, "Not found.");
   if (record.system) throw fail(403, "This album stays; remove what is in it instead.");
   return tx.updateRelationshipRecordForUser(collection, record.id, userId, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; });
 }
