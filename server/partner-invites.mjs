@@ -20,7 +20,7 @@ const problems = {
   invite_expired: ["邀请已过期。请伴侣发送新链接。", "This invite has expired. Ask your partner for a new link.", "La invitación caducó. Pide a tu pareja un enlace nuevo."],
   invite_cancelled: ["邀请已取消。请伴侣发送新链接。", "This invite was cancelled. Ask your partner for a new link.", "Se canceló la invitación. Pide a tu pareja un enlace nuevo."],
   invite_used: ["邀请已被使用。如果你已经加入，请打开“我们俩”。", "This invite has already been used. If you joined, open Us.", "La invitación ya se usó. Si te uniste, abre Nosotros."],
-  invite_self: ["这是你自己的邀请。把链接发给伴侣，或打开对方的邀请。", "This is your own invite. Send it to your partner or open theirs.", "Esta es tu propia invitación. Envíala a tu pareja o abre la suya."],
+  invite_self: ["此邀请无效，因为这是你自己的链接。把它发给伴侣，或打开对方的邀请。", "This is your own invite. Send it to your partner or open theirs.", "Esta es tu propia invitación. Envíala a tu pareja o abre la suya."],
   already_paired: ["你已经与伴侣配对。请返回你们的共同空间，或在设置中管理连接。", "You already have a partner. Return to your shared space or manage your connection in Settings.", "Ya tienes pareja vinculada. Vuelve a su espacio compartido o gestiona la conexión en Ajustes."],
 };
 
