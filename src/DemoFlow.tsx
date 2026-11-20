@@ -6,7 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
-import { brandLabel, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
+import { apiErrorText, brandLabel, currentLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { usePanelSplit } from "./usePanelSplit";
 import { useRealtimeTranscription } from "./useRealtimeTranscription";
 import "./demo.css";
@@ -253,7 +253,7 @@ function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i 
 function SplitButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 function FeedbackBlock({ number, title, body }: { number: string; title: string; body: string }) { return <article className="feedback-block"><span>{number}</span><div><h2>{title}</h2><p>{body}</p></div></article>; }
 function DemoList({ title, items }: { title: string; items: string[] }) { return <section className="analysis-section"><header><span>—</span><h2>{title}</h2></header><ul className="demo-analysis-list">{items.map((item) => <li key={item}>{item}</li>)}</ul></section>; }
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`); return payload as T; }
+async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw new Error(apiErrorText(payload, response.status, currentLanguage())); return payload as T; }
 function initialRoomCode() {
   const pathMatch = location.pathname.match(/^\/j\/([A-Z0-9]{8})\/?$/i);
   return (pathMatch?.[1] || new URLSearchParams(location.search).get("room") || "").toUpperCase();
