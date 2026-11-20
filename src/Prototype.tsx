@@ -36,7 +36,7 @@ type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" 
 type AuthMode = "login" | "register";
 type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
-export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; sentAt?: string | null; cancelledAt?: string | null } | null };
+export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; prepared?: boolean; sentAt?: string | null; cancelledAt?: string | null } | null };
 type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" };
 
 const copy = {
@@ -164,7 +164,8 @@ function AccountPrototype() {
   };
   const refreshPairing = async () => {
     const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
-    setPairing(state.pairing);
+    // A poll started before a newer share/cancel response or sign-out must not replace it.
+    setPairing(current => current === pairing && state.user?.id === user?.id ? state.pairing : current);
   };
   // The share sheet or Settings may still be open when the other person joins.
   useEffect(() => {

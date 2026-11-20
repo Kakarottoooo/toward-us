@@ -41,6 +41,9 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
   const expired = !!invitation && Date.parse(invitation.expiresAt) <= Date.now();
   const usable = !!invitation && !expired && !cancelled;
   const sent = !!invitation && Boolean(invitation.sentAt || invitation.openedAt || receipt === invitation.code);
+  // Older clients created the link on demand, without a sent receipt. The owner
+  // can still manage that link without having to send it again.
+  const canManage = usable && (sent || invitation?.prepared === false);
   const live = useRef(false);
   const locked = useRef(false);
   const polling = useRef(false);
@@ -177,7 +180,7 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
   };
   const primaryAction = () => void act(usable ? "share" : "prepare");
   const disabled = !online || !!working || (!invitation && !failure);
-  return { t, language, invitation, usable, sent, cancelled, expired, title, primary, primaryAction, status, retry, failure, pollFailed,
+  return { t, language, invitation, usable, sent, canManage, cancelled, expired, title, primary, primaryAction, status, retry, failure, pollFailed,
     inviteUrl, disabled, working, loadingText, details, setDetails, confirming, setConfirming, act, copied, receipt };
 }
 
@@ -192,12 +195,13 @@ function Feedback({ state }: { state: InviteState }) {
 }
 
 export function InvitePanel({ state, onEnterCode }: { state: InviteState; onEnterCode?: () => void }) {
-  const { t, invitation, title, primary, primaryAction, working, loadingText, disabled, sent, usable, confirming, setConfirming, act } = state;
+  const { t, invitation, title, primary, primaryAction, working, loadingText, disabled, sent, canManage, usable, confirming, setConfirming, act } = state;
   const time = (value: string) => new Date(value).toLocaleString(languageTag(state.language), { dateStyle: "medium", timeStyle: "short" });
   return <section className="partner-invite-panel" data-testid="conversation-invite" aria-label={title}>
     <h2>{title}</h2>
     {!sent && usable && <p>{t("给 TA 发个链接，就能一起聊天、记下你们的日子。", "Send a link to start your shared chat and keep track of your dates together.", "Envía un enlace para compartir un chat y recordar sus fechas juntos.")}</p>}
-    {sent && usable && invitation && <div className="partner-invite-meta">
+    {canManage && invitation && <div className="partner-invite-meta">
+      {!invitation.sentAt && <p>{t("创建时间", "Created", "Creada")} <time dateTime={invitation.createdAt}>{time(invitation.createdAt)}</time></p>}
       {invitation.sentAt && <p>{t("分享时间", "Shared", "Compartida")} <time dateTime={invitation.sentAt}>{time(invitation.sentAt)}</time></p>}
       {invitation.openedAt && <p>{t("打开时间", "Opened", "Abierta")} <time dateTime={invitation.openedAt}>{time(invitation.openedAt)}</time></p>}
       <p>{t("过期时间", "Expires", "Caduca")} <time dateTime={invitation.expiresAt}>{time(invitation.expiresAt)}</time></p>
@@ -207,9 +211,9 @@ export function InvitePanel({ state, onEnterCode }: { state: InviteState; onEnte
       <button type="button" className="invite-primary" data-testid="share-invite" disabled={disabled} onClick={primaryAction}>
         <ShareNetwork size={18} aria-hidden="true" />{working ? loadingText : primary}
       </button>
-      {sent && usable && <button type="button" disabled={disabled} onClick={() => void act("copy")}><Copy size={17} aria-hidden="true" />{t("复制链接", "Copy link", "Copiar enlace")}</button>}
+      {canManage && <button type="button" disabled={disabled} onClick={() => void act("copy")}><Copy size={17} aria-hidden="true" />{t("复制链接", "Copy link", "Copiar enlace")}</button>}
     </div>}
-    {sent && usable && (confirming ? <div className="partner-invite-confirm" role="group" aria-label={t("确认取消邀请", "Confirm cancellation", "Confirmar cancelación")}>
+    {canManage && (confirming ? <div className="partner-invite-confirm" role="group" aria-label={t("确认取消邀请", "Confirm cancellation", "Confirmar cancelación")}>
       <p>{t("取消后，TA 无法再通过这个链接加入。", "Your partner will no longer be able to join with this link.", "Tu pareja ya no podrá unirse con este enlace.")}</p>
       <div className="partner-invite-actions">
         <button type="button" onClick={() => setConfirming(false)}>{t("保留邀请", "Keep invite", "Conservar invitación")}</button>
@@ -230,6 +234,7 @@ export function InviteBar({ state, onEnterCode }: { state: InviteState; onEnterC
     </div> : <button type="button" className="invite-primary" disabled={disabled} onClick={primaryAction} data-testid="empty-invite">
       <UserPlus size={18} aria-hidden="true" />{working ? loadingText : primary}
     </button>}
+    {!waiting && state.canManage && <button type="button" onClick={() => setDetails(true)}>{t("管理邀请", "Manage invite", "Gestionar invitación")}</button>}
     {!details && <Feedback state={state} />}
     {details && <BottomSheet open onOpenChange={setDetails} title={t("伴侣邀请", "Partner invite", "Invitación de pareja")}><InvitePanel state={state} onEnterCode={() => { setDetails(false); onEnterCode(); }} /></BottomSheet>}
   </div>;

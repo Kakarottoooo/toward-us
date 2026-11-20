@@ -723,7 +723,7 @@ function publicPairing(context, viewerId) {
     status: context.relationship.status,
     role: context.membership.role,
     members: context.members.map((member) => ({ id: member.user.id, name: member.user.name, role: member.role, joinedAt: member.joinedAt })),
-    invitation: context.relationship.status === "pending" && context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null, sentAt: context.invitation.sentAt || null, cancelledAt: context.invitation.cancelledAt || null } : null,
+    invitation: context.relationship.status === "pending" && context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null, prepared: context.invitation.prepared === true, sentAt: context.invitation.sentAt || null, cancelledAt: context.invitation.cancelledAt || null } : null,
   };
 }
 
