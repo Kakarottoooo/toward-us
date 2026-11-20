@@ -57,9 +57,12 @@ const JOIN_WINDOW_MS = 48 * 60 * 60 * 1000;
  * joined by typing the code counts as opened too, so the funnel never narrows the wrong way. Timestamps only. */
 export function partnerJoinReport(invitations, { days = 30, now = new Date() } = {}) {
   const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
-  const rows = invitations.filter((invitation) => invitation.createdAt >= since);
-  const joinedWithin = (invitation) => invitation.acceptedAt && Date.parse(invitation.acceptedAt) - Date.parse(invitation.createdAt) <= JOIN_WINDOW_MS;
-  const settled = rows.filter((invitation) => now.getTime() - Date.parse(invitation.createdAt) >= JOIN_WINDOW_MS);
+  // A prewarmed link has no place in a conversion cohort until someone actually shares or uses it.
+  // Older clients only created links on demand and retain their historical start time.
+  const start = (invite) => invite.prepared ? invite.sentAt || invite.openedAt || invite.acceptedAt : invite.createdAt;
+  const rows = invitations.filter((invite) => start(invite) >= since);
+  const joinedWithin = (invite) => invite.acceptedAt && Date.parse(invite.acceptedAt) - Date.parse(start(invite)) <= JOIN_WINDOW_MS;
+  const settled = rows.filter((invite) => now.getTime() - Date.parse(start(invite)) >= JOIN_WINDOW_MS);
   const within = settled.filter(joinedWithin).length;
   return {
     days, since, until: now.toISOString(),

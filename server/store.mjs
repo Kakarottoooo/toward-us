@@ -3,6 +3,7 @@ import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises
 import { dirname } from "node:path";
 import { fileAppMetrics } from "./app-metrics-store.mjs";
 import { createPostgresStore } from "./postgres-store.mjs";
+import { currentInvitation, invitationStatus } from "./partner-invites.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
 
@@ -187,7 +188,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       .filter((candidate) => candidate.relationshipId === relationship.id)
       .map((candidate) => ({ ...candidate, user: publicUser(state().users[candidate.userId]) }));
     // The newest open invite: one sent again after the first expired replaces it.
-    const invitation = Object.values(state().invitations).filter((candidate) => candidate.relationshipId === relationship.id && !candidate.acceptedAt).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
+    const invitation = Object.values(state().invitations).filter((candidate) => candidate.relationshipId === relationship.id && !candidate.acceptedAt).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || Number(!!a.cancelledAt) - Number(!!b.cancelledAt))[0] || null;
     return { relationship: { ...relationship }, membership: { ...membership }, members, invitation: invitation ? { ...invitation } : null };
   };
 
@@ -330,15 +331,21 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
     },
     // Only the first time the link is opened is kept: the inviter sees it, and the partner-join report counts it.
     async markInvitationOpened(code, openedAt) {
-      if (!state().invitations[code] || state().invitations[code].openedAt) return;
+      if (invitationStatus(state().invitations[code], openedAt) !== "open" || state().invitations[code].openedAt) return;
       own(state().invitations, code).openedAt = openedAt; await persist();
+    },
+    async markInvitationAction(code, action, at) {
+      const invite = own(state().invitations, code);
+      if (action === "sent") invite.sentAt ??= at;
+      else invite.cancelledAt ??= at;
+      await persist();
     },
     async listInvitationsForJob() { return Object.values(state().invitations).map((invitation) => ({ ...invitation })); },
     async acceptInvitation(code, userId, acceptedAt) {
       if (!state().invitations[code]) return null;
       const invitation = own(state().invitations, code);
-      if (invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId) return null;
-      if (state().relationships[invitation.relationshipId]?.status !== "pending") return null;
+      if (invitationStatus(invitation) !== "open" || invitation.createdByUserId === userId) return null;
+      if (!currentInvitation(relationshipContext(invitation.createdByUserId), code)) return null;
       const relationship = own(state().relationships, invitation.relationshipId);
       // Someone who made an invite of their own and then accepts their partner's: their solo, still-pending space ends
       // and they join. Their own private records come along, still private; anything else stays with the ended space.

@@ -55,7 +55,8 @@ import { createCycleRouter } from "./cycle.mjs";
 import { createDiscoverRouter } from "./discover.mjs";
 import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createLegalRouter } from "./legal-router.mjs";
-import { attachReferral, referralPage, referralPreview, referralReport, rememberReferralInstall } from "./referrals.mjs";
+import { attachReferral, recordPartnerSignup, referralPage, referralPreview, referralReport, rememberReferralInstall } from "./referrals.mjs";
+import { currentInvitation, invitationStatus, inviteProblem, partnerCode } from "./partner-invites.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
@@ -218,13 +219,13 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (!validPassword(password)) return res.status(400).json({ code: "invalid_password_length", error: "密码需要 10–128 个字符。" });
     if (req.body?.adultConfirmed !== true) return res.status(400).json({ code: "adult_confirmation_required", error: "Ourever requires confirmation that you are 18 or older." });
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
-    const { referralCode, installId = req.get("x-install-id") } = req.body || {};
+    const { referralCode, partnerInviteCode, installId = req.get("x-install-id") } = req.body || {};
     // A signed-in principal cannot open a second account through their own invitation.
     if (referralCode && req.auth && (await store.getReferralByCode(referralCode))?.ownerUserId === req.auth.user.id) {
       return res.status(422).json({ code: "referral_ineligible" });
     }
     let created;
-    if (referralCode || installId) {
+    if (referralCode || installId || partnerCode(partnerInviteCode)) {
       try {
         created = await store.transaction(REWARD_LOCK, async (tx) => {
           const account = await tx.createUser(user);
@@ -234,6 +235,13 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
             if (!result.accepted) throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible" });
           } else {
             await rememberReferralInstall(tx, account.id, { installId });
+          }
+          if (partnerCode(partnerInviteCode)) {
+            const invite = await tx.getInvitation(partnerCode(partnerInviteCode));
+            if (invitationStatus(invite) === "open" && invite.createdByUserId !== req.auth?.user?.id &&
+                currentInvitation(await tx.getRelationshipContext(invite.createdByUserId), invite.code)) {
+              await recordPartnerSignup(tx, account);
+            }
           }
           return account;
         });
@@ -529,44 +537,73 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   });
 
   app.post("/api/partner/invitations", requireAuth, async (req, res) => {
-    const existing = await store.getRelationshipContext(req.auth.user.id);
-    const now = new Date();
-    // Sending the invite again after it expired makes a fresh link for the same waiting space; an open one is reused.
-    if (existing?.relationship.status === "pending" && existing.members.length === 1 && !(existing.invitation?.expiresAt > now.toISOString())) {
-      const renewed = await store.renewInvitation({
-        code: await createUniqueCode(store, 8, "invitation"), relationshipId: existing.relationship.id, createdByUserId: req.auth.user.id,
-        createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(), acceptedAt: null, acceptedByUserId: null,
-      });
-      return res.status(renewed ? 201 : 200).json({ pairing: publicPairing(renewed || existing, req.auth.user.id) });
-    }
-    if (existing) return res.json({ pairing: publicPairing(existing, req.auth.user.id) });
-    const relationship = { id: randomUUID(), status: "pending", createdAt: now.toISOString(), updatedAt: now.toISOString() };
-    const membership = { relationshipId: relationship.id, userId: req.auth.user.id, role: "A", joinedAt: now.toISOString() };
-    const invitation = {
-      code: await createUniqueCode(store, 8, "invitation"), relationshipId: relationship.id, createdByUserId: req.auth.user.id,
-      createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(), acceptedAt: null, acceptedByUserId: null,
-    };
-    const context = await store.createInvitation({ relationship, membership, invitation });
-    if (!context) return res.status(409).json({ error: localText(languageOf(req), "当前账号已经属于一个共同空间。", "This account already belongs to a shared space.", "Esta cuenta ya pertenece a un espacio compartido.") });
-    res.status(201).json({ pairing: publicPairing(context, req.auth.user.id) });
+    const userId = req.auth.user.id;
+    const { context, created } = await store.transaction(`user:${userId}`, async (tx) => {
+      await tx.getUserForUpdate(userId);
+      const existing = await tx.getRelationshipContext(userId);
+      if (existing && (existing.relationship.status !== "pending" || invitationStatus(existing.invitation) === "open")) {
+        return { context: existing, created: false };
+      }
+      const now = new Date(), at = now.toISOString();
+      const relationship = existing?.relationship || { id: randomUUID(), status: "pending", createdAt: at, updatedAt: at };
+      const invitation = {
+        code: await createUniqueCode(tx, 8, "invitation"), relationshipId: relationship.id, createdByUserId: userId,
+        createdAt: at, prepared: req.body?.prepare === true, expiresAt: new Date(now.getTime() + 7 * 86_400_000).toISOString(), acceptedAt: null, acceptedByUserId: null,
+      };
+      const membership = { relationshipId: relationship.id, userId, role: "A", joinedAt: at };
+      const context = existing ? await tx.renewInvitation(invitation) : await tx.createInvitation({ relationship, membership, invitation });
+      return { context, created: true };
+    });
+    if (!context) return res.status(409).json(inviteProblem("already_paired", languageOf(req)));
+    res.status(created ? 201 : 200).json({ pairing: publicPairing(context, userId) });
   });
+
+  const updateOwnedInvite = (action) => async (req, res) => {
+    const userId = req.auth.user.id, code = partnerCode(req.params.code);
+    const result = await store.transaction(`user:${userId}`, async (tx) => {
+      await tx.getUserForUpdate(userId);
+      const invite = await tx.getInvitation(code);
+      if (!invite || invite.createdByUserId !== userId) return { problem: "invite_invalid" };
+      const context = await tx.getRelationshipContext(userId);
+      const status = invitationStatus(invite);
+      // A recipient can join between sharing and the OS returning control to the app.
+      const lateReceipt = action === "sent" && status === "used";
+      if (!lateReceipt && !currentInvitation(context, code)) return { problem: status === "open" ? "invite_cancelled" : `invite_${status}` };
+      if (action === "cancel" && status === "cancelled") return { context };
+      if (status !== "open" && !lateReceipt) return { problem: `invite_${status}` };
+      await tx.markInvitationAction(code, action, new Date().toISOString());
+      return { context: await tx.getRelationshipContext(userId) };
+    });
+    if (result.problem) return res.status(result.problem === "invite_invalid" ? 404 : 409).json(inviteProblem(result.problem, languageOf(req)));
+    res.json({ pairing: publicPairing(result.context, userId) });
+  };
+  app.post("/api/partner/invitations/:code/sent", requireAuth, updateOwnedInvite("sent"));
+  app.delete("/api/partner/invitations/:code", requireAuth, updateOwnedInvite("cancel"));
 
   // What an invite link opens to, signed in or not: who sent it and whether it still works. Nothing else about the inviter.
   // The first open by anyone but the inviter is recorded, for the inviter's waiting card and the partner-join report.
   app.get("/api/partner/invitations/:code", async (req, res) => {
-    const invitation = await store.getInvitation(normalizeLongCode(req.params.code));
-    if (!invitation) return res.status(404).json({ error: localText(languageOf(req), "找不到这个邀请。", "This invite could not be found.", "No se encontró esta invitación.") });
+    res.set("Cache-Control", "private, no-store");
+    const invitation = await store.getInvitation(partnerCode(req.params.code));
+    if (!invitation) return res.status(404).json(inviteProblem("invite_invalid", languageOf(req)));
     const now = new Date().toISOString();
-    const status = invitation.acceptedAt ? "used" : invitation.expiresAt <= now ? "expired" : "open";
+    let status = invitationStatus(invitation, now);
+    if (status === "open" && !currentInvitation(await store.getRelationshipContext(invitation.createdByUserId), invitation.code)) status = "cancelled";
     if (status === "open" && req.auth?.user?.id !== invitation.createdByUserId) await store.markInvitationOpened(invitation.code, now);
     const inviter = await store.getUserById(invitation.createdByUserId);
-    res.json({ invitation: { inviterName: inviter && inviter.passwordHash !== "deleted" ? inviter.name : "", status, expiresAt: invitation.expiresAt } });
+    res.json({ invitation: { inviterName: status === "open" && inviter && inviter.passwordHash !== "deleted" ? inviter.name.trim().split(/\s+/u)[0] : "", status, expiresAt: invitation.expiresAt } });
   });
 
   app.post("/api/partner/accept", requireAuth, async (req, res) => {
-    const code = normalizeLongCode(req.body?.code);
+    const code = partnerCode(req.body?.code);
     const context = await store.acceptInvitation(code, req.auth.user.id, new Date().toISOString());
-    if (!context) return res.status(409).json({ error: localText(languageOf(req), "邀请无效、已过期，或当前账号已经绑定伴侣。", "This invite is not valid or has expired, or this account is already linked to a partner.", "La invitación no es válida o ha caducado, o esta cuenta ya está vinculada a una pareja.") });
+    if (!context) {
+      const own = await store.getRelationshipContext(req.auth.user.id), invite = await store.getInvitation(code);
+      const status = invitationStatus(invite);
+      const reason = own?.relationship.status === "active" ? "already_paired" : invite?.createdByUserId === req.auth.user.id ? "invite_self"
+        : status === "open" ? "invite_cancelled" : `invite_${status}`;
+      return res.status(409).json(inviteProblem(reason, languageOf(req)));
+    }
     void imessage?.ensureCoupleGroup(req.auth.user.id);
     res.json({ pairing: publicPairing(context, req.auth.user.id) });
   });
@@ -686,7 +723,7 @@ function publicPairing(context, viewerId) {
     status: context.relationship.status,
     role: context.membership.role,
     members: context.members.map((member) => ({ id: member.user.id, name: member.user.name, role: member.role, joinedAt: member.joinedAt })),
-    invitation: context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null } : null,
+    invitation: context.relationship.status === "pending" && context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null, sentAt: context.invitation.sentAt || null, cancelledAt: context.invitation.cancelledAt || null } : null,
   };
 }
 

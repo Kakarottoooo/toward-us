@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { migrateAppMetrics, postgresAppMetrics } from "./app-metrics-store.mjs";
 import { phoneTakenError } from "./phone-identity.mjs";
 import { GRAPH_COLLECTIONS, PERSONAL_COLLECTIONS, assertRecordScope } from "./relationship-domain.mjs";
+import { currentInvitation, invitationStatus } from "./partner-invites.mjs";
 
 const GRAPH_TABLES = Object.freeze({
   privateAgentThreads: "private_agent_threads",
@@ -182,7 +183,7 @@ export async function createPostgresStore(databaseUrl) {
         if ((await client.query("select 1 from relationship_members where user_id = $1", [membership.userId])).rowCount) { await client.query("rollback"); return null; }
         await client.query("insert into relationships (id,status,created_at,updated_at) values ($1,$2,$3,$4)", [relationship.id, relationship.status, relationship.createdAt, relationship.updatedAt]);
         await client.query("insert into relationship_members (relationship_id,user_id,role,joined_at) values ($1,$2,$3,$4)", [membership.relationshipId, membership.userId, membership.role, membership.joinedAt]);
-        await client.query("insert into invitations (code,relationship_id,created_by_user_id,created_at,expires_at) values ($1,$2,$3,$4,$5)", [invitation.code, invitation.relationshipId, invitation.createdByUserId, invitation.createdAt, invitation.expiresAt]);
+        await client.query("insert into invitations (code,relationship_id,created_by_user_id,created_at,expires_at,prepared) values ($1,$2,$3,$4,$5,$6)", [invitation.code, invitation.relationshipId, invitation.createdByUserId, invitation.createdAt, invitation.expiresAt, invitation.prepared === true]);
         await client.query("commit");
         return loadRelationshipContext(pool, membership.userId);
       } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
@@ -190,18 +191,24 @@ export async function createPostgresStore(databaseUrl) {
     async getInvitation(code) { return mapInvitation((await pool.query("select * from invitations where code = $1", [code])).rows[0]); },
     // A fresh invite for a space that is still waiting for the partner (the first one expired).
     async renewInvitation(invitation) {
-      const inserted = await pool.query("insert into invitations (code,relationship_id,created_by_user_id,created_at,expires_at) select $1,$2,$3,$4,$5 where exists (select 1 from relationships r join relationship_members m on m.relationship_id=r.id where r.id=$2 and r.status='pending' and m.user_id=$3)", [invitation.code, invitation.relationshipId, invitation.createdByUserId, invitation.createdAt, invitation.expiresAt]);
+      const inserted = await pool.query("insert into invitations (code,relationship_id,created_by_user_id,created_at,expires_at,prepared) select $1,$2,$3,$4,$5,$6 where exists (select 1 from relationships r join relationship_members m on m.relationship_id=r.id where r.id=$2 and r.status='pending' and m.user_id=$3)", [invitation.code, invitation.relationshipId, invitation.createdByUserId, invitation.createdAt, invitation.expiresAt, invitation.prepared === true]);
       return inserted.rowCount ? loadRelationshipContext(pool, invitation.createdByUserId) : null;
     },
     // Only the first time the link is opened is kept: the inviter sees it, and the partner-join report counts it.
-    async markInvitationOpened(code, openedAt) { await pool.query("update invitations set opened_at=$2 where code=$1 and opened_at is null", [code, openedAt]); },
+    async markInvitationOpened(code, openedAt) { await pool.query("update invitations set opened_at=$2 where code=$1 and opened_at is null and accepted_at is null and cancelled_at is null and expires_at>$2", [code, openedAt]); },
+    async markInvitationAction(code, action, at) {
+      const column = action === "sent" ? "sent_at" : "cancelled_at";
+      await pool.query(`update invitations set ${column}=$2 where code=$1 and ${column} is null`, [code, at]);
+    },
     async listInvitationsForJob() { return (await pool.query("select * from invitations order by created_at")).rows.map(mapInvitation); },
     async acceptInvitation(code, userId, acceptedAt) {
       const initial = await store.getInvitation(code); if (!initial) return null;
       return store.transaction(`relationship:${initial.relationshipId}`, async () => {
+        // Serializes accept with create/renew/cancel and with two cross-invites, in the same order on both paths.
+        for (const id of [...new Set([userId, initial.createdByUserId])].sort()) await store.getUserForUpdate(id);
         const invitation = mapInvitation((await pool.query("select * from invitations where code=$1 for update", [code])).rows[0]);
-        const relationship = (await pool.query("select status from relationships where id=$1 for update", [initial.relationshipId])).rows[0];
-        if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date().toISOString() || invitation.createdByUserId === userId || relationship?.status !== "pending") return null;
+        if (invitationStatus(invitation) !== "open" || invitation.createdByUserId === userId) return null;
+        if (!currentInvitation(await loadRelationshipContext(pool, invitation.createdByUserId), code)) return null;
         // Someone who made an invite of their own and then accepts their partner's: their solo, still-pending space ends
         // and they join. Their own private records come along, still private; anything else stays with the ended space.
         const own = (await pool.query("select m.relationship_id, r.status, (select count(*) from relationship_members o where o.relationship_id=m.relationship_id)::int as members from relationship_members m join relationships r on r.id=m.relationship_id where m.user_id=$1", [userId])).rows[0];
@@ -377,7 +384,7 @@ async function loadRelationshipContext(client, userId) {
   const membership = mapMembership(membershipResult.rows[0]);
   const relationship = mapRelationship((await client.query("select * from relationships where id=$1", [membership.relationshipId])).rows[0]);
   const members = (await client.query("select m.*,u.email,u.name,u.created_at as user_created_at from relationship_members m join users u on u.id=m.user_id where m.relationship_id=$1 order by m.role", [membership.relationshipId])).rows.map((row) => ({ ...mapMembership(row), user: { id: row.user_id, email: row.email, name: row.name, createdAt: iso(row.user_created_at) } }));
-  const invitation = mapInvitation((await client.query("select * from invitations where relationship_id=$1 and accepted_at is null order by created_at desc limit 1", [membership.relationshipId])).rows[0]);
+  const invitation = mapInvitation((await client.query("select * from invitations where relationship_id=$1 and accepted_at is null order by created_at desc, cancelled_at nulls first limit 1", [membership.relationshipId])).rows[0]);
   return { relationship, membership, members, invitation };
 }
 
@@ -408,6 +415,10 @@ async function migrate(pool) {
     alter table users add column if not exists language text;
     alter table relationships add column if not exists imessage_group_id text;
     alter table invitations add column if not exists opened_at timestamptz;
+    alter table invitations add column if not exists sent_at timestamptz;
+    alter table invitations add column if not exists cancelled_at timestamptz;
+    alter table invitations add column if not exists prepared boolean not null default false;
+    create index if not exists invitations_current_idx on invitations(relationship_id,created_at desc) where accepted_at is null;
     create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
   `);
   for (const table of Object.values(GRAPH_TABLES)) {
@@ -470,4 +481,4 @@ const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, p
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
-const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;
+const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), prepared: row.prepared, expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), sentAt: iso(row.sent_at), cancelledAt: iso(row.cancelled_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;
