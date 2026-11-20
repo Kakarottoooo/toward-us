@@ -13,7 +13,7 @@ export const characterOwed = (userId: string) => { try { return localStorage.get
 const setOwed = (userId: string, owed: boolean) => { try { if (owed) localStorage.setItem(owedKey(userId), "1"); else localStorage.removeItem(owedKey(userId)); } catch { /* Not offered again; harmless. */ } };
 
 /** Light cards the first time someone opens Ourever: the private chat, the shared one, where things live, and the couple's own character. */
-export function OnboardingTour({ language, userId, paired, onInvite, onCharacter, onDone, characterOnly = false }: { language: Language; userId: string; paired: boolean; onInvite: () => void; onCharacter: () => void; onDone: () => void; characterOnly?: boolean }) {
+export function OnboardingTour({ language, userId, paired, onInvite, onCharacter, onDone, inviteDisabled, inviteBusy, invitePending, characterOnly = false }: { language: Language; userId: string; paired: boolean; onInvite: () => void; inviteDisabled?: boolean; inviteBusy?: boolean; invitePending?: boolean; onCharacter: () => void; onDone: () => void; characterOnly?: boolean }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [step, setStep] = useState(0);
   const finish = () => { if (characterOnly) setOwed(userId, false); else { markSeen(userId); if (!paired) setOwed(userId, true); } onDone(); };
@@ -33,7 +33,12 @@ export function OnboardingTour({ language, userId, paired, onInvite, onCharacter
       action: paired ? { label: t("现在就做", "Make it now", "Crearlo ahora"), run: onCharacter } : null },
   ];
   if (characterOnly) steps.splice(0, steps.length - 1);
+  else if (!paired && !invitePending) {
+    const [shared] = steps.splice(1, 1);
+    steps.unshift(shared);
+  }
   const current = steps[step];
+  const leadInvite = !paired && !invitePending && step === 0 && !characterOnly;
   return <div className="onboarding-layer" role="dialog" aria-modal="true" aria-label={t("欢迎来到 Ourever", "Welcome to Ourever", "Bienvenido a Ourever")} data-testid="onboarding">
     <div className="onboarding-card">
       {!current.action && <button type="button" className="onboarding-skip" onClick={finish} aria-label={t("跳过", "Skip", "Saltar")}><X size={20} /></button>}
@@ -43,8 +48,8 @@ export function OnboardingTour({ language, userId, paired, onInvite, onCharacter
       {current.list && <ul>{current.list.map(([icon, text], index) => <li key={index}>{icon}<span>{text}</span></li>)}</ul>}
       <div className="onboarding-dots" aria-hidden="true">{steps.map((_, index) => <i key={index} className={index === step ? "on" : ""} />)}</div>
       <div className="onboarding-actions">
-        {current.action && <button type="button" className="onboarding-secondary" onClick={() => { finish(); current.action!.run(); }} data-testid="onboarding-action">{current.action.label}</button>}
-        <button type="button" className="onboarding-next" onClick={() => step < steps.length - 1 ? setStep(step + 1) : finish()} data-testid="onboarding-next">{step < steps.length - 1 ? t("下一步", "Next", "Siguiente") : t("开始吧", "Let's start", "Empecemos")}</button>
+        {current.action && <button type="button" className={leadInvite ? "onboarding-next" : "onboarding-secondary"} disabled={leadInvite && inviteDisabled} onClick={() => { finish(); current.action!.run(); }} data-testid="onboarding-action">{leadInvite && inviteBusy ? t("正在准备链接…", "Preparing link…", "Preparando el enlace…") : current.action.label}</button>}
+        <button type="button" className={leadInvite ? "onboarding-secondary" : "onboarding-next"} onClick={() => step < steps.length - 1 ? setStep(step + 1) : finish()} data-testid="onboarding-next">{step < steps.length - 1 ? t("下一步", "Next", "Siguiente") : t("开始吧", "Let's start", "Empecemos")}</button>
       </div>
     </div>
   </div>;
