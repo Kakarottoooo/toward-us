@@ -671,9 +671,10 @@ ${text}` : text, target);
     const justJoined = previousPairing.current === "pending" && paired;
     previousPairing.current = pairing?.status;
     if (!justJoined) return;
-    // An explicitly hidden Us channel stays private. Its owner still sees the arrival.
+    // A private draft, recording or upload keeps its audience until the author switches.
     joinedHere.current = true;
-    switchChannel("us");
+    const writingPrivately = channel === "me" && (keyboard.visible || draft || attachments.length || voiceActive || call || revising || queued.length || failed);
+    if (!writingPrivately) switchChannel("us");
     setWelcomePartner(true);
   }, [pairing?.status, paired]);
   useEffect(() => {
@@ -989,7 +990,7 @@ ${text}` : text, target);
       </div>
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
       {channel === "me" && !paired && <InviteBar state={invitation} onEnterCode={enterPartnerCode} />}
-      {welcomePartner && <p className="partner-joined" role="status" data-testid="partner-joined"><Heart size={18} weight="fill" aria-hidden="true" />{t("你的伴侣加入了，你们的共同空间已开启。", "Your partner joined. Welcome to your shared space.", "Tu pareja se ha unido. Este es su espacio compartido.")}</p>}
+      {welcomePartner && <p className="partner-joined" role="status" data-testid="partner-joined"><Heart size={18} weight="fill" aria-hidden="true" />{t("你的伴侣加入了，你们的共同空间已开启。", "Your partner joined. Welcome to your shared space.", "Tu pareja se ha unido. Este es su espacio compartido.")}{channel === "me" && !usHidden && <button type="button" disabled={!!attachments.length || voiceActive || !!call} onClick={() => switchChannel("us")}>{t("打开我们俩", "Open Us", "Abrir Nosotros")}</button>}</p>}
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
       {recall.controls}

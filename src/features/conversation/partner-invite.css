@@ -73,3 +73,8 @@
 
 .invite-manual-link { width: 100%; overflow-wrap: anywhere; }
 .invite-manual-link span { user-select: all; -webkit-user-select: all; }
+
+.partner-joined button {
+  flex-shrink: 0; min-width: 44px; min-height: 44px; margin-inline-start: auto; padding: 4px 12px;
+  color: inherit; background: transparent; border: 1px solid var(--jian-line); border-radius: 999px; font: inherit;
+}
