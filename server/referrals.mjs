@@ -55,6 +55,11 @@ export async function rememberReferralInstall(store, userId, { installId } = {})
   await store.transaction(REWARD_LOCK, (tx) => ensureProfile(tx, userId, device));
 }
 
+// Created in the new account's transaction. Keep only attribution and time, never the partner's code.
+export async function recordPartnerSignup(tx, user) {
+  await add(tx, user.id, { id: `partner-signup:${user.id}`, kind: "partner-signup", signupAt: user.createdAt });
+}
+
 export async function referralPreview(store, code, { installId, now = new Date() } = {}) {
   if (!validCode(code)) return null;
   const profile = await store.getReferralByCode(code);
@@ -318,22 +323,56 @@ export async function referralReport(store, { from, to, now = new Date() } = {})
   const rows = new Map();
   for (let time = start; time <= end; time += DAY_MS) {
     const date = day(new Date(time));
-    rows.set(date, { date, invites_sent: null, invites_opened: 0, signups: 0, activations: 0, referral_days: 0, feedback_days: 0, rewards_granted_days: 0 });
+    const funnel = { invites_sent: 0, invites_opened: 0, signups: 0, activations: 0 };
+    rows.set(date, { date, ...funnel, referral_days: 0, feedback_days: 0, rewards_granted_days: 0,
+      partner: { ...funnel }, referral: { ...funnel, invites_sent: null } });
   }
-  const increment = (at, metric, count = 1) => {
+  const increment = (at, metric, count = 1, channel = null) => {
     const row = at && rows.get(at.slice(0, 10));
-    if (row) row[metric] += count;
+    if (row) (channel ? row[channel] : row)[metric] += count;
+  };
+  // Each channel keeps its own conversion definition. An account attributed to both links
+  // contributes just one signup. A qualified referral can overlap the first partnership;
+  // a later, distinct pair still contributes its own activation.
+  const signups = new Map(), referralActivations = new Map(), firstPartnership = new Map();
+  const earliest = (map, id, at) => {
+    if (id && at && (!map.has(id) || at < map.get(id))) map.set(id, at);
   };
   for (const record of await store.listRecordsForJob(COLLECTION)) {
-    if (record.kind === "open") increment(record.openedAt, "invites_opened");
+    if (record.kind === "open") {
+      increment(record.openedAt, "invites_opened", 1, "referral");
+      increment(record.openedAt, "invites_opened");
+    }
+    if (record.kind === "partner-signup") {
+      increment(record.signupAt, "signups", 1, "partner");
+      earliest(signups, record.ownerUserId, record.signupAt);
+    }
     if (record.kind === "claim" && !record.earlyDeleted && record.status !== "ineligible") {
-      increment(record.signupAt, "signups");
-      increment(record.activatedAt, "activations");
+      increment(record.signupAt, "signups", 1, "referral");
+      increment(record.activatedAt, "activations", 1, "referral");
+      earliest(signups, record.ownerUserId, record.signupAt);
+      earliest(referralActivations, record.ownerUserId, record.activatedAt);
     }
     if (record.kind === "reward-audit") {
       increment(record.rewardAt, record.source === "referral" ? "referral_days" : "feedback_days", record.rewardDays);
       increment(record.rewardAt, "rewards_granted_days", record.rewardDays);
     }
+  }
+  for (const invite of await store.listInvitationsForJob()) {
+    increment(invite.sentAt, "invites_sent", 1, "partner");
+    increment(invite.sentAt, "invites_sent");
+    increment(invite.openedAt, "invites_opened", 1, "partner");
+    increment(invite.openedAt, "invites_opened");
+    increment(invite.acceptedAt, "activations", 1, "partner");
+    increment(invite.acceptedAt, "activations");
+    earliest(firstPartnership, invite.acceptedByUserId, invite.acceptedAt);
+  }
+  for (const at of signups.values()) increment(at, "signups");
+  for (const [id, at] of referralActivations) {
+    const pairedAt = firstPartnership.get(id);
+    if (pairedAt && pairedAt <= at) continue;
+    if (pairedAt) increment(pairedAt, "activations", -1);
+    increment(at, "activations");
   }
   return { from: day(new Date(start)), to: day(new Date(end)), timezone: "UTC", days: [...rows.values()] };
 }

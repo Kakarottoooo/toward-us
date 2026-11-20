@@ -27,11 +27,36 @@ maintain();
 // partner pushes on time. Runs are idempotent, so an external tick as well is harmless.
 setInterval(maintain, 5 * 60_000).unref();
 
+// An unfurler should never open the invitation, count as a partner, or learn either person's name.
+const invitePreview = {
+  en: ["Join your partner on Ourever", "Open your invitation to start a private space for the two of you."],
+  es: ["Únete a tu pareja en Ourever", "Abre la invitación para empezar a compartir un espacio privado en pareja."],
+  zh: ["伴侣邀请你加入 Ourever", "打开邀请，开启只属于你们两个人的共同空间。"],
+};
+function serveInvitePage(getTemplate) {
+  app.get("/", async (req, res, next) => {
+    if (typeof req.query.invite !== "string") return next();
+    const host = req.get("host") || "";
+    if (!/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host)) return res.sendStatus(400);
+    const preferred = String(req.query.lang || "").split("-")[0].toLowerCase();
+    const language = Object.hasOwn(invitePreview, preferred) ? preferred : req.acceptsLanguages("en", "es", "zh") || "en";
+    const [title, description] = invitePreview[language];
+    const image = `${req.protocol === "https" ? "https" : "http"}://${host}/assets/brand/share-preview.jpg`;
+    const html = (await getTemplate(req))
+      .replace(/<meta property="og:url"[^>]*>/, "")
+      .replace(/((?:property="og:title"|name="twitter:title") content=")[^"]*/g, `$1${title}`)
+      .replace(/((?:property="og:description"|name="twitter:description"|name="description") content=")[^"]*/g, `$1${description}`)
+      .replace(/((?:property="og:image"|name="twitter:image") content=")[^"]*/g, `$1${image}`);
+    res.set("Cache-Control", "private, no-store").vary("Accept-Language").type("html").send(html);
+  });
+}
+
 if (production) {
   const clientRoot = resolve(root, "dist", "client");
   if (!existsSync(clientRoot)) throw new Error("Production build not found. Run npm run build first.");
   const indexPath = resolve(clientRoot, "index.html");
   const indexTemplate = await readFile(indexPath, "utf8");
+  serveInvitePage(() => indexTemplate);
   app.get("/j/:code", (req, res) => {
     const code = String(req.params.code || "").toUpperCase();
     if (!/^[A-Z0-9]{8}$/.test(code)) return res.redirect(302, "/demo");
@@ -51,6 +76,7 @@ if (production) {
   const { createServer: createViteServer } = await import("vite");
   // DEV_ALLOWED_HOSTS lets a phone reach the dev server through a tunnel such as Tailscale serve (comma-separated hostnames).
   const vite = await createViteServer({ root, appType: "spa", server: { middlewareMode: true, allowedHosts: (process.env.DEV_ALLOWED_HOSTS || "").split(",").map((host) => host.trim()).filter(Boolean) } });
+  serveInvitePage(async () => vite.transformIndexHtml("/", await readFile(resolve(root, "index.html"), "utf8")));
   app.use(vite.middlewares);
 }
 

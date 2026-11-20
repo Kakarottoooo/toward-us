@@ -1,6 +1,8 @@
+import type { Pairing } from "../../Prototype";
+import { InviteBar, InvitePanel, usePartnerInvite } from "./PartnerInvite";
 import { ReportReply } from "../feedback/ReportReply";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Copy, PawPrint, GameController, Sparkle, UserCircle, Drop, ShareNetwork, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { Copy, PawPrint, GameController, Sparkle, UserCircle, Drop, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, ShareNetwork, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { apiErrorText, counted, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
@@ -45,7 +47,6 @@ type Ref = Partial<ConversationSource> & { type: string; id: string; version?: n
 type SharedMessage = { removedAt?: string; deliveredAt?: string; readAt?: string; replyTo?: string; id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; version?: number; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
-type Pairing = { id: string; status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
 type SharedRecipient = "partner" | "assistant";
 type SharedSend = { text: string; itemId: string; photoIds: string[]; speaker: "me" | "partner"; recipient?: SharedRecipient };
@@ -65,7 +66,7 @@ const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
 // Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
 const REOPEN_AFTER = 30 * 60_000;
 
-export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing; language: Language; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onPairingChange, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing | null; language: Language; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onPairingChange: (next: Pairing | null) => void; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -121,7 +122,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<{ text: string; itemId: string; photoIds?: string[] } | null>(null);
   const [notice, setNotice] = useState("");
-  const [copied, setCopied] = useState(false);
+  const invitation = usePartnerInvite({ userId: user.id, language, pairing, onPairingChange, onRefreshPairing });
   const [drawer, setDrawer] = useState(false);
   const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const [openStory, setOpenStory] = useState<Story | null>(null);
@@ -193,7 +194,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const people = peopleState.people;
   // One Ourever, three stages (founder 11-09): what the home shows follows where the member is.
   // Someone who has already sent their partner an invite is on the couple path, so Us stays (pairing tests, 11-09).
-  const stage = paired ? "together" : pairing?.status === "pending" && peopleState.stage === "dating" ? "inviting" : peopleState.stage;
+  const stage = paired ? "together" : invitation.sent && invitation.usable && peopleState.stage === "dating" ? "inviting" : peopleState.stage;
   const [settledOn, setTogetherPerson] = useState<Person | null>(null);
   const [putAway, setPutAway] = useState(0);
   const [answered, setAnswered] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`pinky-together-asked:${user.id}`) || "[]"); } catch { return []; } });
@@ -311,13 +312,6 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
     events.addEventListener("access-ended", () => { events.close(); accessChanged.current(); });
     return () => events.close();
   }, [paired, loadTogether, refreshMascot]);
-  // While the invite waits, look every few seconds, so Us opens by itself once the partner joins (as the invite says).
-  const refreshPairing = useRef(onRefreshPairing); refreshPairing.current = onRefreshPairing;
-  useEffect(() => {
-    if (pairing?.status !== "pending") return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refreshPairing.current().catch(() => {}); }, 4000);
-    return () => window.clearInterval(timer);
-  }, [pairing?.status]);
   useEffect(() => { setNotice(""); }, [language]);
   // Which step Ourever is on while it answers: asked every moment while this phone waits for a reply or Us shows a step, and on
   // each nudge from Us. Only the newest answer per channel counts, so a slow, older one cannot bring back an ended step.
@@ -670,41 +664,25 @@ ${text}` : text, target);
     try { await relationshipApi("/api/together/agreements/draft", jsonBody({ language })); await loadTogether(); }
     catch (error) { setNotice(errorText(error as ApiError)); } finally { setBusy(false); }
   };
-  // An invite that still works; an expired one is replaced by a fresh link the next time it is sent.
-  const liveInvite = pairing?.invitation && !(pairing.invitation.expiresAt && pairing.invitation.expiresAt <= new Date().toISOString()) ? pairing.invitation : null;
-  const createInvite = async () => {
-    setBusy(true); setNotice("");
-    try { const result = await relationshipApi<{ pairing: Pairing }>("/api/partner/invitations", jsonBody({})); await onRefreshPairing(); return result.pairing?.invitation?.code || ""; }
-    catch (error) { setNotice(errorText(error as ApiError)); return ""; } finally { setBusy(false); }
-  };
-  // The partner who has not joined is the one to win over (founder 11-08, user research): the invite says in two lines
-  // what is in it for them and that their own chat stays private, then the link.
-  const inviteMessage = () => t("我在用 Ourever 帮我们记日子、出主意、把说好的事落实。你也有自己的私人对话，只有你能看到，我也看不到；我们俩的事要两个人都同意才算数。点这里加入：", "I'm using Ourever to keep our dates, ideas and agreements in one place. You get your own private chat that only you can see (I can't); anything about us only counts once we both agree. Join here: ", "Uso Ourever para nuestras fechas, ideas y acuerdos. Tú tienes tu propio chat privado que solo tú ves (yo no); lo nuestro solo cuenta si ambos estamos de acuerdo. Únete aquí: ");
-  // One tap: make the link if there is none (or it expired), then the phone's share sheet with the message and link; without
-  // a share sheet both are copied. The link opens a page that says who invited them and joins in the same sign-up.
-  const shareInvite = async () => {
-    keyboard.hide();
-    const code = liveInvite?.code || await createInvite();
-    if (!code) return;
-    const url = `${location.origin}${location.pathname}?invite=${code}`, text = inviteMessage();
-    try { if (navigator.share) { await navigator.share({ title: "Ourever", text, url }); return; } }
-    catch (error) {
-      if ((error as Error).name === "AbortError") return;
-      // Making the link took long enough that the phone no longer counts this as a tap: the card now has the link, one more tap sends it.
-      if ((error as Error).name === "NotAllowedError") { setNotice(t("邀请已准备好，再点一次就能发给 TA。", "Your invite is ready. Tap once more to send it.", "Tu invitación está lista. Toca otra vez para enviarla.")); return; }
-    }
-    try { await navigator.clipboard.writeText(`${text}${url}`); setCopied(true); setTimeout(() => setCopied(false), 1500); setNotice(t("邀请和链接已复制，发给 TA 吧。", "Invite and link copied. Send them to your partner.", "Invitación y enlace copiados. Envíaselos a tu pareja.")); }
-    catch { setNotice(`${text}${url}`); }
-  };
-  const shortTime = (iso: string) => new Date(iso).toLocaleString(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  // While the partner has not joined: whether the link has been opened yet (the server keeps only the first time), or that it expired.
-  const inviteStatus = pairing?.status !== "pending" ? "" : !liveInvite ? t("邀请已过期，再发一次就是新的链接。", "Your invite expired. Sending it again makes a new link.", "Tu invitación caducó. Al enviarla de nuevo se crea un enlace nuevo.")
-    : liveInvite.openedAt ? t(`TA 在 ${shortTime(liveInvite.openedAt)} 打开了邀请，还没加入。`, `Your partner opened the invite ${shortTime(liveInvite.openedAt)} but hasn't joined yet.`, `Tu pareja abrió la invitación el ${shortTime(liveInvite.openedAt)}, pero aún no se ha unido.`)
-    : t("等 TA 加入。邀请还没被打开。", "Waiting for your partner. The invite hasn't been opened yet.", "Esperando a tu pareja. La invitación aún no se ha abierto.");
-  // The waiting line above Just me can be put away for this invite; a new invite brings it back.
-  const waitKey = `pinky-invite-wait-hidden:${user.id}`;
-  const [waitHidden, setWaitHidden] = useState(() => { try { return localStorage.getItem(waitKey) || ""; } catch { return ""; } });
-  const hideWait = () => { const code = liveInvite?.code || "expired"; setWaitHidden(code); try { localStorage.setItem(waitKey, code); } catch { /* private mode */ } };
+  const previousPairing = useRef(pairing?.status);
+  const joinedHere = useRef(false);
+  const [welcomePartner, setWelcomePartner] = useState(false);
+  useEffect(() => {
+    const justJoined = previousPairing.current === "pending" && paired;
+    previousPairing.current = pairing?.status;
+    if (!justJoined) return;
+    // A private draft, recording or upload keeps its audience until the author switches.
+    joinedHere.current = true;
+    const writingPrivately = channel === "me" && (keyboard.visible || draft || attachments.length || voiceActive || call || revising || queued.length || failed);
+    if (!writingPrivately) switchChannel("us");
+    setWelcomePartner(true);
+  }, [pairing?.status, paired]);
+  useEffect(() => {
+    if (!welcomePartner) return;
+    const timer = window.setTimeout(() => setWelcomePartner(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [welcomePartner]);
+  const enterPartnerCode = () => { keyboard.hide(); onPair(); };
 
   // A letter's opening day, written out ("2027年3月5日", "March 5, 2027").
   const longDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
@@ -909,13 +887,9 @@ ${text}` : text, target);
     try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
   // Ourever's core (founder 11-08): "I don't know how to reply to her" — a reply coach that works alone, before any pairing.
-  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t("不知道怎么回 TA？", "Not sure how to reply?", "¿No sabes qué responder?")}</h1><p>{t("把 TA 的话粘贴过来，或者发聊天截图。Ourever 帮你看懂 TA 的意思，写一句你可以直接发的回复。这段对话对伴侣保密。", "Paste what your partner said, or send a screenshot of the chat. Ourever helps you read what they mean and writes a reply you can send as is. Your partner cannot see this conversation.", "Pega lo que dijo tu pareja o envía una captura del chat. Ourever te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Tu pareja no puede ver esta conversación.")}</p><div className="card-actions"><button type="button" className="card-primary" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button>{!paired && pairing?.status !== "pending" && <button type="button" disabled={busy} onClick={() => void shareInvite()} data-testid="empty-invite"><UserPlus size={18} />{t("邀请 TA 一起用", "Invite your partner", "Invita a tu pareja")}</button>}</div></section>;
+  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t("不知道怎么回 TA？", "Not sure how to reply?", "¿No sabes qué responder?")}</h1><p>{t("把 TA 的话粘贴过来，或者发聊天截图。Ourever 帮你看懂 TA 的意思，写一句你可以直接发的回复。这段对话对伴侣保密。", "Paste what your partner said, or send a screenshot of the chat. Ourever helps you read what they mean and writes a reply you can send as is. Your partner cannot see this conversation.", "Pega lo que dijo tu pareja o envía una captura del chat. Ourever te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Tu pareja no puede ver esta conversación.")}</p><div className="card-actions"><button type="button" className={paired ? "card-primary" : undefined} onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button></div></section>;
   const usEmpty = <section className="conversation-empty"><h1>{t(`和 ${partnerName} 聊天`, `Chat with ${partnerName}`, `Habla con ${partnerName}`)}</h1><p>{t("你们俩都能看到这里的消息。", "You can both see messages here.", "Ambos pueden ver los mensajes aquí.")}</p></section>;
-  const invite = <section className="conversation-empty conversation-invite" data-testid="conversation-invite"><h1>{t("邀请 TA 一起来", "Invite your partner", "Invita a tu pareja")}</h1><p>{t("“我们俩”是你们两个人和 Ourever 的共同对话。TA 用自己的账号加入后，这里就会打开。", "Us is the shared conversation for the two of you and Ourever. It opens once your partner joins with their own account.", "Nosotros es la conversación compartida entre ustedes dos y Ourever. Se abre cuando tu pareja se une con su propia cuenta.")}</p>
-    {liveInvite && <div className="invite-code"><span>{t("邀请码", "Invite code", "Código de invitación")}</span><strong>{liveInvite.code}</strong></div>}
-    {inviteStatus && <p className="invite-status" data-testid="invite-status">{inviteStatus}</p>}
-    <div className="card-actions"><button className="card-primary" disabled={busy} onClick={() => void shareInvite()} data-testid="share-invite"><ShareNetwork size={18} />{copied ? t("已复制", "Copied", "Copiado") : liveInvite ? t("再发给 TA", "Send it again", "Enviar de nuevo") : t("发邀请给 TA", "Send your partner an invite", "Enviar invitación a tu pareja")}</button><button onClick={() => { keyboard.hide(); onPair(); }} data-testid="enter-partner-code">{t("输入 TA 的邀请码", "Enter partner’s code", "Introducir código de tu pareja")}</button></div>
-  </section>;
+  const invite = <InvitePanel state={invitation} onEnterCode={enterPartnerCode} />;
 
   // A long conversation keeps its older messages in pages (memory plan, 11-09); they load on request, newest page first.
   const shownEarlier = earlierMe.sessionId === session?.id ? earlierMe : { sessionId: session?.id || "", page: 0, messages: [] as PrivateMessage[] };
@@ -1015,7 +989,8 @@ ${text}` : text, target);
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Ourever 通话", "Call Ourever", "Llamar a Ourever")} data-testid="start-call"><Phone size={22} /></button>
       </div>
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
-      {channel === "me" && !thread && pairing?.status === "pending" && waitHidden !== (liveInvite?.code || "expired") && <div className="thread-bar invite-wait" data-testid="invite-waiting"><span>{inviteStatus}</span><button type="button" disabled={busy} onClick={() => void shareInvite()}>{t("再发一次", "Send again", "Enviar otra vez")}</button><button type="button" className="invite-wait-close" onClick={hideWait} aria-label={t("收起", "Hide", "Ocultar")}><X size={14} /></button></div>}
+      {channel === "me" && !paired && <InviteBar state={invitation} onEnterCode={enterPartnerCode} />}
+      {welcomePartner && <p className="partner-joined" role="status" data-testid="partner-joined"><Heart size={18} weight="fill" aria-hidden="true" />{t("你的伴侣加入了，你们的共同空间已开启。", "Your partner joined. Welcome to your shared space.", "Tu pareja se ha unido. Este es su espacio compartido.")}{channel === "me" && !usHidden && <button type="button" disabled={!!attachments.length || voiceActive || !!call} onClick={() => switchChannel("us")}>{t("打开我们俩", "Open Us", "Abrir Nosotros")}</button>}</p>}
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
       {recall.controls}
@@ -1085,8 +1060,8 @@ ${text}` : text, target);
         </div>}
     </footer>}
     {importDialog}
-    {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
-    {offerCharacter && !touring && !mascot && <OnboardingTour characterOnly language={language} userId={user.id} paired={paired} onInvite={() => switchChannel("us")} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
+    {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={invitation.primaryAction} inviteDisabled={invitation.disabled} inviteBusy={!!invitation.working} invitePending={invitation.sent} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
+    {offerCharacter && !touring && !mascot && !joinedHere.current && <OnboardingTour characterOnly language={language} userId={user.id} paired={paired} onInvite={invitation.primaryAction} inviteDisabled={invitation.disabled} inviteBusy={!!invitation.working} invitePending={invitation.sent} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
@@ -1113,7 +1088,7 @@ ${text}` : text, target);
     {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
       initialCardId={playTogether.cardId} fromGames={playTogether.fromGames} onLeaveDaily={leavePlayDaily}
-      onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) void shareInvite(); else switchChannel("us"); }}
+      onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) invitation.primaryAction(); else switchChannel("us"); }}
       renderPlans={(questionId) => paired && !planQuestionId ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
         readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /> : null}
       onRefreshDaily={() => void loadTogether()} renderDaily={(offline) => todayQuestion ? renderDaily(todayQuestion, true, offline) : null}
