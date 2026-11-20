@@ -51,7 +51,10 @@ async function savePage(directory, html, lang, page = "") {
 for (const [lang, t] of Object.entries(copy)) {
   const directory = lang === "en" ? output : join(output, lang);
   const languages = Object.keys(copy).map((other) => other === lang ? `<strong>${lang.toUpperCase()}</strong>` : `<a lang="${langTag[other]}" href="${prefix(other)}">${other.toUpperCase()}</a>`).join(" / ");
-  const legalLinks = LEGAL_PAGES.map(page => `<a href="${prefix(lang)}${page}">${t[page]}</a>`).join(" · ");
+  const legalLinks = LEGAL_PAGES.map(page => {
+    const href = page === "privacy" ? new URL(`privacy?lang=${lang}`, appUrl).href : prefix(lang) + page;
+    return `<a href="${href}">${t[page]}</a>`;
+  }).join(" · ");
   await savePage(directory, `<!doctype html><html lang="${langTag[lang]}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Ourever</title>
 <style>body{margin:0;background:#f4efe6;color:#2b2622;font:18px/1.6 system-ui,sans-serif}main{max-width:38rem;margin:auto;padding:clamp(2rem,8vw,6rem) 1.5rem}nav,footer{font-size:1rem}header{margin-top:3rem}header img{display:block;height:auto;width:clamp(5.5rem,18vw,7.5rem)}h1{font:600 clamp(3.6rem,12vw,6rem)/1.1 Georgia,serif;margin:1rem 0}p{max-width:32rem}a{color:#863619}#open{display:inline-block;background:#2b2622;color:#fff;border-radius:.5rem;padding:.65rem 1rem;text-decoration:none}footer{margin-top:4rem}</style></head>
