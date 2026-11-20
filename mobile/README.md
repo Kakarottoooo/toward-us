@@ -3,7 +3,7 @@
 这是一个很薄的原生外壳：App 打开后直接加载网站（`server.url`），界面、登录、语音都是现有网页，没有重写。这样现有的 `HttpOnly` Cookie 登录不用改；网站更新后 App 里立即生效，不需要重新装包。公开上架前再评估要不要把前端打进安装包。
 
 - App ID：`us.toward.app`，名字：`Ourever`。美国区正式包由 Witnora 公司团队签名。主 App 和 Widget 分别使用已注册的 `us.toward.app` 和 `us.toward.app.widget`。
-- 安卓通过 Firebase Cloud Messaging 接收推送。iPhone 首版暂不申请系统推送权限。主屏幕和锁屏小组件使用自己的只读令牌，保存在 App 和 Widget 共享的设备钥匙串里；退出后会撤销并清除。
+- 安卓通过 Firebase Cloud Messaging 接收推送。公司签名的 iPhone 版使用 APNs，在用户开启通知时申请权限。主屏幕和锁屏小组件使用自己的只读令牌，保存在 App 和 Widget 共享的设备钥匙串里；退出后会撤销并清除。
   - iOS：`NSMicrophoneUsageDescription`，中英西三语说明。
   - Android：`RECORD_AUDIO`（会弹窗问用户）和 `MODIFY_AUDIO_SETTINGS`（必需，不弹窗）。原因：网页调用麦克风时，Capacitor 8.5.3 的 WebView 桥会同时申请这两项，只要有一项没在清单里声明就直接拒绝录音，所以少了它语音输入永远打不开。
 - 加载哪个网址在**打包时**决定：默认是云端服务器 `https://toward-us-private-beta.onrender.com`（`scripts/config.mjs` 里的 `CLOUD_URL`，唯一一处；服务器在 Render 上，见根目录 README 的“云端部署”）。本地试用时用环境变量 `TOWARD_US_APP_URL` 临时改指别的地址。换网址就要重新打包、重新安装。
@@ -11,6 +11,12 @@
 - 连不上服务器时（没网、服务器挂了）显示包里自带的离线页（`www/offline.html`，按手机语言显示中/英/西），每 10 秒和联网时自动重试，连上就回到 App；不会白屏。
 - 只有网址是 `http://` 时才允许明文流量（本地试用）；默认的 HTTPS 包不允许。
 - iOS 与 Android 用 Ourever 小飞鼠图标和启动图。
+
+## iPhone 推送与伴侣邀请
+
+正式服务使用团队的 APNs 推送密钥，Render 密钥存储中的名称为 `APNS_KEY_ID`、`APNS_TEAM_ID`、`APNS_PRIVATE_KEY`。后端只向 `us.toward.app` 投递；未配置时设置页显示通知暂不可用。开发版与分发版经 Apple 的对应环境接收推送。
+
+主 App 的发布描述文件为 `Ourever App Store Push and Links`，须含生产 `aps-environment` 与 Associated Domains。公司 App 认领正式服务根路径带八位 `invite` 参数的链接。关联文件由正式服务的 `/.well-known/apple-app-site-association` 路由提供。
 
 ## 安卓：编出 APK
 

@@ -1,3 +1,5 @@
+import { requireAiPermission } from "./ai-permission.mjs";
+import { withChatRequest, chatSignal, regenerateChatReply } from "./chat-response.mjs";
 import express from "express";
 import { locateConversation } from "./conversation-recall.mjs";
 import { answerAgreementPoint, approveAgreement, phrasePoint, clean, decisionError, rejectAgreement, requestAgreementChange } from "./agreement-actions.mjs";
@@ -113,7 +115,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     res.status(result.duplicate ? 200 : 201).json({ message: result.message, duplicate: Boolean(result.duplicate) });
   });
 
-  router.post("/together/messages", async (req, res) => {
+  router.post("/together/messages", async (req, res) => withChatRequest(res, async () => {
     const userId = req.auth.user.id, text = clean(req.body?.text, 2000), itemId = clean(req.body?.itemId, 120);
     const photoIds = Array.isArray(req.body?.photoIds) ? [...new Set(req.body.photoIds.map((id) => clean(id, 80)).filter(Boolean))].slice(0, 6) : [];
     if (!text && !photoIds.length) throw decisionError(400, "message_required");
@@ -131,7 +133,71 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, recipient, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
     if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId); }
     res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
+  }));
+
+  // The partner acknowledges an observed message. Server acceptance alone means "sent".
+  router.post("/together/messages/:id/receipt", async (req, res) => {
+    const userId = req.auth.user.id, read = req.body?.state === "read";
+    if (!read && req.body?.state !== "delivered") throw decisionError(400, "invalid_receipt");
+    const updated = await transaction(req, async (tx, context, relationshipId) => {
+      const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
+      const line = conversation.messages.find((item) => item.id === req.params.id);
+      if (!line || line.role !== "member" || line.actorUserId === userId || line.removedAt) throw decisionError(404, "message_unavailable");
+      if (read ? line.readAt : line.deliveredAt) return null;
+      return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, draft => {
+        const target = draft.messages.find(item => item.id === line.id), now = new Date().toISOString();
+        target.deliveredAt ||= now;
+        if (read) target.readAt ||= now;
+        draft.version += 1;
+      });
+    });
+    if (updated) emit(updated, "together.updated", null, userId);
+    res.sendStatus(204);
   });
+
+  router.post("/together/messages/:id/unsend", async (req, res) => {
+    const userId = req.auth.user.id;
+    const updated = await transaction(req, async (tx, context, relationshipId) => {
+      const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
+      const line = conversation.messages.find(item => item.id === req.params.id);
+      if (!line || line.role !== "member" || line.kind !== "text" || line.actorUserId !== userId || line.recordedByUserId) throw decisionError(404, "message_unavailable");
+      if (line.removedAt) return null;
+      if (Date.now() - Date.parse(line.createdAt) > 120_000) throw decisionError(409, "unsend_expired");
+      return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, draft => {
+        const index = draft.messages.findIndex(item => item.id === line.id);
+        const { id, role, kind, actorUserId, source, createdAt, handle } = line;
+        draft.messages[index] = { id, role, kind, actorUserId, source, createdAt, handle, refs: [], text: "", removedAt: new Date().toISOString() };
+        draft.version += 1;
+      });
+    });
+    if (updated) emit(updated, "together.updated", null, userId);
+    res.sendStatus(204);
+  });
+
+  router.post("/together/regenerate", async (req, res) => withChatRequest(res, async () => {
+    const userId = req.auth.user.id;
+    const { conversation, reply, request } = await transaction(req, async (tx, context, relationshipId) => {
+      const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
+      const reply = conversation.messages.at(-1), request = conversation.messages.find(item => item.id === reply?.replyTo);
+      if (!reply || reply.id !== req.body?.messageId || reply.role !== "agent" || reply.kind !== "text" || request?.actorUserId !== userId || request.removedAt) throw decisionError(409, "conversation_changed");
+      return { conversation, reply, request };
+    });
+    await requireAiPermission(store, userId, language(req), "together_turn");
+    const text = await regenerateChatReply(mediator, request, reply, language(req), "us");
+    const updated = await transaction(req, async (tx, context, relationshipId) => {
+      if (relationshipId !== conversation.relationshipId) throw decisionError(409, "relationship_changed");
+      const current = (await ensureTogetherConversation(tx, { relationshipId, userId })).conversation;
+      if (current.messages.at(-1)?.id !== reply.id || current.messages.at(-1).text !== reply.text || current.messages.find(item => item.id === request.id)?.removedAt) throw decisionError(409, "conversation_changed");
+      chatSignal()?.throwIfAborted();
+      return tx.updateRelationshipRecordForUser("togetherConversations", current.id, userId, draft => {
+        const line = draft.messages.at(-1);
+        line.text = text; delete line.i18n; delete line.translations;
+        draft.version += 1;
+      });
+    });
+    emit(updated, "together.updated", null, userId);
+    res.sendStatus(204);
+  }));
 
   router.post("/together/agreements/draft", async (req, res) => {
     const userId = req.auth.user.id;
@@ -256,6 +322,19 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
       text: req.body?.text, clientId: req.body?.clientId, language: language(req) });
     if (saved.changed) emit(saved.conversation, "together.updated", null, userId);
     res.status(saved.changed ? 201 : 200).json(saved.view);
+  });
+
+  const messageErrors = {
+    invalid_receipt: ["消息回执无效。", "Invalid message receipt.", "Confirmación de mensaje no válida."],
+    message_unavailable: ["此消息不可操作。", "This message is unavailable.", "Este mensaje no está disponible."],
+    unsend_expired: ["消息发出已超过两分钟，无法撤回。", "The two-minute undo window has ended.", "Ya pasaron los dos minutos para anular el envío."],
+    message_removed: ["消息已撤回。", "The message was removed.", "Se retiró el mensaje."],
+    conversation_changed: ["对话已更新，请查看最新回复。", "The conversation changed. Open the latest reply.", "La conversación cambió. Abre la última respuesta."],
+  };
+  router.use("/together", (error, req, res, next) => {
+    const copy = messageErrors[error.decisionCode];
+    if (!copy) return next(error);
+    res.status(error.statusCode).json({ error: say(language(req), ...copy), code: error.decisionCode });
   });
 
   const playErrors = {

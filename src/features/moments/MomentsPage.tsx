@@ -1,5 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, GlobeHemisphereWest, LockKey, Plus, Trash, UsersThree } from "@phosphor-icons/react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, GlobeHemisphereWest, LockKey, PencilSimple, Plus, Trash, UsersThree } from "@phosphor-icons/react";
+import { BottomSheet, KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
+import { PhotoViewer } from "./PhotoViewer";
 import { counted, languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
@@ -13,7 +15,7 @@ import "./moments.css";
 // The map library is only loaded when someone opens the map.
 const MemoriesMap = lazy(() => import("./MemoriesMap").then((module) => ({ default: module.MemoriesMap })));
 
-type Item = { id: string; title: string; text: string; date: string | null; done?: boolean; photoId?: string | null; idea?: number; photoEvent?: string; createdAt: string; ownerUserId: string };
+type Item = { id: string; version: number; momentGroup?: string; title: string; text: string; date: string | null; done?: boolean; photoId?: string | null; idea?: number; photoEvent?: string; createdAt: string; ownerUserId: string };
 type Album = { id: string; system?: string; visibility: string; items: Item[] };
 type Checkin = { id: string; text: string; mood?: string | null; createdAt: string; ownerUserId: string; visibility: string };
 type Scale = "years" | "months" | "all";
@@ -36,16 +38,41 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const [playing, setPlaying] = useState<{ title: string; slides: Slide[] } | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [openYear, setOpenYear] = useState("");
-  const [confirming, setConfirming] = useState(""); const [error, setError] = useState("");
-  const load = useCallback(async () => {
+  const keyboard = useKeyboard();
+  const [editing, setEditing] = useState<{ moment: Moment; title: string; date: string; text: string } | null>(null);
+  const [viewer, setViewer] = useState<{ title: string; photos: string[]; start: number } | null>(null);
+  const undoKey = `ourever:moment-undo:${userId}`;
+  const [undo, setUndo] = useState<{ id: string; version: number; expires: number } | null>(() => {
     try {
-      const [{ spaces }, { checkins }] = await Promise.all([relationshipApi<{ spaces: Album[] }>("/api/spaces"), relationshipApi<{ checkins: Checkin[] }>("/api/checkins").catch(() => ({ checkins: [] as Checkin[] }))]);
+      const last = JSON.parse(localStorage.getItem(undoKey) || "null");
+      return typeof last?.id === "string" && Number.isInteger(last.version) && last.expires > Date.now() ? last : null;
+    } catch { return null; }
+  });
+  useEffect(() => {
+    try { if (undo) localStorage.setItem(undoKey, JSON.stringify(undo)); else localStorage.removeItem(undoKey); } catch { /* Undo remains available in this session. */ }
+  }, [undoKey, undo]);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
+  useEffect(() => {
+    if (!undo || busy) return;
+    const timer = window.setTimeout(() => setUndo(null), Math.max(0, undo.expires - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [undo, busy]);
+  const load = useCallback(async () => {
+    const sequence = ++requestId.current;
+    setLoading(true);
+    try {
+      const [{ spaces }, { checkins }] = await Promise.all([relationshipApi<{ spaces: Album[] }>("/api/spaces"), relationshipApi<{ checkins: Checkin[] }>("/api/checkins")]);
+      if (sequence !== requestId.current) return;
       setWatched(spaces.filter((space) => space.system === "watched").flatMap((space) => space.items.map((item) => ({ id: item.id, title: item.title, text: item.text, date: item.date, done: Boolean(item.done), createdAt: item.createdAt }))));
       // Photos of one memory arrive as separate items with the same title and date; they read as one moment.
       const grouped = new Map<string, Moment>();
       for (const album of spaces.filter((space) => space.system === "moments")) for (const item of album.items) {
-        const date = item.date || item.createdAt.slice(0, 10), key = `${album.id}|${date}|${item.title || item.id}`;
-        const moment = grouped.get(key) || { key, date, title: item.title, text: "", photos: [], ids: [], shared: album.visibility === "shared", mine: item.ownerUserId === userId };
+        const date = item.date || item.createdAt.slice(0, 10), key = JSON.stringify([album.id, item.ownerUserId, item.momentGroup || [date, item.title || item.id]]);
+        const moment = grouped.get(key) || { key, date, version: item.version, title: item.title, text: "", photos: [], ids: [], shared: album.visibility === "shared", mine: item.ownerUserId === userId };
         if (item.text && !moment.text) moment.text = item.text;
         if (item.photoId) moment.photos.push(item.photoId);
         if (item.idea && album.visibility === "shared") moment.idea = item.idea;
@@ -56,19 +83,32 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
       }
       // Daily check-ins told to Ourever are private moments with a feeling.
       for (const checkin of checkins.filter((item) => item.ownerUserId === userId && item.visibility === "private")) grouped.set(`checkin|${checkin.id}`, { key: `checkin|${checkin.id}`, date: checkin.createdAt.slice(0, 10), title: "", text: checkin.text, photos: [], ids: [], shared: false, mine: true, mood: checkin.mood });
-      setMoments([...grouped.values()].sort((a, b) => b.date.localeCompare(a.date))); setError("");
-    } catch (caught) { setError((caught as Error).message); setMoments([]); }
+      setMoments([...grouped.values()].sort((a, b) => b.date.localeCompare(a.date))); setError(false);
+    } catch { if (sequence === requestId.current) setError(true); }
+    finally { if (sequence === requestId.current) setLoading(false); }
   }, [userId]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { requestId.current += 1; }; }, [load]);
   useEffect(() => {
     const events = new EventSource("/api/relationship/events");
     events.addEventListener("relationship", (event) => { try { if (/^space/.test(JSON.parse((event as MessageEvent).data).eventType)) void load(); } catch { /* Ignore malformed events. */ } });
     return () => events.close();
   }, [load]);
-  const remove = async (moment: Moment) => {
-    if (confirming !== moment.key) { setConfirming(moment.key); return; }
-    setConfirming("");
-    try { for (const id of moment.ids) await relationshipApi(`/api/space-items/${id}/archive`, jsonBody({})); await load(); } catch (caught) { setError((caught as Error).message); }
+  const change = async (action: "edit" | "archive" | "restore", id: string, version: number | undefined) => {
+    if (busy) return;
+    setBusy(true); setActionError("");
+    try {
+      const fields = action === "edit" && editing ? { title: editing.title, date: editing.date, text: editing.text } : {};
+      const { record } = await relationshipApi<{ record: Item }>(`/api/space-items/${encodeURIComponent(id)}/moment/${action}`, jsonBody({ ...fields, version }));
+      if (action === "archive") setUndo({ id, version: record.version, expires: Date.now() + 15000 });
+      if (action === "restore") setUndo(null);
+      keyboard.hide(); setEditing(null); setFocus(null);
+      await load();
+    } catch (caught) {
+      setActionError((caught as { status?: number }).status === 409
+        ? t("这段回忆已更改，请重新打开。", "This memory changed. Reopen it to continue.", "Este recuerdo cambió. Vuelve a abrirlo.")
+        : t("更改未保存，请重试。", "Your change could not be saved. Try again.", "No se pudo guardar el cambio. Inténtalo de nuevo."));
+      await load();
+    } finally { setBusy(false); }
   };
 
   const all = moments || [];
@@ -80,8 +120,11 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const onThisDay = all.filter((moment) => moment.date.slice(5) === today.slice(5) && moment.date < today);
   const day = (date: string, withYear = false) => new Date(`${date}T12:00:00Z`).toLocaleDateString(languageTag(language), { month: "long", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
   const mood = (value?: string | null) => value === "low" ? t("有点低落", "Feeling low", "Con poco ánimo") : value === "mixed" ? t("说不清", "Mixed", "Mezclado") : value === "okay" ? t("还好", "Okay", "Bien") : value === "good" ? t("很好", "Good", "Muy bien") : "";
-  const photo = (id: string | null, className = "", width = 240) => id ? <img className={className} decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=${width}`} alt="" loading="lazy" draggable={false} /> : <span className={`${className} moments-nophoto`} aria-hidden="true" />;
-  const photos = (ids: string[]) => <div className={`moment-photos count-${Math.min(ids.length, 3)}`}>{ids.slice(0, 6).map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=480`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
+  const photo = (id: string | null, alt: string, className = "", width = 240) => id ? <img className={className} decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=${width}`} alt={alt} loading="lazy" draggable={false} /> : <span className={`${className} moments-nophoto`} aria-hidden="true" />;
+  const memoryTitle = (moment: Moment) => moment.title || day(moment.date, true);
+  const photoLabel = (moment: Moment, index: number) => t(`${memoryTitle(moment)}，第 ${index + 1} 张照片`, `${memoryTitle(moment)}, photo ${index + 1}`, `${memoryTitle(moment)}, foto ${index + 1}`);
+  const showPhoto = (moment: Moment, index: number) => { keyboard.hide(); setViewer({ title: memoryTitle(moment), photos: moment.photos, start: index }); };
+  const photos = (moment: Moment) => <div className={`moment-photos count-${Math.min(moment.photos.length, 3)}`}>{moment.photos.slice(0, 6).map((id, at) => <button key={id} type="button" onClick={() => showPhoto(moment, at)}><img decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=480`} alt={photoLabel(moment, at)} loading="lazy" draggable={false} /></button>)}</div>;
   // Ideas done together: the oldest shared memory that names one ticks it, with its first photo.
   const done = new Map<number, { photo: string | null; date: string }>();
   for (const moment of [...all].reverse()) if (moment.idea && !done.has(moment.idea)) done.set(moment.idea, { photo: moment.photos[0] || null, date: moment.date });
@@ -97,9 +140,12 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
         {moment.title && <strong>{moment.title}</strong>}
         {moment.text && <p>{moment.text}</p>}
         {moment.mood && <em>{t("心情：", "Feeling: ", "Ánimo: ")}{mood(moment.mood)}</em>}
-        {!!moment.photos.length && photos(moment.photos)}
+        {!!moment.photos.length && photos(moment)}
       </div>
-      {moment.ids.length > 0 && moment.mine && <button type="button" className={`space-remove ${confirming === moment.key ? "confirming" : ""}`} onClick={() => void remove(moment)} aria-label={t("删除", "Delete", "Eliminar")}>{confirming === moment.key ? t("确认删除", "Delete", "Eliminar") : <Trash size={18} />}</button>}
+      {moment.ids.length > 0 && moment.mine && <div className="moment-actions">
+        <button type="button" disabled={busy} onClick={() => { keyboard.hide(); setActionError(""); setEditing({ moment, title: moment.title, date: moment.date, text: moment.text }); }} aria-label={t("编辑回忆", "Edit memory", "Editar recuerdo")}><PencilSimple size={18} /></button>
+        <button type="button" disabled={busy} onClick={() => void change("archive", moment.ids[0], moment.version)} aria-label={t("删除回忆", "Delete memory", "Eliminar recuerdo")}><Trash size={18} /></button>
+      </div>}
     </li>)}</ol></section>);
   };
 
@@ -110,32 +156,52 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   const monthTitle = (key: string) => new Date(`${key}-15T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", timeZone: "UTC" });
   const back = <button type="button" className="moments-back" onClick={() => { setFocus(null); setIdeasOpen(false); }}><ArrowLeft size={18} />{mapOpen ? t("地图", "Map", "Mapa") : t("回忆", "Memories", "Recuerdos")}</button>;
 
+  const overlays = <>
+    {actionError && !editing && <p className="space-error" role="alert">{actionError}</p>}
+    {undo && <div className="moment-undo" role="status">{t("回忆已删除", "Memory deleted", "Recuerdo eliminado")}<button type="button" disabled={busy} onClick={() => void change("restore", undo.id, undo.version)}>{t("撤销", "Undo", "Deshacer")}</button></div>}
+    {viewer && <PhotoViewer {...viewer} language={language} onClose={() => setViewer(null)} />}
+    {editing && <BottomSheet open onOpenChange={(next) => { if (!next && !busy) { keyboard.hide(); setEditing(null); setActionError(""); } }} title={t("编辑回忆", "Edit memory", "Editar recuerdo")} snap={0.8}>
+      <form className="memory-editor" onSubmit={(event) => { event.preventDefault(); void change("edit", editing.moment.ids[0], editing.moment.version); }}>
+        <label>{t("标题", "Title", "Título")}<KeyboardInput required maxLength={160} value={editing.title} onChange={(event) => setEditing({ ...editing, title: event.target.value })} onBlur={() => keyboard.hide()} /></label>
+        <label>{t("日期", "Date", "Fecha")}<KeyboardInput type="date" required value={editing.date} onChange={(event) => setEditing({ ...editing, date: event.target.value })} onBlur={() => keyboard.hide()} /></label>
+        <label>{t("回忆内容", "Memory", "Recuerdo")}<KeyboardTextarea maxLength={2000} value={editing.text} onChange={(event) => setEditing({ ...editing, text: event.target.value })} onBlur={() => keyboard.hide()} /></label>
+        {actionError && <p className="space-error" role="alert">{actionError}</p>}
+        <button type="submit" onMouseDown={(event) => event.preventDefault()} disabled={busy || !editing.title.trim() || !editing.date}>{t("保存", "Save", "Guardar")}</button>
+      </form>
+    </BottomSheet>}
+  </>;
+  const loadStatus = error ? <div role="alert" className="moments-note"><p>{t("回忆未能加载。", "Your memories could not load.", "No se pudieron cargar tus recuerdos.")}</p><button type="button" disabled={loading} onClick={() => void load()}>{t("重试", "Retry", "Reintentar")}</button></div>
+    : !moments && loading ? <p role="status">{t("正在加载回忆…", "Loading memories…", "Cargando recuerdos…")}</p> : null;
   if (focus) return <div className="moments-page" data-testid="moments-focus">
     {back}
     <header className="moments-focus-head"><h2>{focus.title}</h2>{focus.detail && <small>{focus.detail}</small>}</header>
-    {timeline(focus.moments)}
+    {loadStatus}
+    {timeline(all.filter((entry) => focus.moments.some((selected) => selected.key === entry.key || (selected.ids.length > 0 && entry.ids.includes(selected.ids[0])))))}
+    {overlays}
   </div>;
 
   if (watchedOpen) return <div className="moments-page" data-testid="moments-watched">
     <button type="button" className="moments-back" onClick={() => setWatchedOpen(false)}><ArrowLeft size={18} />{t("回忆", "Memories", "Recuerdos")}</button>
-    <WatchedShelf language={language} items={watched} onAsk={(text) => onAsk(text, "us")} />
+    {loadStatus}
+    {moments && !error && <WatchedShelf language={language} items={watched} onAsk={(text) => onAsk(text, "us")} />}
   </div>;
 
   if (ideasOpen) return <div className="moments-page" data-testid="moments-ideas">
     {back}
-    <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} onPlan={(text) => onAsk(text, "us")} />
+    {loadStatus}
+    {moments && !error && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} onPlan={(text) => onAsk(text, "us")} />}
   </div>;
 
   // The map is its own page, opened from the globe at the top right (founder 11-05).
   // The map fills the page under the app header, with the way back and the title floating on it (founder 11-06: the two
   // header rows above a small map wasted the screen).
   if (mapOpen) return <div className="moments-map-page" data-testid="moments-map">
-    {places.length ? <Suspense fallback={<p className="moments-note">{mapLabels.loading}</p>}>
+    {loadStatus || (places.length ? <Suspense fallback={<p className="moments-note">{mapLabels.loading}</p>}>
       <MemoriesMap places={places} language={language} label={t("你们一起去过的地方", "Places you've been together", "Lugares donde han estado juntos")} labels={mapLabels} onOpen={openPlace} />
-    </Suspense> : <div className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></div>}
+    </Suspense> : <div className="moments-empty"><strong>{t("地图上还没有地方", "No places yet", "Aún no hay lugares")}</strong><p>{t("连接 iPhone 相册后，带地点的照片会出现在这里。", "Connect your iPhone album and photos with a place appear here.", "Conecta tu álbum del iPhone y las fotos con lugar aparecerán aquí.")}</p></div>)}
     <div className="moments-map-top">
       <button type="button" className="moments-map-back" onClick={() => setMapOpen(false)} aria-label={t("返回回忆", "Back to memories", "Volver a recuerdos")}><ArrowLeft size={20} weight="bold" /></button>
-      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong><small>{t(`一起去过 ${places.length} 个地方`, `${counted(places.length, "place", "places")} together`, `${counted(places.length, "lugar", "lugares")} juntos`)}</small></div>
+      <div className="moments-map-title"><strong>{t("我们的足迹", "Where we've been", "Donde hemos estado")}</strong>{moments && !error && <small>{t(`一起去过 ${places.length} 个地方`, `${counted(places.length, "place", "places")} together`, `${counted(places.length, "lugar", "lugares")} juntos`)}</small>}</div>
     </div>
   </div>;
 
@@ -156,7 +222,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
       return <section key={key} className="photo-wall-month">
         <h3>{monthTitle(key)}{where.length ? <small> · {where.join(t("、", ", ", ", "))}</small> : null}</h3>
         <div className="photo-wall">{items.map((moment) => <button key={moment.key} type="button" className={moment.photos.length ? "photo-tile" : "photo-tile is-text"} onClick={() => openMoment(moment)}>
-          {moment.photos.length ? <img decoding="async" src={`/api/photos/${encodeURIComponent(moment.photos[0])}?w=480`} alt="" loading="lazy" draggable={false} /> : <span className="photo-tile-text">{moment.title || moment.text}</span>}
+          {moment.photos.length ? <img decoding="async" src={`/api/photos/${encodeURIComponent(moment.photos[0])}?w=480`} alt={photoLabel(moment, 0)} loading="lazy" draggable={false} /> : <span className="photo-tile-text">{moment.title || moment.text}</span>}
           {moment.photos.length > 1 && <em>{moment.photos.length}</em>}
           {!moment.shared && <LockKey className="photo-tile-lock" size={14} weight="fill" />}
         </button>)}</div>
@@ -168,7 +234,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     for (const moment of list) for (const id of moment.photos) { const key = moment.date.slice(0, 7); if (!months.has(key)) months.set(key, []); months.get(key)!.push({ id, moment }); }
     return [...months].sort((a, b) => b[0].localeCompare(a[0])).map(([key, items]) => <section key={key} className="photo-wall-month">
       <h3>{monthTitle(key)}</h3>
-      <div className="photo-wall is-dense">{items.map(({ id, moment }) => <button key={id} type="button" className="photo-tile" onClick={() => openMoment(moment)}><img decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=240`} alt="" loading="lazy" draggable={false} /></button>)}</div>
+      <div className="photo-wall is-dense">{items.map(({ id, moment }) => <button key={id} type="button" className="photo-tile" onClick={() => showPhoto(moment, moment.photos.indexOf(id))}><img decoding="async" src={`/api/photos/${encodeURIComponent(id)}?w=240`} alt={photoLabel(moment, moment.photos.indexOf(id))} loading="lazy" draggable={false} /></button>)}</div>
     </section>);
   };
   const scales: Array<[Scale, string]> = [["years", t("年", "Years", "Años")], ["months", t("月", "Months", "Meses")], ["all", t("全部", "All", "Todo")]];
@@ -185,15 +251,16 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
           code, the one exception to using Carousel; vertical swipes on it still scroll the page. */}
       <div role="group" aria-label={t("Ourever 找到的故事", "Stories Ourever found", "Historias que encontró Ourever")} className="story-bubbles story-bubbles-native"><div className="story-bubbles-track">
         {bubbles.map((story) => <button key={story.id} type="button" className="story-bubble" onClick={() => play(story)} data-testid={`story-${story.kind}`}>
-          <span className="story-bubble-ring">{photo(story.cover, "story-bubble-photo")}</span><span className="story-bubble-label">{story.title}</span>
+          <span className="story-bubble-ring">{photo(story.cover, story.title, "story-bubble-photo")}</span><span className="story-bubble-label">{story.title}</span>
         </button>)}
         {/* 100 件小事 and 一起看过的 live in 关于我们 now (founder 11-07): this row is for photo stories only. */}
       </div></div>
     </div>}
-    {error && <p className="space-error" role="alert">{error}</p>}
+    {loadStatus}
+    {overlays}
 
     {scale === "years" && !year && <div className="year-grid">{years.map((item) => <button key={item.year} type="button" onClick={() => setOpenYear(item.year)} data-testid={`year-${item.year}`}>
-      {photo(item.cover, "year-cover", 480)}
+      {photo(item.cover, t(`${item.year} 年回忆封面`, `Memories from ${item.year}`, `Recuerdos de ${item.year}`), "year-cover", 480)}
       <span><strong>{item.year}</strong><small>{count(item.moments.length)}{item.places.length ? ` · ${item.places.slice(0, 3).join(t("、", ", ", ", "))}` : ""}</small></span>
     </button>)}</div>}
     {scale === "years" && year && <>
@@ -202,10 +269,10 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </>}
     {scale === "months" && wallOf(all)}
     {scale === "all" && everyPhoto(all)}
-    {moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Ourever 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Ourever in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Ourever en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
+    {!error && moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Ourever 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Ourever in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Ourever en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
 
     {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
     {!!all.length && <div className="moments-scale" role="tablist" aria-label={t("按时间看", "By time", "Por fecha")}>{scales.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={scale === value} className={scale === value ? "active" : ""} onClick={() => { setScale(value); setOpenYear(""); }}>{label}</button>)}</div>}
-    {playing && <StoryViewer title={playing.title} slides={playing.slides} closeLabel={t("关闭", "Close", "Cerrar")} onClose={() => setPlaying(null)} />}
+    {playing && <StoryViewer title={playing.title} slides={playing.slides} language={language} onClose={() => setPlaying(null)} />}
   </div>;
 }

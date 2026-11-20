@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { currentLanguage, inInterfaceLanguage } from "./i18n";
+import { apiErrorText, currentLanguage, inInterfaceLanguage } from "./i18n";
 
 type PartialTurn = { itemId: string; speakerId: string; text: string };
 
@@ -76,7 +76,7 @@ export function useRealtimeTranscription<T>({
         body: JSON.stringify({ itemId, speakerId: turnSpeaker, text }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "实时转录保存失败。");
+      if (!response.ok) throw new Error(apiErrorText(payload, response.status, currentLanguage()));
       callbacksRef.current.onCommitted(payload as T);
     } catch (error) {
       callbacksRef.current.onError((error as Error).message);

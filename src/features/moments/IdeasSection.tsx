@@ -71,7 +71,7 @@ export function IdeasSection({ language, done, onDid, onPlan }: { language: Lang
         <span className="ideas-sheet-icon">{LOOK[open.category].icon(30)}</span>
         <h3>{ideaText(open, language)}</h3>
         {mark ? <>
-          {mark.photo && <img className="ideas-sheet-photo" decoding="async" src={`/api/photos/${encodeURIComponent(mark.photo)}?w=640`} alt="" draggable={false} />}
+          {mark.photo && <img className="ideas-sheet-photo" decoding="async" src={`/api/photos/${encodeURIComponent(mark.photo)}?w=640`} alt={t(`${ideaText(open, language)}，拍摄于 ${day(mark.date)}`, `${ideaText(open, language)}, ${day(mark.date)}`, `${ideaText(open, language)}, ${day(mark.date)}`)} draggable={false} />}
           <p>{t(`你们在 ${day(mark.date)} 一起做过了 ♡`, `You did this together on ${day(mark.date)} ♡`, `Lo hicieron juntos el ${day(mark.date)} ♡`)}</p>
         </> : <>
           <p>{t("做过了就告诉 Ourever，发几张那天的照片，它会存进你们的回忆，这一张就会换成你们的照片。", "Done it? Tell Ourever and send a few photos from that day: it keeps them in your memories and this card becomes your photo.", "¿Ya lo hicieron? Díganselo a Ourever con unas fotos de ese día: las guarda en sus recuerdos y esta tarjeta será su foto.")}</p>

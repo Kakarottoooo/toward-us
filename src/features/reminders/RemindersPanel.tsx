@@ -2,11 +2,11 @@ import { Bell, BellSlash, Plus } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
-import { enableNativePush, iosPushUnavailable, nativePushPlugin, nativePushRegistered } from "./nativePush";
+import { enableNativePush, inNativeApp, nativePushAvailable, nativePushRegistered, type NativeSettings } from "./nativePush";
 import "./reminders.css";
 
 export type ReminderTarget = { kind: "issue" | "milestone" | "outcome" | "checkin" | "reminders" | "plans" | "checkins"; id?: string };
-type Settings = { enabled: boolean; configured: boolean; nativeConfigured?: boolean; nativeEnabled?: boolean; imessage?: boolean; imessageEnabled?: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
+type Settings = NativeSettings & { enabled: boolean; configured: boolean; nativeConfigured?: boolean; nativeEnabled?: boolean; imessage?: boolean; imessageEnabled?: boolean; publicKey: string; timezone: string; devices: Array<{ id: string; createdAt: string }> };
 type Delivery = { id: string; status: string; attempts: number; acceptedAt?: string; lastErrorCode?: string };
 type Reminder = { id: string; title?: string; dueAt?: string; frequency?: string; timezone?: string; status: string; target?: ReminderTarget; deliveries: Delivery[]; occurrenceOriginalDueAt?: string | null; localTime?: string };
 class ReminderError extends Error { constructor(public code: string) { super(code); } }
@@ -70,13 +70,13 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     } catch (error) { setNotice(errorText(error)); } finally { setBusy(false); }
   };
   // Inside the App the phone's own notifications replace browser push.
-  const nativeApp = iosPushUnavailable() || Boolean(nativePushPlugin());
-  const pushReady = nativeApp ? !iosPushUnavailable() && settings?.nativeConfigured : settings?.configured;
+  const nativeApp = inNativeApp();
+  const pushReady = nativeApp ? nativePushAvailable(settings) : settings?.configured;
   // "On" means what this device will actually receive: this phone's App push in the App, this browser's push elsewhere.
   const notificationsOn = nativeApp ? Boolean(settings?.nativeEnabled && nativePushRegistered()) : Boolean(settings?.enabled && settings.devices.length);
   const connectPhone = async () => {
     setBusy(true); setNotice("");
-    const result = await enableNativePush({ force: true });
+    const result = await enableNativePush();
     // Connecting this phone also lifts an earlier "turn off all reminder notifications".
     if (result === "registered") await api("/reminder-settings", "PATCH", { enabled: true, timezone, language }).catch(() => {});
     await load().catch(() => {});
@@ -104,7 +104,8 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     <header><div><Bell size={23} /><h2 id="reminders-title">{text("我的提醒", "My reminders", "Mis recordatorios")}</h2></div><p>{text("给计划、复盘或一句关心留个时间。提醒名称只对你可见：手机和浏览器通知只显示一句模糊提示，发到你自己 iMessage 的提醒会带上提醒名称。", "Make time for a plan, a review or a caring moment. Reminder names stay private: phone and browser notifications only show a vague line, while reminders sent to your own iMessage include the reminder name.", "Haz espacio para un plan, una revisión o un gesto de cariño. Los nombres son privados: las notificaciones del teléfono y del navegador solo muestran un aviso general, y los recordatorios enviados a tu propio iMessage incluyen el nombre.")}</p></header>
     <div className="reminders-settings">
       <p>{settings ? nativeApp ? notificationsOn ? text("此手机的通知已开启", "Notifications are on for this phone", "Notificaciones activadas en este teléfono") : text("此手机的通知未开启或已关闭", "Notifications for this phone are not on", "Las notificaciones de este teléfono no están activadas") : notificationsOn ? text("浏览器通知已开启", "Browser notifications are on", "Notificaciones del navegador activadas") : text("浏览器通知未连接或已关闭", "Browser notifications are disconnected or off", "Notificaciones desconectadas o desactivadas") : text("正在读取提醒…", "Loading reminders…", "Cargando recordatorios…")}</p>
-      <div className="row-actions">{!iosPushUnavailable() && <button type="button" onClick={() => void (nativeApp ? connectPhone() : connect())} disabled={busy || !pushReady}>{nativeApp ? text("开启此手机通知", "Turn on phone notifications", "Activar notificaciones del teléfono") : text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>}
+      {nativeApp && !notificationsOn && pushReady && <p>{text("开启后，这台手机会收到伴侣消息、每日一问和提醒。可在设置中按类型关闭。", "This phone can notify you about partner messages, daily questions and reminders. Choose the types in Settings.", "Recibe mensajes de tu pareja, preguntas diarias y recordatorios. Elige los tipos en Ajustes.")}</p>}
+      <div className="row-actions">{(!nativeApp || (pushReady && !notificationsOn)) && <button type="button" onClick={() => void (nativeApp ? connectPhone() : connect())} disabled={busy || !pushReady}>{nativeApp ? text("开启此手机通知", "Turn on phone notifications", "Activar notificaciones del teléfono") : text("连接此浏览器通知", "Connect this browser", "Conectar este navegador")}</button>}
         {(settings?.enabled || (nativeApp && notificationsOn) || settings?.imessageEnabled) && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: false, timezone, language }))}><BellSlash size={16} />{text("关闭所有提醒通知（手机、浏览器和 iMessage）", "Turn off all reminder notifications (phone, browser and iMessage)", "Desactivar todas las notificaciones (teléfono, navegador e iMessage)")}</button>}
         {settings && !settings.enabled && ((settings.devices.length > 0 && settings.configured) || (settings.imessage && !settings.imessageEnabled)) && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: true, timezone, language }))}>{text("重新开启通知", "Turn notifications back on", "Reactivar notificaciones")}</button>}
       </div>

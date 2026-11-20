@@ -19,9 +19,12 @@ import "./settings.css";
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; aiConsentAt?: string | null; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account" | "ai"; days?: number | null } | { kind: "withdraw"; summary: Summary };
-type Page = "main" | "access" | "referrals" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
-type SettingsProps = { onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
+type Page = "account" | "main" | "access" | "referrals" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
+type SettingsProps = { onName: (name: string) => void; onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
+
+type AccountBridge = { info(): Promise<{ app_version: string; build: string }>; shareExport?(options: { contents: string }): Promise<{ completed: boolean }> };
+const accountBridge = () => (window as Window & { Capacitor?: { Plugins?: { OureverFeedback?: AccountBridge } } }).Capacitor?.Plugins?.OureverFeedback;
 
 function downloadFile(contents: string, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
@@ -37,10 +40,18 @@ function Row({ icon, tone = "blue", label, value, onClick, danger = false, testI
 const Group = ({ title, note, children }: { title?: string; note?: string; children: ReactNode }) => <section className="settings-group">{title && <h2>{title}</h2>}<div className="settings-card">{children}</div>{note && <p className="settings-note">{note}</p>}</section>;
 
 /** Settings: account, language, privacy and data, each one row deep; every irreversible step is confirmed in a sheet with the password. */
-export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
+export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlierPeople, user, relationshipId, partnerName, language, onLanguage, onBack, onLogout, onLeft, onAiConsent, onDeleted }: SettingsProps) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
-  const [page, setPage] = useState<Page>(initialPage === "membership" && inIosApp() ? "main" : initialPage || "main");
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    if (inIosApp()) {
+      void accountBridge()?.info().then(info => setVersion([info.app_version, info.build && `(${info.build})`].filter(Boolean).join(" "))).catch(() => {});
+    } else {
+      setVersion([import.meta.env.VITE_WEB_VERSION, import.meta.env.VITE_WEB_COMMIT?.slice(0, 8)].filter(Boolean).join(" · "));
+    }
+  }, []);
+  const [page, setPage] = useState<Page>(initialPage || "main");
   // The couple's character: made by either of them, shown to both; showing it on this screen is each member's own choice.
   const { character, setCharacter } = useCoupleCharacter(Boolean(relationshipId));
   const [characterNotice, setCharacterNotice] = useState("");
@@ -55,7 +66,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
   const [plan, setPlan] = useState<Membership["plan"] | null>(null);
   const [founder, setFounder] = useState(false);
   useEffect(() => { if (inIosApp()) return; void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
-  useEffect(() => { if (inIosApp()) return; void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
+  useEffect(() => { void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [password, setPassword] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState(""); const [showCode, setShowCode] = useState(false);
@@ -70,7 +81,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
   };
   const load = async () => { try { setData(await relationshipApi<PrivacyData>(`/api/privacy?language=${language}`)); } catch (error) { setNotice((error as Error).message); } };
   useEffect(() => { void load(); }, [language]);
-  const open = (next: Page) => { keyboard.hide(); setNotice(""); setPage(next); };
+  const open = (next: Page) => { keyboard.hide(); setCurrent(""); setNextPassword(""); setRepeat(""); setName(user.name); setNotice(""); setPage(next); };
   const prepare = (action: PendingAction) => { keyboard.hide(); setPending(action); setPassword(""); setConfirmed(false); setNotice(""); };
   const close = () => { keyboard.hide(); setPending(null); setPassword(""); setConfirmed(false); };
   const period = (value: number | null) => value === null ? t("由我手动删除", "Until I delete them", "Hasta que los borre") : t(`${value} 天没更新就删除`, `After ${counted(value, "day", "days")} without changes`, `Tras ${counted(value, "día", "días")} sin cambios`);
@@ -92,14 +103,29 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
       const body = { password, confirm: true, language };
       if (action.kind === "retention") await relationshipApi("/api/privacy", { method: "PATCH", body: JSON.stringify({ ...body, privateRetentionDays: action.days ?? null }) });
       if (action.kind === "recovery") { const result = await relationshipApi<{ recoveryCode: string }>("/api/privacy/recovery-code", jsonBody(body)); setRecoveryCode(result.recoveryCode); setShowCode(true); }
-      if (action.kind === "export") { const result = await relationshipApi<unknown>("/api/privacy/export", jsonBody(body)); downloadFile(JSON.stringify(result, null, 2), "ourever-export.json", "application/json;charset=utf-8"); }
+      let exportCompleted = true;
+      if (action.kind === "export") { const result = await relationshipApi<unknown>("/api/privacy/export", jsonBody(body)); const contents = JSON.stringify(result, null, 2);
+        if (inIosApp()) {
+          try {
+            const bridge = accountBridge();
+            if (bridge?.shareExport) exportCompleted = (await bridge.shareExport({ contents })).completed;
+            else {
+              const files = [new File([contents], "ourever-export.json", { type: "application/json" })];
+              if (!navigator.canShare?.({ files })) throw new Error();
+              await navigator.share({ files });
+            }
+          } catch (err) {
+            if ((err as Error).name === "AbortError") exportCompleted = false;
+            else throw new Error(t("无法共享导出文件，请重试。", "Could not share the export. Try again.", "No se pudo compartir el archivo. Inténtalo de nuevo."));
+          }
+        } else downloadFile(contents, "ourever-export.json", "application/json;charset=utf-8"); }
       if (action.kind === "delete-private") await relationshipApi("/api/privacy/delete-private", jsonBody(body));
       if (action.kind === "leave") { await relationshipApi("/api/privacy/leave", jsonBody(body)); await onLeft(); }
       if (action.kind === "account") { await relationshipApi("/api/privacy/account", { method: "DELETE", body: JSON.stringify(body) }); setPending(null); await onDeleted(); return; }
       if (action.kind === "ai") { const result = await relationshipApi<{ activeCallMayNeedHangup?: boolean }>("/api/privacy/ai-consent", jsonBody({ agree: false, language })); setPending(null); setData((current) => current ? { ...current, aiConsentAt: null } : current); onAiConsent?.(null); if (result.activeCallMayNeedHangup) setNotice(t("授权已撤回。请挂断其他设备上仍在进行的通话。", "Permission withdrawn. End any call still open on another device.", "Permiso retirado. Finaliza cualquier llamada que siga abierta en otro dispositivo.")); return; }
       if (action.kind === "withdraw") await relationshipApi(`/api/privacy/summaries/${action.summary.id}/withdraw`, jsonBody({ confirm: true, language, version: action.summary.version }));
       setPending(null); await load();
-      setNotice(action.kind === "export" ? t("数据文件已开始下载。", "Your data file is downloading.", "Tu archivo de datos se está descargando.") : t("已完成。", "Done.", "Listo."));
+      setNotice(action.kind === "export" && inIosApp() ? (exportCompleted ? t("文件已共享。", "File shared.", "Archivo compartido.") : t("已取消共享。", "Sharing canceled.", "Se canceló el envío.")) : action.kind === "export" ? t("数据文件已开始下载。", "Your data file is downloading.", "Tu archivo de datos se está descargando.") : t("已完成。", "Done.", "Listo."));
     } catch (error) { setNotice((error as Error).message); }
     finally { setBusy(false); setPassword(""); setConfirmed(false); }
   };
@@ -107,7 +133,22 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
   const paired = Boolean(data?.relationships.some((relationship) => ["active", "pending"].includes(relationship.status)));
   const confirmedSummaries = (data?.sharedSummaries || []).filter((summary) => summary.status === "confirmed");
   const summaryIsCurrent = (summary: Summary) => Boolean(summary.relationshipId && data?.relationships.some((relationship) => relationship.id === summary.relationshipId && relationship.status === "active"));
-  const titles: Record<Page, string> = { main: t("设置", "Settings", "Ajustes"), referrals: inviteTitle(language), membership: t("Ourever 会员", "Ourever membership", "Membresía Ourever"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("AI 与数据处理方", "AI and data processors", "IA y encargados de datos"), report: t("举报或求助", "Report or get help", "Denunciar o pedir ayuda"), access: t("Ourever 能看到什么", "What Ourever can see", "Qué puede ver Ourever"), memory: t("Ourever 记得的事", "What Ourever remembers", "Lo que Ourever recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
+  const titles: Record<Page, string> = { account: t("名字与密码", "Name and password", "Nombre y contraseña"), main: t("设置", "Settings", "Ajustes"), referrals: inviteTitle(language), membership: t("Ourever 会员", "Ourever membership", "Membresía Ourever"), founder: t("内测看板", "Beta board", "Panel de beta"), profile: t("关于我们", "About us", "Sobre nosotros"), processors: t("AI 与数据处理方", "AI and data processors", "IA y encargados de datos"), report: t("举报或求助", "Report or get help", "Denunciar o pedir ayuda"), access: t("Ourever 能看到什么", "What Ourever can see", "Qué puede ver Ourever"), memory: t("Ourever 记得的事", "What Ourever remembers", "Lo que Ourever recuerda"), notifications: t("通知", "Notifications", "Notificaciones"), retention: t("私人内容保留", "Private content", "Contenido privado"), summaries: t("我授权的共同摘要", "Summaries I shared", "Resúmenes que compartí"), history: t("同意与操作记录", "Consent history", "Historial de consentimiento"), recovery: t("恢复码", "Recovery code", "Código de recuperación"), character: t("我们的角色", "Our character", "Nuestro personaje") };
+
+  const [name, setName] = useState(user.name);
+  const [current, setCurrent] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const saveAccount = async () => {
+    setBusy(true); setNotice(""); keyboard.hide();
+    try {
+      await relationshipApi("/api/privacy/account", { method: "PATCH", body: JSON.stringify({
+        password: current, language, ...(name.trim() !== user.name ? { name: name.trim() } : {}), ...(nextPassword ? { newPassword: nextPassword } : {})
+      }) });
+      onName(name.trim()); setName(name.trim()); setNextPassword(""); setRepeat(""); setCurrent("");
+      setNotice(t("账号已更新。", "Account updated.", "Cuenta actualizada."));
+    } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
+  };
 
   const main = <>
     <section className="settings-profile">
@@ -115,7 +156,8 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
       <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${partnerName} 连接`, `Connected with ${partnerName}`, `Conectado con ${partnerName}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
     <Group>
-      {!inIosApp() && <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />}
+      <Row icon={<Key size={18} />} label={titles.account} onClick={() => open("account")} />
+      <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />
       <Row icon={<UsersThree size={18} weight="bold" />} tone="green" label={titles.referrals} onClick={() => open("referrals")} testId="settings-referrals" />
       {founder && <Row icon={<ListChecks size={18} weight="bold" />} tone="green" label={titles.founder} onClick={() => open("founder")} testId="settings-founder" />}
       <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
@@ -158,7 +200,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
     <Group>
       <Row icon={<SignOut size={18} weight="bold" />} tone="gray" label={t("退出登录", "Sign out", "Cerrar sesión")} onClick={onLogout} testId="settings-logout" />
     </Group>
-    <p className="settings-footer">Ourever · {t("版本", "Version", "Versión")} 1.0</p>
+    <p className="settings-footer">Ourever{version && ` · ${t("版本", "Version", "Versión")} ${version}`}</p>
   </>;
 
   const processors: Array<[string, string]> = [
@@ -173,7 +215,15 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
     referrals: <ReferralPage language={language} />,
     founder: <FounderBeta language={language} />,
     access: <AiAccess language={language} onOpen={open} />,
-    membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} />,
+    account: <form className="settings-sheet" onSubmit={event => { event.preventDefault(); void saveAccount(); }}>
+      <label>{t("显示名字", "Display name", "Nombre visible")}<KeyboardInput required maxLength={24} value={name} onChange={e => setName(e.target.value)} /></label>
+      <label>{t("当前密码", "Current password", "Contraseña actual")}<KeyboardInput autoComplete="current-password" type="password" required maxLength={128} value={current} onChange={e => setCurrent(e.target.value)} /></label>
+      <label>{t("新密码（可选，10–128 个字符）", "New password (optional, 10–128 characters)", "Nueva contraseña (opcional, de 10 a 128 caracteres)")}<KeyboardInput autoComplete="new-password" type="password" minLength={10} maxLength={128} value={nextPassword} onChange={e => setNextPassword(e.target.value)} /></label>
+      {nextPassword && <label>{t("再次输入新密码", "Repeat new password", "Repite la nueva contraseña")}<KeyboardInput autoComplete="new-password" type="password" required maxLength={128} value={repeat} onChange={e => setRepeat(e.target.value)} /></label>}
+      {nextPassword && repeat && repeat !== nextPassword && <p role="alert">{t("两次密码不同。", "The passwords do not match.", "Las contraseñas no coinciden.")}</p>}
+      <button type="submit" disabled={busy || !current || !name.trim() || (name.trim() === user.name && !nextPassword) || (!!nextPassword && (nextPassword.length < 10 || nextPassword !== repeat))}>{t("保存更改", "Save changes", "Guardar cambios")}</button>
+    </form>,
+    membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} onInvite={() => open("referrals")} />,
     profile: <ProfilePage language={language} relationshipId={relationshipId} />,
     notifications: <NotificationSettings language={language} />,
     character: <>
@@ -207,7 +257,7 @@ export function SettingsPage({ onFeedback, initialPage, onAsk, onEarlierPeople, 
     summaries: confirmedSummaries.length ? <Group note={t("关系记忆有单独的双人授权，在“回忆”里管理。", "Relationship memories have their own two-person consent, managed in Moments.", "Los recuerdos tienen su propio consentimiento de ambos, en Momentos.")}>{confirmedSummaries.map((summary) => <div key={summary.id} className="settings-row settings-text-row"><p>{summary.text}</p><small>v{summary.version} · {!summaryIsCurrent(summary) ? t("关系已结束，不再使用", "Relationship ended; no longer used", "Relación terminada; ya no se usa") : summary.withdrawnAt || summary.aiAccessScope === "none" ? t("已停止 AI 使用", "AI use stopped", "Uso de IA detenido") : t("共同 AI 可以使用", "Joint AI may use it", "La IA compartida puede usarlo")}</small>{summaryIsCurrent(summary) && !summary.withdrawnAt && summary.aiAccessScope !== "none" && <button type="button" className="settings-link" disabled={busy} onClick={() => prepare({ kind: "withdraw", summary })}>{t("停止 AI 使用", "Stop AI use", "Detener uso de IA")}</button>}</div>)}</Group> : <p className="settings-empty">{t("你还没有确认分享过摘要。", "You haven't shared any summaries yet.", "Aún no compartiste resúmenes.")}</p>,
     history: data?.consentHistory.length ? <Group note={t("最近 50 条，不含私人原文。", "The latest 50, without private words.", "Los últimos 50, sin textos privados.")}>{data.consentHistory.map((event, index) => <div key={`${event.createdAt}:${index}`} className="settings-row settings-text-row"><strong>{consentLabel(event.eventType, language)}{event.sourceVersion ? ` · v${event.sourceVersion}` : ""}</strong><small>{new Date(event.createdAt).toLocaleString(languageTag(language), { dateStyle: "medium", timeStyle: "short" })}</small></div>)}</Group> : <p className="settings-empty">{t("还没有记录。", "Nothing yet.", "Aún no hay nada.")}</p>,
     recovery: <>
-      <Group note={t("还没有邮箱找回。忘记密码时，只能用恢复码重设。", "Email recovery isn't available yet. If you forget your password, the recovery code is the only way back in.", "Aún no hay recuperación por correo. Si olvidas la contraseña, el código es la única forma de volver a entrar.")}>
+      <Group note={t("忘记密码时，可在登录页通过注册邮箱或一次性恢复码重设。", "Use your account email or a one-time recovery code to reset your password from sign-in.", "Desde el inicio de sesión puedes restablecer la contraseña con tu correo o un código de recuperación de un solo uso.")}>
         <Row icon={<Key size={18} weight="bold" />} tone="gray" label={t("状态", "Status", "Estado")} value={data?.recoveryEnabled ? t("已设置", "On", "Activado") : t("未设置", "Off", "Desactivado")} />
         <button type="button" className="settings-row settings-action" onClick={() => prepare({ kind: "recovery" })}>{data?.recoveryEnabled ? t("更换恢复码", "Replace recovery code", "Reemplazar código") : t("生成恢复码", "Generate recovery code", "Generar código")}</button>
       </Group>

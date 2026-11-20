@@ -1,3 +1,4 @@
+import { chatSignal } from "./chat-response.mjs";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { checkCurrentAiPermission, servingAiAccounts } from "./ai-ledger.mjs";
@@ -18,7 +19,7 @@ async function screen(input, direction) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw failure("ai_screening_unavailable");
   const result = await fetch("https://api.openai.com/v1/moderations", {
-    method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
+    method: "POST", redirect: "error", signal: chatSignal() ? AbortSignal.any([chatSignal(), AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({ model: "omni-moderation-latest", input }),
   }).then((r) => r.ok ? r.json() : null).catch(() => null);
@@ -51,7 +52,9 @@ export function screenedClient(client) {
     responses: { async create(params, options) {
       const messages = Array.isArray(params.input) ? params.input.filter((m) => ["user", "assistant"].includes(m.role)).map((m) => m.content) : [params.input];
       await screenText(messages.map((v) => typeof v === "string" ? v : JSON.stringify(v)).join("\n"));
-      const result = await client.responses.create(params, options);
+      const signal = chatSignal();
+      signal?.throwIfAborted();
+      const result = await client.responses.create(params, signal ? { ...options, signal: options?.signal ? AbortSignal.any([signal, options.signal]) : signal } : options);
       await screenText(result.output_text, "output");
       return result;
     } },

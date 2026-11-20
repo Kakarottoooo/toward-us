@@ -28,7 +28,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .home-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; user-select: none; }
 .language-switch { position: absolute; z-index: 2; top: 56px; right: 24px; display: flex; align-items: center; gap: 7px; color: #aaa49e; font-weight: 650; font-size: 16px; letter-spacing: .04em; }
 .language-switch > span { display: flex; align-items: center; gap: 7px; }
-.language-switch button { padding: 0 0 4px; border: 0; border-bottom: 1.5px solid transparent; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
+.language-switch button { min-width: 44px; min-height: 44px; padding: 0 0 4px; border: 0; border-bottom: 1.5px solid transparent; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
 .language-switch button.active { color: var(--jian-red); border-bottom-color: currentColor; }
 .language-switch i { font-style: normal; color: #aaa49e; }
 .home-statement { display: flex; flex-direction: column; align-items: center; }
@@ -48,8 +48,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .home-actions p { margin: 12px 0 0; text-align: center; color: #6d6964; font-size: 12px; letter-spacing: .12em; }
 
 .paper-screen { background-color: var(--jian-paper); }
-.simple-header { position: sticky; top: 0; z-index: 5; min-height: 104px; padding: 51px 22px 14px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; background: rgba(244, 239, 230, .96); border-bottom: 1px solid var(--jian-line); }
-.simple-header > button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; color: var(--jian-ink); cursor: pointer; }
+.simple-header { position: sticky; top: 0; z-index: 5; min-height: 104px; padding: 51px 22px 14px; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; background: rgba(244, 239, 230, .96); border-bottom: 1px solid var(--jian-line); }
+.simple-header > button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .simple-header > span { text-align: center; font-size: 12px; letter-spacing: .19em; font-weight: 700; }
 .simple-header .compact-language { font-size: 12px; font-weight: 800; color: var(--jian-red); }
 .simple-header > i { display: block; }
@@ -72,8 +72,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .loading-screen span { color: var(--jian-blue); font-family: Georgia, serif; letter-spacing: .34em; }
 .loading-screen p { color: var(--jian-muted); font-size: 13px; }
 .room-shell { position: relative; overflow: hidden; }
-.room-header { position: absolute; z-index: 6; top: 0; left: 0; right: 0; height: 101px; padding: 49px 20px 10px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; background: var(--jian-paper); border-bottom: 1px solid var(--jian-line); }
-.room-header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; }
+.room-header { position: absolute; z-index: 6; top: 0; left: 0; right: 0; height: 101px; padding: 49px 20px 10px; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; background: var(--jian-paper); border-bottom: 1px solid var(--jian-line); }
+.room-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; }
 .room-header > div { text-align: center; }
 .room-header > div span { display: block; color: var(--jian-muted); font-size: 12px; letter-spacing: .14em; }
 .room-header > div strong { font-size: 18px; letter-spacing: .16em; }
@@ -211,7 +211,7 @@ html:not(:lang(zh)) .vertical-title h1 { writing-mode: horizontal-tb; max-width:
 .invite-landing-points { margin: 22px auto 26px; padding: 0; max-width: 320px; list-style: none; display: grid; gap: 12px; text-align: left; color: var(--jian-ink); font-size: 15px; line-height: 1.55; }
 .invite-landing-points li { padding-left: 14px; border-left: 2px solid var(--jian-red); }
 .invite-landing .form-notice { margin: 0 auto 16px; max-width: 320px; text-align: left; font-size: 14px; }
-.pairing-screen .language-switch button { min-width: 30px; min-height: 32px; padding: 2px 4px; border: 1px solid var(--jian-line); border-radius: 6px; color: #5d574f; }
+.pairing-screen .language-switch button { min-width: 44px; min-height: 44px; padding: 2px 4px; border: 1px solid var(--jian-line); border-radius: 6px; color: #5d574f; }
 .pairing-screen .language-switch button.active { border-color: var(--jian-red); color: var(--jian-red); }
 .invite-code-panel { padding: 18px 15px; border: 1px solid var(--jian-line); background: rgba(251,247,239,.88); text-align: left; }
 .invite-code-panel > span { display: block; color: var(--jian-muted); font-size: 12px; letter-spacing: .12em; }

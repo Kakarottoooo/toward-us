@@ -3,7 +3,7 @@ import { AsyncResource } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { requireAiPermission } from "./ai-permission.mjs";
-import { AI_LIMIT, FREE_LIMIT_OPTIONS, MODEL_METHODS, currentAiUser, featureForCall, isPaidAiUser } from "./ai-budget.mjs";
+import { AI_LIMIT, freeLimitOptions, MODEL_METHODS, currentAiUser, featureForCall, isPaidAiUser } from "./ai-budget.mjs";
 import { isReferralAiCall, recordReferralUse } from "./referrals.mjs";
 import { currentAiCall, runInAiCall } from "./ai-call-context.mjs";
 import { claudeResult } from "./model-call-budget.mjs";
@@ -80,7 +80,7 @@ const LIMIT_TEXT = {
   kill_switch: { zh: "Ourever 的 AI 正在短暂维护，请稍后再试。其他功能照常可用。", en: "Ourever's AI is briefly paused for maintenance. Please try again soon; everything else keeps working.", es: "La IA de Ourever está en una breve pausa de mantenimiento. Inténtalo pronto; todo lo demás sigue funcionando." },
 };
 const costLimitError = (scope, language, feature, free) => {
-  const text = free ? Object.fromEntries(Object.entries(LIMIT_TEXT[scope]).map(([lang, value]) => [lang, value + " " + FREE_LIMIT_OPTIONS[lang]])) : LIMIT_TEXT[scope];
+  const text = free ? Object.fromEntries(Object.entries(LIMIT_TEXT[scope]).map(([lang, value]) => [lang, value + " " + freeLimitOptions()[lang]])) : LIMIT_TEXT[scope];
   return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, cost: true, upgrade: free });
 };
 

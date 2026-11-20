@@ -77,7 +77,8 @@ export async function createPostgresStore(databaseUrl) {
     },
     async createSession(session) { await pool.query("insert into sessions (id,user_id,created_at,expires_at) values ($1,$2,$3,$4)", [session.id, session.userId, session.createdAt, session.expiresAt]); return session; },
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
-    async deleteUserSessions(userId) { await pool.query("delete from sessions where user_id=$1", [userId]); },
+    async deleteUserSessions(userId, except = null) { await pool.query("delete from sessions where user_id=$1 and id is distinct from $2", [userId, except]); },
+    async updateUserName(userId, name) { return (await pool.query("update users set name=$2 where id=$1", [userId, name])).rowCount > 0; },
     async updateUserPassword(userId, passwordHash) { return (await pool.query("update users set password_hash=$2 where id=$1", [userId, passwordHash])).rowCount > 0; },
     async updateUserLanguage(userId, language) { return (await pool.query("update users set language=$2 where id=$1", [userId, language])).rowCount > 0; },
     async leaveRelationship(userId) {

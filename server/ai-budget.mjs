@@ -46,7 +46,7 @@ export const usesCheaperModel = (feature) => featureKind(feature) !== "interacti
 const METHODS = {
   structured: (params) => params?.name || "structured", readScreenshots: () => "chat_screenshots",
   checkReplySources: () => "reply_source_check",
-  planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: () => "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
+  planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: (_input, _language, scope) => scope === "us" ? "together_turn" : "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
   continuePrivateAgentThread: () => "private_agent", summarizePerspective: () => "perspective_summary", generateDecisionOptions: () => "decision_options",
   continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", createRealtimeSession: () => "realtime_voice",
   transcribe: (_buffer, _mime, _language, feature) => feature === "feedback_voice" ? feature : "transcription",
@@ -69,24 +69,30 @@ export const FREE_LIMIT_OPTIONS = {
   en: "You can upgrade your membership or invite a friend to earn membership days.",
   es: "Puedes mejorar tu membresía o invitar a alguien para ganar días de membresía.",
 };
-const FREE_LIMIT_TEXT = {
-  zh: `今天 Ourever 的免费额度用完了，明天会自动恢复。${FREE_LIMIT_OPTIONS.zh}`,
-  en: `Ourever has used up today's free allowance. It resets tomorrow. ${FREE_LIMIT_OPTIONS.en}`,
-  es: `Ourever ya usó la asignación gratuita de hoy. Se renueva mañana. ${FREE_LIMIT_OPTIONS.es}`,
+const INVITE_ONLY = {
+  zh: "邀请好友可以获得会员天数。",
+  en: "Invite a friend to earn membership days.",
+  es: "Invita a alguien para ganar días de membresía.",
 };
+export const freeLimitOptions = () => currentAiUser()?.ios ? INVITE_ONLY : FREE_LIMIT_OPTIONS;
+const freeLimitText = () => ({
+  zh: `今天 Ourever 的免费额度用完了，明天会自动恢复。${freeLimitOptions().zh}`,
+  en: `Ourever has used up today's free allowance. It resets tomorrow. ${freeLimitOptions().en}`,
+  es: `Ourever ya usó la asignación gratuita de hoy. Se renueva mañana. ${freeLimitOptions().es}`,
+});
 export const isAiLimit = (error) => error?.code === AI_LIMIT;
-const limitError = (language, feature, scope, free = false) => { const text = free ? FREE_LIMIT_TEXT : LIMIT_TEXT; return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, upgrade: free, background: featureKind(feature) === "background" }); };
+const limitError = (language, feature, scope, free = false) => { const text = free ? freeLimitText() : LIMIT_TEXT; return Object.assign(new Error(text[language] || text.zh), { statusCode: 429, code: AI_LIMIT, i18n: text, feature, scope, upgrade: free, background: featureKind(feature) === "background" }); };
 
 // Who a model call is for. Set once per signed-in request (and around channel turns and import jobs), so every call made
 // while serving it, including background work it starts, is counted for that person.
 const context = new AsyncLocalStorage();
 /** The person the current request or job is for ({ userId, language }), or null. */
 export const currentAiUser = () => context.getStore() || null;
-export const asAiUser = ({ userId, language = "zh" }, work) => context.run({ userId, language }, work);
+export const asAiUser = ({ userId, language = "zh" }, work) => context.run({ ...context.getStore(), userId, language }, work);
 export function aiUserMiddleware(req, _res, next) {
   if (!req.auth?.user) return next();
   const hint = req.body?.language || req.query?.language || req.auth.user.language;
-  context.run({ userId: req.auth.user.id, language: ["zh", "en", "es"].includes(hint) ? hint : "zh" }, next);
+  context.run({ userId: req.auth.user.id, ios: /iPhone|iPad|iPod/i.test(req.get("user-agent") || ""), language: ["zh", "en", "es"].includes(hint) ? hint : "zh" }, next);
 }
 
 const COLLECTION = "aiUsage";
@@ -105,13 +111,7 @@ export async function isPaidAiUser(store, userId, now = new Date()) {
   return paid.has(String(userId).toLowerCase()) || paid.has(String((await store.getUserById(userId))?.email || "").toLowerCase());
 }
 
-/** Counts one call for this person, or throws the "today's limit" error if a cap is reached. */
-async function take(store, { userId, language }, feature, now, anonymous, caps) {
-  if (!userId) {
-    const key = day(now); if (anonymous.day !== key) { anonymous.day = key; anonymous.count = 0; }
-    if (anonymous.count >= ANONYMOUS_DAILY_CAP) throw limitError(language, feature, "anonymous");
-    anonymous.count += 1; return;
-  }
+async function allowanceScope(store, userId, now, caps) {
   const pairing = await store.getRelationshipContext(userId);
   const relationshipId = pairing?.relationship?.id || null, members = pairing?.members?.length ? pairing.members : null;
   const paid = paidList();
@@ -119,7 +119,27 @@ async function take(store, { userId, language }, feature, now, anonymous, caps) 
   const isPaid = async (id, user) => member || (paid.size > 0 && (paid.has(id.toLowerCase()) || paid.has(String((user || await store.getUserById(id))?.email || "").toLowerCase())));
   const plan = caps[await isPaid(userId, members?.find((member) => member.userId === userId)?.user) ? "paid" : "free"];
   const couplePlan = members && (await Promise.all(members.map((member) => isPaid(member.userId, member.user)))).some(Boolean) ? caps.paid : plan;
-  const id = usageId(relationshipId || `user-${userId}`, day(now)), kind = featureKind(feature);
+  return { relationshipId, plan, couplePlan, id: usageId(relationshipId || `user-${userId}`, day(now)) };
+}
+
+export async function remainingInteractiveCalls(store, userId, now = new Date()) {
+  const { relationshipId, plan, couplePlan, id } = await allowanceScope(store, userId, now, AI_CAPS);
+  const record = await store.getRelationshipRecordForUser(COLLECTION, id, userId);
+  const counts = record?.counts || {};
+  const personal = plan.person - sum(counts[userId] || {}, "interactive");
+  const shared = couplePlan.couple - Object.values(counts).reduce((n, row) => n + sum(row, "interactive"), 0);
+  return Math.max(0, relationshipId ? Math.min(personal, shared) : personal);
+}
+
+/** Counts one call for this person, or throws the "today's limit" error if a cap is reached. */
+async function take(store, { userId, language }, feature, now, anonymous, caps) {
+  if (!userId) {
+    const key = day(now); if (anonymous.day !== key) { anonymous.day = key; anonymous.count = 0; }
+    if (anonymous.count >= ANONYMOUS_DAILY_CAP) throw limitError(language, feature, "anonymous");
+    anonymous.count += 1; return;
+  }
+  const { relationshipId, plan, couplePlan, id } = await allowanceScope(store, userId, now, caps);
+  const kind = featureKind(feature);
   await store.transaction(`ai-usage:${id}`, async (tx) => {
     let record = await tx.getRelationshipRecordForUser(COLLECTION, id, userId);
     if (!record) {

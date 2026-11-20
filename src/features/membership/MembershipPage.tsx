@@ -36,7 +36,7 @@ export function listenAppleTransactions() {
 }
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
-export function MembershipPage({ language, userId, partnerName }: { language: Language; userId: string; partnerName: string | null }) {
+export function MembershipPage({ language, userId, partnerName, onInvite }: { language: Language; userId: string; partnerName: string | null; onInvite: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [data, setData] = useState<Membership | null>(null);
   const [apple, setApple] = useState<Record<string, string>>({});
@@ -49,7 +49,10 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
     try { await relationshipApi("/api/membership/redeem", jsonBody({ code, language })); forgetBetaCode(); setCode(""); await load(); setNotice(t("内测码已用上，谢谢你们来试 Ourever！", "Beta code applied. Thanks for trying Ourever!", "Código aplicado. ¡Gracias por probar Ourever!")); }
     catch (error) { setNotice((error as Error).message); } finally { setBusy(""); }
   };
-  const load = async () => { try { setData(await relationshipApi<Membership>("/api/membership")); } catch (error) { setNotice((error as Error).message); } };
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const load = async () => { try {
+    if (ios) setRemaining((await relationshipApi<{ remaining: number }>("/api/membership/allowance")).remaining);
+    setData(await relationshipApi<Membership>("/api/membership")); } catch (error) { setNotice((error as Error).message); } };
   useEffect(() => { void load(); }, []);
   useEffect(() => { if (!store) return; void store.products({ ids: Object.values(APPLE_IDS) }).then(({ products }) => setApple(Object.fromEntries(products.map((item) => [item.id, item.displayPrice])))).catch(() => {}); }, []);
   useEffect(() => { if (new URLSearchParams(location.search).get("paid") === "1") { setNotice(t("付款成功，正在开通，可能要等几秒。", "Payment received. Turning it on; this can take a few seconds.", "Pago recibido. Activándolo; puede tardar unos segundos.")); const timer = window.setTimeout(() => void load(), 4000); return () => window.clearTimeout(timer); } }, []);
@@ -80,9 +83,15 @@ export function MembershipPage({ language, userId, partnerName }: { language: La
     setBusy("");
   };
 
-  if (!data) return <p className="membership-loading">{notice || t("正在读取…", "Loading…", "Cargando…")}</p>;
+  if (!data) return <p className="membership-loading">{notice ? <>{notice} <button type="button" onClick={() => void load()}>{t("重试", "Retry", "Reintentar")}</button></> : t("正在读取…", "Loading…", "Cargando…")}</p>;
   const member = data.plan === "member", mine = data.paidBy === userId;
   const until = data.until ? new Date(data.until).toLocaleDateString(language === "zh" ? "zh-CN" : language, { year: "numeric", month: "short", day: "numeric" }) : "";
+  if (ios) return <section className="membership membership-hero" data-testid="membership-page">
+    <h2>{member ? t("当前会员", "Active membership", "Membresía activa") : t("免费版", "Free plan", "Plan gratuito")}</h2>
+    {member && until && <p>{t(`有效至 ${until}`, `Active through ${until}`, `Vigente hasta el ${until}`)}</p>}
+    <p>{t(`今日互动 AI 调用剩余 ${remaining} 次（UTC 零点重置）。`, `${remaining} interactive AI calls left today. Resets at midnight UTC.`, `Quedan ${remaining} llamadas de IA interactivas hoy. Se renuevan a medianoche UTC.`)}</p>
+    <button type="button" className="card-primary" onClick={onInvite}>{t("邀请好友获得会员天数", "Invite a friend to earn membership days", "Invita a alguien para ganar días de membresía")}</button>
+  </section>;
   const price = (plan: "monthly" | "yearly") => apple[APPLE_IDS[plan]] || dollars(data.prices[plan].usd);
   const canPay = Boolean(store) || (!ios && data.providers.stripe);
   const perks = [

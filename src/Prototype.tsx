@@ -20,12 +20,12 @@ import { SpacePage } from "./features/spaces/SpacePage";
 import { PeoplePage } from "./features/people/PeoplePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import { CapabilitiesPage } from "./features/capabilities/CapabilitiesPage";
-import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
+import { disableNativePush, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
 import { PlayCardArrival } from "./features/games/PlayCardArrival";
-import { brandLabel, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
+import { apiErrorText, brandLabel, currentLanguage, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
@@ -90,7 +90,7 @@ function AccountPrototype() {
   const [feedbackFile, setFeedbackFile] = useState<File>();
   const [feedbackReturn, setFeedbackReturn] = useState<Screen>("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
-  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "referrals" ? "referrals" : !inIosApp() && params.get("view") === "membership" ? "membership" : undefined; });
+  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "referrals" ? "referrals" : params.get("view") === "membership" ? "membership" : undefined; });
   const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -109,6 +109,7 @@ function AccountPrototype() {
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen("home"));
     listenNativePushTaps();
+    listenNativeInviteLinks();
     registerAppWorker();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
@@ -164,8 +165,8 @@ function AccountPrototype() {
         setUser(joined.user); setPairing(joined.pairing); setScreen("conversation");
       } catch (error) { setNotice(accountError((error as Error).message, language)); setScreen("pairing"); }
     } else setScreen(landing(state.pairing));
-    // Signing in is the user action that may ask, once, for App notification permission (a no-op in a browser).
-    void enableNativePush();
+    // A signed-in phone with existing permission can reconnect without a system prompt.
+    void restoreNativePush();
     // Inside the iPhone App, the home-screen widget gets its own read-only token (a no-op in a browser).
     void connectHomeWidget();
   };
@@ -206,7 +207,7 @@ function AccountPrototype() {
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
-    if (screen === "privacy" && user) return <SettingsPage key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
+    if (screen === "privacy" && user) return <SettingsPage onName={name => setUser({ ...user, name })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
     if (screen === "invite") return <InviteLanding code={inviteCode()} language={language} onLanguage={selectLanguage} onJoin={() => openAuth("register")} onSignIn={() => openAuth("login")} />;
     if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
     if (screen === "auth") return <AuthScreen mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(inviteCode() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
@@ -284,7 +285,7 @@ function AuthScreen({ mode, onModeChange, language, onLanguage, onBack, onAuth, 
       {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
       <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} testId="auth-submit" />
       <button className="auth-switch" type="button" onClick={() => { keyboard.hide(); setShowPassword(false); onModeChange(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
-      {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "使用恢复码找回账号", "Recover with a recovery code", "Recuperar con un código")}</button>}
+      {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>}
     </main>
   </MobileScroll>;
 }
@@ -358,4 +359,4 @@ const ACCOUNT_ERRORS: Record<string, [en: string, es: string]> = {
   "邀请无效、已过期，或当前账号已经绑定伴侣。": ["This invite is not valid or has expired, or this account is already linked to a partner.", "La invitación no es válida o ha caducado, o esta cuenta ya está vinculada a una pareja."],
 };
 function accountError(message: string, language: Language) { const known = ACCOUNT_ERRORS[message]; return known ? localized(language, message, known[0], known[1]) : inInterfaceLanguage(message, language); }
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(payload.error || `Request failed (${response.status})`), { code: payload.code }); return payload; }
+async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(apiErrorText(payload, response.status, currentLanguage())), { code: payload.code }); return payload; }

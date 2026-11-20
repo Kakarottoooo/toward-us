@@ -6,13 +6,32 @@ import "./report-reply.css";
 
 type Intent = "unhelpful" | "report";
 type Delivery = "idle" | "sending" | "sent" | "failed";
-type Props = { channel?: "me" | "us" | "private-workspace" | "decision"; conversationId?: string; messageId: string; language: Language; demoRoom?: string; messageMenu?: boolean; replyText?: string };
+async function copyPhotos(ids: string[]) {
+  // WebKit requires clipboard.write in the tap handler. Resolve image data inside the promised item.
+  const images = Promise.all(ids.map(async id => {
+    const response = await fetch("/api/photos/" + encodeURIComponent(id), { credentials: "same-origin" });
+    if (!response.ok) throw new Error("Photo unavailable");
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }));
+  return navigator.clipboard.write([new ClipboardItem({
+    "text/html": images.then(urls => new Blob([urls.map(url => '<img src="' + url + '">').join("")], { type: "text/html" })),
+  })]);
+}
 
-export function ReportReply({ channel, conversationId, messageId, language, demoRoom, messageMenu = false, replyText }: Props) {
+type MessageActions = { photoIds?: string[]; canReport?: boolean; onRegenerate?: () => void; onUnsend?: () => void };
+type Props = MessageActions & { channel?: "me" | "us" | "private-workspace" | "decision"; conversationId?: string; messageId: string; language: Language; demoRoom?: string; messageMenu?: boolean; replyText?: string };
+
+export function ReportReply({ channel, conversationId, messageId, language, demoRoom, messageMenu = false, replyText, ...actions }: Props) {
   const send = (intent?: Intent) => relationshipApi(demoRoom ? `/api/demo/rooms/${encodeURIComponent(demoRoom)}/report` : "/api/feedback/reply",
     jsonBody({ channel, conversationId, messageId, language, ...(intent ? { intent } : {}) }));
   return messageMenu && !demoRoom
-    ? <ReplyFeedbackMenu key={messageId} language={language} replyText={replyText} send={send} />
+    ? <ReplyFeedbackMenu key={messageId} language={language} replyText={replyText} send={send} {...actions} />
     : <InlineReport language={language} send={send} />;
 }
 
@@ -32,20 +51,21 @@ function InlineReport({ language, send }: { language: Language; send: () => Prom
   </div>;
 }
 
-function ReplyFeedbackMenu({ language, replyText, send }: { language: Language; replyText?: string; send: (intent: Intent) => Promise<unknown> }) {
+function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = true, onRegenerate, onUnsend }: MessageActions & { language: Language; replyText?: string; send: (intent: Intent) => Promise<unknown> }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [view, setView] = useState<"closed" | "menu" | "confirm">("closed");
+  const [view, setView] = useState<"closed" | "menu" | "confirm" | "unsend">("closed");
   const [delivery, setDelivery] = useState<Record<Intent, Delivery>>({ unhelpful: "idle", report: "idle" });
   const claimed = useRef(new Set<Intent>());
   const initialItem = useRef<Intent>("unhelpful");
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const unhelpful = useRef<HTMLButtonElement>(null), report = useRef<HTMLButtonElement>(null), confirm = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+  const [copyStatus, setCopyStatus] = useState("");
   const close = () => { setView("closed"); trigger.current?.focus(); };
   const open = (first: Intent) => { initialItem.current = first; setView("menu"); };
   useEffect(() => {
     if (view === "closed") return;
-    if (view === "menu") (initialItem.current === "report" ? report : unhelpful).current?.focus();
+    if (view === "menu") (initialItem.current === "report" && canReport ? report.current : root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]'))?.focus();
     else confirm.current?.focus();
     const outside = (event: PointerEvent) => {
       if (event.target instanceof Node && !root.current?.contains(event.target)) setView("closed");
@@ -97,17 +117,31 @@ function ReplyFeedbackMenu({ language, replyText, send }: { language: Language; 
       <div id={panelId} role="menu" aria-label={actions} className="reply-report-options" onKeyDown={(event) => {
         if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
-        const toFirst = event.key === "Home" || (event.key !== "End" && document.activeElement === report.current);
-        (toFirst ? unhelpful : report).current?.focus();
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
       }}>
-        <button ref={unhelpful} role="menuitem" tabIndex={-1} type="button" aria-disabled={delivery.unhelpful === "sending" || delivery.unhelpful === "sent"} onClick={() => void submit("unhelpful")}>
+        {(replyText || Boolean(photoIds?.length)) && <button role="menuitem" tabIndex={-1} type="button" onClick={async () => {
+          try { if (replyText) await navigator.clipboard.writeText(replyText); else await copyPhotos(photoIds!); setCopyStatus(t("已复制", "Copied", "Copiado")); }
+          catch { setCopyStatus(t("长按文字即可复制", "Touch and hold the text to copy it.", "Mantén pulsada la burbuja para copiar el texto.")); }
+        }}>{t("复制", "Copy", "Copiar")}</button>}
+        {onRegenerate && <button role="menuitem" tabIndex={-1} type="button" onClick={() => { close(); onRegenerate(); }}>{t("重新生成", "Regenerate", "Volver a generar")}</button>}
+        {onUnsend && <button role="menuitem" tabIndex={-1} type="button" onClick={() => setView("unsend")}>{t("撤回", "Undo send", "Anular envío")}</button>}
+        {canReport && <><button ref={unhelpful} role="menuitem" tabIndex={-1} type="button" aria-disabled={delivery.unhelpful === "sending" || delivery.unhelpful === "sent"} onClick={() => void submit("unhelpful")}>
           {delivery.unhelpful === "sent" ? <Check size={16} /> : <ThumbsDown size={16} />}{t("这条回复没帮到我", "This reply wasn’t helpful", "Esta respuesta no me ayudó")}
         </button>
         <button ref={report} role="menuitem" tabIndex={-1} type="button" aria-disabled={delivery.report === "sending" || delivery.report === "sent"} onClick={() => { if (!claimed.current.has("report")) setView("confirm"); }}>
           {delivery.report === "sent" ? <Check size={16} /> : <Flag size={16} />}{t("举报不当内容", "Report inappropriate content", "Denunciar contenido inapropiado")}
         </button>
+        </>}
       </div>
-      <span role="status" className="reply-report-receipt">{[receipt("unhelpful"), receipt("report")].filter(Boolean).join(" · ")}</span>
+      <span role="status" className="reply-report-receipt">{[copyStatus, receipt("unhelpful"), receipt("report")].filter(Boolean).join(" · ")}</span>
+    </div>}
+    {view === "unsend" && <div id={panelId} className="reply-report-panel is-confirming">
+      <p>{t("从你们两人的对话中撤回这条消息？", "Remove this message for both of you?", "¿Retirar este mensaje para ambos?")}</p>
+      <button ref={confirm} type="button" onClick={() => { close(); onUnsend?.(); }}>{t("确认撤回", "Undo send", "Anular envío")}</button>
+      <button type="button" onClick={close}>{t("保留", "Keep message", "Conservar mensaje")}</button>
     </div>}
     {view === "confirm" && <div id={panelId} className="reply-report-panel is-confirming">
       <p id={panelId + "-notice"}>{t("提交后，Ourever 团队会收到这条回复的可见文字，用于审核。只包含这一条回复。", "The Ourever team will receive the visible text of this reply for review. Only this reply is included.", "El equipo de Ourever recibirá el texto visible de esta respuesta para revisarlo. Solo se incluye esta respuesta.")}</p>

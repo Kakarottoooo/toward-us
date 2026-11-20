@@ -132,6 +132,26 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     res.setHeader("Cache-Control", "no-store");
     return req.auth ? next() : res.status(401).json({ error: local(req, "请先登录。", "Please sign in.", "Inicia sesión.") });
   });
+  router.patch("/privacy/account", async (req, res) => {
+    const userId = req.auth.user.id;
+    const { name, newPassword } = req.body || {};
+    if (name !== undefined && (typeof name !== "string" || !name.trim() || name.trim().length > 24))
+      return res.status(400).json({ code: "invalid_display_name" });
+    if (newPassword !== undefined && !validPassword(newPassword))
+      return res.status(400).json({ code: "invalid_password_length" });
+    if (name === undefined && newPassword === undefined) return res.status(400).json({ code: "invalid_input" });
+    await store.transaction(`user:${userId}`, async tx => {
+      await reauthenticate(req, tx);
+      if (name !== undefined) await tx.updateUserName(userId, name.trim());
+      if (newPassword !== undefined) {
+        await tx.updateUserPassword(userId, await hashPassword(newPassword));
+        await tx.deleteUserSessions(userId, req.auth.session.id);
+        await updateSettings(userId, record => { delete record.passwordReset; delete record.widgetToken; }, tx);
+      }
+    });
+    if (newPassword !== undefined) closeConnections([userId]);
+    res.status(204).end();
+  });
   router.get("/privacy", async (req, res) => {
     const userId = req.auth.user.id; const current = await settings(userId); const snapshot = await store.getPrivacySnapshot(userId);
     const privateCount = Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection) && collection !== "consentEvents").reduce((count, [, records]) => count + records.filter((record) => record.ownerUserId === userId && ["private", "private_surprise"].includes(record.visibility)).length, 0);

@@ -19,11 +19,12 @@ const NATIVE_TOKEN = /^[A-Za-z0-9_:-]{16,4096}$/;
 const TOGETHER_NOTIFY_MS = 10 * 60_000;
 // Channels the browser retry button never re-targets (it can only move a job to another browser).
 const OWN_CHANNELS = new Set(["imessage", "native"]);
-const RAW_APNS = /^[0-9a-f]{64}$/i;
+const APNS_TOKEN = /^(?:[0-9a-f]{2}){8,256}$/i;
 
-export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null, groupsEnabled = () => false }) {
+export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null, nativeProviders = { fcm: Boolean(sendNative), apns: false }, groupsEnabled = () => false }) {
   const pushOn = enabled && typeof sendPush === "function";
   const nativeOn = typeof sendNative === "function";
+  const reachablePhone = (item) => active(item) && item.token && nativeProviders[item.provider || "fcm"];
   // Like the iMessage mirror: what this process already nudged about per conversation, so nothing older than it goes out.
   const togetherCursors = new Map(), startedAt = new Date().toISOString();
   // 游戏: when each tag (one per game) last reached a member, so a quick back-and-forth sends one notice, not one per move.
@@ -51,7 +52,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
   const settings = async (userId) => {
     const preference = await preferences(store, userId);
     const imessage = typeof sendIMessage === "function" && Boolean(await store.getPhoneForUser(userId));
-    return { notify: notifyOf(preference), enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeEnabled: nativeOn && preference?.enabled !== false, imessage, imessageEnabled: imessage && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
+    return { notify: notifyOf(preference), enabled: enabled && preference?.enabled === true, configured: enabled, nativeConfigured: nativeOn, nativeProviders, dailyQuestionsEnabled: preference?.dailyQuestionsEnabled ?? notifyOf(preference).messages, nativeEnabled: nativeOn && preference?.enabled !== false, imessage, imessageEnabled: imessage && preference?.enabled !== false, publicKey: enabled ? publicKey : "", timezone: preference?.timezone || "UTC", devices: (await owned(store, "pushSubscriptions", userId)).filter(active).map(({ id, createdAt }) => ({ id, createdAt })) };
   };
   const getOwnedReminder = async (db, id, userId) => {
     const reminder = await db.getRelationshipRecordForUser("reminders", id, userId);
@@ -94,7 +95,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const reminder = await db.getRelationshipRecordForUser("reminders", job.reminderId, job.ownerUserId);
       if (!reminder || reminder.scheduleVersion !== job.scheduleVersion || !await authorizeReminder(db, reminder)) return null;
       const device = await db.getRelationshipRecordForUser("nativePushDevices", job.deviceId, job.ownerUserId);
-      return active(device) && device.ownerUserId === job.ownerUserId && device.token ? { reminder, device, native: true, language: await memberLanguage(db, job.ownerUserId) } : null;
+      return reachablePhone(device) && device.ownerUserId === job.ownerUserId ? { reminder, device, native: true, language: await memberLanguage(db, job.ownerUserId) } : null;
     }
     if (!enabled) return null;
     const preference = await preferences(db, job.ownerUserId);
@@ -207,17 +208,18 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     async reachable(userId) {
       const preference = await preferences(store, userId);
       if (preference?.enabled === false) return false;
-      if (nativeOn && (await owned(store, "nativePushDevices", userId)).some((item) => active(item) && item.token)) return true;
+      if (nativeOn && (await owned(store, "nativePushDevices", userId)).some(reachablePhone)) return true;
       return pushOn && Boolean(preference?.enabled) && active(preference) && (await owned(store, "pushSubscriptions", userId)).some((item) => active(item) && item.subscription);
     },
     async updateNotify(userId, input) {
       const notify = Object.fromEntries(Object.keys(NOTIFY_DEFAULTS).filter((key) => typeof input?.[key] === "boolean").map((key) => [key, input[key]]));
-      if (!Object.keys(notify).length) throw fail("Choose what to be notified about.");
+      const daily = typeof input?.dailyQuestions === "boolean" ? { dailyQuestionsEnabled: input.dailyQuestions } : {};
+      if (!Object.keys(notify).length && !Object.keys(daily).length) throw fail("Choose what to be notified about.");
       const timezone = typeof input.timezone === "string" && input.timezone ? input.timezone : null; if (timezone) dateFormatter(timezone);
       await store.transaction(LOCK, async (db) => {
         const existing = await preferences(db, userId);
-        if (existing) await update(db, "deliveryPreferences", existing, { notify: { ...notifyOf(existing), ...notify }, ...(timezone ? { timezone } : {}) });
-        else await db.createRelationshipRecord("deliveryPreferences", privateRecord(userId, { enabled: true, timezone: timezone || "UTC", language: "zh", status: "active", notify: { ...NOTIFY_DEFAULTS, ...notify } }));
+        if (existing) await update(db, "deliveryPreferences", existing, { dailyQuestionsEnabled: existing.dailyQuestionsEnabled ?? notifyOf(existing).messages, ...daily, notify: { ...notifyOf(existing), ...notify }, ...(timezone ? { timezone } : {}) });
+        else await db.createRelationshipRecord("deliveryPreferences", privateRecord(userId, { enabled: true, timezone: timezone || "UTC", language: "zh", status: "active", dailyQuestionsEnabled: true, ...daily, notify: { ...NOTIFY_DEFAULTS, ...notify } }));
       });
       return settings(userId);
     },
@@ -263,8 +265,10 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     async registerNativeDevice(userId, input) {
       if (!nativeOn) throw fail("Phone notifications have not been configured.", 503, "push_not_configured");
       const token = typeof input?.token === "string" ? input.token : "";
-      // A raw APNs device token (64 hex) cannot be addressed through FCM: iOS must hand over Firebase's token.
-      if (!NATIVE_TOKEN.test(token) || !["ios", "android"].includes(input?.platform) || (input.platform === "ios" && RAW_APNS.test(token))) throw fail("Invalid phone notification token.", 400, "invalid_device");
+      const provider = input?.provider || "fcm"; // Existing Android and Firebase iOS installations.
+      if (!["apns", "fcm"].includes(provider) || !["ios", "android"].includes(input?.platform) ||
+          (provider === "apns" ? input.platform !== "ios" || !APNS_TOKEN.test(token) : !NATIVE_TOKEN.test(token) || (input.platform === "ios" && APNS_TOKEN.test(token)))) throw fail("Invalid phone notification token.", 400, "invalid_device");
+      if (!nativeProviders[provider]) throw fail("Phone notifications have not been configured.", 503, "push_not_configured");
       return store.transaction(LOCK, async (db) => {
         // One token, one account: a phone that switched accounts must stop receiving the previous account's reminders.
         const holders = (await db.listRecordsForJob("nativePushDevices")).filter((item) => active(item) && item.token === token);
@@ -274,7 +278,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         // Tokens rotate; keep the five newest phones instead of refusing a rotated token.
         const devices = (await owned(db, "nativePushDevices", userId)).filter(active).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
         for (const stale of devices.slice(0, Math.max(0, devices.length - 4))) await revokeNative(db, stale);
-        const record = privateRecord(userId, { token, platform: input.platform });
+        const record = privateRecord(userId, { token, platform: input.platform, provider });
         await db.createRelationshipRecord("nativePushDevices", record);
         return { id: record.id };
       });
@@ -302,11 +306,11 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       if (preference?.enabled === false || notifyOf(preference).messages === false || quietNow(preference)) return { sent: 0 };
       memberNotices.set(key, now().getTime());
       const language = await memberLanguage(store, userId), text = String(body?.[language] || body?.zh || "").slice(0, 160);
-      const phones = nativeOn ? (await owned(store, "nativePushDevices", userId)).filter((item) => active(item) && item.token) : [];
+      const phones = nativeOn ? (await owned(store, "nativePushDevices", userId)).filter(reachablePhone) : [];
       const browsers = pushOn && preference?.enabled && active(preference) ? (await owned(store, "pushSubscriptions", userId)).filter((item) => active(item) && item.subscription) : [];
       let sent = 0;
       const link = fromPush(url);
-      for (const device of phones) { try { await sendNative(device.token, { title: "Ourever", body: text, url: link }); sent += 1; } catch (error) { console.error("member native push failed", error?.code || "error"); } }
+      for (const device of phones) { try { await sendNative(device.token, { title: "Ourever", body: text, url: link }, device); sent += 1; } catch (error) { console.error("member native push failed", error?.code || "error"); } }
       for (const device of browsers) { try { const receipt = await sendPush(device.subscription, { title: "Ourever", body: text, url: link, tag }, { dedupeKey: tag }); if (receipt?.statusCode >= 200 && receipt.statusCode < 300) sent += 1; } catch (error) { console.error("member web push failed", error?.code || error?.statusCode || "error"); } }
       if (sent) void recordUsage(store, { userId, action: "push_sent" });
       return { sent };
@@ -326,7 +330,10 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const kindOf = (item) => item.role === "member" ? "messages" : item.kind === "story" || /^(onthisday|pet-level):/.test(String(item.handle || "")) ? "pinky" : ["reminder", "review"].includes(item.kind) ? "reminders" : "messages";
       for (const member of context.members) {
         const preference = await preferences(store, member.userId), notify = notifyOf(preference), quiet = quietNow(preference);
-        const mine = fresh.filter((item) => authorOf(item) !== member.userId).filter((item) => notify[kindOf(item)] !== false && (!quiet || kindOf(item) === "reminders"));
+        const mine = fresh.filter((item) => !item.removedAt && authorOf(item) !== member.userId).filter((item) => {
+          const allowed = item.kind === "daily_question" ? preference?.dailyQuestionsEnabled ?? notify.messages : notify[kindOf(item)];
+          return allowed !== false && (!quiet || kindOf(item) === "reminders");
+        });
         if (!mine.length) continue;
         const partnerWrote = mine.some((item) => item.role === "member");
         // Only Pinky, and not a reminder: counts toward the daily cap.
@@ -426,7 +433,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           if (!await authorizeReminder(db, reminder)) { await update(db, "reminders", reminder, { status: "cancelled" }); continue; }
           const devices = pushOn && preference?.enabled ? (await owned(db, "pushSubscriptions", reminder.ownerUserId)).filter(active) : [];
           const phone = typeof sendIMessage === "function" && preference?.enabled !== false ? await db.getPhoneForUser(reminder.ownerUserId) : null;
-          const phones = nativeOn && preference?.enabled !== false ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter((item) => active(item) && item.token) : [];
+          const phones = nativeOn && preference?.enabled !== false ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter(reachablePhone) : [];
           if (!devices.length && !phone && !phones.length) continue;
           // One job per channel and occurrence; the channel suffix keeps a failure or retry on one from touching the other.
           const occurrence = `${reminder.id}:${reminder.scheduleVersion || 0}:${reminder.dueAt}`;
@@ -472,7 +479,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           try {
             if (authorization.phone) await sendIMessage(authorization.phone, reminderText(authorization.reminder, authorization.language));
             // Same vague copy as browser push (only the 1:1 iMessage may carry the title); a tap opens the conversation home.
-            else if (authorization.native) { const { title, body } = reminderPayload(authorization.reminder, authorization.language, job.dedupeKey); await sendNative(authorization.device.token, { title, body, url: "/" }); }
+            else if (authorization.native) { await sendNative(authorization.device.token, reminderPayload(authorization.reminder, authorization.language, job.dedupeKey), authorization.device); }
             else {
               const receipt = await sendPush(authorization.device.subscription, reminderPayload(authorization.reminder, authorization.language, job.dedupeKey), { dedupeKey: job.dedupeKey });
               if (!Number.isInteger(receipt?.statusCode) || receipt.statusCode < 200 || receipt.statusCode >= 300) throw fail("Push provider did not accept delivery.", 502, "provider_rejected");
@@ -501,13 +508,14 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const preference = await preferences(db, userId), none = { phones: [], browsers: [] };
       if (preference?.enabled === false) return none;
       const current = now();
-      const phones = nativeOn ? (await owned(db, "nativePushDevices", userId)).filter((item) => active(item) && item.token) : [];
+      const phones = nativeOn ? (await owned(db, "nativePushDevices", userId)).filter(reachablePhone) : [];
       const browsers = pushOn && preference?.enabled && active(preference) ? (await owned(db, "pushSubscriptions", userId)).filter((item) => active(item) && item.subscription) : [];
       const targets = [...phones.map((device) => ["nativePushDevices", device]), ...browsers.map((device) => ["pushSubscriptions", device])];
-      const last = targets.map(([, device]) => device.togetherNotifiedAt || "").sort().at(-1);
+      const stamp = ask?.kind === "daily_question" ? "dailyQuestionNotifiedAt" : "togetherNotifiedAt";
+      const last = targets.map(([, device]) => device[stamp] || "").sort().at(-1);
       if (!targets.length || (last && current.getTime() - new Date(last).getTime() < TOGETHER_NOTIFY_MS)) return none;
       // Bookkeeping stamp, no version bump: it must not conflict with a concurrent re-registration.
-      for (const [collection, device] of targets) await db.updateRelationshipRecordForUser(collection, device.id, device.ownerUserId, (draft) => { draft.togetherNotifiedAt = iso(current); });
+      for (const [collection, device] of targets) await db.updateRelationshipRecordForUser(collection, device.id, device.ownerUserId, (draft) => { draft[stamp] = iso(current); });
       return { phones, browsers };
     });
     const language = phones.length || browsers.length ? await memberLanguage(store, userId) : "zh";
@@ -515,7 +523,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     const body = asked ? asked : missYou ? say(language, "TA 想你了 💗", "Your partner is thinking of you 💗", "Tu pareja está pensando en ti 💗") : surprise ? say(language, "Ourever 给你们准备了一点东西。", "Ourever made something for you two.", "Ourever les preparó algo.") : partnerWrote ? say(language, "TA 在“我们俩”里说了话。", "Your partner wrote in Us.", "Tu pareja escribió en Nosotros.") : say(language, "“我们俩”里有新消息。", "There is something new in Us.", "Hay algo nuevo en Nosotros.");
     let sent = 0;
     for (const device of phones) {
-      try { await sendNative(device.token, { title: "Ourever", body, url: fromPush("/?channel=us") }); sent += 1; }
+      try { await sendNative(device.token, { title: "Ourever", body, url: fromPush("/?channel=us") }, device); sent += 1; }
       catch (error) {
         console.error("together native push failed", error?.code || "error");
         if (error?.expired) await store.transaction(LOCK, async (db) => { const fresh = await db.getRelationshipRecordForUser("nativePushDevices", device.id, device.ownerUserId); if (active(fresh) && fresh.token === device.token) await revokeNative(db, fresh); });

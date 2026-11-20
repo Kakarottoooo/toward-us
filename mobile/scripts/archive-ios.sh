@@ -67,7 +67,7 @@ cat > "$destination/ExportOptions.plist" <<'PLIST'
 <key>signingStyle</key><string>manual</string>
 <key>signingCertificate</key><string>Apple Distribution</string>
 <key>provisioningProfiles</key><dict>
-<key>us.toward.app</key><string>Pinky App Store</string>
+<key>us.toward.app</key><string>Ourever App Store Push and Links</string>
 <key>us.toward.app.widget</key><string>Pinky Widget App Store</string>
 </dict>
 <key>manageAppVersionAndBuildNumber</key><false/>

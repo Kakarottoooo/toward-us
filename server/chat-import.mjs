@@ -1,3 +1,4 @@
+import { chatSignal } from "./chat-response.mjs";
 import { withoutScreenshotPreamble, screenshotTurnMessages } from "./screenshot-turn.mjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
@@ -426,6 +427,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // "截图没能读出来"). Then read only; the import answers the question in its own call (answerScreenshot).
     const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
     const result = await read().catch((error) => {
+      chatSignal()?.throwIfAborted();
       if (!question || isAiLimit(error) || error?.statusCode === 503) throw error;
       console.warn("[screenshots] read-and-answer failed; reading only:", String(error?.message || error).slice(0, 120));
       return mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
@@ -434,6 +436,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
     if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
+    chatSignal()?.throwIfAborted();
     return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
   }
   router.importScreenshots = importScreenshots;
