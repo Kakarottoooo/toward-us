@@ -90,8 +90,14 @@ const errorCopy: Record<string, [string, string, string]> = {
   "network_unavailable": ["无法连接服务器，请检查网络后重试。", "Check your connection and try again.", "Comprueba la conexión e inténtalo de nuevo."]
 };
 
+export function apiErrorCode(payload: { code?: string; error?: string }, status: number) {
+  if (payload.code) return payload.code;
+  if (typeof payload.error === "string" && /^[a-z][a-z0-9_]+$/.test(payload.error)) return payload.error;
+  return (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
+}
+
 export function apiErrorText(payload: { code?: string; error?: string }, status: number, language: Language) {
-  const code = payload.code || "";
+  const code = apiErrorCode(payload, status);
   const fallback = (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
   // Legacy routes can already supply a specific translated explanation. Keep it over the HTTP category.
   const message = typeof payload.error === "string" ? payload.error : "";
