@@ -20,7 +20,7 @@ import { SpacePage } from "./features/spaces/SpacePage";
 import { PeoplePage } from "./features/people/PeoplePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import { CapabilitiesPage } from "./features/capabilities/CapabilitiesPage";
-import { disableNativePush, enableNativePush, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
+import { disableNativePush, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
@@ -109,6 +109,7 @@ function AccountPrototype() {
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen("home"));
     listenNativePushTaps();
+    listenNativeInviteLinks();
     registerAppWorker();
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
@@ -164,8 +165,8 @@ function AccountPrototype() {
         setUser(joined.user); setPairing(joined.pairing); setScreen("conversation");
       } catch (error) { setNotice(accountError((error as Error).message, language)); setScreen("pairing"); }
     } else setScreen(landing(state.pairing));
-    // Signing in is the user action that may ask, once, for App notification permission (a no-op in a browser).
-    void enableNativePush();
+    // A signed-in phone with existing permission can reconnect without a system prompt.
+    void restoreNativePush();
     // Inside the iPhone App, the home-screen widget gets its own read-only token (a no-op in a browser).
     void connectHomeWidget();
   };

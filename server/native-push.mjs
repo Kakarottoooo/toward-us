@@ -1,4 +1,5 @@
 import { createSign } from "node:crypto";
+import { createApplePush } from "./apple-push.mjs";
 
 // App push (iPhone and Android) through Firebase Cloud Messaging HTTP v1. Live only when FCM_SERVICE_ACCOUNT_JSON holds a
 // Google service account; otherwise `configured` is false and nothing touches the network. The OAuth exchange is the
@@ -12,7 +13,19 @@ const PROJECT = /^[a-z][a-z0-9-]{4,61}[a-z0-9]$/;
 const EXPIRED = new Set(["UNREGISTERED", "INVALID_ARGUMENT"]);
 let announced = false;
 
-export function createNativePush({ serviceAccountJson = process.env.FCM_SERVICE_ACCOUNT_JSON || "", apiBase = process.env.NODE_ENV === "production" ? "" : process.env.FCM_API_BASE || "", fetchImpl = (...args) => globalThis.fetch(...args), log = console } = {}) {
+export function createNativePush(options = {}) {
+  const apple = createApplePush();
+  const firebase = createFirebasePush(options);
+  return {
+    configured: apple.configured || firebase.configured,
+    providers: { apns: apple.configured, fcm: firebase.configured },
+    send(token, payload, device) {
+      return (device?.provider === "apns" ? apple : firebase).send(token, payload);
+    },
+  };
+}
+
+function createFirebasePush({ serviceAccountJson = process.env.FCM_SERVICE_ACCOUNT_JSON || "", apiBase = process.env.NODE_ENV === "production" ? "" : process.env.FCM_API_BASE || "", fetchImpl = (...args) => globalThis.fetch(...args), log = console } = {}) {
   const account = parseAccount(serviceAccountJson);
   // The override only ever points at a local stub: a signed assertion and device tokens must not go to any other host.
   if (apiBase && !loopback(apiBase)) { log.log("Native push: FCM_API_BASE ignored (only localhost, 127.0.0.1 or ::1 are allowed)"); apiBase = ""; }

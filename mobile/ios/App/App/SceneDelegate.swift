@@ -17,6 +17,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
+        if let response = connectionOptions.notificationResponse,
+           let controller = window?.rootViewController as? PinkyBridgeViewController {
+            controller.bridge?.notificationRouter.pushNotificationHandler?.didReceive(response: response)
+        }
         for context in connectionOptions.urlContexts where context.url.isFileURL { ChatImportUploader.shared.receive(context.url, window: window) }
     }
 

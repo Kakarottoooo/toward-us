@@ -22,7 +22,7 @@ export function createReminderRouter({ service }) {
   router.patch("/reminder-settings/notify", handle((req) => service.updateNotify(req.auth.user.id, req.body)));
   router.post("/push-subscriptions", handle((req) => service.subscribe(req.auth.user.id, req.body), 201));
   router.delete("/push-subscriptions/:id", handle((req) => service.unsubscribe(req.auth.user.id, req.params.id)));
-  // App (Capacitor) phones: the FCM token is the device. DELETE on sign-out stops this phone receiving this account's pushes.
+  // App (Capacitor) phones: register the APNs or FCM token for this device. DELETE on sign-out stops this phone receiving this account's pushes.
   router.post("/push/native-devices", handle((req) => service.registerNativeDevice(req.auth.user.id, req.body), 201));
   router.delete("/push/native-devices", handle((req) => service.unregisterNativeDevice(req.auth.user.id, req.body)));
   router.get("/reminders", handle(async (req) => ({ reminders: await service.listReminders(req.auth.user.id) })));

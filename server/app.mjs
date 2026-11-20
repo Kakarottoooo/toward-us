@@ -91,7 +91,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
   let imessage = null;
   const nativePush = reminderService ? null : createNativePush();
-  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null, sendNative: nativePush?.configured ? nativePush.send : null, groupsEnabled: () => sendblue.groupsEnabled() });
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null, sendNative: nativePush?.configured ? nativePush.send : null, nativeProviders: nativePush?.providers, groupsEnabled: () => sendblue.groupsEnabled() });
 
   // Daily question and celebration cards at a sensible local hour, so they reach both partners by push (not with an injected
   // test service: those tests drive delivery themselves).
@@ -121,6 +121,11 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (production && req.headers["x-forwarded-proto"] !== "https") return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
     next();
   });
+
+  // Only partner invitations belong to the installed app. All other links keep their web behavior.
+  app.get("/.well-known/apple-app-site-association", (_req, res) => res.json({
+    applinks: { details: [{ appIDs: ["693NJRHRV5.us.toward.app"], components: [{ "/": "/", "?": { invite: "????????" } }] }] },
+  }));
 
   app.get("/api/health", async (_req, res) => {
     try {
