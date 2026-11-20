@@ -46,7 +46,7 @@ export const usesCheaperModel = (feature) => featureKind(feature) !== "interacti
 const METHODS = {
   structured: (params) => params?.name || "structured", readScreenshots: () => "chat_screenshots",
   checkReplySources: () => "reply_source_check",
-  planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: () => "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
+  planAssistantTurn: () => "assistant_turn", answerScreenshot: () => "assistant_turn", rewriteReply: (_input, _language, scope) => scope === "us" ? "together_turn" : "assistant_turn", lookup: () => "web_lookup", analyze: () => "demo_analysis", answer: () => "demo_answer",
   continuePrivateAgentThread: () => "private_agent", summarizePerspective: () => "perspective_summary", generateDecisionOptions: () => "decision_options",
   continueTogether: () => "together_turn", mediateTogether: () => "together_mediation", createRealtimeSession: () => "realtime_voice",
   transcribe: (_buffer, _mime, _language, feature) => feature === "feedback_voice" ? feature : "transcription",

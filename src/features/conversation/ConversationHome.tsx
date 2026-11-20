@@ -38,14 +38,14 @@ type Channel = "me" | "us";
 type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string; openOn?: string; shareKind?: "date" | "agreement" };
 type SpaceSummary = { id: string; title: string; layout: string; visibility: string; system?: string };
 type CallTranscript = { minutes: number; rows: Array<{ role: string; text: string }> };
-type PrivateMessage = { copyableReply?: string; screenshotPending?: boolean; sources?: ConversationSource[]; id: string; role: "user" | "assistant"; kind?: string; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript; dateCheck?: { title: string; date: string }; dateAnswer?: { rating: "great" | "ok" | "meh"; told: boolean }; personId?: string };
+type PrivateMessage = { stopped?: boolean; copyableReply?: string; screenshotPending?: boolean; sources?: ConversationSource[]; id: string; role: "user" | "assistant"; kind?: string; text: string; createdAt: string; cards?: Card[]; photoIds?: string[]; call?: CallTranscript; dateCheck?: { title: string; date: string }; dateAnswer?: { rating: "great" | "ok" | "meh"; told: boolean }; personId?: string };
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[]; earlierPages?: number };
 type Ref = Partial<ConversationSource> & { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
-type SharedMessage = { id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { removedAt?: string; deliveredAt?: string; readAt?: string; replyTo?: string; id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; version?: number; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
-type Pairing = { status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
+type Pairing = { id: string; status: "pending" | "active"; invitation: { code: string; createdAt?: string; expiresAt?: string; openedAt?: string | null } | null } | null;
 type ApiError = Error & { status?: number; code?: string };
 type SharedRecipient = "partner" | "assistant";
 type SharedSend = { text: string; itemId: string; photoIds: string[]; speaker: "me" | "partner"; recipient?: SharedRecipient };
@@ -88,7 +88,16 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [loadingOlder, setLoadingOlder] = useState(false);
   const olderRef = useRef<HTMLDivElement>(null);
   // A page can hand a starting sentence back ("Add to …: "); it lands in that channel's box once, then leaves the URL.
-  const [drafts, setDrafts] = useState<Record<Channel, string>>(() => { const params = new URLSearchParams(location.search); const say = (params.get("say") || "").slice(0, 300); return { me: params.get("channel") !== "us" ? say : "", us: params.get("channel") === "us" ? say : "" }; });
+  const draftKey = `ourever:conversation-drafts:${user.id}`;
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => {
+    let saved: Record<string, string> = {};
+    try { saved = JSON.parse(localStorage.getItem(draftKey) || "{}") || {}; } catch { /* storage unavailable */ }
+    const params = new URLSearchParams(location.search);
+    const text = params.get("say")?.slice(0, 300);
+    if (text) saved[params.get("channel") === "us" ? "us:" + (pairing?.id || "") : `me:${params.get("person") || ""}`] = text;
+    return saved;
+  });
+  useEffect(() => { try { localStorage.setItem(draftKey, JSON.stringify(drafts)); } catch { /* keep editing in memory */ } }, [drafts, draftKey]);
   const [askAgent, setAskAgent] = useState<boolean | null>(() => {
     const params = new URLSearchParams(location.search);
     if (params.get("channel") !== "us" || !params.get("say")?.trim()) return null;
@@ -211,10 +220,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const conversationContent = useRef<HTMLElement>(null);
   const followingLatest = useRef(true);
   const keyboard = useKeyboard();
-  const recall = useConversationRecall({ channel, sessionId: session?.id, language, userId: user.id, members: together?.members || [], photos: (ids) => <Photos ids={ids} />, importCard: (id) => <ImportCard key={id} id={id} language={language} onOpen={(url) => open(url)} /> });
+  const recall = useConversationRecall({ channel, sessionId: session?.id, language, userId: user.id, members: together?.members || [], photos: (ids) => <Photos ids={ids} language={language} />, importCard: (id) => <ImportCard key={id} id={id} language={language} onOpen={(url) => open(url)} /> });
   const accessChanged = useRef(onAccessChanged); accessChanged.current = onAccessChanged;
-  const draft = drafts[channel];
-  const setDraft = (value: string | ((current: string) => string), target: Channel = channel) => setDrafts((current) => ({ ...current, [target]: typeof value === "function" ? value(current[target]) : value }));
+  const draftScope = (target: Channel) => target === "us" ? "us:" + (pairing?.id || "") : "me:" + (thread || "");
+  const draft = drafts[draftScope(channel)] || "";
+  const setDraft = (value: string | ((current: string) => string), target: Channel = channel) => setDrafts((current) => ({ ...current, [draftScope(target)]: typeof value === "function" ? value(current[draftScope(target)] || "") : value }));
   // A 503 from Ourever already says what happened in the language the member writes in; only a bare status or code falls back.
   const serverWords = (message: string) => Boolean(message) && !/^Request failed \(\d+\)$/.test(message) && !/^[a-z_]+$/.test(message);
   const errorText = (error: ApiError) => error.code === "ai_daily_limit" ? error.message : error.status === 429 ? t("已达到使用上限，请稍后再试。", "A usage limit was reached. Try again later.", "Se alcanzó un límite de uso. Inténtalo más tarde.") : error.status === 503 && !serverWords(error.message) ? t("助手暂时不可用，什么都没有改动。请稍后重试。", "The assistant is unavailable right now. Nothing was changed; try again soon.", "El asistente no está disponible. No se cambió nada; inténtalo pronto.") : error.message;
@@ -239,7 +249,7 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const loadTogether = useCallback(async () => {
     if (!paired) return;
     try {
-      const result = await relationshipApi<Together>(`/api/together?language=${language}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`); setTogether(result);
+      const result = await relationshipApi<Together>(`/api/together?language=${language}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`); setTogether(previous => previous?.conversation.id === result.conversation.id && (previous.conversation.version ?? 0) > (result.conversation.version ?? 0) ? previous : result);
       if (result.pendingAgreement) {
         const home = await relationshipApi<{ graph: { approvals: GraphRecord[] } }>("/api/relationship/home");
         setApproved(home.graph.approvals.filter((item) => item.ownerUserId === user.id && !item.withdrawnAt).map((item) => `${item.agreementId}:${item.approvedVersion}`));
@@ -351,6 +361,26 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   // Turns run strictly in order per channel, typed and spoken alike (one queue per channel): the server rejects a turn that
   // races the previous one, so a second utterance waits for the first answer instead of failing with a version conflict.
   const queues = useRef<Record<Channel, Promise<unknown>>>({ me: Promise.resolve(), us: Promise.resolve() });
+  const running = useRef<Partial<Record<Channel, AbortController>>>({});
+  const [generating, setGenerating] = useState({ me: false, us: false });
+  const beginReply = (target: Channel) => {
+    const controller = new AbortController();
+    running.current[target] = controller;
+    setGenerating(value => ({ ...value, [target]: true }));
+    return controller;
+  };
+  const endReply = (target: Channel, controller: AbortController) => {
+    if (running.current[target] !== controller) return;
+    delete running.current[target];
+    setGenerating(value => ({ ...value, [target]: false }));
+  };
+  const stopReply = (target: Channel) => {
+    const controller = running.current[target];
+    if (!controller) return;
+    controller.abort();
+    endReply(target, controller);
+  };
+  useEffect(() => () => { running.current.me?.abort(); running.current.us?.abort(); }, []);
   const failedRef = useRef<{ text: string; itemId: string; photoIds?: string[] } | null>(null);
   const keep = (text: string, target: Channel) => setDraft((value) => value ? `${value}
 ${text}` : text, target);
@@ -365,19 +395,22 @@ ${text}` : text, target);
   const sendPrivate = (text: string, itemId: string, spoken = false, photoIds: string[] = []) => {
     setNotice(""); setQueued((items) => [...items.filter((item) => item.itemId !== itemId), { text, itemId }]);
     return enqueue("me", async () => {
+      const controller = beginReply("me");
       try {
         if (failedRef.current && failedRef.current.itemId !== itemId) { keep(text, "me"); setNotice(t("上一句还没确认送达，请先重试它。", "The previous message was not confirmed. Retry it first.", "El mensaje anterior no se confirmó. Reinténtalo primero.")); return null; }
         const active = await ensureSession();
-        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${active!.id}/${spoken ? "transcripts" : "messages"}`, jsonBody({ text, itemId, ...(photoIds.length ? { photoIds } : {}) }));
-        current(result.session); failedRef.current = null; setFailed(null); setRevising(false);
+        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${active!.id}/${spoken ? "transcripts" : "messages"}`, { ...jsonBody({ text, itemId, ...(photoIds.length ? { photoIds } : {}) }), signal: controller.signal });
+        if (sessionRef.current?.id === result.session.id) current(result.session);
+        failedRef.current = null; setFailed(null); setRevising(false);
         window.dispatchEvent(new Event("toward-us:assistant-changed"));
         if (spoken) say(result.session.messages.filter((message) => message.role === "assistant").at(-1)?.text || "");
         return result;
       } catch (error) {
+        if (controller.signal.aborted) { if (!spoken) keep(text, "me"); return null; }
         const status = (error as ApiError).status;
         if (!status || status >= 500 && status !== 503) { failedRef.current = { text, itemId, photoIds }; setFailed(failedRef.current); } else keep(text, "me");
         setNotice(errorText(error as ApiError)); return null;
-      } finally { setQueued((items) => items.filter((item) => item.itemId !== itemId)); }
+      } finally { endReply("me", controller); setQueued((items) => items.filter((item) => item.itemId !== itemId)); }
     });
   };
   // A retry is the original delivery, including its recipient, speaker, attachments and idempotency key.
@@ -387,19 +420,22 @@ ${text}` : text, target);
     setNotice("");
     return enqueue("us", async () => {
       const shown = calling ? setTimeout(() => void loadTogether(), 600) : null;
+      const controller = calling ? beginReply("us") : null;
       if (calling) setAgentWorking((count) => count + 1);
       try {
-        await relationshipApi("/api/together/messages", jsonBody({ text, itemId, recipient, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-          ...(photoIds.length ? { photoIds } : {}), ...(speaker === "partner" ? { speaker } : {}) }));
+        await relationshipApi("/api/together/messages", { ...jsonBody({ text, itemId, recipient, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          ...(photoIds.length ? { photoIds } : {}), ...(speaker === "partner" ? { speaker } : {}) }), signal: controller?.signal });
         setUnconfirmedShared((items) => items.filter((item) => item.itemId !== itemId));
         await loadTogether();
         if (calling) window.dispatchEvent(new Event("toward-us:assistant-changed"));
         return true;
       } catch (error) {
+        if (controller?.signal.aborted) { void loadTogether(); return false; }
         setUnconfirmedShared((items) => items.some((item) => item.itemId === itemId) ? items : [...items, message]);
         setNotice(errorText(error as ApiError));
         return false;
       } finally {
+        if (controller) endReply("us", controller);
         if (shown) clearTimeout(shown);
         if (calling) setAgentWorking((count) => count - 1);
       }
@@ -407,6 +443,26 @@ ${text}` : text, target);
   };
   const sendShared = (text: string, photoIds: string[] = [], speaker: SharedSend["speaker"] = "me", recipient?: SharedRecipient) =>
     deliverShared({ text, itemId: crypto.randomUUID(), photoIds, speaker, recipient });
+  const regenerate = async (target: Channel, messageId: string) => {
+    if (running.current[target] || (target === "me" && !session)) return;
+    const controller = beginReply(target);
+    setNotice("");
+    try {
+      const options = { ...jsonBody({ messageId, language }), signal: controller.signal };
+      if (target === "me") {
+        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${session!.id}/regenerate`, options);
+        if (sessionRef.current?.id === result.session.id) current(result.session);
+      } else {
+        await relationshipApi("/api/together/regenerate", options);
+        await loadTogether();
+      }
+    } catch (error) { if (!controller.signal.aborted) setNotice(errorText(error as ApiError)); }
+    finally { endReply(target, controller); }
+  };
+  const unsend = async (id: string) => {
+    try { await relationshipApi(`/api/together/messages/${encodeURIComponent(id)}/unsend`, jsonBody({ language })); await loadTogether(); }
+    catch (error) { setNotice(errorText(error as ApiError)); }
+  };
   const ready = attachments.filter((item) => item.id).map((item) => item.id!);
   const uploading = attachments.some((item) => !item.id && !item.failed);
   // The import posts its own note into this conversation; reload it so the card shows up right away.
@@ -443,7 +499,17 @@ ${text}` : text, target);
     if (!delivered) return;
     try { current((await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(active.id)}/date-check`, jsonBody({ messageId: message.id, told: true }))).session); } catch { /* The button stays; the message went. */ }
   };
-  const pendingScreenshot = session?.messages.find(message => message.screenshotPending)?.id;
+  const [stoppingScreenshot, setStoppingScreenshot] = useState<string | null>(null);
+  const pendingScreenshot = session?.messages.find(message => message.screenshotPending && message.id !== stoppingScreenshot)?.id;
+  const stopScreenshot = async () => {
+    if (!session || !pendingScreenshot) return;
+    setStoppingScreenshot(pendingScreenshot);
+    try {
+      const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${session.id}/stop-screenshot`, jsonBody({ messageId: pendingScreenshot, language }));
+      if (sessionRef.current?.id === result.session.id) current(result.session);
+    } catch (error) { setNotice(errorText(error as ApiError)); }
+    finally { setStoppingScreenshot(null); }
+  };
   useEffect(() => {
     const id = sessionRef.current?.id;
     if (!id || !pendingScreenshot || channel !== "me") return;
@@ -494,7 +560,7 @@ ${text}` : text, target);
   // Together in Ourever: the people row is gone, so Just me is the one conversation again.
   useEffect(() => { if (stage === "together" && threadRef.current) openThread(null); }, [stage]);
   const send = async () => {
-    const text = draft.trim(); if ((!text && !ready.length) || uploading) return;
+    const text = draft.trim(); if (generating[channel] || (!text && !ready.length) || uploading) return;
     if (pastedDraft.current[channel] || (channel === "me" && looksLikePastedChat(text))) {
       if (!await confirmImport(channel === "us" ? "shared" : "private")) return;
     }
@@ -769,13 +835,19 @@ ${text}` : text, target);
   };
   const sharedMessage = (message: SharedMessage, index: number) => {
     const body = sharedBody(message, index);
-    if (!body || message.role !== "agent" || !together) return body;
-    return <div key={message.id} className="shared-reportable">
-      {body}<ReportReply messageMenu replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? message.text} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
+    if (!body || !together || message.removedAt) return body;
+    const own = message.role === "member" && message.actorUserId === user.id;
+    const removable = own && !readOnly && !message.recordedByUserId && message.kind === "text" && Date.now() - Date.parse(message.createdAt) <= 120_000;
+    const latest = together.conversation.messages.at(-1);
+    const canRegenerate = !readOnly && !generating.us && latest?.id === message.id && message.kind === "text" && message.role === "agent" && sharedMessages.some(line => line.id === message.replyTo && line.actorUserId === user.id && !line.removedAt);
+    return <div key={message.id} className="shared-reportable" data-shared-id={message.id}>
+      {body}<ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "agent"} onUnsend={removable ? () => void unsend(message.id) : undefined} onRegenerate={canRegenerate ? () => void regenerate("us", message.id) : undefined} replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? (message.text || message.call?.rows.map(row => row.text).join("\n"))} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
+      {own && latestOwn?.id === message.id && <small className="message-receipt">{message.readAt ? t("已读", "Read", "Leído") : message.deliveredAt ? t("已送达", "Delivered", "Entregado") : t("已发送", "Sent", "Enviado")}</small>}
     </div>;
   };
   const sharedBody = (message: SharedMessage, index: number) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
+    if (message.removedAt) return <p key={message.id} className="conversation-nudge">{t("消息已撤回", "Message removed", "Mensaje retirado")}</p>;
     // Like a group chat: the avatar and name show once at the start of each run of lines from the same speaker.
     const previous = sharedMessages[index - 1];
     const continued = Boolean(previous && ["text", "relay"].includes(previous.kind) && previous.role === message.role && previous.actorUserId === message.actorUserId && !previous.recordedByUserId === !message.recordedByUserId);
@@ -819,7 +891,7 @@ ${text}` : text, target);
     const chatRequest = message.refs.find((ref) => ref.type === "chat_import_request"), chatShared = message.refs.find((ref) => ref.type === "chat_import");
     const handoffs = message.role === "agent" ? message.refs.filter((ref) => ref.type === "link" && ref.url) : [];
     const from = message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner";
-    const article = <article className={`conversation-message ${from}`}>{!continued && (author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{text && <p>{message.role === "agent" ? <Linked text={text} /> : text}</p>}
+    const article = <article className={`conversation-message ${from}`}>{!continued && (author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{text && <p>{message.role === "agent" ? <Linked text={text} /> : text}</p>}
       <RecallLinks sources={message.refs.filter((ref) => ref.type === "conversation" && ref.channel === "us" && ref.conversationId && ref.messageId) as ConversationSource[]} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />
       {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.system === "watched" ? "/?view=moments&watched=1" : ref.system === "moments" ? "/?view=moments" : ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.system === "watched" ? t("一起看过的", "Watched together", "Vistos juntos") : ref.system === "moments" ? t("回忆", "Moments", "Momentos") : ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
       {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} onOpen={open} />)}</div>}
@@ -884,6 +956,25 @@ ${text}` : text, target);
   if (!shown.current && (firstLook.cap || firstLook.session && firstLook.together && (extrasIn || firstLook.grace))) shown.current = true;
   const conversationVisible = shown.current;
   const currentThread = channel === "me" ? thread : null;
+  const latestOwn = liveMessages.filter(line => line.role === "member" && !line.removedAt && line.actorUserId === user.id).at(-1);
+  const incoming = liveMessages.filter(line => line.role === "member" && !line.removedAt && line.actorUserId !== user.id).at(-1);
+  const showingMessages = conversationVisible && channel === "us" && !drawer && !call && !recall.active && !petRoom && !gameHall && !playTogether && !openQuestionId && !interaction;
+  useEffect(() => {
+    if (!incoming || incoming.readAt || together?.readOnly) return;
+    const acknowledge = (state: "delivered" | "read") => relationshipApi(`/api/together/messages/${encodeURIComponent(incoming.id)}/receipt`, jsonBody({ state, language })).catch(() => {});
+    if (!incoming.deliveredAt) void acknowledge("delivered");
+    if (!showingMessages) return;
+    const row = conversationContent.current?.querySelector<HTMLElement>(`[data-shared-id="${CSS.escape(incoming.id)}"]`);
+    if (!row) return;
+    let visible = false;
+    const mark = () => { if (visible && !document.hidden && document.hasFocus()) void acknowledge("read"); };
+    const observer = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting || false; mark(); });
+    observer.observe(row);
+    window.addEventListener("focus", mark);
+    document.addEventListener("visibilitychange", mark);
+    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", mark); window.removeEventListener("focus", mark); };
+  }, [incoming?.id, incoming?.readAt, incoming?.deliveredAt, showingMessages, together?.readOnly, language]);
+
   useLayoutEffect(() => {
     const content = conversationContent.current;
     const viewport = content?.closest<HTMLElement>(".mobile-scroll");
@@ -936,8 +1027,9 @@ ${text}` : text, target);
         if (message.role === "assistant" && !message.text?.trim() && !message.photoIds?.length && !message.call && !message.dateCheck && !message.kind) {
           return <Fragment key={message.id}><RecallLinks sources={message.sources} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />{cards}</Fragment>;
         }
-        const actions = message.role === "assistant" && session ? <ReportReply messageMenu replyText={message.text} language={language} channel="me" conversationId={session.id} messageId={message.id} /> : null;
-        return <Fragment key={message.id}>{message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask">{actions}<p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <div className="private-note-actions">{actions}<button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about && thread !== about.id) openThread(about.id); else if (about) open(`/?view=people&person=${encodeURIComponent(about.id)}`); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{thread !== about.id ? t("去对话", "Open chat", "Ir al chat") : t("档案", "Page", "Ficha")}</span>}</button></div>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{actions}{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span className="assistant-byline">Ourever</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}
+        const canRegenerate = !generating.me && session?.messages.at(-1)?.id === message.id && message.role === "assistant" && (!session.messages.at(-2) || session.messages.at(-2)?.role === "user") && Boolean(message.text) && !message.screenshotPending && !message.stopped && !message.call && !message.kind;
+        const actions = session ? <ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "assistant"} onRegenerate={canRegenerate ? () => void regenerate("me", message.id) : undefined} replyText={message.text || message.call?.rows.map(row => row.text).join("\n")} language={language} channel="me" conversationId={session.id} messageId={message.id} /> : null;
+        return <Fragment key={message.id}>{message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask">{actions}<p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <div className="private-note-actions">{actions}<button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about && thread !== about.id) openThread(about.id); else if (about) open(`/?view=people&person=${encodeURIComponent(about.id)}`); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{thread !== about.id ? t("去对话", "Open chat", "Ir al chat") : t("档案", "Page", "Ficha")}</span>}</button></div>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{actions}{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span className="assistant-byline">Ourever</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}
           {message.copyableReply && <button type="button" className="card-secondary" onClick={async () => {
             try { await navigator.clipboard.writeText(message.copyableReply!); setNotice(t("已复制建议回复", "Suggested reply copied", "Respuesta sugerida copiada")); }
             catch { setNotice(t("请长按回复文字并选择复制。", "Touch and hold the reply text, then choose Copy.", "Mantén pulsada la respuesta y elige Copiar.")); }
@@ -988,7 +1080,8 @@ ${text}` : text, target);
           <input ref={fileRef} type="file" accept="image/*,.txt,.zip,.json,.csv,.xml,.html" multiple hidden onChange={(event) => void pickPhotos(event.target.files)} data-testid="conversation-photo-input" />
           <KeyboardTextarea onPaste={(event) => { if (event.clipboardData.getData("text/plain")) pastedDraft.current[channel] = true; }} data-testid="conversation-input" aria-label={placeholder} aria-describedby={audienceId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={2000} placeholder={placeholder} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
-          <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={sendLabel} title={sendLabel} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>
+          {generating[channel] || channel === "me" && pendingScreenshot ? <button type="button" className="conversation-send" onClick={() => generating[channel] ? stopReply(channel) : void stopScreenshot()} aria-label={t("停止生成", "Stop generating", "Detener respuesta")}><span aria-hidden="true">■</span></button> :
+          <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={sendLabel} title={sendLabel} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>}
         </div>}
     </footer>}
     {importDialog}
@@ -1135,8 +1228,8 @@ function outgoing(url: string): { to: string; subject?: string; body: string } |
 }
 
 /** Photos in a message: one large, or a tidy grid; each opens full size. */
-function Photos({ ids }: { ids: string[] }) {
-  return <div className={`message-photos count-${Math.min(ids.length, 3)}`}>{ids.map((id) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img src={`/api/photos/${encodeURIComponent(id)}`} alt="" loading="lazy" draggable={false} /></a>)}</div>;
+function Photos({ ids, language }: { ids: string[]; language: Language }) {
+  return <div className={`message-photos count-${Math.min(ids.length, 3)}`}>{ids.map((id, index) => <a key={id} href={`/api/photos/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer"><img src={`/api/photos/${encodeURIComponent(id)}`} alt={localized(language, "聊天照片 " + (index + 1), "Conversation photo " + (index + 1), "Foto de la conversación " + (index + 1))} loading="lazy" draggable={false} /></a>)}</div>;
 }
 
 /** Shrinks a picked photo to at most 1600px on its long side as JPEG, so uploads stay small on mobile data. */

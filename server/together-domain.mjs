@@ -1,3 +1,4 @@
+import { chatSignal } from "./chat-response.mjs";
 import { screenText, isAiPolicyError } from "./ai-screening.mjs";
 import { keepMessages } from "./thread-pages.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
@@ -215,7 +216,10 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
     if (!context || context.relationship.id !== relationshipId || context.relationship.status !== "active" || context.members.length !== 2) throw decisionError(409, "relationship_changed");
-    return action(tx);
+    chatSignal()?.throwIfAborted();
+    const result = await action(tx);
+    chatSignal()?.throwIfAborted();
+    return result;
   });
   await screenText(text);
   const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, recipient, answersCheckIn: recipient !== "partner" }));
@@ -292,6 +296,7 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   const reply = (outcome) => transaction(async (tx) => {
     // A concurrent retry may have answered while the model was thinking: keep exactly one reply.
     const { conversation: current } = await ensureTogetherConversation(tx, { relationshipId, userId: actorUserId });
+    if (current.messages.find((line) => line.id === message.id)?.removedAt) throw decisionError(409, "message_removed");
     const existing = answered(current); if (existing) return { conversation: current, message: existing, duplicate: true };
     const made = await applyTogetherActions(tx, { relationshipId, userId: actorUserId, actions: outcome.actions || [], asked, timezone, language });
     const awaiting = outcome.awaiting || (outcome.waitingFor || []).map((name) => members.find((member) => member.name && member.name.toLowerCase() === String(name).toLowerCase())?.id).filter(Boolean);

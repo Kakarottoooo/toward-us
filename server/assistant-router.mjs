@@ -1,3 +1,4 @@
+import { withChatRequest, withChatSignal, chatSignal, regenerateChatReply } from "./chat-response.mjs";
 import { screenshotPending, screenshotTurnMessages, visibleAssistantText } from "./screenshot-turn.mjs";
 import { screenText } from "./ai-screening.mjs";
 import { keepMessages, summarizeEarlier } from "./thread-pages.mjs";
@@ -50,6 +51,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     if (!user || user.passwordHash === "deleted" || user.disabledAt || user.deletedAt) throw fail(401, "Please sign in.");
   };
   router.use("/assistant", async (req, _res, next) => { if (!req.auth) throw fail(401, "Please sign in."); await liveUser(store, req.auth.user.id); next(); });
+  const screenshotControllers = new Map();
   const owned = async (db, id, userId) => {
     const thread = await db.getRelationshipRecordForUser("privateAgentThreads", id, userId);
     if (!thread || thread.intentType !== "assistant" || thread.ownerUserId !== userId || thread.visibility !== "private" || thread.archivedAt || thread.status !== "active") throw fail(404, "Private assistant session not found.");
@@ -65,7 +67,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     }
     return { id: session.id, language: session.language, timezone: session.timezone, version: session.version, ...(session.personId ? { personId: session.personId } : {}), earlierPages: session.earlier?.length || 0, messages: session.messages.map((message, index) => ({
       ...(message.sources?.length ? { sources: message.sources.filter((source) => validSources.get(`${source.channel}:${source.conversationId}`)?.has(source.messageId)) } : {}),
-      id: message.id, role: message.role, text: visibleAssistantText(message, session.messages[index - 1]), ...(message.copyableReply ? { copyableReply: message.copyableReply } : {}), ...(screenshotPending(message) ? { screenshotPending: true } : {}), createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
+      id: message.id, role: message.role, text: visibleAssistantText(message, session.messages[index - 1]), ...(message.copyableReply ? { copyableReply: message.copyableReply } : {}), ...(screenshotPending(message) ? { screenshotPending: true } : {}), ...(message.screenshotOutcome === "stopped" ? { stopped: true } : {}), createdAt: message.createdAt, ...(message.itemId ? { itemId: message.itemId } : {}), ...(["noted", "together_ask"].includes(message.kind) ? { kind: message.kind, ...(message.personId ? { personId: message.personId } : {}) } : {}), ...(message.call ? { call: message.call } : {}), ...(message.dateCheck ? { dateCheck: { title: message.dateCheck.title, date: message.dateCheck.date } } : {}), ...(message.dateAnswer ? { dateAnswer: { rating: message.dateAnswer.rating, told: Boolean(message.dateAnswer.toldAt) } } : {}), ...(message.photoIds?.length ? { photoIds: message.photoIds } : {}),
       ...(message.cards ? { cards: message.cards.map((reference) => {
         if (reference.kind === "link") return { id: reference.id, kind: "link", version: 1, title: reference.title, url: reference.url, status: "active" };
         if (reference.kind === "chat_import") return { id: reference.id, kind: "chat_import", version: 1, title: reference.title, status: "active", url: `/?view=import&import=${encodeURIComponent(reference.id)}` };
@@ -312,6 +314,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const changes = []; let partnerMessage = null; let raced = false; const pendingShares = []; const promiseAnswers = [];
     let delivery;
     let updated = await store.transaction("reminder-delivery", async (tx) => {
+      chatSignal()?.throwIfAborted();
       await liveUser(tx, userId, true);
       const latest = await owned(tx, session.id, userId);
       if (latest.messages.some((message) => message.itemId === itemId)) { raced = true; return latest; }
@@ -498,6 +501,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (draft) => { if (draft.version !== session.version) throw fail(409, "The conversation changed."); if (webTurn.results.length) draft.webFailures = webTurn.failures; draft.messages.push(userMessage, { id: randomUUID(), role: "assistant", text: cited.reply, ...(readingScreenshots ? { screenshotReplyTo: userMessage.id, screenshotStartedAt: userMessage.createdAt, ...(cited.reply ? { screenshotToolReceipt: cited.reply } : {}) } : {}), ...(cited.sources.length ? { sources: cited.sources } : {}), cards: cards.map(({ id, kind, version, text, digest, title, url, openOn }) => ({ id, kind, version, ...(kind === "partner_message" ? { text, digest, ...(openOn ? { openOn } : {}) } : kind === "link" ? { title, url } : ["space", "space_item"].includes(kind) ? { title } : {}) })), plannerQuestion: !plan.actions.length || Boolean(askBack) && !cards.length, createdAt: new Date().toISOString() }); keepMessages(draft, draft.messages); if (partnerMessage) draft.partnerMessage = partnerMessage; if (pendingShares.length) draft.pendingShares = [...(draft.pendingShares || []).filter((item) => !item.sharedAt).slice(-9), ...pendingShares]; if (promiseAnswers.length) draft.promiseLog = [...(draft.promiseLog || []), ...promiseAnswers].slice(-200); draft.version += 1; });
       if (!saved) throw fail(409, "The conversation was removed. Nothing was changed.");
       delivery = { replies, writeReceipts, cards, foundNothing, handoffLines, askBack, messageId: saved.messages.at(-1).id };
+      chatSignal()?.throwIfAborted();
       return saved;
     });
     if (!raced && !readingScreenshots && !delivery.foundNothing && !delivery.handoffLines.length) {
@@ -530,14 +534,55 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       });
     }
     if (readingScreenshots && !raced) {
-      void chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text })
-        .catch((error) => postNote(userId, { sessionId: session.id, language: session.language, replacesScreenshotReplyTo: userMessage.id, screenshotOutcome: "error", text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}));
+      const controller = new AbortController();
+      screenshotControllers.set(userMessage.id, controller);
+      void withChatSignal(controller.signal, () => chatImports.importScreenshots({ id: userId, name: "" }, photoIds, { sessionId: session.id, language, messageId: userMessage.id, question: text }))
+        .catch((error) => !controller.signal.aborted && postNote(userId, { sessionId: session.id, language: session.language, replacesScreenshotReplyTo: userMessage.id, screenshotOutcome: "error", text: error.statusCode === 422 ? error.message : say(session.language, "这些截图没能读出来，可以再试一次，或者换成导出的文件。", "I couldn't read those screenshots. Try again, or send an exported file.", "No pude leer esas capturas. Inténtalo de nuevo o envía un archivo exportado.") }).catch(() => {}))
+        .finally(() => screenshotControllers.delete(userMessage.id));
     }
     for (const { kind, record } of changes) emit(record, `${kind === "plan" ? "private_agent_thread" : kind}.updated`, userId);
     void recordUsage(store, { userId, action: "private_message", channel });
     return { session: updated, duplicate: raced };
   };
-  const append = async (req, res) => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body, { transcript: req.path.endsWith("/transcripts") })).session) });
+  const append = async (req, res) => withChatRequest(res, async () => res.json({ session: await output((await appendTurn(req.auth.user.id, req.params.id, req.body, { transcript: req.path.endsWith("/transcripts") })).session) }));
+  router.post("/assistant/sessions/:id/stop-screenshot", async (req, res) => {
+    const userId = req.auth.user.id;
+    const saved = await store.transaction("reminder-delivery", async tx => {
+      const session = await owned(tx, req.params.id, userId);
+      const line = screenshotTurnMessages(session).find(item => item.id === req.body?.messageId && item.role === "assistant");
+      if (!line?.screenshotReplyTo) return session;
+      screenshotControllers.get(line.screenshotReplyTo)?.abort();
+      return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, draft => {
+        const target = screenshotTurnMessages(draft).find(item => item.id === line.id);
+        target.screenshotAnswerTo = target.screenshotReplyTo;
+        delete target.screenshotReplyTo; delete target.screenshotStartedAt;
+        target.screenshotOutcome = "stopped";
+        target.text = say(session.language, "已停止生成。", "Response stopped.", "Respuesta detenida.");
+        draft.version += 1;
+      });
+    });
+    res.json({ session: await output(saved) });
+  });
+  router.post("/assistant/sessions/:id/regenerate", async (req, res) => withChatRequest(res, async () => {
+    const userId = req.auth.user.id;
+    const session = await owned(store, req.params.id, userId);
+    const reply = session.messages.at(-1), request = session.messages.at(-2);
+    const changed = () => Object.assign(fail(409, say(session.language, "对话已更新，请查看最新回复。", "The conversation changed. Open the latest reply.", "La conversación cambió. Abre la última respuesta.")), { code: "conversation_changed" });
+    if (!reply || reply.id !== req.body?.messageId || reply.role !== "assistant" || (request && request.role !== "user") || !reply.text || reply.call || reply.kind || screenshotPending(reply) || reply.screenshotOutcome === "stopped") throw changed();
+    const text = await regenerateChatReply(mediator, request || { text: "" }, reply, session.language);
+    const saved = await store.transaction("reminder-delivery", async (tx) => {
+      const latest = await owned(tx, session.id, userId);
+      if (latest.version !== session.version) throw changed();
+      chatSignal()?.throwIfAborted();
+      return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
+        draft.messages.at(-1).text = text;
+        delete draft.messages.at(-1).copyableReply;
+        draft.version += 1;
+      });
+    });
+    emit(saved, "assistant.updated", userId);
+    res.json({ session: await output(saved) });
+  }));
   // Only an explicit confirm of the current card's digest moves the polished text (never the member's raw words) into the shared conversation.
   const confirmShare = async (userId, sessionId, body, { channel = "app" } = {}) => {
     const session = await owned(store, sessionId, userId);
@@ -682,7 +727,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
         const additions = cards || (card ? [card] : []);
         const draftText = copyableReply && clean(text, 2000).includes(copyableReply) ? copyableReply : null;
         if (pending) {
-          if (pending.screenshotOutcome === "answered" || pending.screenshotOutcome === "error" && screenshotOutcome === "error") return;
+          if (pending.screenshotOutcome === "stopped" || pending.screenshotOutcome === "answered" || pending.screenshotOutcome === "error" && screenshotOutcome === "error") return;
           pending.text = [clean(text, 2000), pending.screenshotToolReceipt].filter(Boolean).join("\n");
           pending.cards = [...new Map([...(pending.cards || []), ...additions].map((item) => [item.id, item])).values()];
           delete pending.screenshotReplyTo;

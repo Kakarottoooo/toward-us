@@ -73,7 +73,7 @@ export function createAnthropicClient({ apiKey = process.env.ANTHROPIC_API_KEY, 
           // The system part is the same for every member and every turn (only the reply language varies), so it is cached
           // once and read at a tenth of the price after (founder 11-10, cost pass: quality first, then cost).
           ...(system ? { system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] } : {}), messages: messages.length ? messages : [{ role: "user", content: "(empty)" }],
-        }, { timeout: options.timeout || 60_000, maxRetries: options.maxRetries });
+        }, { timeout: options.timeout || 60_000, maxRetries: options.maxRetries, signal: options.signal });
         return { output_text: schema ? JSON.stringify(json(message)) : text(message) };
       },
     },
