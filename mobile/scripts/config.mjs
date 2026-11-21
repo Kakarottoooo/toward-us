@@ -79,7 +79,7 @@ export function offlinePage(origin) {
     es: { title: "No podemos conectar con Ourever", body: "Revisa tu conexión. Volverás solo en cuanto haya red; todo lo tuyo sigue ahí.", retry: "Reintentar", trying: "Reconectando…", still: "Sigue sin conexión; lo intentaremos de nuevo." },
     en: { title: "Can't reach Ourever right now", body: "Check your connection. You'll be back automatically once you're online; everything you saved is still there.", retry: "Try again", trying: "Reconnecting…", still: "Still offline. We'll keep trying." }
   };
-  var text, button = document.getElementById("retry"), status = document.getElementById("status");
+  var text, button = document.getElementById("retry"), statusLine = document.getElementById("status");
   function readLanguage() {
     var saved; try { saved = localStorage.getItem("toward-us.language"); } catch {}
     var preferred = Array.from(navigator.languages || [navigator.language]).map(tag => tag.toLowerCase().split(/[-_]/)[0]);
@@ -94,18 +94,19 @@ export function offlinePage(origin) {
   document.addEventListener("pinky-language-ready", readLanguage);
   var busy = false;
   // An opaque no-cors request settles only when the server is reachable; a network failure rejects.
-  function retry(manual) {
-    if (busy) return; busy = true; button.disabled = true; status.textContent = text.trying;
+  function retry() {
+    if (busy) return; busy = true; statusLine.textContent = text.trying;
     var done = false, timer = setTimeout(function () { if (!done) { done = true; fail(); } }, 8000);
     fetch(SERVER + "/api/health", { mode: "no-cors", cache: "no-store" }).then(function () {
       if (done) return; done = true; clearTimeout(timer); location.replace(SERVER + "/");
     }, function () { if (done) return; done = true; clearTimeout(timer); fail(); });
-    function fail() { busy = false; button.disabled = false; status.textContent = text.still; }
+    function fail() { busy = false; statusLine.textContent = text.still; }
   }
-  button.addEventListener("click", function () { retry(true); });
-  window.addEventListener("online", function () { retry(false); });
-  setInterval(function () { retry(false); }, 10000);
-  retry(false);
+  // A user can reopen the configured app directly even if WebKit blocks the cross-origin health probe.
+  button.addEventListener("click", function () { statusLine.textContent = text.trying; location.replace(SERVER + "/"); });
+  window.addEventListener("online", retry);
+  setInterval(retry, 10000);
+  retry();
 </script>
 </body></html>
 `;
