@@ -29,6 +29,7 @@ const nativeConfigured = async () => nativePushAvailable(await fetch("/api/remin
 export const nativePermission = async () => (await nativePushPlugin()?.checkPermissions().catch(() => null))?.receive;
 
 let invitesBound = false;
+const inviteOrigins = new Set(["https://ourever.witnora.com", "https://toward-us-private-beta.onrender.com"]);
 export function listenNativeInviteLinks() {
   const app = capacitor()?.Plugins?.App;
   if (!app || !inNativeApp() || invitesBound) return;
@@ -39,7 +40,7 @@ export function listenNativeInviteLinks() {
     let target: URL;
     try { target = new URL(url); } catch { return; }
     const invite = target.searchParams.get("invite") || "";
-    if (target.origin !== "https://toward-us-private-beta.onrender.com" || target.pathname !== "/" || !/^[A-Z0-9]{8}$/i.test(invite)) return;
+    if (!inviteOrigins.has(target.origin) || target.pathname !== "/" || !/^[A-Z0-9]{8}$/i.test(invite)) return;
     location.assign("/?invite=" + encodeURIComponent(invite.toUpperCase()));
   })).catch(() => { invitesBound = false; });
 }

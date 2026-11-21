@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { offlinePage, releaseProblem, shellFiles } from "../mobile/scripts/config.mjs";
+import { listenNativeInviteLinks } from "../src/features/reminders/nativePush.ts";
 
 // App Store readiness of the iPhone shell (mobile/): what goes to TestFlight must load a public production server, show a
 // real page when that server can't be reached, and carry the privacy manifest, export answer and purpose strings.
@@ -12,13 +13,31 @@ test("a release build refuses the dogfood, local and cleartext addresses and def
     assert.notEqual(releaseProblem(new URL(url)), "", url);
     assert.throws(() => shellFiles(url, { release: true }), undefined, url);
   }
-  assert.equal(shellFiles("", { release: true }).config.server.url, "https://toward-us-private-beta.onrender.com");
+  assert.equal(shellFiles("", { release: true }).config.server.url, "https://ourever.witnora.com");
   assert.equal(releaseProblem(new URL("https://pinky.example.com")), "");
   assert.equal(shellFiles("https://pinky.example.com/path", { release: true }).config.server.url, "https://pinky.example.com");
   // Dogfood builds keep working as before, the Tailscale address included.
   assert.equal(shellFiles("https://node.tail3f720f.ts.net").config.server.url, "https://node.tail3f720f.ts.net");
   assert.equal(shellFiles("http://localhost:5173").config.server.cleartext, true);
   assert.equal(shellFiles("https://pinky.example.com").config.server.cleartext, undefined);
+});
+
+test("native invites from both associated domains open on the active shell origin", (t) => {
+  const hosts = ["ourever.witnora.com", "toward-us-private-beta.onrender.com"];
+  const domains = [...ios("App/App.entitlements").matchAll(/<string>applinks:([^<]+)<\/string>/g)];
+  assert.deepEqual(domains.map((match) => match[1]).sort(), hosts);
+  let openLink;
+  const opened = [];
+  const app = { addListener(event, callback) { assert.equal(event, "appUrlOpen"); openLink = callback; } };
+  globalThis.window = { Capacitor: { isNativePlatform: () => true, Plugins: { App: app } } };
+  globalThis.location = { assign: (url) => opened.push(url) };
+  t.after(() => { delete globalThis.window; delete globalThis.location; });
+  listenNativeInviteLinks();
+  for (const host of hosts) openLink({ url: `https://${host}/?invite=abcd1234` });
+  openLink({ url: "https://unlisted.example/?invite=abcd1234" });
+  openLink({ url: "http://ourever.witnora.com/?invite=abcd1234" });
+  openLink({ url: "https://ourever.witnora.com/other?invite=abcd1234" });
+  assert.deepEqual(opened, ["/?invite=ABCD1234", "/?invite=ABCD1234"]);
 });
 
 test("when the server can't be reached the shell shows a bundled offline page that retries and returns by itself", () => {
