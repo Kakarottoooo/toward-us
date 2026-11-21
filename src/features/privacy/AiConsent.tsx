@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ShieldCheck, WifiSlash } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { MobileScroll } from "../../mobile";
@@ -24,16 +24,17 @@ export function LegalLinks({ language, className = "legal-links" }: { language: 
 }
 
 /** Shown once to a signed-in person who has not agreed yet; nothing of theirs reaches an AI provider before they do. */
-export function AiConsentScreen({ language, onAgreed, onDecline }: { language: Language; onAgreed: (at: string) => void; onDecline: () => void }) {
+export function AiConsentScreen({ language, onAgreed, onDecline, header }: { language: Language; onAgreed: (at: string) => void; onDecline: () => void; header?: ReactNode }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
   const agree = async () => {
     setBusy(true); setNotice("");
-    try { const { aiConsentAt } = await relationshipApi<{ aiConsentAt: string }>("/api/privacy/ai-consent", jsonBody({ agree: true, noticeVersion: AI_NOTICE_VERSION, language })); onAgreed(aiConsentAt); }
-    catch (error) { setNotice((error as Error).message); setBusy(false); }
+    try { const { aiConsentAt } = await relationshipApi<{ aiConsentAt: string }>("/api/privacy/ai-consent", { ...jsonBody({ agree: true, noticeVersion: AI_NOTICE_VERSION, language }), signal: AbortSignal.timeout(12000) }); onAgreed(aiConsentAt); }
+    catch (error) { setNotice((error as Error).name === "TimeoutError" ? t("连接超时，请重试。", "Connection timed out. Try again.", "La conexión tardó demasiado. Inténtalo de nuevo.") : (error as Error).message); setBusy(false); }
   };
   return <MobileScroll className="paper-screen ai-consent-screen" data-testid="ai-consent">
     <main className="ai-consent">
+      {header}
       <span className="ai-consent-icon" aria-hidden="true"><ShieldCheck size={30} weight="fill" /></span>
       <h1>{t("允许第三方 AI 处理内容？", "Allow third-party AI processing?", "¿Permitir el procesamiento con IA de terceros?")}</h1>
       <p>{aiDisclosure(language)}</p>

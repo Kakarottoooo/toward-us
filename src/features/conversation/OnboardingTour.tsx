@@ -1,55 +1,22 @@
-import { useState, type ReactNode } from "react";
-import { ChatCircleDots, Heart, List, LockKey, Microphone, Phone, Sticker, UsersThree, X } from "@phosphor-icons/react";
+import { Sticker } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 
-// Per device: once someone has seen it on this phone, it does not return (tests and demos set the same key).
-const seenKey = (_userId: string) => "toward-us:onboarded";
-export const tourSeen = (userId: string) => { try { return localStorage.getItem(seenKey(userId)) === "1"; } catch { return true; } };
-const markSeen = (userId: string) => { try { localStorage.setItem(seenKey(userId), "1"); } catch { /* Shown again next time; harmless. */ } };
-// Someone who took the tour before their partner joined saw "make your character" without a button: the card is owed to
-// them and comes back once, on its own, after pairing.
-const owedKey = (userId: string) => `toward-us:character-owed:${userId}`;
-export const characterOwed = (userId: string) => { try { return localStorage.getItem(owedKey(userId)) === "1"; } catch { return false; } };
-const setOwed = (userId: string, owed: boolean) => { try { if (owed) localStorage.setItem(owedKey(userId), "1"); else localStorage.removeItem(owedKey(userId)); } catch { /* Not offered again; harmless. */ } };
+// People who finished the former tour while alone can still claim their character introduction.
+const owedKey = (id: string) => `toward-us:character-owed:${id}`;
+export const characterOwed = (id: string) => { try { return localStorage.getItem(owedKey(id)) === "1"; } catch { return false; } };
 
-/** Light cards the first time someone opens Ourever: the private chat, the shared one, where things live, and the couple's own character. */
-export function OnboardingTour({ language, userId, paired, onInvite, onCharacter, onDone, inviteDisabled, inviteBusy, invitePending, characterOnly = false }: { language: Language; userId: string; paired: boolean; onInvite: () => void; inviteDisabled?: boolean; inviteBusy?: boolean; invitePending?: boolean; onCharacter: () => void; onDone: () => void; characterOnly?: boolean }) {
+export function CharacterOffer({ userId, language, onDone, onCharacter }: {
+  userId: string; language: Language; onDone: () => void; onCharacter: () => void;
+}) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [step, setStep] = useState(0);
-  const finish = () => { if (characterOnly) setOwed(userId, false); else { markSeen(userId); if (!paired) setOwed(userId, true); } onDone(); };
-  const steps: Array<{ icon: ReactNode; title: string; text?: string; list?: Array<[ReactNode, string]>; action?: { label: string; run: () => void } | null }> = [
-    { icon: <LockKey size={30} weight="duotone" />, title: t("“只有我”：只属于你", "Just me: only yours", "Solo yo: solo tuyo"), text: t("不知道怎么回 TA 的时候，把 TA 的话或聊天截图发给 Ourever，它帮你看懂意思、写一句能直接发的回复。这里只有你能看到；不用邀请 TA 也能用。", "When you don’t know how to reply, send Ourever what your partner said or a screenshot. It helps you read what they mean and writes a reply you can send. Only you see this, and it works without inviting your partner.", "Cuando no sepas qué responder, envíale a Ourever lo que dijo tu pareja o una captura. Te ayuda a entenderlo y escribe una respuesta que puedes enviar. Solo tú lo ves, y funciona sin invitar a tu pareja.") },
-    { icon: <UsersThree size={30} weight="duotone" />, title: t("“我们俩”：你们俩和 Ourever", "Us: the two of you and Ourever", "Nosotros: ustedes dos y Ourever"), text: t("你们两个人都能看到。叫一声“Ourever”它就来帮忙：定约定、排计划、吵架时帮你们调解。", "You both see everything here. Say “Ourever” and it helps: settle agreements, plan things, mediate when you argue.", "Los dos ven todo aquí. Digan «Ourever» y ayuda: acordar cosas, planear, mediar cuando discuten."), action: paired ? null : { label: t("邀请 TA 加入", "Invite your partner", "Invita a tu pareja"), run: onInvite } },
-    { icon: <Heart size={30} weight="duotone" />, title: t("其他都在这里", "Where things live", "Dónde está todo"), list: [
-      [<List size={18} />, t("左上角菜单：约定、即将到来、回忆", "Top-left menu: agreements, coming up, moments", "Menú arriba a la izquierda: acuerdos, próximamente, momentos")],
-      [<ChatCircleDots size={18} />, t("输入框上方的小建议，不知道说什么时点一下", "The small ideas above the box, when you don't know what to say", "Las ideas sobre el cuadro, cuando no sepas qué decir")],
-      [<Microphone size={18} />, t("麦克风：直接说话", "Microphone: just talk", "Micrófono: solo habla")],
-      [<Phone size={18} />, t("电话：和 Ourever 实时通话，几个人一起也行", "Phone: a live call with Ourever, even with others in the room", "Teléfono: una llamada con Ourever, incluso con más personas")],
-    ] },
-    // 做我们的角色 (the founder, 11-03): a photo of their pet becomes a moving character both of them see at the top.
-    { icon: <Sticker size={30} weight="duotone" />, title: t("做你们的角色", "Make your own character", "Creen su propio personaje"), text: paired
-      ? t("拍一张你们宠物的照片，或上传截图、喜欢的形象，Ourever 会把它做成会动的小角色，浮在对话顶部陪着你们俩。以后也可以在设置里做或隐藏。", "Take a photo of your pet, or upload a screenshot or a figure you love: Ourever turns it into a little moving character that floats at the top of your conversation for both of you. You can also make or hide it later in Settings.", "Hazle una foto a su mascota, o sube una captura o una figura que les guste: Ourever la convierte en un personaje que se mueve y flota arriba de su conversación para los dos. También pueden crearlo u ocultarlo luego en Ajustes.")
-      : t("TA 加入后，拍一张你们宠物的照片（或上传喜欢的形象），Ourever 会把它做成会动的小角色，浮在对话顶部陪着你们俩。在设置里做。", "Once your partner joins, take a photo of your pet (or upload a figure you love) and Ourever turns it into a little moving character at the top of your conversation. Make it in Settings.", "Cuando tu pareja se una, hazle una foto a su mascota (o sube una figura que les guste) y Ourever la convierte en un personaje que se mueve arriba de su conversación. Créenlo en Ajustes."),
-      action: paired ? { label: t("现在就做", "Make it now", "Crearlo ahora"), run: onCharacter } : null },
-  ];
-  if (characterOnly) steps.splice(0, steps.length - 1);
-  else if (!paired && !invitePending) {
-    const [shared] = steps.splice(1, 1);
-    steps.unshift(shared);
-  }
-  const current = steps[step];
-  const leadInvite = !paired && !invitePending && step === 0 && !characterOnly;
-  return <div className="onboarding-layer" role="dialog" aria-modal="true" aria-label={t("欢迎来到 Ourever", "Welcome to Ourever", "Bienvenido a Ourever")} data-testid="onboarding">
-    <div className="onboarding-card">
-      {!current.action && <button type="button" className="onboarding-skip" onClick={finish} aria-label={t("跳过", "Skip", "Saltar")}><X size={20} /></button>}
-      <span className="onboarding-icon">{current.icon}</span>
-      <h2>{current.title}</h2>
-      {current.text && <p>{current.text}</p>}
-      {current.list && <ul>{current.list.map(([icon, text], index) => <li key={index}>{icon}<span>{text}</span></li>)}</ul>}
-      <div className="onboarding-dots" aria-hidden="true">{steps.map((_, index) => <i key={index} className={index === step ? "on" : ""} />)}</div>
+  const done = () => { try { localStorage.removeItem(owedKey(userId)); } catch { /* optional storage */ } onDone(); };
+  const title = t("做你们的角色", "Make your own character", "Creen su propio personaje");
+  return <div className="onboarding-layer" role="dialog" aria-modal="true" aria-label={title} data-testid="onboarding">
+    <div className="onboarding-card"><Sticker size={30} aria-hidden="true" /><h2>{title}</h2>
+      <p>{t("拍一张你们宠物的照片，或上传截图、喜欢的形象，Ourever 会把它做成会动的小角色，浮在对话顶部陪着你们俩。以后也可以在设置里做或隐藏。", "Take a photo of your pet, or upload a screenshot or a figure you love: Ourever turns it into a little moving character that floats at the top of your conversation for both of you. You can also make or hide it later in Settings.", "Hazle una foto a su mascota, o sube una captura o una figura que les guste: Ourever la convierte en un personaje que se mueve y flota arriba de su conversación para los dos. También pueden crearlo u ocultarlo luego en Ajustes.")}</p>
       <div className="onboarding-actions">
-        {current.action && <button type="button" className={leadInvite ? "onboarding-next" : "onboarding-secondary"} disabled={leadInvite && inviteDisabled} onClick={() => { finish(); current.action!.run(); }} data-testid="onboarding-action">{leadInvite && inviteBusy ? t("正在准备链接…", "Preparing link…", "Preparando el enlace…") : current.action.label}</button>}
-        <button type="button" className={leadInvite ? "onboarding-secondary" : "onboarding-next"} onClick={() => step < steps.length - 1 ? setStep(step + 1) : finish()} data-testid="onboarding-next">{step < steps.length - 1 ? t("下一步", "Next", "Siguiente") : t("开始吧", "Let's start", "Empecemos")}</button>
+        <button className="onboarding-next" onClick={() => { done(); onCharacter(); }} data-testid="onboarding-action">{t("现在就做", "Make it now", "Crearlo ahora")}</button>
+        <button className="onboarding-secondary" onClick={done}>{t("以后再说", "Not now", "Ahora no")}</button>
       </div>
     </div>
   </div>;

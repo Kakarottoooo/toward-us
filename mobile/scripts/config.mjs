@@ -58,6 +58,11 @@ export function offlinePage(origin) {
   h1 { font-size: 24px; line-height: 1.3; margin: 8px 0 0; }
   p { font-size: 17px; line-height: 1.5; margin: 0; color: #5b524b; max-width: 320px; }
   button { margin-top: 12px; min-height: 48px; min-width: 160px; border: 0; border-radius: 24px; background: #c2453d; color: #fff; font-size: 17px; font-weight: 600; padding: 0 28px; }
+  @supports (font: -apple-system-body) {
+    main { font: -apple-system-body; }
+    p, button { font-size: 1em; }
+    h1 { font-size: 1.45em; }
+  }
   button:disabled { opacity: 0.6; }
   small { font-size: 14px; color: #7a7068; min-height: 20px; }
 </style></head>
@@ -77,7 +82,8 @@ export function offlinePage(origin) {
   var text, button = document.getElementById("retry"), status = document.getElementById("status");
   function readLanguage() {
     var saved; try { saved = localStorage.getItem("toward-us.language"); } catch {}
-    var lang = ["zh", "en", "es"].includes(saved) ? saved : "en";
+    var preferred = Array.from(navigator.languages || [navigator.language]).map(tag => tag.toLowerCase().split(/[-_]/)[0]);
+    var lang = [saved, ...preferred].find(tag => ["zh", "en", "es"].includes(tag)) || "en";
     text = COPY[lang];
     document.documentElement.lang = lang === "zh" ? "zh-Hans" : lang;
     document.getElementById("title").textContent = text.title;
@@ -89,12 +95,12 @@ export function offlinePage(origin) {
   var busy = false;
   // An opaque no-cors request settles only when the server is reachable; a network failure rejects.
   function retry(manual) {
-    if (busy) return; busy = true; button.disabled = true; if (manual) status.textContent = text.trying;
+    if (busy) return; busy = true; button.disabled = true; status.textContent = text.trying;
     var done = false, timer = setTimeout(function () { if (!done) { done = true; fail(); } }, 8000);
     fetch(SERVER + "/api/health", { mode: "no-cors", cache: "no-store" }).then(function () {
       if (done) return; done = true; clearTimeout(timer); location.replace(SERVER + "/");
     }, function () { if (done) return; done = true; clearTimeout(timer); fail(); });
-    function fail() { busy = false; button.disabled = false; if (manual) status.textContent = text.still; }
+    function fail() { busy = false; button.disabled = false; status.textContent = text.still; }
   }
   button.addEventListener("click", function () { retry(true); });
   window.addEventListener("online", function () { retry(false); });
