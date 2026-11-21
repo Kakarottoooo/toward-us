@@ -3,11 +3,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The shell loads the hosted web app so the existing HttpOnly session cookie keeps working unchanged.
-// CLOUD_URL is Ourever's server in the cloud (render.yaml, Render service "toward-us-private-beta"): the one place
-// the App's server is set.
+// CLOUD_URL is the public Ourever origin used by the release shell.
 // TOWARD_US_APP_URL overrides it at sync time for dogfooding (a PC on the same Wi-Fi, a Tailscale name). A release build
 // (--release, used for TestFlight and the App Store) may not point at a private or cleartext address.
-export const CLOUD_URL = 'https://toward-us-private-beta.onrender.com';
+export const CLOUD_URL = 'https://ourever.witnora.com';
 
 /** Why `url` cannot be the server of a build that goes to TestFlight or the App Store, or '' when it can. */
 export function releaseProblem(url) {
