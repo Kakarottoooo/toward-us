@@ -90,3 +90,8 @@ html.plum-entry {
   .home-screen .mobile-home-composition.plum-welcome { position: absolute; inset: 0; align-items: center; }
   .plum-welcome h1, .welcome-entry-actions { width: min(100%, 520px); }
 }
+
+/* Fill the whole window, including the safe areas the native shell insets, with plum while an entry screen is shown. */
+html.plum-entry:has(.plum-welcome, .plum-auth),
+html.plum-entry:has(.plum-welcome, .plum-auth) body,
+html.plum-entry:has(.plum-welcome, .plum-auth) #root { background: #300e29; }

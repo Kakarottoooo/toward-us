@@ -62,6 +62,7 @@ test("the native app keeps the plum welcome and sign-in at full-screen iPad widt
     await expect(page.getByTestId("desktop-home")).toBeHidden();
     await expect(page.locator(".plum-welcome")).toHaveCSS("background-color", "rgb(48, 14, 41)");
     await expect(page.getByTestId("start-button")).toBeVisible();
+    await expect(page.locator("html")).toHaveCSS("background-color", "rgb(48, 14, 41)");
     await page.locator(".welcome-sign-in").click();
     await expect(page.locator(".paper-screen.plum-auth")).toHaveCSS("background-color", "rgb(48, 14, 41)");
     await expect(page.locator(".plum-auth .editorial-top")).toHaveCSS("background-color", "rgb(48, 14, 41)");
