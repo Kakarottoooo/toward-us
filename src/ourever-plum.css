@@ -95,3 +95,6 @@ html.plum-entry {
 html.plum-entry:has(.plum-welcome, .plum-auth),
 html.plum-entry:has(.plum-welcome, .plum-auth) body,
 html.plum-entry:has(.plum-welcome, .plum-auth) #root { background: #300e29; }
+/* The feedback button sat over the welcome headline; on the plum welcome it lives in the top corner instead. */
+html.plum-entry .home-screen:has(.plum-welcome) ~ .feedback-launch,
+html.plum-entry:has(.plum-welcome) .feedback-launch { top: max(22px, env(safe-area-inset-top)); right: 16px; }
