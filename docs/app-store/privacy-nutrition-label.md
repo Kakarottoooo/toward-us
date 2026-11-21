@@ -16,7 +16,7 @@ App Store Connect → App 隐私。答案要和 `mobile/ios/App/App/PrivacyInfo.
 | App Store Connect 里的类型 | 清单里的键 | 用途 | 说明 |
 |---|---|---|---|
 | 联系信息 → 姓名 | `NSPrivacyCollectedDataTypeName` | App 功能 | 显示名 |
-| 联系信息 → 电子邮件地址 | `NSPrivacyCollectedDataTypeEmailAddress` | App 功能 | 登录、重设密码 |
+| 联系信息 → 电子邮件地址 | `NSPrivacyCollectedDataTypeEmailAddress` | App 功能 | 邮箱登录、Google 或 Apple 提供的验证邮箱（可为 Apple 转发地址）、通过 Resend 投递重设密码邮件 |
 | 联系信息 → 电话号码 | `NSPrivacyCollectedDataTypePhoneNumber` | App 功能 | 只在用户绑定 iMessage 时 |
 | 健康与健身 → 健康 | `NSPrivacyCollectedDataTypeHealth` | App 功能 | 经期记录（只属于本人） |
 | 位置 → 精确位置 | `NSPrivacyCollectedDataTypePreciseLocation` | App 功能 | 只来自用户连接的相册照片里的拍摄坐标，用来写回忆地点；App 不读设备定位 |
@@ -27,7 +27,7 @@ App Store Connect → App 隐私。答案要和 `mobile/ios/App/App/PrivacyInfo.
 | 用户内容 → 客户支持 | `NSPrivacyCollectedDataTypeCustomerSupport` | App 功能 | 反馈和举报 |
 | 用户内容 → 游戏内容 | `NSPrivacyCollectedDataTypeGameplayContent` | App 功能 | 小游戏中的每步操作和对局结果 |
 | 诊断 → 其他诊断数据 | `NSPrivacyCollectedDataTypeOtherDiagnosticData` | App 功能 | 用户提交 App 内反馈时随附的诊断快照 |
-| 标识符 → 用户 ID | `NSPrivacyCollectedDataTypeUserID` | App 功能 | 账号 ID |
+| 标识符 → 用户 ID | `NSPrivacyCollectedDataTypeUserID` | App 功能 | Ourever 账号 ID，以及用户选择 Google 或 Apple 登录时的提供方账号标识 |
 | 使用数据 → 产品交互 | `NSPrivacyCollectedDataTypeProductInteraction` | 分析、App 功能 | 前台与后台切换、打开次数、使用时长；已登录使用计入日活，不含内容 |
 | 标识符 → 设备 ID | `NSPrivacyCollectedDataTypeDeviceID` | 分析、App 功能 | 会话统计使用随机安装 ID 和会话 ID 的组合摘要。好友邀请使用独立的随机安装标识，服务端关联其摘要以防同设备重复领奖。 |
 

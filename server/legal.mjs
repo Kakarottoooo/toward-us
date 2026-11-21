@@ -5,7 +5,7 @@
 //   PINKY_OPERATOR       company operating Ourever (defaults to Witnora, Inc.)
 // What the policy says must stay true to the code: update it with any change to what is collected or who processes it.
 export const LEGAL_PAGES = ["privacy", "terms", "support"];
-const UPDATED = "2026-11-19";
+const UPDATED = "2026-11-20";
 
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
@@ -23,7 +23,7 @@ function content(page, language, { email, operator }) {
         ["我们是谁", [`Ourever 由 ${op} 运营。Ourever 是一个私人的关系助手：先做你一个人的教练，你和另一半连接后，也是你们俩共同的助手。`]],
         ["邀请与奖励", ["我们用随机安装标识的摘要、账号及已有付款标识核对奖励资格。邀请人可以看到好友名字首字和达标进度。删除账号后，我们保留去标识的发放和防重复记录。"]],
         ["我们收集什么", [
-          "账号：你的名字（显示名）、邮箱、加密保存的密码；如果你绑定了手机号用 iMessage 和 Ourever 聊天，还有手机号。",
+          "账号：我们保存你的显示名和邮箱。使用密码时，保存的是密码哈希值。使用 Google 或 Apple 登录时，我们记录该服务提供的账号标识和经验证的邮箱。如果你在 Apple 选择隐藏邮箱，我们收到的是转发地址。绑定 iMessage 时，我们也保存你的手机号。",
           "你主动给 Ourever 的内容：你打字或说出的话（语音会转成文字）、你选择发送或连接的照片和相册信息（拍摄时间、地点坐标）、你导入的聊天记录、提醒、约定、记忆、经期记录等。",
           "使用情况：功能使用、每天 AI 请求次数、打开次数、前后台切换和使用时长。已登录活跃度按账号汇总。崩溃摘要由 Apple MetricKit 送到 Ourever，单独保存，不含账号或聊天。",
           "付款：会员或装扮的购买记录（由 Apple 或 Stripe 处理，我们看不到你的卡号）。",
@@ -33,7 +33,8 @@ function content(page, language, { email, operator }) {
         ["私人与共享", ["你在“只有我”里的一切只有你能看到，另一半永远看不到。只有你确认过的“可共享摘要”才会进入你们俩共同的对话；约定要你们两人都同意同一个版本才算数。经期记录只属于你；即使你选择让对方知道，对方也只会收到一句“这几天多照顾 TA 一点”，看不到日期和原因。"]],
         ["第三方 AI 和其他处理方", [
           "注册账号后，Ourever 会单独询问第三方 AI 授权。相关聊天记录、他人的导入消息、截图、所选照片及语音可发送给 OpenAI 或 Anthropic，以生成回复、转录及理解图片。OpenAI 还对相关文字和图片进行安全审核。选择制作动态角色时，处理后的角色图片发送给 Replicate。你可以在设置中撤回。",
-          "其他处理方：云服务器和数据库托管商（存放数据）；Apple、Google 的推送服务（发通知）；Resend（发重设密码邮件）；Sendblue 和 Apple（仅当你用 iMessage 和 Ourever 聊天）；Apple 和 Stripe（付款）。我们只给它们完成该项工作所需的数据，并要求它们提供不低于本政策的保护。"]],
+          "你选择 Google 或 Apple 登录时，对应服务会验证你的身份。申请重设密码时，Resend 会处理收件地址并投递含一次性链接的邮件。",
+          "其他处理方包括云服务器和数据库托管商、Apple 和 Google 的推送服务、Sendblue 和 Apple（用于 iMessage），以及 Apple 和 Stripe（付款）。我们只给它们完成该项工作所需的数据，并要求它们提供不低于本政策的保护。"]],
         ["保留与删除", ["私人内容默认保留到你自己删除，你也可以在“设置 → 私人内容保留”里改成 7、30、90 或 365 天没更新就自动删除。“设置 → 下载我的数据”可以导出全部数据；“删除我的私人内容”立即删除私人内容；“删除账号”立即删除账号、私人内容、私人照片和导入的聊天记录，并让你退出关系。你在“我们俩”里说过的话会留给对方。"]],
         ["撤回同意", ["你可以随时撤回第三方 AI 同意（设置 → AI 与数据处理方），撤回后 Ourever 不再把你的内容发给 AI，需要重新同意才能继续使用 AI 功能。也可以随时退出关系、删除内容或删除账号，都不需要对方批准。"]],
         ["儿童", ["Ourever 只面向 18 岁及以上的人，我们不会有意收集未成年人的数据。"]],
@@ -43,7 +44,7 @@ function content(page, language, { email, operator }) {
         ["Who we are", [`Ourever is operated by ${op}. Ourever is a private relationship assistant: first a coach for you alone, and, once you connect with a partner, a shared assistant for the two of you.`]],
         ["Invitations and rewards", ["We use a hash of a random installation identifier, account details and existing payment identifiers to check reward eligibility. The inviter sees a friend’s initial and progress. After account deletion we retain pseudonymous grant and fraud-prevention records."]],
         ["What we collect", [
-          "Account: your display name, email and a hashed password; if you link a phone number to talk to Ourever over iMessage, that number.",
+          "We store your display name and email. If you use a password, we store its hash. If you sign in with Google or Apple, we store the account identifier and verified email the service provides. Choosing Hide My Email with Apple gives us a relay address. We also store your phone number if you link it for iMessage.",
           "What you give Ourever: what you type or say (voice is turned into text), photos you choose to send or connect and their album details (when and where they were taken), chat history you import, reminders, agreements, memories, cycle entries and the like.",
           "Usage: feature use, daily AI requests, launches, foreground sessions and time spent. Signed-in activity is counted by account. Ourever stores Apple MetricKit crash summaries separately without account identifiers or chat content.",
           "Payments: records of membership or outfit purchases (processed by Apple or Stripe; we never see your card number).",
@@ -53,7 +54,8 @@ function content(page, language, { email, operator }) {
         ["Private and shared", ["Everything in Just me is visible only to you; your partner never sees it. Only a summary you confirm as shareable enters the shared conversation, and an agreement counts only when both of you approve the same version. Cycle entries are yours alone; even if you choose to let your partner know, they only get a note to take extra care of you these days, with no dates and no reason."]],
         ["Third-party AI and other processors", [
           "After signup, Ourever separately asks permission for third-party AI. Relevant chats (including imported messages from others), screenshots, selected photos and voice may go to OpenAI or Anthropic for replies, transcription and image understanding. OpenAI also screens relevant text and images for safety. If you animate a character, the processed image is sent to Replicate. You can withdraw in Settings.",
-          "Other processors: our cloud server and database host (stores data); Apple and Google push services (notifications); Resend (password-reset email); Sendblue and Apple (only if you talk to Ourever over iMessage); Apple and Stripe (payments). Each receives only what its job needs, and we require protection at least equal to this policy."]],
+          "When you choose Google or Apple sign-in, that provider verifies your identity. When you request a password reset, Resend processes your email address to deliver a one-time reset link.",
+          "Other processors include our cloud server and database host, Apple and Google push services, Sendblue and Apple for iMessage, and Apple and Stripe for payments. Each receives only what its job needs, and we require protection at least equal to this policy."]],
         ["Retention and deletion", ["Private content stays until you delete it, or you can choose in Settings → Keep private content to delete it after 7, 30, 90 or 365 days without changes. Settings → Download my data exports everything; Delete my private content removes it at once; Delete account immediately removes your account, private content, private photos and imported chats, and ends your relationship space. What you wrote in Us stays for your partner."]],
         ["Withdrawing consent", ["You can withdraw third-party AI consent at any time (Settings → AI and data processors); Ourever then stops sending your content to AI until you agree again. You can also leave a relationship, delete content or delete your account at any time, without your partner's approval."]],
         ["Children", ["Ourever is only for people 18 and older. We do not knowingly collect data from minors."]],
@@ -63,7 +65,7 @@ function content(page, language, { email, operator }) {
         ["Quiénes somos", [`Ourever lo opera ${op}. Ourever es un asistente privado de pareja: primero un coach solo para ti y, cuando te conectas con tu pareja, un asistente compartido para los dos.`]],
         ["Invitaciones y recompensas", ["Usamos un resumen criptográfico de un identificador aleatorio de instalación, los datos de la cuenta y los identificadores de pago existentes para comprobar las recompensas. Quien invita ve la inicial y el progreso de su amigo. Al borrar la cuenta, conservamos registros seudónimos de concesión y prevención de duplicados."]],
         ["Qué recopilamos", [
-          "Cuenta: tu nombre visible, tu correo y una contraseña cifrada; si vinculas un teléfono para hablar con Ourever por iMessage, ese número.",
+          "Guardamos tu nombre visible y tu correo. Si usas una contraseña, guardamos su hash. Si accedes con Google o Apple, guardamos el identificador de cuenta y el correo verificado que nos comunica el proveedor. Si ocultas tu correo con Apple, recibimos una dirección de reenvío. También guardamos tu número de teléfono si lo vinculas a iMessage.",
           "Lo que le das a Ourever: lo que escribes o dices (la voz se convierte en texto), las fotos que eliges enviar o conectar y sus datos de álbum (cuándo y dónde se tomaron), los chats que importas, recordatorios, acuerdos, recuerdos, registros del ciclo y similares.",
           "Uso: funciones, peticiones diarias de IA, aperturas, sesiones y duración. La actividad con sesión iniciada se cuenta por cuenta. Ourever guarda por separado resúmenes de fallos de Apple MetricKit sin cuentas ni chats.",
           "Pagos: registros de compras de membresía o atuendos (los procesan Apple o Stripe; nunca vemos tu tarjeta).",
@@ -73,7 +75,8 @@ function content(page, language, { email, operator }) {
         ["Privado y compartido", ["Todo lo de Solo yo lo ves solo tú; tu pareja nunca lo ve. Solo un resumen que confirmas como compartible entra en la conversación común, y un acuerdo cuenta solo cuando los dos aprueban la misma versión. El registro del ciclo es solo tuyo; aunque elijas avisar a tu pareja, solo recibe una nota para cuidarte más estos días, sin fechas ni motivo."]],
         ["IA de terceros y otros encargados", [
           "Después de registrarte, Ourever solicita permiso específico para usar IA de terceros. Los chats pertinentes (incluidos mensajes importados de otras personas), capturas, fotos elegidas y voz pueden enviarse a OpenAI o Anthropic para responder, transcribir e interpretar imágenes. OpenAI también revisa el texto y las imágenes por seguridad. Si animas un personaje, la imagen procesada se envía a Replicate. Puedes retirar el permiso en Ajustes.",
-          "Otros encargados: nuestro proveedor de servidor y base de datos (almacena los datos); los servicios de notificaciones de Apple y Google; Resend (correo para restablecer la contraseña); Sendblue y Apple (solo si hablas con Ourever por iMessage); Apple y Stripe (pagos). Cada uno recibe solo lo necesario para su tarea y les exigimos una protección al menos igual a esta política."]],
+          "Si accedes con Google o Apple, el proveedor que elijas verifica tu identidad. Si solicitas un cambio de contraseña, Resend utiliza tu dirección de correo para enviarte un enlace de un solo uso.",
+          "Otros encargados incluyen nuestro proveedor de servidor y base de datos, los servicios de notificaciones de Apple y Google, Sendblue y Apple para iMessage, y Apple y Stripe para pagos. Cada uno recibe solo lo necesario para su tarea y les exigimos una protección al menos igual a esta política."]],
         ["Conservación y borrado", ["Lo privado se conserva hasta que lo borres, o puedes elegir en Ajustes → Conservar lo privado que se borre tras 7, 30, 90 o 365 días sin cambios. Ajustes → Descargar mis datos lo exporta todo; Borrar mi contenido privado lo elimina al instante; Borrar la cuenta elimina de inmediato tu cuenta, lo privado, las fotos privadas y los chats importados, y termina el espacio de pareja. Lo que escribiste en Nosotros queda para tu pareja."]],
         ["Retirar el consentimiento", ["Puedes retirar el consentimiento de IA de terceros en cualquier momento (Ajustes → IA y encargados de datos); Ourever deja de enviar tu contenido a la IA hasta que vuelvas a aceptar. También puedes salir de una relación, borrar contenido o borrar tu cuenta cuando quieras, sin la aprobación de tu pareja."]],
         ["Menores", ["Ourever es solo para mayores de 18 años. No recopilamos a sabiendas datos de menores."]],

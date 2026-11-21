@@ -81,6 +81,10 @@ test("privacy policy, terms and support are public pages in all three languages,
       const { html } = await request(`/${page}?lang=${lang}`);
       assert.ok(html.includes(words), `${page} ${lang}`);
       assert.ok(html.includes(`data-testid="legal-${page}"`));
+      if (page === "privacy") {
+        const signInDisclosure = { zh: "你选择 Google 或 Apple 登录", en: "When you choose Google or Apple sign-in", es: "Si accedes con Google o Apple" };
+        assert.ok(html.includes(signInDisclosure[lang]) && html.includes("Resend"), lang);
+      }
     }
   }
   assert.ok((await request("/privacy", { headers: { "accept-language": "es-MX,es;q=0.9" } })).html.includes("Política de privacidad de Ourever"));

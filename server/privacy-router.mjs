@@ -10,7 +10,7 @@ import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPass
 import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { deleteReferralAccount } from "./referrals.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
-import { createEmailSender } from "./email.mjs";
+import { createEmailSender, resetMessage } from "./email.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
@@ -76,35 +76,37 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   });
   // Password reset by email. The token is "<userId>.<secret>"; only sha256(secret) is stored, on the owner's private accountSettings record.
   const RESET_TTL_MS = 30 * 60_000; const resetRequests = new Map();
-  const resetLimited = (key, max) => {
+  const resetLimited = (key, max, cooldownMs = 0) => {
     const now = Date.now(); const recent = (resetRequests.get(key) || []).filter((at) => at > now - 3_600_000);
-    const over = recent.length >= max; if (!over) recent.push(now); resetRequests.set(key, recent);
+    const over = recent.length >= max || (recent.length > 0 && now - recent.at(-1) < cooldownMs);
+    if (!over) recent.push(now);
+    resetRequests.set(key, recent);
     if (resetRequests.size > 5000) for (const [candidate, times] of resetRequests) if (times.every((at) => at < now - 3_600_000)) resetRequests.delete(candidate);
     return over;
   };
-  const resetMessage = (language, link) => language === "es"
-    ? { subject: "Restablece tu contraseña de Ourever", text: `Usa este enlace para elegir una nueva contraseña. Funciona durante 30 minutos y solo una vez.\n\n${link}\n\nSi no lo pediste, ignora este correo: tu contraseña no cambiará.` }
-    : language === "en"
-      ? { subject: "Reset your Ourever password", text: `Use this link to choose a new password. It works for 30 minutes and only once.\n\n${link}\n\nIf you did not ask for this, ignore this email; your password will not change.` }
-      : { subject: "重设你的 Ourever 密码", text: `用这个链接设置新密码。链接 30 分钟内有效，且只能使用一次。\n\n${link}\n\n如果不是你本人操作，请忽略这封邮件，你的密码不会改变。` };
   router.post("/auth/reset-request", async (req, res) => {
+    const base = process.env.TOWARD_US_BASE_URL || (production ? "" : `${req.protocol}://${req.get("host")}`);
+    const url = URL.canParse(base) ? new URL(base) : null;
+    if (!email.configured || !url || !(production ? url.protocol === "https:" : ["http:", "https:"].includes(url.protocol)))
+      throw fail(503, local(req, "暂时无法发送重设邮件，请稍后重试。", "Reset email is temporarily unavailable. Try again later.", "El correo de recuperación no está disponible. Vuelve a intentarlo más tarde."));
     const address = normalizeEmail(req.body?.email);
-    // Both counters always advance (non-short-circuit) and every outcome is the same 200, so limits reveal nothing about accounts.
-    const tooMany = resetLimited(`ip:${req.ip}`, 20) | resetLimited(`email:${address}`, 3);
-    const user = !tooMany && validEmail(address) ? await store.getUserByEmail(address) : null;
+    // Count each IP before allocating an address bucket. Registered and unknown addresses follow the same limits.
+    const eligible = !resetLimited(`ip:${req.ip}`, 20) && validEmail(address) && !resetLimited(`email:${hash(address)}`, 3, 30_000);
+    const user = eligible ? await store.getUserByEmail(address) : null;
     if (user && user.email === address && user.passwordHash !== "deleted") {
-      // Never build the link from a client-supplied Host in production (host-header poisoning): require TOWARD_US_BASE_URL there.
-      const base = String(process.env.TOWARD_US_BASE_URL || (production ? "" : `${req.protocol}://${req.get("host")}`)).replace(/\/+$/, "");
-      if (!base) console.error("[email] password reset skipped: set TOWARD_US_BASE_URL");
-      else {
-        const secret = randomBytes(32).toString("base64url");
-        await store.transaction(`user:${user.id}`, async (tx) => {
-          const live = await tx.getUserForUpdate(user.id); if (!live || live.passwordHash === "deleted") return;
-          await updateSettings(user.id, (record) => { record.passwordReset = { hash: hash(secret), expiresAt: new Date(Date.now() + RESET_TTL_MS).toISOString() }; }, tx);
-        });
-        const link = `${base}/?reset=${user.id}.${secret}`; const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : ["zh", "en", "es"].includes(user.language) ? user.language : "zh";
-        // Not awaited: the response must not reveal, by timing, whether an email was sent.
-        void Promise.resolve().then(() => email.send({ to: user.email, link, ...resetMessage(language, link) })).catch(() => console.error("[email] password reset delivery failed"));
+      const secret = randomBytes(32).toString("base64url");
+      const issued = await store.transaction(`user:${user.id}`, async (tx) => {
+        const live = await tx.getUserForUpdate(user.id);
+        if (!live || live.email !== address || live.passwordHash === "deleted") return false;
+        await updateSettings(user.id, (record) => { record.passwordReset = { hash: hash(secret), expiresAt: new Date(Date.now() + RESET_TTL_MS).toISOString() }; }, tx);
+        return true;
+      });
+      if (issued) {
+        // A fragment stays out of HTTP access logs when the recipient opens the link.
+        const link = `${url.origin}/#reset=${user.id}.${secret}`;
+        const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : user.language || "zh";
+        // Reply independently of the provider's latency or delivery outcome.
+        void Promise.resolve().then(() => email.send({ to: address, link, ...resetMessage(language, link) })).catch(() => console.error("[email] password reset delivery failed"));
       }
     }
     res.json({ ok: true });
@@ -118,7 +120,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     const done = await store.transaction(`user:${userId}`, async (tx) => {
       const liveUser = await tx.getUserForUpdate(userId); if (!liveUser || liveUser.passwordHash === "deleted") return false;
       const reset = (await settings(userId, tx))?.passwordReset;
-      if (!reset?.hash || !reset.expiresAt || reset.expiresAt <= new Date().toISOString()) return false;
+      if (!reset?.hash || !(Date.parse(reset.expiresAt) > Date.now())) return false;
       if (!timingSafeEqual(Buffer.from(hash(secret), "hex"), Buffer.from(reset.hash, "hex"))) return false;
       await tx.updateUserPassword(userId, await hashPassword(req.body.password));
       await tx.deleteUserSessions(userId);
