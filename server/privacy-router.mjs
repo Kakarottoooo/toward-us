@@ -142,6 +142,22 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     res.setHeader("Cache-Control", "no-store");
     return req.auth ? next() : res.status(401).json({ error: local(req, "请先登录。", "Please sign in.", "Inicia sesión.") });
   });
+  // This salutation is private to the member. Account names and invitations keep their verified profile name.
+  router.get("/privacy/first-run", async (req, res) => {
+    const record = await settings(req.auth.user.id);
+    res.json({ preferredName: record?.firstRunName || "", completed: Boolean(record?.firstRunCompletedAt) });
+  });
+  router.put("/privacy/first-run", async (req, res) => {
+    const { preferredName } = req.body || {};
+    if (typeof preferredName !== "string" || !preferredName.trim() || preferredName.trim().length > 24)
+      return res.status(400).json({ code: "invalid_display_name" });
+    const userId = req.auth.user.id;
+    await store.transaction(`user:${userId}`, tx => updateSettings(userId, record => {
+      record.firstRunName = preferredName.trim();
+      record.firstRunCompletedAt ||= new Date().toISOString();
+    }, tx));
+    res.status(204).end();
+  });
   router.patch("/privacy/account", async (req, res) => {
     const userId = req.auth.user.id;
     const { name, newPassword } = req.body || {};

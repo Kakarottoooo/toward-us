@@ -22,7 +22,7 @@
     </main>
     <script>
       (function () {
-        // Honor a language chosen in Ourever. A first visit starts in English.
+        // Honor a language chosen in Ourever. Otherwise use the first supported device language.
         var copy = {
           zh: ["现在连不上网络", "Ourever 需要网络才能打开你们的对话。联网后再试一次。", "再试一次", "zh-CN"],
           en: ["You're offline", "Ourever needs a connection to open your conversations. Try again once you're back online.", "Try again", "en"],
@@ -30,7 +30,8 @@
         };
         var saved = null;
         try { saved = localStorage.getItem("toward-us.language"); } catch (error) { saved = null; }
-        var language = saved === "zh" || saved === "es" ? saved : "en";
+        var preferred = Array.from(navigator.languages || [navigator.language]).map(function (tag) { return tag.toLowerCase().split(/[-_]/)[0]; });
+        var language = [saved].concat(preferred).find(function (tag) { return ["zh", "en", "es"].includes(tag); }) || "en";
         var text = copy[language];
         if (!text || language === "en") return;
         document.documentElement.lang = text[3];

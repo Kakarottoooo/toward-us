@@ -17,7 +17,7 @@ import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
-import { PartnerInvite } from "./features/conversation/PartnerInvite";
+import { FirstRun } from "./features/conversation/FirstRun";
 import { SpacePage } from "./features/spaces/SpacePage";
 import { PeoplePage } from "./features/people/PeoplePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
@@ -118,7 +118,7 @@ function AccountPrototype() {
       if (new URLSearchParams(url.hash.slice(1)).has("reset")) url.hash = "";
       history.replaceState(history.state, "", url);
     }
-    api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
+    api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me", { signal: AbortSignal.timeout(12000) }).then((state) => {
       setUser(state.user); setPairing(state.pairing);
       if (returning && state.user && !resetToken) {
         if (referralCode()) clearReferral();
@@ -129,7 +129,7 @@ function AccountPrototype() {
       if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
       setScreen(state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home");
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
-    }).catch(() => setScreen(signInReturn ? "auth" : hasInvite() ? "identity-error" : "home"));
+    }).catch(() => setScreen(signInReturn ? "auth" : "identity-error"));
     listenNativePushTaps();
     listenNativeInviteLinks();
     registerAppWorker();
@@ -195,7 +195,7 @@ function AccountPrototype() {
     void connectHomeWidget();
   };
   const refreshPairing = async () => {
-    const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me");
+    const state = await api<{ user: User; pairing: Pairing | null }>("/api/auth/me", { signal: AbortSignal.timeout(12000) });
     // A poll started before a newer share/cancel response or sign-out must not replace it.
     setPairing(current => current === pairing && state.user?.id === user?.id ? state.pairing : current);
   };
@@ -249,23 +249,20 @@ function AccountPrototype() {
     if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onRequestLink={() => { setResetToken(""); setScreen("recovery"); }} onDone={() => { setUser(null); setPairing(null); setResetToken(""); setSignInReturn(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "feedback" && user) return <FeedbackPage key={user.id} userId={user.id} language={language} from={feedbackFrom}
       activity={recentFeedbackActivity(language) || localized(language, `正在使用的页面 · ${feedbackFrom}`, `Using screen · ${feedbackFrom}`, `Pantalla en uso · ${feedbackFrom}`)} initialFile={feedbackFile} onBack={closeFeedback} />;
-    if (screen === "identity-error") return <InviteFrame language={language} onLanguage={selectLanguage} title={localized(language, "暂时无法打开邀请", "Your invitation couldn’t load", "No se pudo cargar tu invitación")}>
+    if (screen === "identity-error") return <InviteFrame language={language} onLanguage={selectLanguage} title={hasInvite() ? localized(language, "暂时无法打开邀请", "Your invitation couldn’t load", "No se pudo cargar tu invitación") : localized(language, "暂时连不上 Ourever", "Ourever couldn’t connect", "No se pudo conectar con Ourever")}>
       <p className="pairing-lead" role="alert">{inviteNetworkMessage(language)}</p>
       <button className="primary-action" onClick={() => location.reload()}>{retryLabel(language)}</button>
     </InviteFrame>;
-    if (screen === "invite-first" && user) {
-      const paired = pairing?.status === "active";
-      return <InviteFrame language={language} onLanguage={selectLanguage} title={paired ? localized(language, "你们的共同空间已开启", "Your shared space is ready", "Su espacio compartido está listo") : localized(language, "你们的共同空间", "A space for the two of you", "Un espacio para los dos")}>
-        {paired ? <p className="pairing-lead" role="status">{localized(language, "你的伴侣已加入。欢迎你们！", "Your partner joined. Welcome to Us!", "Tu pareja se ha unido. ¡Bienvenidos a Nosotros!")}</p> : <PartnerInvite userId={user.id} language={language} pairing={pairing} onPairingChange={setPairing} onRefreshPairing={refreshPairing} />}
-        <button className="secondary-action" onClick={() => { keyboard.hide(); if (paired) history.replaceState(null, "", "/?channel=us"); setScreen("conversation"); }}>{paired ? localized(language, "打开共同对话", "Open Us", "Abrir Nosotros") : localized(language, "进入我的私人空间", "Continue to my private space", "Ir a mi espacio privado")}</button>
-      </InviteFrame>;
-    }
+    if (screen === "invite-first" && user) return <FirstRun key={user.id} user={user} language={language} pairing={pairing}
+      onPairingChange={setPairing} onRefreshPairing={refreshPairing}
+      onAgreed={at => { setUser({ ...user, aiConsentAt: at }); setScreen("conversation"); }}
+      onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
     if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery", "privacy", "pairing"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
     if (screen === "conversation" && user) return <><InstallHint language={language} userId={user.id} /><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
-    if (screen === "booting") return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
+    if (screen === "booting") return <div className="loading-screen" aria-busy="true" data-testid="booting" role="status">{localized(language, "正在打开 Ourever…", "Opening Ourever…", "Abriendo Ourever…")}</div>;
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;

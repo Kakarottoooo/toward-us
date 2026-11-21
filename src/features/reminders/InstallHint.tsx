@@ -3,7 +3,6 @@ import { BottomSheet } from "../../mobile";
 import { localized, type Language } from "../../i18n";
 import { canPromptInstall, inAppBrowser, isIOS, isStandalone, onInstallPromptChange, promptInstall } from "./webPush";
 import { nativePushPlugin } from "./nativePush";
-import { tourSeen } from "../conversation/OnboardingTour";
 
 const SEEN_KEY = "toward-us-install-hint-seen";
 const seen = () => { try { return localStorage.getItem(SEEN_KEY) === "1"; } catch { return true; } };
@@ -17,9 +16,14 @@ export function InstallHint({ language, userId }: { language: Language; userId: 
   const [kind, setKind] = useState<"ios" | "inapp" | "prompt" | null>(null);
   useEffect(() => {
     if (seen() || isStandalone() || nativePushPlugin()) return;
+    // Leave the first signed-in visit free for the private conversation.
+    try {
+      const visit = "ourever:first-home:" + userId;
+      if (!localStorage.getItem(visit)) { localStorage.setItem(visit, "1"); sessionStorage.setItem(visit, "1"); }
+      if (sessionStorage.getItem(visit)) return;
+    } catch { return; }
     let timer = 0;
     const decide = () => {
-      if (!tourSeen(userId)) { timer = window.setTimeout(decide, 2000); return; }
       setKind((current) => current || (isIOS() ? (inAppBrowser() ? "inapp" : "ios") : canPromptInstall() ? "prompt" : null));
     };
     // A moment after the screen settles, so it never covers the first look at the conversation.

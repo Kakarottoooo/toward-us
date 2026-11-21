@@ -94,7 +94,7 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
     locked.current = true;
     setFailure(null); setCopied(false); setWorking("prepare");
     try {
-      const { pairing: next } = await relationshipApi<{ pairing: Pairing }>(endpoint, jsonBody(background ? { prepare: true } : {}));
+      const { pairing: next } = await relationshipApi<{ pairing: Pairing }>(endpoint, { ...jsonBody(background ? { prepare: true } : {}), signal: AbortSignal.timeout(12000) });
       if (live.current) onPairingChange(next);
     } catch { if (live.current) setFailure("prepare"); }
     finally { locked.current = false; if (live.current) setWorking(null); }
@@ -126,7 +126,7 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
     try {
       const path = endpoint + "/" + encodeURIComponent(invitation.code);
       if (action === "cancel") {
-        const { pairing: next } = await relationshipApi<{ pairing: Pairing }>(path, { method: "DELETE" });
+        const { pairing: next } = await relationshipApi<{ pairing: Pairing }>(path, { method: "DELETE", signal: AbortSignal.timeout(12000) });
         if (live.current) { onPairingChange(next); setConfirming(false); saveReceipt(""); }
         return;
       }
@@ -148,7 +148,7 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
         saveReceipt(invitation.code);
       }
       attempted = "receipt";
-      const { pairing: next } = await relationshipApi<{ pairing: Pairing }>(path + "/sent", jsonBody({}));
+      const { pairing: next } = await relationshipApi<{ pairing: Pairing }>(path + "/sent", { ...jsonBody({}), signal: AbortSignal.timeout(12000) });
       if (live.current) { onPairingChange(next); saveReceipt(""); }
     } catch { if (live.current) setFailure(attempted); }
     finally { locked.current = false; if (live.current) setWorking(null); }

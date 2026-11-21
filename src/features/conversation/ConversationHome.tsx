@@ -16,7 +16,7 @@ import { importAction, importPastedChat, isChatFile, listImports, looksLikePaste
 import { CallPanel, CallRecord } from "../call/CallPanel";
 import { togetherStats } from "../moments/together";
 import { StoryCard, StoryView, type Story } from "../story/StoryCard";
-import { OnboardingTour, characterOwed, tourSeen } from "./OnboardingTour";
+import { CharacterOffer, characterOwed } from "./OnboardingTour";
 import { DailyQuestionCard, type DailyAnswerInput, type DailyAnswers, type DailyPlay } from "./DailyQuestionCard";
 import { QuickReply } from "./QuickReply";
 import { WatchCheckCard } from "../moments/WatchedShelf";
@@ -77,6 +77,15 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [channel, setChannel] = useState<Channel>(() => { if (usHidden) return "me"; try { const asked = new URLSearchParams(location.search).get("channel"); return asked === "us" ? "us" : "me"; } catch { return "me"; } });
   const [session, setSession] = useState<Session | null>(null);
   const [noSavedSession, setNoSavedSession] = useState(false);
+  const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [salutation, setSalutation] = useState(user.name);
+  useEffect(() => {
+    let active = true;
+    relationshipApi<{ preferredName: string }>("/api/privacy/first-run", { signal: AbortSignal.timeout(12000) })
+      .then(prefs => { if (active && prefs.preferredName) setSalutation(prefs.preferredName); }).catch(() => {});
+    return () => { active = false; };
+  }, [user.id]);
   const [together, setTogether] = useState<Together | null>(null);
   // 想你了 (founder 11-06): hearts float up when one is sent from here or arrives from the partner while Us is open.
   const [hearts, setHearts] = useState(0);
@@ -126,13 +135,12 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [drawer, setDrawer] = useState(false);
   const [call, setCall] = useState<{ channel: Channel; sessionId: string | null } | null>(null);
   const [openStory, setOpenStory] = useState<Story | null>(null);
-  const [touring, setTouring] = useState(() => !tourSeen(user.id));
   // The couple's own character, shared by both; it floats under the top row once one of them has made it.
   const { character: mascot, refresh: refreshMascot, loaded: mascotLoaded } = useCoupleCharacter(paired);
   // Whoever took the tour before their partner joined never saw "make your character" with a button: once paired, and while
   // the couple has no character yet, that card comes once on its own.
   const [offerCharacter, setOfferCharacter] = useState(false);
-  useEffect(() => { if (paired && !touring && mascotLoaded && !mascot && characterOwed(user.id)) setOfferCharacter(true); }, [paired, touring, mascotLoaded, mascot, user.id]);
+  useEffect(() => { if (paired && mascotLoaded && !mascot && characterOwed(user.id)) setOfferCharacter(true); }, [paired, mascotLoaded, mascot, user.id]);
   // 小家伙 (11-06): floats at the side of the chat; its room opens over the conversation. It can be tucked away from the room.
   const [petRoom, setPetRoom] = useState(false);
   // 游戏大厅 (11-06): opened from the drawer, from a game card in Us, or from a "轮到你了" notice (?game=<id>).
@@ -228,18 +236,25 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const setDraft = (value: string | ((current: string) => string), target: Channel = channel) => setDrafts((current) => ({ ...current, [draftScope(target)]: typeof value === "function" ? value(current[draftScope(target)] || "") : value }));
   // A 503 from Ourever already says what happened in the language the member writes in; only a bare status or code falls back.
   const serverWords = (message: string) => Boolean(message) && !/^Request failed \(\d+\)$/.test(message) && !/^[a-z_]+$/.test(message);
-  const errorText = (error: ApiError) => error.code === "ai_daily_limit" ? error.message : error.status === 429 ? t("已达到使用上限，请稍后再试。", "A usage limit was reached. Try again later.", "Se alcanzó un límite de uso. Inténtalo más tarde.") : error.status === 503 && !serverWords(error.message) ? t("助手暂时不可用，什么都没有改动。请稍后重试。", "The assistant is unavailable right now. Nothing was changed; try again soon.", "El asistente no está disponible. No se cambió nada; inténtalo pronto.") : error.message;
+  const errorText = (error: ApiError) => error.name === "TimeoutError" ? t("连接超时，请重试。", "Connection timed out. Try again.", "La conexión tardó demasiado. Inténtalo de nuevo.") : error.code === "ai_daily_limit" ? error.message : error.status === 429 ? t("已达到使用上限，请稍后再试。", "A usage limit was reached. Try again later.", "Se alcanzó un límite de uso. Inténtalo más tarde.") : error.status === 503 && !serverWords(error.message) ? t("助手暂时不可用，什么都没有改动。请稍后重试。", "The assistant is unavailable right now. Nothing was changed; try again soon.", "El asistente no está disponible. No se cambió nada; inténtalo pronto.") : error.message;
 
   const store = (id: string | null) => { if (threadRef.current) return; try { if (id) localStorage.setItem(sessionKey, id); else localStorage.removeItem(sessionKey); } catch { /* The session still works in memory. */ } };
   const current = (next: Session) => { setNoSavedSession(false); sessionRef.current = next; setSession(next); };
   // One assistant session per member for this channel: reopen the remembered one, otherwise create it once.
-  const restore = async () => {
+  const restore = async (latestOnly = false): Promise<Session | null> => {
     if (threadRef.current) { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", jsonBody({ personId: threadRef.current, language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" })); current(result.session); return result.session; }
-    let id: string | null = null; try { id = localStorage.getItem(sessionKey); } catch { /* No stored session. */ }
-    if (!id) { try { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions/latest"); current(result.session); store(result.session.id); return result.session; } catch (error) { setNoSavedSession((error as ApiError).status === 404); return null; } }
-    try { const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${encodeURIComponent(id)}?opened=1`); current(result.session); return result.session; } catch { store(null); return null; }
+    let id: string | null = null; try { if (!latestOnly) id = localStorage.getItem(sessionKey); } catch { /* No stored session. */ }
+    const path = id ? `/api/assistant/sessions/${encodeURIComponent(id)}?opened=1` : "/api/assistant/sessions/latest";
+    try {
+      const result = await relationshipApi<{ session: Session }>(path, { signal: AbortSignal.timeout(12000) });
+      current(result.session); store(result.session.id); return result.session;
+    } catch (error) {
+      if ((error as ApiError).status !== 404) throw error;
+      if (id) { store(null); return restore(true); }
+      setNoSavedSession(true); return null;
+    }
   };
-  const create = async (opened = false) => { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", jsonBody({ language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...(opened ? { opened: true } : {}) })); current(result.session); store(result.session.id); return result.session; };
+  const create = async (opened = false) => { const result = await relationshipApi<{ session: Session }>("/api/assistant/sessions", { ...jsonBody({ language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...(opened ? { opened: true } : {}) }), signal: AbortSignal.timeout(12000) }); current(result.session); store(result.session.id); return result.session; };
   const ensureSession = async (allowCreate = true, opened = false): Promise<Session | null> => {
     if (sessionRef.current) return sessionRef.current;
     const restored = await (restoring.current ||= restore().finally(() => { restoring.current = null; }));
@@ -274,7 +289,13 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   };
 
   // Connected members always get a conversation on open, so Ourever can speak first to someone it barely knows (founder 11-08).
-  useEffect(() => { void ensureSession(paired, true).catch(() => {}).finally(() => setFirstLook((current) => ({ ...current, session: true }))); }, [user.id, paired]);
+  useEffect(() => {
+    let active = true;
+    setSessionLoadFailed(false);
+    void ensureSession(paired, true).catch(() => { if (active) setSessionLoadFailed(true); })
+      .finally(() => { if (active) setFirstLook(current => ({ ...current, session: true })); });
+    return () => { active = false; };
+  }, [user.id, paired, loadAttempt]);
   useEffect(() => { void loadTogether().finally(() => setFirstLook((current) => ({ ...current, together: true }))); }, [loadTogether]);
   useEffect(() => {
     if (!playTogether || !paired) return;
@@ -393,7 +414,8 @@ ${text}` : text, target);
       try {
         if (failedRef.current && failedRef.current.itemId !== itemId) { keep(text, "me"); setNotice(t("上一句还没确认送达，请先重试它。", "The previous message was not confirmed. Retry it first.", "El mensaje anterior no se confirmó. Reinténtalo primero.")); return null; }
         const active = await ensureSession();
-        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${active!.id}/${spoken ? "transcripts" : "messages"}`, { ...jsonBody({ text, itemId, ...(photoIds.length ? { photoIds } : {}) }), signal: controller.signal });
+        controller.signal.throwIfAborted();
+        const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${active!.id}/${spoken ? "transcripts" : "messages"}`, { ...jsonBody({ text, itemId, ...(photoIds.length ? { photoIds } : {}) }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(90000)]) });
         if (sessionRef.current?.id === result.session.id) current(result.session);
         failedRef.current = null; setFailed(null); setRevising(false);
         window.dispatchEvent(new Event("toward-us:assistant-changed"));
@@ -402,7 +424,7 @@ ${text}` : text, target);
       } catch (error) {
         if (controller.signal.aborted) { if (!spoken) keep(text, "me"); return null; }
         const status = (error as ApiError).status;
-        if (!status || status >= 500 && status !== 503) { failedRef.current = { text, itemId, photoIds }; setFailed(failedRef.current); } else keep(text, "me");
+        if (!status || status === 429 || status >= 500) { failedRef.current = { text, itemId, photoIds }; setFailed(failedRef.current); } else keep(text, "me");
         setNotice(errorText(error as ApiError)); return null;
       } finally { endReply("me", controller); setQueued((items) => items.filter((item) => item.itemId !== itemId)); }
     });
@@ -887,8 +909,8 @@ ${text}` : text, target);
     try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
   // Ourever's core (founder 11-08): "I don't know how to reply to her" — a reply coach that works alone, before any pairing.
-  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t("不知道怎么回 TA？", "Not sure how to reply?", "¿No sabes qué responder?")}</h1><p>{t("把 TA 的话粘贴过来，或者发聊天截图。Ourever 帮你看懂 TA 的意思，写一句你可以直接发的回复。这段对话对伴侣保密。", "Paste what your partner said, or send a screenshot of the chat. Ourever helps you read what they mean and writes a reply you can send as is. Your partner cannot see this conversation.", "Pega lo que dijo tu pareja o envía una captura del chat. Ourever te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Tu pareja no puede ver esta conversación.")}</p><div className="card-actions"><button type="button" className={paired ? "card-primary" : undefined} onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button></div></section>;
-  const usEmpty = <section className="conversation-empty"><h1>{t(`和 ${partnerName} 聊天`, `Chat with ${partnerName}`, `Habla con ${partnerName}`)}</h1><p>{t("你们俩都能看到这里的消息。", "You can both see messages here.", "Ambos pueden ver los mensajes aquí.")}</p></section>;
+  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t(`${salutation}，最近哪件小事让你觉得被在乎？`, `${salutation}, when did you last feel cared for?`, `${salutation}, ¿cuándo sentiste por última vez que te cuidaban?`)}</h1><p>{t("把那一刻写在这里；即使伴侣加入，这段对话也只有你能看到。", "Write about that moment here. This conversation stays private when your partner joins.", "Escribe aquí sobre ese momento. Esta conversación seguirá siendo privada cuando se una tu pareja.")}</p><div className="card-actions"><button type="button" className={paired ? "card-primary" : undefined} onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button></div></section>;
+  const usEmpty = <section className="conversation-empty"><h1>{t(`和 ${partnerName} 聊天`, `Chat with ${partnerName}`, `Habla con ${partnerName}`)}</h1><p>{t("你们俩都能看到这里的消息。", "You can both see messages here.", "Ambos pueden ver los mensajes aquí.")}</p><button type="button" className="conversation-empty-link" onClick={() => composerRef.current?.querySelector("textarea")?.focus()}>{t("写第一条消息", "Write the first message", "Escribir el primer mensaje")}</button></section>;
   const invite = <InvitePanel state={invitation} onEnterCode={enterPartnerCode} />;
 
   // A long conversation keeps its older messages in pages (memory plan, 11-09); they load on request, newest page first.
@@ -997,7 +1019,7 @@ ${text}` : text, target);
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main ref={conversationContent} className="conversation-thread" aria-live="polite">{recall.active ? recall.history : <>
-      {channel === "me" ? <>{session && (session.earlierPages || 0) > shownEarlier.page && <button type="button" className="conversation-earlier" disabled={loadingEarlierMe} onClick={() => void loadEarlierMe()} data-testid="earlier-me">{loadingEarlierMe ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}{emptyPrivateChat && meEmpty}{privateMessages.map((message, index) => {
+      {channel === "me" ? <>{session && (session.earlierPages || 0) > shownEarlier.page && <button type="button" className="conversation-earlier" disabled={loadingEarlierMe} onClick={() => void loadEarlierMe()} data-testid="earlier-me">{loadingEarlierMe ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}{sessionLoadFailed && !session && <div role="alert" className="conversation-retry"><span>{t("暂时无法打开私人对话。", "Your private conversation couldn’t load.", "No se pudo abrir tu conversación privada.")}</span><button onClick={() => setLoadAttempt(n => n + 1)}>{t("重试", "Retry", "Reintentar")}</button></div>}{emptyPrivateChat && meEmpty}{privateMessages.map((message, index) => {
         const cards = groupCards((message.cards || []).filter((card) => card.kind !== "chat_import" || importAt.get(card.id) === index)).map(privateCard);
         if (message.role === "assistant" && !message.text?.trim() && !message.photoIds?.length && !message.call && !message.dateCheck && !message.kind) {
           return <Fragment key={message.id}><RecallLinks sources={message.sources} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />{cards}</Fragment>;
@@ -1019,7 +1041,7 @@ ${text}` : text, target);
       {working && <AgentTyping activity={working} language={language} inUs={channel === "us"} />}
       {showNudge && <PromiseNudge item={nudge!} partnerName={partnerName} language={language} onSettled={() => setNudge(null)} onOpenAll={() => open("/?view=upcoming")} />}
       {showStarters && <div className="conversation-suggestions" data-testid="private-chat-starters">
-        {[t("帮我读懂一条消息", "Help me understand a message", "Ayúdame a entender un mensaje"), t("帮我说清自己的感受", "Help me put my feelings into words", "Ayúdame a expresar lo que siento")].map((text) =>
+        {[t("最近让我觉得被在乎的一件事是…", "I felt cared for when…", "Sentí que me cuidaban cuando…"), t("我希望能和 TA 聊聊…", "I wish we could talk about…", "Me gustaría que habláramos de…")].map((text) =>
           <button type="button" key={text} onClick={() => { setDraft(text, "me"); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}</button>)}
       </div>}
       <div aria-hidden="true" />
@@ -1028,7 +1050,7 @@ ${text}` : text, target);
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {!recall.active && !call && !(channel === "us" && !paired) && <footer className="conversation-composer" ref={composerRef}>
       {notice && <p className="conversation-notice" role="alert">{notice}</p>}
-      {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")}</span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
+      {failed && channel === "me" && <div className="conversation-retry"><span>{t("这句话还没确认送达。", "This message was not confirmed.", "Este mensaje no se confirmó.")} <q>{failed.text}</q></span><button disabled={pending.me > 0} onClick={() => void sendPrivate(failed.text, failed.itemId, false, failed.photoIds)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {channel === "us" && unconfirmedShared.map((item) => <div key={item.itemId} className="conversation-retry shared-retry" role="status">
         <span><strong>{t("未确认送达", "Delivery unconfirmed", "Entrega sin confirmar")} · {item.recipient === "assistant" ? "Ourever" : partnerName}</strong>
           {item.text && <span>{item.text}</span>}{item.photoIds.length > 0 && <small>{t(`照片：${item.photoIds.length}`, `Photos: ${item.photoIds.length}`, `Fotos: ${item.photoIds.length}`)}</small>}</span>
@@ -1060,8 +1082,7 @@ ${text}` : text, target);
         </div>}
     </footer>}
     {importDialog}
-    {touring && <OnboardingTour language={language} userId={user.id} paired={paired} onInvite={invitation.primaryAction} inviteDisabled={invitation.disabled} inviteBusy={!!invitation.working} invitePending={invitation.sent} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setTouring(false)} />}
-    {offerCharacter && !touring && !mascot && !joinedHere.current && <OnboardingTour characterOnly language={language} userId={user.id} paired={paired} onInvite={invitation.primaryAction} inviteDisabled={invitation.disabled} inviteBusy={!!invitation.working} invitePending={invitation.sent} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
+    {offerCharacter && !mascot && !joinedHere.current && <CharacterOffer language={language} userId={user.id} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}

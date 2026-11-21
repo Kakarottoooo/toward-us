@@ -1,0 +1,46 @@
+.first-run {
+  box-sizing: border-box;
+  width: min(100%, 29rem);
+  margin-inline: auto;
+  padding: max(64px, calc(var(--mobile-safe-area-top, 0px) + 16px)) 24px calc(var(--mobile-safe-area-height, 0px) + 32px);
+  display: grid;
+  align-content: start;
+  gap: 1.15rem;
+  color: var(--jian-ink, #292321);
+  overflow-wrap: anywhere;
+}
+.first-run h1, .first-run p { margin: 0; }
+.first-run h1 { font: 600 2rem/1.12 var(--jian-serif, Georgia, serif); }
+.first-run p, .first-run label { font-size: 1.05rem; line-height: 1.5; }
+.first-run-name { display: grid; gap: .5rem; margin-block-start: .5rem; }
+.first-run-name input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #96867c;
+  border-radius: 12px;
+  padding: .65em .8em;
+  background: #fffaf4;
+  color: inherit;
+  font: inherit;
+}
+.first-run-progress { display: flex; align-items: center; gap: .75rem; font-weight: 600; }
+.first-run-progress button {
+  display: grid; place-items: center; width: 44px; height: 44px;
+  border: 1px solid #ac9c90; border-radius: 50%; background: transparent; color: inherit;
+}
+.first-run button, .ai-consent button, .first-run input { min-height: 44px; white-space: normal; }
+.first-run button, .ai-consent button { height: auto; }
+.first-run .partner-invite-panel { padding-block: 0; }
+.first-run .primary-action, .first-run .secondary-action { width: 100%; padding: .75em 1em; }
+@supports (font: -apple-system-body) {
+  .first-run, .ai-consent, .conversation-empty { font: -apple-system-body; }
+  .first-run h1 { font-size: 1.85em; }
+  .first-run p, .first-run label, .first-run button, .first-run .partner-invite-panel p,
+  .ai-consent p, .ai-consent li, .ai-consent button, .conversation-empty p { font-size: 1em; }
+  .ai-consent h1, .first-run .partner-invite-panel h2 { font-size: 1.45em; }
+}
+.conversation-suggestions button, .conversation-retry button, .conversation-empty button,
+.people-main .people-primary, .channel-tabs button { min-height: 44px; }
+.conversation-retry { flex-wrap: wrap; overflow-wrap: anywhere; }
+.conversation-retry q { white-space: pre-wrap; }
