@@ -6,7 +6,7 @@ import UIKit
 final class OureverSignInPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentationContextProviding {
     let identifier = "OureverSignInPlugin"
     let jsName = "OureverSignIn"
-    let pluginMethods = [CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise)]
+    let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise)]
     private var authorization: ASWebAuthenticationSession?
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
