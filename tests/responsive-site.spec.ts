@@ -82,3 +82,15 @@ test("the feedback button does not cover the phone welcome headline", async ({ b
   expect(headline && feedback && feedback.y + feedback.height <= headline.y).toBeTruthy();
   await phone.close();
 });
+
+test("the welcome screen offers email sign-up directly, with consent instead of a checkbox", async ({ browser, baseURL }) => {
+  const phone = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
+  const page = await phone.newPage();
+  await page.goto("/");
+  await expect(page.locator(".entry-consent")).toBeVisible();
+  await page.getByTestId("start-button").click();
+  await expect(page.getByTestId("register-name")).toBeVisible();
+  await expect(page.locator(".plum-auth input[type=checkbox]")).toHaveCount(0);
+  await expect(page.getByTestId("auth-apple")).toHaveCount(0);
+  await phone.close();
+});
