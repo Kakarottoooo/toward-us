@@ -52,3 +52,19 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   await desktop.close();
   await mobile.close();
 });
+
+test("the native app keeps the plum welcome and sign-in at full-screen iPad widths", async ({ browser, baseURL }) => {
+  for (const viewport of [{ width: 1366, height: 1024 }, { width: 1024, height: 1366 }]) {
+    const app = await browser.newContext({ baseURL, viewport });
+    await app.addInitScript(() => { (window as unknown as { Capacitor: object }).Capacitor = { isNativePlatform: () => true, getPlatform: () => "ios" }; });
+    const page = await app.newPage();
+    await page.goto("/");
+    await expect(page.getByTestId("desktop-home")).toBeHidden();
+    await expect(page.locator(".plum-welcome")).toHaveCSS("background-color", "rgb(48, 14, 41)");
+    await expect(page.getByTestId("start-button")).toBeVisible();
+    await page.locator(".welcome-sign-in").click();
+    await expect(page.locator(".paper-screen.plum-auth")).toHaveCSS("background-color", "rgb(48, 14, 41)");
+    await expect(page.locator(".plum-auth .editorial-top")).toHaveCSS("background-color", "rgb(48, 14, 41)");
+    await app.close();
+  }
+});

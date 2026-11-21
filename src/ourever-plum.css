@@ -1,4 +1,4 @@
-/* Shared palette for the mobile welcome and account entry screens. */
+/* Plum design for the welcome and account entry screens: phones, and the native app at every width (html.plum-entry, set in main.tsx). */
 .auth-brand { display: none; }
 .signin-providers { display: grid; gap: 10px; margin: 16px 0 22px; }
 .plum-auth .signin-method {
@@ -18,7 +18,7 @@
   color: inherit; border: 0; background: transparent; cursor: pointer;
 }
 
-@media (max-width: 899px) {
+html.plum-entry {
   .plum-welcome, .plum-auth {
     --plum: #300e29; --cream: #fff3de; --apricot: #ffdaa0;
     --mauve: #57344e; --soft-ink: #e4cbd9; --rose: #ff95af;
@@ -66,7 +66,7 @@
   .plum-auth .auth-brand { display: flex; gap: 9px; align-items: center; margin-bottom: 24px; font-size: 24px; font-weight: 700; }
   .auth-brand img { width: 42px; height: 42px; }
   .plum-auth .auth-content .vertical-title { display: block; height: auto; }
-  html .plum-auth .auth-content .vertical-title h1 { max-width: none; margin: 0 0 16px; writing-mode: horizontal-tb; color: var(--cream); text-align: start; font: 730 clamp(30px,8vw,42px)/1.12 var(--jian-sans); letter-spacing: -.035em; }
+  .plum-auth .auth-content .vertical-title h1 { max-width: none; margin: 0 0 16px; writing-mode: horizontal-tb; color: var(--cream); text-align: start; font: 730 clamp(30px,8vw,42px)/1.12 var(--jian-sans); letter-spacing: -.035em; }
   .plum-auth .auth-hint { margin: -4px 0 18px; text-align: start; color: var(--cream); font: 400 16px/1.42 var(--jian-sans); }
   .plum-auth .editorial-field { display: grid; gap: 5px; margin: 0 0 14px; }
   .plum-auth .auth-content .editorial-field :is(span,label,small) { margin: 0; color: var(--cream); font-family: var(--jian-sans); letter-spacing: 0; }
@@ -84,4 +84,9 @@
   .plum-auth .form-notice { color: #ffc3ce; }
   .plum-welcome :focus-visible, .plum-auth :focus-visible { outline: 2px solid var(--apricot); outline-offset: -3px; }
 
+  /* Wide screens (iPad app full screen): keep the phone composition, centred, instead of the website landing. */
+  .home-screen .desktop-home-composition { display: none; }
+  .plum-auth .editorial-top { min-height: 0; background: var(--plum); border-bottom: 0; }
+  .home-screen .mobile-home-composition.plum-welcome { position: absolute; inset: 0; align-items: center; }
+  .plum-welcome h1, .welcome-entry-actions { width: min(100%, 520px); }
 }
