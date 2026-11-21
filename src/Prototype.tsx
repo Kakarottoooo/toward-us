@@ -22,7 +22,7 @@ import { SpacePage } from "./features/spaces/SpacePage";
 import { PeoplePage } from "./features/people/PeoplePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
 import { CapabilitiesPage } from "./features/capabilities/CapabilitiesPage";
-import { disableNativePush, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
+import { disableNativePush, inNativeApp, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
@@ -32,6 +32,12 @@ import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
 import "./ourever-plum.css";
+
+// The plum welcome and sign-in design applies on phones and everywhere inside the native app, including a full-screen iPad.
+const narrowScreen = window.matchMedia("(max-width: 899px)");
+const syncEntryDesign = () => document.documentElement.classList.toggle("plum-entry", inNativeApp() || narrowScreen.matches);
+syncEntryDesign();
+narrowScreen.addEventListener("change", syncEntryDesign);
 
 type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type AuthMode = "login" | "register";
