@@ -1,5 +1,16 @@
 /* Shared palette for the mobile welcome and account entry screens. */
 .auth-brand { display: none; }
+.signin-providers { display: grid; gap: 10px; margin: 16px 0 22px; }
+.plum-auth .signin-method {
+  width: 100%; min-height: 54px; display: flex; align-items: center; justify-content: center;
+  gap: 10px; padding: 10px 16px; border: 1px solid currentColor; border-radius: 15px;
+  color: var(--cream, var(--jian-blue)); background: var(--mauve, white); font: 650 18px/1.3 var(--jian-sans); cursor: pointer;
+}
+.signin-method svg { width: 23px; height: 23px; flex: none; }
+.signin-method:disabled { opacity: .65; cursor: default; }
+.signin-spinner { animation: signin-spin .9s linear infinite; }
+@keyframes signin-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .signin-spinner { animation: none; } }
 .password-input-wrap { position: relative; }
 .auth-password-field .password-input-wrap input { padding-inline-end: 48px; }
 .password-input-wrap button {

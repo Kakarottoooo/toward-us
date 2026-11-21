@@ -20,6 +20,8 @@ import {
   verifyPassword,
 } from "./auth.mjs";
 import { createRelationshipRouter } from "./relationship-router.mjs";
+import { createOAuthRouter } from "./oauth-router.mjs";
+import { createOAuthProviders } from "./oauth-providers.mjs";
 import { createPrivateAgentRouter } from "./private-agent-router.mjs";
 import { createMemoryRouter } from "./memory-router.mjs";
 import { buildMemoryContext } from "./memory-domain.mjs";
@@ -79,7 +81,7 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email }) {
+export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders() }) {
   const app = express();
   // Every model call below is counted and capped per person and couple per day (server/ai-budget.mjs).
   // Every model call is also costed in the AI ledger, and admitted by the cost controls first (server/ai-ledger.mjs).
@@ -179,6 +181,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || !(req.path.startsWith("/api/") || req.path.startsWith("/m/"))) return next();
     // This single server-to-server endpoint has its own constant-time Bearer gate.
     if (req.method === "POST" && req.path === "/api/internal/reminders/run") return next();
+    // Sign in with Apple posts to this exact return endpoint. Its single-use state and browser cookie bind the request.
+    if (req.method === "POST" && req.path === "/api/auth/oauth/apple/callback" && req.is("application/x-www-form-urlencoded")) return next();
     return sameOriginRequest(req) ? next() : res.status(403).json({ error: localText(languageOf(req), "请求来源未通过安全检查。", "This request did not pass the security check.", "Esta solicitud no superó la comprobación de seguridad.") });
   });
   app.use(async (req, _res, next) => {
@@ -211,6 +215,29 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     res.json(await referralReport(store, { from: req.query.from, to: req.query.to }));
   });
 
+  async function registerWithInvitation(tx, user, { referralCode, installId, partnerInviteCode, actor }) {
+    if (referralCode && actor && (await tx.getReferralByCode(referralCode))?.ownerUserId === actor) {
+      throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible", status: 422 });
+    }
+    const account = await tx.createUser(user);
+    if (!account) return null;
+    if (referralCode) {
+      if (!(await attachReferral(tx, account.id, { code: referralCode, installId })).accepted) {
+        throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible", status: 422 });
+      }
+    } else if (installId || partnerCode(partnerInviteCode)) {
+      await rememberReferralInstall(tx, account.id, { installId });
+    }
+    if (partnerCode(partnerInviteCode)) {
+      const invite = await tx.getInvitation(partnerCode(partnerInviteCode));
+      if (invitationStatus(invite) === "open" && invite.createdByUserId !== actor &&
+          currentInvitation(await tx.getRelationshipContext(invite.createdByUserId), invite.code)) {
+        await recordPartnerSignup(tx, account);
+      }
+    }
+    return account;
+  }
+  app.use("/api/auth/oauth", createOAuthRouter({ store, production, register: registerWithInvitation, providers: oauthProviders }));
   app.post("/api/auth/register", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const name = cleanName(req.body?.name, "我");
@@ -220,31 +247,10 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (req.body?.adultConfirmed !== true) return res.status(400).json({ code: "adult_confirmation_required", error: "Ourever requires confirmation that you are 18 or older." });
     const user = createUser({ email, name, passwordHash: await hashPassword(password) });
     const { referralCode, partnerInviteCode, installId = req.get("x-install-id") } = req.body || {};
-    // A signed-in principal cannot open a second account through their own invitation.
-    if (referralCode && req.auth && (await store.getReferralByCode(referralCode))?.ownerUserId === req.auth.user.id) {
-      return res.status(422).json({ code: "referral_ineligible" });
-    }
     let created;
     if (referralCode || installId || partnerCode(partnerInviteCode)) {
       try {
-        created = await store.transaction(REWARD_LOCK, async (tx) => {
-          const account = await tx.createUser(user);
-          if (!account) return null;
-          if (referralCode) {
-            const result = await attachReferral(tx, account.id, { code: referralCode, installId });
-            if (!result.accepted) throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible" });
-          } else {
-            await rememberReferralInstall(tx, account.id, { installId });
-          }
-          if (partnerCode(partnerInviteCode)) {
-            const invite = await tx.getInvitation(partnerCode(partnerInviteCode));
-            if (invitationStatus(invite) === "open" && invite.createdByUserId !== req.auth?.user?.id &&
-                currentInvitation(await tx.getRelationshipContext(invite.createdByUserId), invite.code)) {
-              await recordPartnerSignup(tx, account);
-            }
-          }
-          return account;
-        });
+        created = await store.transaction(REWARD_LOCK, (tx) => registerWithInvitation(tx, user, { referralCode, partnerInviteCode, installId, actor: req.auth?.user?.id }));
       } catch (error) {
         if (error.code === "referral_ineligible") return res.status(422).json({ code: error.code });
         throw error;
@@ -647,7 +653,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", voiceCalls);
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit, activity });
   app.use(imessage.router);
-  app.use("/api", createPrivacyRouter({ store, production, closeConnections, onAiWithdrawal: voiceCalls.withdrawPermission, ...(email ? { email } : {}) }));
+  app.use("/api", createPrivacyRouter({ store, production, closeConnections, onAiWithdrawal: voiceCalls.withdrawPermission, oauthProviders, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
@@ -713,7 +719,7 @@ async function authenticateRequest(store, req) {
 
 async function appState(store, user) {
   const pairing = await store.getRelationshipContext(user.id);
-  return { user: { ...publicUser(user), aiConsentAt: await aiConsentAt(store, user.id) }, pairing: publicPairing(pairing, user.id) };
+  return { user: { ...publicUser(user), passwordless: user.passwordHash === "federated", aiConsentAt: await aiConsentAt(store, user.id) }, pairing: publicPairing(pairing, user.id) };
 }
 
 function publicPairing(context, viewerId) {

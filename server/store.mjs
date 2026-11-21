@@ -11,6 +11,7 @@ const EMPTY_STATE = () => ({
   version: 4,
   users: {},
   userByEmail: {},
+  oauthIdentities: {},
   sessions: {},
   appMetricSessions: {},
   appMetricActivity: {},
@@ -206,6 +207,22 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
     },
     getUserById(id) { return state().users[id] ? { ...state().users[id] } : null; },
     getUserForUpdate(id) { return store.getUserById(id); },
+    getOAuthIdentity(provider, subject) { return state().oauthIdentities[`${provider}:${subject}`] || null; },
+    getUserOAuthIdentities(userId) { return Object.values(state().oauthIdentities).filter((identity) => identity.userId === userId); },
+    async deleteUnverifiedGoogleIdentity(userId) {
+      for (const [key, link] of Object.entries(state().oauthIdentities)) {
+        if (link.userId === userId && link.provider === "google" && !link.authoritativeEmail) delete state().oauthIdentities[key];
+      }
+      await persist();
+    },
+    async bindOAuthIdentity(provider, subject, userId, revocation, authoritativeEmail) {
+      const key = `${provider}:${subject}`;
+      const previous = state().oauthIdentities[key];
+      if (previous && previous.userId !== userId) throw new Error("Identity already linked");
+      if (!previous && implementation.getUserOAuthIdentities(userId).some((identity) => identity.provider === provider)) throw new Error("Provider already linked");
+      state().oauthIdentities[key] = { provider, subject, userId, authoritativeEmail, revocation: revocation || previous?.revocation || null };
+      await persist();
+    },
     async createUser(user) {
       if (state().userByEmail[user.email]) return null;
       state().users[user.id] = { ...user };
@@ -286,6 +303,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       await persist(); return deleted;
     },
     async deleteAccount(userId) {
+      for (const [key, identity] of Object.entries(state().oauthIdentities)) if (identity.userId === userId) delete state().oauthIdentities[key];
       await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
       for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"]) for (const [id, record] of Object.entries(state().relationshipGraph[collection])) if (record.ownerUserId === userId) delete state().relationshipGraph[collection][id];
       const phone = implementation.getPhoneForUser(userId);

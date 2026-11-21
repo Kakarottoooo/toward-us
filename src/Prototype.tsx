@@ -1,5 +1,5 @@
-import { ArrowLeft, ArrowRight, ChatCircleText, Eye, EyeSlash } from "@phosphor-icons/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { AppleLogo, ArrowLeft, ArrowRight, ChatCircleText, EnvelopeSimple, Eye, EyeSlash, GoogleLogo, SpinnerGap } from "@phosphor-icons/react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
 import { PersonalHome } from "./features/private-agent/PersonalHome";
@@ -14,6 +14,7 @@ import { feedbackView, recentFeedbackActivity } from "./features/feedback/feedba
 import { FeedbackPage } from "./features/feedback/FeedbackPage";
 import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
+import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
 import { PartnerInvite } from "./features/conversation/PartnerInvite";
@@ -34,7 +35,7 @@ import "./ourever-plum.css";
 
 type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type AuthMode = "login" | "register";
-type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null };
+type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null; passwordless?: boolean };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; prepared?: boolean; sentAt?: string | null; cancelledAt?: string | null } | null };
 type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" };
@@ -92,7 +93,8 @@ function AccountPrototype() {
   const [feedbackReturn, setFeedbackReturn] = useState<Screen>("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
   const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "referrals" ? "referrals" : params.get("view") === "membership" ? "membership" : undefined; });
-  const [resetToken, setResetToken] = useState(() => { const token = new URLSearchParams(window.location.search).get("reset") || ""; if (token) window.history.replaceState(null, "", window.location.pathname); return token; });
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get("reset") || new URLSearchParams(location.search).get("reset") || "");
+  const [signInReturn, setSignInReturn] = useState(() => new URLSearchParams(location.search).get("signin") || "");
   const [user, setUser] = useState<User | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [notice, setNotice] = useState("");
@@ -104,15 +106,44 @@ function AccountPrototype() {
 
   useEffect(() => { try { localStorage.setItem("toward-us.language", language); } catch { /* keep the selection for this visit */ } document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
   useEffect(() => {
+    const returning = restoreSignInNavigation();
+    if (returning) {
+      const view = new URLSearchParams(location.search).get("view");
+      if (view === "membership" || view === "referrals") setSettingsPage(view);
+    }
+    if (resetToken || signInReturn) {
+      const url = new URL(location.href);
+      url.searchParams.delete("reset");
+      url.searchParams.delete("signin");
+      if (new URLSearchParams(url.hash.slice(1)).has("reset")) url.hash = "";
+      history.replaceState(history.state, "", url);
+    }
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me").then((state) => {
       setUser(state.user); setPairing(state.pairing);
+      if (returning && state.user && !resetToken) {
+        if (referralCode()) clearReferral();
+        const next = new URLSearchParams(location.search).get("next");
+        if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
+      }
       // Signed out with a partner's invite link: the page that says who invited them comes first, not the generic home.
-      setScreen(state.user ? accountLanding(state.user, state.pairing) : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home");
+      if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
+      setScreen(state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home");
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
-    }).catch(() => setScreen(hasInvite() ? "identity-error" : "home"));
+    }).catch(() => setScreen(signInReturn ? "auth" : hasInvite() ? "identity-error" : "home"));
     listenNativePushTaps();
     listenNativeInviteLinks();
     registerAppWorker();
+  }, []);
+  useEffect(() => {
+    const openReset = () => {
+      const url = new URL(location.href);
+      const token = new URLSearchParams(url.hash.slice(1)).get("reset");
+      if (!token) return;
+      setResetToken(token); url.hash = "";
+      history.replaceState(history.state, "", url);
+    };
+    window.addEventListener("hashchange", openReset);
+    return () => window.removeEventListener("hashchange", openReset);
   }, []);
   // The server keeps the signed-in member's interface language for copy the Agent posts on their behalf.
   // The installed web app stays open for days: when it comes back to the front and the server runs a newer build,
@@ -147,6 +178,7 @@ function AccountPrototype() {
   const openAuth = (mode: AuthMode) => {
     keyboard.hide();
     setNotice("");
+    setSignInReturn("");
     setAuthMode(mode);
     setScreen("auth");
   };
@@ -214,6 +246,7 @@ function AccountPrototype() {
     setScreen(feedbackReturn);
   };
   const renderScreen = () => {
+    if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onRequestLink={() => { setResetToken(""); setScreen("recovery"); }} onDone={() => { setUser(null); setPairing(null); setResetToken(""); setSignInReturn(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "feedback" && user) return <FeedbackPage key={user.id} userId={user.id} language={language} from={feedbackFrom}
       activity={recentFeedbackActivity(language) || localized(language, `正在使用的页面 · ${feedbackFrom}`, `Using screen · ${feedbackFrom}`, `Pantalla en uso · ${feedbackFrom}`)} initialFile={feedbackFile} onBack={closeFeedback} />;
     if (screen === "identity-error") return <InviteFrame language={language} onLanguage={selectLanguage} title={localized(language, "暂时无法打开邀请", "Your invitation couldn’t load", "No se pudo cargar tu invitación")}>
@@ -232,15 +265,14 @@ function AccountPrototype() {
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
-    if (screen === "booting" && !resetToken) return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
-    if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onDone={() => { setResetToken(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
+    if (screen === "booting") return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
-    if (screen === "privacy" && user) return <SettingsPage onName={name => setUser({ ...user, name })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
+    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
     if (screen === "invite") return <PartnerJoin language={language} onLanguage={selectLanguage} onAuth={(mode) => { rememberInvite(); openAuth(mode); }} />;
     if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
-    if (screen === "auth") return <AuthScreen mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(hasInvite() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+    if (screen === "auth") return <AuthScreen initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(hasInvite() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
     if (screen === "pairing" && user) return <PartnerJoin language={language} onLanguage={selectLanguage} account={{ pairing, onJoined: (next) => {
       forgetInvite(); history.replaceState(null, "", "/?channel=us"); setPairing(next); setScreen("conversation");
     }, onBack: () => { forgetInvite(); backToConversation(); } }} />;
@@ -282,46 +314,157 @@ function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: 
   </div>;
 }
 
-function AuthScreen({ mode, onModeChange, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
-  mode: AuthMode; onModeChange: (mode: AuthMode) => void; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
+function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
+  initialError: string; mode: AuthMode; onModeChange: (mode: AuthMode) => void; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [adultConfirmed, setAdultConfirmed] = useState(false);
   const [ref, setRef] = useState(referralCode);
-  const [ineligible, setIneligible] = useState(false);
-  const removeRef = () => { clearReferral(); setRef(""); setIneligible(false); setNotice(""); };
+  const [ineligible, setIneligible] = useState(initialError === "referral_ineligible");
+  const removeRef = () => { clearReferral(); setRef(""); setIneligible(false); setProviderError(""); setNotice(""); };
+  const [providerError, setProviderError] = useState(initialError);
+  const [providers, setProviders] = useState<"checking" | "ready" | "unconfigured" | "failed">("checking");
+  const [providerCheck, setProviderCheck] = useState(0);
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    providerSignInAvailable(controller.signal).then(available => {
+      if (mounted) setProviders(available ? "ready" : "unconfigured");
+    }).catch(() => { if (mounted) setProviders("failed"); }).finally(() => clearTimeout(timeout));
+    const refresh = () => { if (!document.hidden) setProviderCheck(last => last + 1); };
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      mounted = false; clearTimeout(timeout); controller.abort();
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [providerCheck]);
+  const [working, setWorking] = useState<SignInProvider | "email" | null>(null);
+  const submitting = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const keyboard = useKeyboard();
+  const begin = (method: SignInProvider | "email") => {
+    if (submitting.current) return false;
+    keyboard.hide(); setNotice(""); setProviderError("");
+    if (!navigator.onLine) { setProviderError("offline"); return false; }
+    submitting.current = true; setWorking(method); setBusy(true); return true;
+  };
+  const finish = () => { submitting.current = false; setWorking(null); setBusy(false); };
+  const social = async (provider: SignInProvider) => {
+    if (!begin(provider)) return;
+    let redirecting = false;
+    try {
+      const result = await startProviderSignIn(provider, {
+        adultConfirmed, installId: referralInstallId(), referralCode: ref || undefined, partnerInviteCode: inviteCode() || undefined,
+      });
+      if (result === "redirect") { redirecting = true; return; }
+      if (result === "success") { await onAuth(await api("/api/auth/me")); return; }
+      if (result === "adult_required" || result === "referral_ineligible") onModeChange("register");
+      if (result === "referral_ineligible") setIneligible(true);
+      if (result === "link_required") { setPassword(""); onModeChange("login"); }
+      setProviderError(result);
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 503) setProviderCheck(last => last + 1);
+      setProviderError(!navigator.onLine ? "offline" : status === 503 ? "unavailable" : status === 429 ? "throttled" : "failed");
+    } finally { if (!redirecting) finish(); }
+  };
+  useEffect(() => {
+    const restore = (event: PageTransitionEvent) => { if (event.persisted) finish(); };
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
   const submit = async () => {
-    keyboard.hide(); setBusy(true); setNotice("");
+    if (!begin("email")) return;
     try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed, ...(inviteCode() ? { partnerInviteCode: inviteCode() } : {}), installId: referralInstallId(), ...(ref ? { referralCode: ref } : {}) }) })); }
-    catch (error) { if (ref && (error as { code?: string }).code === "referral_ineligible") { setIneligible(true); setNotice(localized(language, "这次注册无法获得邀请奖励。你仍可不使用邀请创建账号。", "This registration is ineligible for referral rewards. You can still create an account without the invitation.", "Este registro no cumple los requisitos de la invitación. Aún puedes crear una cuenta sin ella.")); } else setNotice(error instanceof TypeError ? inviteNetworkMessage(language) : accountError((error as Error).message, language)); } finally { setBusy(false); }
+    catch (error) { if (ref && (error as { code?: string }).code === "referral_ineligible") { setIneligible(true); setNotice(localized(language, "这次注册无法获得邀请奖励。你仍可不使用邀请创建账号。", "This registration is ineligible for referral rewards. You can still create an account without the invitation.", "Este registro no cumple los requisitos de la invitación. Aún puedes crear una cuenta sin ella.")); } else setNotice(error instanceof TypeError ? inviteNetworkMessage(language) : accountError((error as Error).message, language)); } finally { finish(); }
+  };
+  const confirmLink = async () => {
+    if (submitting.current || !password) return;
+    if (!navigator.onLine) { setNotice(inviteNetworkMessage(language)); return; }
+    keyboard.hide(); submitting.current = true; setBusy(true); setWorking("email"); setNotice("");
+    try {
+      await api("/api/auth/oauth/confirm-link", { method: "POST", body: JSON.stringify({ password }) });
+      setPassword("");
+      await onAuth(await api("/api/auth/me"));
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 410) { setProviderError("expired"); setPassword(""); }
+      else if (status === 401) setNotice(localized(language, "密码不正确，请重试。", "Incorrect password. Try again.", "La contraseña es incorrecta. Inténtalo de nuevo."));
+      else setNotice(!navigator.onLine ? inviteNetworkMessage(language) : signInMessage(status === 429 ? "throttled" : "failed", language));
+    } finally { finish(); }
   };
   return <MobileScroll className="paper-screen auth-screen plum-auth" data-testid="auth-screen">
-    <header className="editorial-top"><button onClick={onBack} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
+    <header className="editorial-top"><button disabled={busy} onClick={onBack} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="auth-art red-column" aria-hidden="true" />
     <main className="auth-content">{mode === "login" && <div className="auth-brand"><img src="/assets/brand/ourever-mascot.webp" alt="" />Ourever</div>}<div className="vertical-title"><h1>{mode === "login" ? t.welcome : t.register}</h1><PauseMark /></div><Wordmark language={language} />
       {mode === "register" && (ref ? <SignupReferral code={ref} language={language} remove={removeRef} /> : <p className="auth-hint">{t.registerHint}</p>)}
-      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput value={name} onChange={(event) => setName(event.target.value)} maxLength={24} data-testid="register-name" /></label>}
-      <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
+      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
+      {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
+      {providerError === "link_required" ? <div className="signin-link">
+        <p role="status">{signInMessage("link_required", language)}</p>
+        <form onSubmit={event => { event.preventDefault(); void confirmLink(); }}>
+          <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" required autoComplete="current-password" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} onBlur={() => keyboard.hide()} /></label>
+          <button className="signin-method" type="submit" disabled={busy || !password}>{localized(language, "确认并关联账号", "Confirm and link account", "Confirmar y vincular cuenta")}</button>
+        </form>
+        {notice && <p className="form-notice" role="alert">{notice}</p>}
+        <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); onRecover(); }}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>
+        <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); setNotice(""); setProviderError(""); }}>{t.back}</button>
+      </div> : <>
+      {providers === "checking" && <p className="auth-hint" role="status">{localized(language, "正在检查其他登录方式…", "Checking other sign-in options…", "Comprobando otros métodos de acceso…")}</p>}
+      {providers === "failed" && <button type="button" className="auth-switch" disabled={busy} onClick={() => { setProviders("checking"); setProviderCheck(last => last + 1); }}>
+        {localized(language, "未能加载其他登录方式，点此重试", "Couldn’t load other sign-in options. Try again", "No se pudieron cargar otros métodos de acceso. Reintentar")}
+      </button>}
+      {providers === "ready" && <div className="signin-providers">
+        {(["apple", "google"] as const).map(provider => {
+          const brand = provider === "apple" ? "Apple" : "Google";
+          return <button className="signin-method" type="button" key={provider} disabled={busy || (mode === "register" && !adultConfirmed)} aria-busy={working === provider} onClick={() => void social(provider)} data-testid={`auth-${provider}`}>
+            {working === provider ? <SpinnerGap className="signin-spinner" /> : provider === "apple" ? <AppleLogo weight="fill" /> : <GoogleLogo weight="bold" />}
+            {localized(language, `使用 ${brand} 继续`, `Continue with ${brand}`, `Continuar con ${brand}`)}
+          </button>;
+        })}
+      </div>}
+      {providerError && providerError !== "cancelled" && <p className="form-notice" role="alert">{signInMessage(providerError, language)}</p>}
+      <form onSubmit={event => { event.preventDefault(); void submit(); }}>
+      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} data-testid="register-name" /></label>}
+      <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <div className="editorial-field auth-password-field">
         <label htmlFor="auth-password">{t.password}</label>
-        <div className="password-input-wrap"><KeyboardInput id="auth-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" />
+        <div className="password-input-wrap"><KeyboardInput id="auth-password" required minLength={10} maxLength={128} type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" />
           <button type="button" aria-label={localized(language, "显示密码", "Show password", "Mostrar contraseña")} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}</button>
         </div>{mode === "register" && <small>{t.passwordHint}</small>}
       </div>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       {mode === "register" && ineligible && <button type="button" className="auth-switch" onClick={removeRef}>{localized(language, "不使用邀请注册", "Register without the invitation", "Registrarme sin invitación")}</button>}
-      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
-      {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
-      <SplitButton label={mode === "login" ? t.login : t.register} onClick={submit} disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} testId="auth-submit" />
-      <button className="auth-switch" type="button" onClick={() => { keyboard.hide(); setShowPassword(false); onModeChange(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
-      {mode === "login" && <button className="auth-switch" type="button" onClick={onRecover}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>}
+      <button className="signin-method" type="submit" disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} aria-busy={working === "email"} data-testid="auth-submit">
+        {working === "email" ? <SpinnerGap className="signin-spinner" /> : <EnvelopeSimple weight="bold" />}
+        {mode === "login" ? localized(language, "使用邮箱登录", "Sign in with email", "Entrar con correo") : localized(language, "使用邮箱注册", "Create account with email", "Crear cuenta con correo")}
+      </button>
+      </form>
+      <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setProviderError(""); setShowPassword(false); onModeChange(mode === "login" ? "register" : "login"); setNotice(""); }}>{mode === "login" ? t.switchRegister : t.switchLogin}</button>
+      {mode === "login" && <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); onRecover(); }}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>}
+      </>}
     </main>
   </MobileScroll>;
 }
 
+function signInMessage(reason: string, language: Language) {
+  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  switch (reason) {
+    case "adult_required": return t("要创建账号，请确认已满 18 岁，再继续登录。", "To create your account, confirm you’re 18 or older and continue again.", "Para crear tu cuenta, confirma que tienes al menos 18 años y vuelve a continuar.");
+    case "link_required": return t("此邮箱已有关联账号。输入原密码即可关联此次登录，继续使用原有的资料和伴侣空间。", "An account already uses this email. Enter its password to link this sign-in and keep your existing profile and shared space.", "Este correo ya tiene una cuenta. Introduce su contraseña para vincular este acceso y conservar tu perfil y espacio compartido.");
+    case "expired": return t("本次关联已过期，请重新选择登录方式。", "This link request expired. Choose a sign-in method to try again.", "La solicitud de vinculación caducó. Elige un método de acceso para volver a intentarlo.");
+    case "referral_ineligible": return t("本次注册不能使用此邀请奖励。你仍可不使用邀请注册。", "This account is ineligible for the referral reward. You can register without the invitation.", "Esta cuenta no puede recibir la recompensa. Puedes registrarte sin la invitación.");
+    case "update_required": return t("当前版本请用邮箱登录，或在系统浏览器中继续。", "Sign in with email in this app version, or continue in your browser.", "En esta versión, entra con correo o continúa en tu navegador.");
+    case "unavailable": return t("此登录方式暂时不可用。请用邮箱登录，或稍后重试。", "This sign-in method is unavailable. Use email or try again later.", "Este método no está disponible. Usa el correo o inténtalo más tarde.");
+    case "throttled": return t("尝试过于频繁，请稍后重试。", "Too many attempts. Try again later.", "Demasiados intentos. Inténtalo más tarde.");
+    case "offline": return inviteNetworkMessage(language);
+    default: return t("登录未完成，请重试。", "Sign-in didn’t finish. Please try again.", "No se completó el inicio de sesión. Inténtalo de nuevo.");
+  }
+}
 function retryLabel(language: Language) { return localized(language, "重试", "Try again", "Reintentar"); }
 function inviteNetworkMessage(language: Language) {
   return localized(language, "暂时无法连接 Ourever。请检查网络后重试。", "Can’t reach Ourever. Check your connection and try again.", "No se pudo conectar con Ourever. Revisa tu conexión y vuelve a intentarlo.");
@@ -419,7 +562,6 @@ function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Langu
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: (language: Language) => void; compact?: boolean }) { return <div className={`language-switch ${compact ? "compact" : ""}`} role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div>; }
 function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>Ourever</strong>{language === "zh" && <span>两个人的关系助手</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
-function SplitButton({ label, onClick, disabled, testId }: { label: string; onClick: () => void; disabled?: boolean; testId?: string }) { return <button className="split-cta" type="button" onClick={onClick} disabled={disabled} data-testid={testId}><img src="/assets/brand/split-cta-background-tight.png" alt="" aria-hidden="true" draggable={false} /><span>{label}</span><i><ArrowRight size={25} /></i></button>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
 function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return hasInvite() ? "pairing" : params.get("view") === "feedback" ? "feedback" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "people" ? "people" : params.get("view") === "capabilities" ? "capabilities" : ["membership", "referrals"].includes(params.get("view") || "") ? "privacy" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 function accountLanding(user: User, pairing: Pairing | null): Screen {

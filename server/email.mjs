@@ -1,21 +1,30 @@
-// Transactional email. Production sends through Resend when RESEND_API_KEY is set; local development logs the message
-// (including its link) so a reset flow can be tried without a mail account. Tests inject their own sender instead.
 const RESEND_URL = "https://api.resend.com/emails";
 const TIMEOUT_MS = 15_000;
 
+const resetCopy = {
+  en: ["Reset your Ourever password", "Choose a new password using the link below. The link works once and expires in 30 minutes.", "Choose a new password", "If you did not request a reset, you can ignore this email."],
+  es: ["Restablece tu contraseña de Ourever", "Elige una contraseña nueva con el enlace de abajo. Solo puede usarse una vez y caduca en 30 minutos.", "Elegir una contraseña nueva", "Si no solicitaste este cambio, puedes ignorar este correo."],
+  zh: ["重设你的 Ourever 密码", "请使用下方链接设置新密码。链接 30 分钟内有效，只能使用一次。", "设置新密码", "如果你没有申请重设密码，请忽略这封邮件。"],
+};
+
+export function resetMessage(language, link) {
+  const [subject, instructions, action, footer] = resetCopy[language] || resetCopy.zh;
+  const href = link.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return {
+    subject,
+    text: `${subject}\n\n${instructions}\n\n${link}\n\n${footer}`,
+    html: `<h1>${subject}</h1><p>${instructions}</p><p><a href="${href}" style="font-size:18px">${action}</a></p><p>${footer}</p>`,
+  };
+}
+
 export function createEmailSender({ env = process.env, fetchImpl = globalThis.fetch, log = console } = {}) {
-  const apiKey = env.RESEND_API_KEY || "";
-  // Keep the verified sender address even when its old display name is still configured.
-  const senderAddress = String(env.EMAIL_FROM || "onboarding@resend.dev").trim();
-  const mailbox = senderAddress.match(/<([^<>]+)>$/)?.[1] || senderAddress;
+  const apiKey = String(env.RESEND_API_KEY || "").trim();
+  const senderAddress = String(env.EMAIL_FROM || "").trim();
+  const mailbox = senderAddress.match(/^[^<>\r\n]+<([^<>]+)>$/)?.[1] || senderAddress;
   const from = `Ourever <${mailbox}>`;
-  const configured = Boolean(apiKey);
-  const production = env.NODE_ENV === "production";
-  async function send({ to, subject, text, html, link }) {
-    if (!configured) {
-      if (!production) log.log(`[email to ${to}] ${subject} ${link || text}`);
-      return { sent: false };
-    }
+  const configured = Boolean(apiKey) && /^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$/.test(mailbox);
+  async function send({ to, subject, text, html }) {
+    if (!configured) return { sent: false };
     try {
       const response = await fetchImpl(RESEND_URL, {
         method: "POST",
