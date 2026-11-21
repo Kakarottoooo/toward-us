@@ -23,12 +23,13 @@ export async function verifyPassword(password, encoded) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export async function issueSession(store, userId) {
+export async function issueSession(store, userId, provider = null) {
   const token = randomBytes(32).toString("base64url");
   const now = new Date();
   const session = {
     id: sessionId(token),
     userId,
+    ...(provider ? { provider } : {}),
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + SESSION_AGE_SECONDS * 1000).toISOString(),
   };

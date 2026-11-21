@@ -72,11 +72,26 @@ export async function createPostgresStore(databaseUrl) {
     async getUserByEmail(email) { return mapUser((await pool.query("select * from users where email = $1", [email])).rows[0]); },
     async getUserById(id) { return mapUser((await pool.query("select * from users where id = $1", [id])).rows[0]); },
     async getUserForUpdate(id) { if (!transactions.getStore()) throw new Error("User lock requires a transaction"); return mapUser((await pool.query("select * from users where id=$1 for update", [id])).rows[0]); },
+    async getOAuthIdentity(provider, subject) {
+      return (await pool.query('select user_id as "userId",revocation,authoritative_email as "authoritativeEmail" from oauth_identities where provider=$1 and subject=$2', [provider, subject])).rows[0] || null;
+    },
+    async getUserOAuthIdentities(userId) {
+      return (await pool.query('select provider,revocation,authoritative_email as "authoritativeEmail" from oauth_identities where user_id=$1', [userId])).rows;
+    },
+    async deleteUnverifiedGoogleIdentity(userId) {
+      await pool.query("delete from oauth_identities where user_id=$1 and provider='google' and authoritative_email is null", [userId]);
+    },
+    async bindOAuthIdentity(provider, subject, userId, revocation, authoritativeEmail) {
+      const result = await pool.query(`insert into oauth_identities(provider,subject,user_id,revocation,authoritative_email) values($1,$2,$3,$4,$5)
+        on conflict(provider,subject) do update set revocation=coalesce(excluded.revocation,oauth_identities.revocation),authoritative_email=excluded.authoritative_email
+        where oauth_identities.user_id=excluded.user_id`, [provider, subject, userId, revocation, authoritativeEmail]);
+      if (!result.rowCount) throw new Error("Identity already linked");
+    },
     async createUser(user) {
       const result = await pool.query("insert into users (id,email,name,password_hash,created_at) values ($1,$2,$3,$4,$5) on conflict (email) do nothing returning *", [user.id, user.email, user.name, user.passwordHash, user.createdAt]);
       return mapUser(result.rows[0]);
     },
-    async createSession(session) { await pool.query("insert into sessions (id,user_id,created_at,expires_at) values ($1,$2,$3,$4)", [session.id, session.userId, session.createdAt, session.expiresAt]); return session; },
+    async createSession(session) { await pool.query("insert into sessions (id,user_id,created_at,expires_at,provider) values ($1,$2,$3,$4,$5)", [session.id, session.userId, session.createdAt, session.expiresAt, session.provider || null]); return session; },
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
     async deleteUserSessions(userId, except = null) { await pool.query("delete from sessions where user_id=$1 and id is distinct from $2", [userId, except]); },
     async updateUserName(userId, name) { return (await pool.query("update users set name=$2 where id=$1", [userId, name])).rowCount > 0; },
@@ -158,6 +173,7 @@ export async function createPostgresStore(databaseUrl) {
       const context = await store.getRelationshipContext(userId);
       return store.transaction(context ? `relationship:${context.relationship.id}` : `user:${userId}`, async () => {
         await store.getUserForUpdate(userId);
+        await pool.query("delete from oauth_identities where user_id=$1", [userId]);
         await store.leaveRelationship(userId); await store.deletePrivateData(userId); await store.deleteUserSessions(userId);
         await pool.query("delete from phone_links where phone=(select phone from user_phones where user_id=$1)", [userId]); await store.unbindPhone(userId);
         for (const collection of ["accountSettings", "deliveryPreferences", "pushSubscriptions", "deliveryJobs", "nativePushDevices", "purchases", "betaCodes"]) await pool.query(`delete from ${graphTable(collection)} where owner_user_id=$1`, [userId]);
@@ -391,7 +407,12 @@ async function loadRelationshipContext(client, userId) {
 async function migrate(pool) {
   await pool.query(`
     create table if not exists users (id text primary key, email text not null unique, name text not null, password_hash text not null, created_at timestamptz not null);
+    create table if not exists oauth_identities (
+      provider text not null, subject text not null, user_id text not null references users(id) on delete cascade,
+      revocation text, authoritative_email text, primary key(provider,subject), unique(user_id,provider)
+    );
     create table if not exists sessions (id text primary key, user_id text not null references users(id) on delete cascade, created_at timestamptz not null, expires_at timestamptz not null);
+    alter table sessions add column if not exists provider text;
     create index if not exists sessions_expiry_idx on sessions(expires_at);
     create table if not exists relationships (id text primary key, status text not null check (status in ('pending','active')), created_at timestamptz not null, updated_at timestamptz not null);
     create table if not exists relationship_members (relationship_id text not null references relationships(id) on delete cascade, user_id text primary key references users(id) on delete cascade, role text not null check (role in ('A','B')), joined_at timestamptz not null, unique(relationship_id,role));
@@ -478,7 +499,7 @@ function mapGraphRecord(row) {
 
 const iso = (value) => value ? new Date(value).toISOString() : null;
 const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, language: row.language || null, createdAt: iso(row.created_at) } : null;
-const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at) } : null;
+const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), ...(row.provider ? { provider: row.provider } : {}) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
 const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), prepared: row.prepared, expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), sentAt: iso(row.sent_at), cancelledAt: iso(row.cancelled_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;

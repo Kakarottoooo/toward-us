@@ -31,7 +31,7 @@ export async function setAiConsent(tx, userId, agree, at = new Date().toISOStrin
   return agree ? at : null;
 }
 
-export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onAiWithdrawal = async () => {}, email = createEmailSender() }) {
+export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onAiWithdrawal = async () => {}, email = createEmailSender(), oauthProviders }) {
   const router = express.Router(); const attempts = new Map();
   const limited = (key) => {
     const now = Date.now(); const recent = (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000);
@@ -50,6 +50,12 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   const reauthenticate = async (req, tx) => {
     if (limited(`reauth:${req.ip}:${req.auth.user.id}`)) throw fail(429, local(req, "尝试过多，请稍后再试。", "Too many attempts. Try later.", "Demasiados intentos. Inténtalo más tarde."));
     const user = await tx.getUserForUpdate(req.auth.user.id);
+    if (user?.passwordHash === "federated" && req.auth.session.provider &&
+        Date.now() - Date.parse(req.auth.session.createdAt) <= 5 * 60_000) {
+      attempts.delete(`reauth:${req.ip}:${user.id}`);
+      return;
+    }
+    if (user?.passwordHash === "federated") throw fail(403, local(req, "请退出并使用原登录方式重新登录，然后在五分钟内重试。", "Sign out and sign in again with your provider, then retry within five minutes.", "Cierra la sesión y vuelve a entrar con tu proveedor. Reinténtalo en los cinco minutos siguientes."));
     if (!user || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) throw fail(403, local(req, "请使用当前密码确认。", "Confirm with your current password.", "Confirma con tu contraseña actual."));
     attempts.delete(`reauth:${req.ip}:${req.auth.user.id}`);
   };
@@ -123,6 +129,8 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       if (!reset?.hash || !(Date.parse(reset.expiresAt) > Date.now())) return false;
       if (!timingSafeEqual(Buffer.from(hash(secret), "hex"), Buffer.from(reset.hash, "hex"))) return false;
       await tx.updateUserPassword(userId, await hashPassword(req.body.password));
+      // Mailbox recovery supersedes a Google account that could only attest to historical control of this address.
+      await tx.deleteUnverifiedGoogleIdentity(userId);
       await tx.deleteUserSessions(userId);
       await updateSettings(userId, (record) => { delete record.passwordReset; delete record.widgetToken; }, tx);
       await audit(tx, userId, "account.password_reset"); return true;
@@ -248,6 +256,12 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       await reauthenticate(req, tx);
       const paths = await privateFiles(tx, req.auth.user.id);
       await deleteReferralAccount(tx, req.auth.user.id);
+      for (const identity of await tx.getUserOAuthIdentities(req.auth.user.id)) {
+        if (identity.provider === "apple" && identity.revocation) {
+          try { await oauthProviders.revokeApple(identity.revocation); }
+          catch { throw fail(503, local(req, "暂时无法撤销 Apple 授权，请重试。", "Apple authorization could not be revoked. Please retry.", "No se pudo revocar la autorización de Apple. Inténtalo de nuevo.")); }
+        }
+      }
       await tx.deleteAccount(req.auth.user.id); return paths;
     });
     await removeFiles(files);
