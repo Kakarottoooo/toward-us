@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { EnvelopeSimple, Key } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import { EnvelopeSimple, Key, SpinnerGap } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -10,29 +10,48 @@ export function AccountRecovery({ language, onBack, onRecovered }: { language: L
   const [password, setPassword] = useState(""); const [repeat, setRepeat] = useState("");
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(""); const [recovered, setRecovered] = useState(false);
   const [linkEmail, setLinkEmail] = useState(""); const [linkBusy, setLinkBusy] = useState(false); const [linkSent, setLinkSent] = useState(false); const [linkNotice, setLinkNotice] = useState("");
+  const sending = useRef(false);
+  const [nextSend, setNextSend] = useState({ address: "", at: 0 });
+  const [now, setNow] = useState(Date.now);
+  const address = linkEmail.trim().toLowerCase();
+  const remaining = address === nextSend.address ? Math.max(0, Math.ceil((nextSend.at - now) / 1000)) : 0;
+  useEffect(() => {
+    if (nextSend.at <= Date.now()) return;
+    const timer = window.setInterval(() => {
+      const time = Date.now(); setNow(time);
+      if (time >= nextSend.at) clearInterval(timer);
+    }, 500);
+    return () => clearInterval(timer);
+  }, [nextSend]);
   const keyboard = useKeyboard(); const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const submit = async () => {
     if (password !== repeat) { setNotice(t("两次输入的密码不同。", "The passwords do not match.", "Las contraseñas no coinciden.")); return; }
     setBusy(true); setNotice(""); keyboard.hide();
-    try { await relationshipApi("/api/auth/recover", jsonBody({ email, recoveryCode, password, language })); setRecovered(true); }
+    try { await relationshipApi("/api/auth/recover", jsonBody({ email, recoveryCode, password, language })); setPassword(""); setRepeat(""); setRecoveryCode(""); setRecovered(true); }
     catch (error) { setNotice((error as Error).message); }
-    finally { setBusy(false); setPassword(""); setRepeat(""); setRecoveryCode(""); }
+    finally { setBusy(false); }
   };
   const sendLink = async () => {
+    if (sending.current || (address === nextSend.address && Date.now() < nextSend.at)) return;
+    sending.current = true;
     setLinkBusy(true); setLinkNotice(""); keyboard.hide();
-    try { await relationshipApi("/api/auth/reset-request", jsonBody({ email: linkEmail, language })); setLinkSent(true); }
-    catch (error) { setLinkNotice((error as Error).message); }
-    finally { setLinkBusy(false); }
+    const cooldown = () => { const at = Date.now(); setNow(at); setNextSend({ address, at: at + 30_000 }); };
+    try { await relationshipApi("/api/auth/reset-request", jsonBody({ email: address, language })); cooldown(); setLinkSent(true); }
+    catch (error) { if ((error as { status?: number }).status === 429) cooldown(); setLinkNotice((error as Error).message); }
+    finally { sending.current = false; setLinkBusy(false); }
   };
+  const sendLabel = linkBusy ? t("正在发送…", "Sending…", "Enviando…") : remaining ? t(`${remaining} 秒后重发`, `Resend in ${remaining}s`, `Reenviar en ${remaining} s`) : linkSent ? t("重新发送链接", "Resend link", "Reenviar enlace") : t("发送重设链接", "Send reset link", "Enviar enlace");
   return <section className="privacy-workspace account-recovery" aria-labelledby="recovery-title">
     <header><Key size={24} /><h2 id="recovery-title">{t("找回你的账号", "Recover your account", "Recupera tu cuenta")}</h2></header>
     {recovered ? <div className="privacy-success" role="status"><h3>{t("密码已更新", "Password updated", "Contraseña actualizada")}</h3><p>{t("所有旧登录已失效，这个恢复码也已用完。用新密码登录后，可在隐私设置生成新的恢复码。", "All previous sessions are signed out, and this recovery code is used. Sign in with your new password, then generate a new code in Privacy settings.", "Todas las sesiones anteriores se cerraron y este código ya se utilizó. Inicia sesión con tu nueva contraseña y genera otro código en Privacidad.")}</p><button onClick={onRecovered}>{t("使用新密码登录", "Sign in with new password", "Entrar con la nueva contraseña")}</button></div> : <>
       <div className="reset-link">
         <h3><EnvelopeSimple size={20} /> {t("给我发重设链接", "Send me a reset link", "Envíame un enlace para restablecer")}</h3>
-        {linkSent ? <p className="privacy-success" role="status">{t("如果这个邮箱有账号，链接已经在路上了；链接 30 分钟内有效。", "If that email has an account, a link is on its way; it works for 30 minutes.", "Si ese correo tiene una cuenta, un enlace va en camino; funciona durante 30 minutos.")}</p> : <form onSubmit={(event) => { event.preventDefault(); void sendLink(); }}>
-          <label><span>{t("注册邮箱", "Account email", "Correo de la cuenta")}</span><KeyboardInput type="email" required autoComplete="email" maxLength={254} value={linkEmail} onChange={(event) => setLinkEmail(event.target.value)} onBlur={() => keyboard.hide()} /></label>
-          <button disabled={linkBusy || !linkEmail.trim()} type="submit">{linkBusy ? t("正在发送…", "Sending…", "Enviando…") : t("发送重设链接", "Send reset link", "Enviar enlace")}</button>
-        </form>}
+        <form onSubmit={(event) => { event.preventDefault(); void sendLink(); }}>
+          {linkSent ? <p className="privacy-success" role="status">{t(`如果 ${address} 有账号，你将收到一封重设邮件。链接 30 分钟内有效。`, `If ${address} has an account, you’ll receive a reset email. The link works for 30 minutes.`, `Si ${address} tiene una cuenta, recibirás un correo para restablecer la contraseña. El enlace dura 30 minutos.`)}</p> :
+            <label><span>{t("注册邮箱", "Account email", "Correo de la cuenta")}</span><KeyboardInput type="email" disabled={linkBusy} required autoComplete="email" maxLength={254} value={linkEmail} onChange={(event) => setLinkEmail(event.target.value)} onBlur={() => keyboard.hide()} /></label>}
+          <button disabled={linkBusy || !!remaining || !address} type="submit" aria-busy={linkBusy}>{linkBusy && <SpinnerGap className="signin-spinner" aria-hidden="true" />} {sendLabel}</button>
+          {linkSent && <button type="button" className="privacy-quiet" disabled={linkBusy} onClick={() => { setLinkSent(false); setLinkNotice(""); }}>{t("更改邮箱地址", "Change email address", "Cambiar dirección de correo")}</button>}
+        </form>
         {linkNotice && <p className="privacy-notice" role="alert">{linkNotice}</p>}
       </div>
       <h3 className="recovery-code-heading"><Key size={20} /> {t("我有恢复码", "I have a recovery code", "Tengo un código de recuperación")}</h3>

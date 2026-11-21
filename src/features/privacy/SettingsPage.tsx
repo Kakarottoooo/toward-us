@@ -20,7 +20,7 @@ type Summary = { id: string; relationshipId?: string; issueId: string; text: str
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; aiConsentAt?: string | null; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account" | "ai"; days?: number | null } | { kind: "withdraw"; summary: Summary };
 type Page = "account" | "main" | "access" | "referrals" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
-type SettingsProps = { onName: (name: string) => void; onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
+type SettingsProps = { onName: (name: string, addedPassword?: boolean) => void; onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string; passwordless?: boolean }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 type AccountBridge = { info(): Promise<{ app_version: string; build: string }>; shareExport?(options: { contents: string }): Promise<{ completed: boolean }> };
@@ -96,6 +96,8 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
     if (action.kind === "ai") return t("撤回后，Ourever 不再把你的内容发给第三方 AI 处理方，AI 功能会停下，直到你重新同意。已经处理过的内容不受影响。", "Ourever will stop sending your content to third-party AI processors, and AI features pause until you agree again. Content already processed is not affected.", "Ourever dejará de enviar tu contenido a proveedores de IA, y las funciones de IA se pausan hasta que vuelvas a aceptar. Lo ya procesado no cambia.");
     return t("以后共同 AI 不再使用这段摘要，已经确认的约定仍然有效。已经分享的内容无法收回。", "Joint AI will no longer use this summary; confirmed agreements stay valid. What was already shared cannot be taken back.", "La IA compartida dejará de usar este resumen; los acuerdos confirmados siguen vigentes. Lo ya compartido no se puede retirar.");
   };
+  const recentSignInHint = t("为保护账号，请在用 Google 或 Apple 重新登录后的 5 分钟内确认。", "For your security, confirm within five minutes of signing in again with Google or Apple.", "Por seguridad, confirma en los cinco minutos posteriores a volver a entrar con Google o Apple.");
+  const verifyAction = !!pending && pending.kind !== "withdraw" && pending.kind !== "ai";
   const destructive = pending && ["delete-private", "leave", "account"].includes(pending.kind);
   const execute = async () => {
     if (!pending || !confirmed) return; const action = pending; setBusy(true); setNotice(""); keyboard.hide();
@@ -145,7 +147,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
       await relationshipApi("/api/privacy/account", { method: "PATCH", body: JSON.stringify({
         password: current, language, ...(name.trim() !== user.name ? { name: name.trim() } : {}), ...(nextPassword ? { newPassword: nextPassword } : {})
       }) });
-      onName(name.trim()); setName(name.trim()); setNextPassword(""); setRepeat(""); setCurrent("");
+      onName(name.trim(), !!nextPassword); setName(name.trim()); setNextPassword(""); setRepeat(""); setCurrent("");
       setNotice(t("账号已更新。", "Account updated.", "Cuenta actualizada."));
     } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
@@ -185,7 +187,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
       <Row icon={<Key size={18} weight="bold" />} tone="gray" label={titles.recovery} value={data ? data.recoveryEnabled ? t("已设置", "On", "Activado") : t("未设置", "Off", "Desactivado") : ""} onClick={() => open("recovery")} />
       <Row icon={<DownloadSimple size={18} weight="bold" />} tone="blue" label={t("下载我的数据", "Download my data", "Descargar mis datos")} onClick={() => prepare({ kind: "export" })} />
     </Group>
-    <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${counted(data.privateCount, "private record", "private records")}. Each step explains what it does and asks for your password first.`, `Tienes ${counted(data.privateCount, "registro", "registros")} privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
+    <Group title={t("危险操作", "Danger zone", "Zona de riesgo")} note={user.passwordless ? recentSignInHint : data ? t(`你现在有 ${data.privateCount} 条私人记录。每一项都会先说明影响，再请你输入密码确认。`, `You have ${counted(data.privateCount, "private record", "private records")}. Each step explains what it does and asks for your password first.`, `Tienes ${counted(data.privateCount, "registro", "registros")} privados. Cada paso explica lo que hace y pide tu contraseña.`) : undefined}>
       {paired && <Row icon={<LinkBreak size={18} weight="bold" />} tone="red" danger label={t("退出当前关系", "Leave this relationship", "Salir de esta relación")} onClick={() => prepare({ kind: "leave" })} />}
       <Row icon={<Trash size={18} weight="bold" />} tone="red" danger label={t("删除我的私人内容", "Delete my private content", "Borrar mi contenido privado")} onClick={() => prepare({ kind: "delete-private" })} />
       <Row icon={<UserMinus size={18} weight="bold" />} tone="red" danger label={t("删除账号", "Delete account", "Borrar la cuenta")} onClick={() => prepare({ kind: "account" })} />
@@ -204,6 +206,8 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
   </>;
 
   const processors: Array<[string, string]> = [
+    [t("账号登录", "Account sign-in", "Acceso a la cuenta"), t("选择 Google 或 Apple 登录时，相应提供方验证你的身份，并与 Ourever 共享账号标识及获准提供的邮箱和姓名。", "When you choose Google or Apple, that provider verifies your identity and shares an account identifier and the email and name you authorize with Ourever.", "Cuando eliges Google o Apple, ese proveedor verifica tu identidad y comparte con Ourever un identificador y el correo y el nombre que autorices.")],
+    [t("密码重设邮件", "Password reset email", "Correo para restablecer la contraseña"), t("Resend 使用你的邮箱地址投递你申请的重设链接。", "Resend uses your email address to deliver the reset link you request.", "Resend utiliza tu dirección de correo para enviarte el enlace que solicites.")],
     [t("私聊与语音", "Private chats and voice", "Chats privados y voz"), t("由 AI 服务处理，我们要求它不保存这些内容。", "Processed by our AI provider, which we ask not to keep them.", "Los procesa nuestro proveedor de IA, al que pedimos no guardarlos.")],
     ["iMessage", t("如果你用 iMessage 和 Ourever 聊天，消息会经过 Apple 和 Sendblue。", "If you talk to Ourever over iMessage, messages pass through Apple and Sendblue.", "Si hablas con Ourever por iMessage, los mensajes pasan por Apple y Sendblue.")],
     [t("推送通知", "Push notifications", "Notificaciones"), t("经过手机或浏览器的推送服务；每日一问等问题会写在通知里。锁屏是否显示内容取决于系统的通知预览设置。", "Pass through your phone or browser's push service; questions such as the daily question appear in the notification. Lock-screen content depends on your system's notification preview settings.", "Pasan por el servicio de notificaciones del teléfono o navegador; incluyen preguntas como la diaria. Lo que aparece en la pantalla bloqueada depende de los ajustes de vista previa del sistema.")],
@@ -217,11 +221,11 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
     access: <AiAccess language={language} onOpen={open} />,
     account: <form className="settings-sheet" onSubmit={event => { event.preventDefault(); void saveAccount(); }}>
       <label>{t("显示名字", "Display name", "Nombre visible")}<KeyboardInput required maxLength={24} value={name} onChange={e => setName(e.target.value)} /></label>
-      <label>{t("当前密码", "Current password", "Contraseña actual")}<KeyboardInput autoComplete="current-password" type="password" required maxLength={128} value={current} onChange={e => setCurrent(e.target.value)} /></label>
+      {user.passwordless ? <p>{recentSignInHint}</p> : <label>{t("当前密码", "Current password", "Contraseña actual")}<KeyboardInput autoComplete="current-password" type="password" required maxLength={128} value={current} onChange={e => setCurrent(e.target.value)} /></label>}
       <label>{t("新密码（可选，10–128 个字符）", "New password (optional, 10–128 characters)", "Nueva contraseña (opcional, de 10 a 128 caracteres)")}<KeyboardInput autoComplete="new-password" type="password" minLength={10} maxLength={128} value={nextPassword} onChange={e => setNextPassword(e.target.value)} /></label>
       {nextPassword && <label>{t("再次输入新密码", "Repeat new password", "Repite la nueva contraseña")}<KeyboardInput autoComplete="new-password" type="password" required maxLength={128} value={repeat} onChange={e => setRepeat(e.target.value)} /></label>}
       {nextPassword && repeat && repeat !== nextPassword && <p role="alert">{t("两次密码不同。", "The passwords do not match.", "Las contraseñas no coinciden.")}</p>}
-      <button type="submit" disabled={busy || !current || !name.trim() || (name.trim() === user.name && !nextPassword) || (!!nextPassword && (nextPassword.length < 10 || nextPassword !== repeat))}>{t("保存更改", "Save changes", "Guardar cambios")}</button>
+      <button type="submit" disabled={busy || (!user.passwordless && !current) || !name.trim() || (name.trim() === user.name && !nextPassword) || (!!nextPassword && (nextPassword.length < 10 || nextPassword !== repeat))}>{t("保存更改", "Save changes", "Guardar cambios")}</button>
     </form>,
     membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} onInvite={() => open("referrals")} />,
     profile: <ProfilePage language={language} relationshipId={relationshipId} />,
@@ -279,9 +283,9 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
         {pending.kind === "withdraw" && <blockquote>{pending.summary.text}</blockquote>}
         {/* The checkbox comes first so the sheet opens without focusing the password field and raising the keyboard. */}
         <label className="settings-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>{t("我明白上面的影响", "I understand what this does", "Entiendo lo que hace")}</span></label>
-        {pending.kind !== "withdraw" && pending.kind !== "ai" && <label><span>{t("输入当前密码", "Enter your password", "Escribe tu contraseña")}</span><KeyboardInput type="password" autoComplete="current-password" required maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} onBlur={() => keyboard.hide()} /></label>}
+        {verifyAction && (user.passwordless ? <p>{recentSignInHint}</p> : <label><span>{t("输入当前密码", "Enter your password", "Escribe tu contraseña")}</span><KeyboardInput type="password" autoComplete="current-password" required maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} onBlur={() => keyboard.hide()} /></label>)}
         {notice && <p className="settings-error" role="alert">{notice}</p>}
-        <button type="submit" className={destructive ? "danger" : ""} disabled={busy || !confirmed || (pending.kind !== "withdraw" && pending.kind !== "ai" && !password)}>{busy ? t("正在处理…", "Working…", "Procesando…") : actionTitle(pending)}</button>
+        <button type="submit" className={destructive ? "danger" : ""} disabled={busy || !confirmed || (verifyAction && !user.passwordless && !password)}>{busy ? t("正在处理…", "Working…", "Procesando…") : actionTitle(pending)}</button>
         <button type="button" className="quiet" disabled={busy} onClick={close}>{t("取消", "Cancel", "Cancelar")}</button>
       </form>}
     </BottomSheet>

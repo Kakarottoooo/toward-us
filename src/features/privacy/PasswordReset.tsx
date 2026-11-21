@@ -5,17 +5,17 @@ import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./privacy.css";
 
-// Opened from the emailed link (/?reset=<token>). The token is single-use and expires after 30 minutes.
-export function PasswordResetForm({ language, token, onDone }: { language: Language; token: string; onDone: () => void }) {
+// The single-use link is valid for 30 minutes. Current emails carry the token in the URL fragment.
+export function PasswordResetForm({ language, token, onDone, onRequestLink }: { language: Language; token: string; onDone: () => void; onRequestLink: () => void }) {
   const [password, setPassword] = useState(""); const [repeat, setRepeat] = useState("");
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(""); const [finished, setFinished] = useState(false);
   const keyboard = useKeyboard(); const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const submit = async () => {
     if (password !== repeat) { setNotice(t("两次输入的密码不同。", "The passwords do not match.", "Las contraseñas no coinciden.")); return; }
     setBusy(true); setNotice(""); keyboard.hide();
-    try { await relationshipApi("/api/auth/reset", jsonBody({ token, password, language })); setFinished(true); }
+    try { await relationshipApi("/api/auth/reset", jsonBody({ token, password, language })); setPassword(""); setRepeat(""); setFinished(true); }
     catch (error) { setNotice((error as Error).message); }
-    finally { setBusy(false); setPassword(""); setRepeat(""); }
+    finally { setBusy(false); }
   };
   return <section className="privacy-workspace account-recovery" aria-labelledby="reset-title">
     <header><LockKey size={24} /><h2 id="reset-title">{t("设置新密码", "Choose a new password", "Elige una nueva contraseña")}</h2></header>
@@ -27,6 +27,7 @@ export function PasswordResetForm({ language, token, onDone }: { language: Langu
         <button disabled={busy || password.length < 10 || !repeat} type="submit">{busy ? t("正在更新…", "Updating…", "Actualizando…") : t("更新密码", "Update password", "Cambiar contraseña")}</button>
       </form>
       {notice && <p className="privacy-notice" role="alert">{notice}</p>}
+      <button type="button" className="privacy-quiet" disabled={busy} onClick={() => { keyboard.hide(); onRequestLink(); }}>{t("重新申请链接", "Request a new link", "Solicitar otro enlace")}</button>
     </>}
   </section>;
 }

@@ -194,6 +194,7 @@ final class OureverFeedbackPlugin: CAPPlugin, CAPBridgedPlugin {
 class PinkyBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(OureverFeedbackPlugin())
+        bridge?.registerPluginInstance(OureverSignInPlugin())
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
         bridge?.registerPluginInstance(PinkyWidgetPlugin())
         // Render pages already carrying this revision own their own styles. The bundled fallback also

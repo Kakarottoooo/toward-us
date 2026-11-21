@@ -21,6 +21,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		7B0610000000000000000B02 /* PinkyWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A02 /* PinkyWidgetPlugin.swift */; };
+		7B0620000000000000000B02 /* OureverSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0620000000000000000A02 /* OureverSignInPlugin.swift */; };
 		7B0610000000000000000B20 /* PinkyTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A20 /* PinkyTelemetry.swift */; };
 		7B0610000000000000000B22 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A22 /* WidgetStore.swift */; };
 		7B0610000000000000000B23 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0610000000000000000A22 /* WidgetStore.swift */; };
@@ -72,6 +73,7 @@
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		7B0610000000000000000A02 /* PinkyWidgetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyWidgetPlugin.swift; sourceTree = "<group>"; };
+		7B0620000000000000000A02 /* OureverSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OureverSignInPlugin.swift; sourceTree = "<group>"; };
 		7B0610000000000000000A20 /* PinkyTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinkyTelemetry.swift; sourceTree = "<group>"; };
 		7B0610000000000000000A22 /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		7B0610000000000000000A03 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				7B0610000000000000000A02 /* PinkyWidgetPlugin.swift */,
+				7B0620000000000000000A02 /* OureverSignInPlugin.swift */,
 				7B0610000000000000000A20 /* PinkyTelemetry.swift */,
 				7B0610000000000000000A22 /* WidgetStore.swift */,
 				7B0610000000000000000A03 /* App.entitlements */,
@@ -287,6 +290,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				7B0610000000000000000B02 /* PinkyWidgetPlugin.swift in Sources */,
+				7B0620000000000000000B02 /* OureverSignInPlugin.swift in Sources */,
 				7B0610000000000000000B20 /* PinkyTelemetry.swift in Sources */,
 				7B0610000000000000000B22 /* WidgetStore.swift in Sources */,
 			);
