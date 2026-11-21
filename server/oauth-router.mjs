@@ -36,13 +36,20 @@ export function createOAuthRouter({ store, production, register, providers = cre
   const router = express.Router();
   const starts = expiringMap(now), states = expiringMap(now), handoffs = expiringMap(now), links = expiringMap(now), limits = expiringMap(now);
   const googleOrApple = (provider) => provider === "google" || provider === "apple";
+  const singleOrigin = env.OAUTH_PUBLIC_ORIGIN || env.TOWARD_US_BASE_URL;
+  const configuredOrigins = env.OAUTH_PUBLIC_ORIGINS ? env.OAUTH_PUBLIC_ORIGINS.split(",") : singleOrigin ? [singleOrigin] : null;
   const origin = (req) => {
-    const value = env.OAUTH_PUBLIC_ORIGIN || env.TOWARD_US_BASE_URL || (!production && `${req.protocol}://${req.get("host")}`);
-    if (!value) return null;
-    try {
-      const url = new URL(value);
-      return (!production || url.protocol === "https:") && url.host === req.get("host") ? url.origin : null;
-    } catch { return null; }
+    const host = req.get("host")?.toLowerCase();
+    if (!host) return null;
+    const values = configuredOrigins ?? (production ? [] : [`${req.protocol}://${host}`]);
+    for (const value of values) {
+      try {
+        const url = new URL(value.trim());
+        if (url.host === host && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash &&
+            (url.protocol === "https:" || (!production && url.protocol === "http:"))) return url.origin;
+      } catch { /* Skip invalid entries. */ }
+    }
+    return null;
   };
   const options = (maxAge, sameSite = "lax") => ({ path, httpOnly: true, secure: production, sameSite, maxAge });
   const attempt = (key, max, ttl) => {

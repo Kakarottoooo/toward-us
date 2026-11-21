@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { text } from "node:stream/consumers";
+import express from "express";
 import { Pool } from "pg";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +13,7 @@ import { createApiApp } from "../server/app.mjs";
 import { createFileStore } from "../server/store.mjs";
 import { createPostgresStore } from "../server/postgres-store.mjs";
 import { createOAuthProviders } from "../server/oauth-providers.mjs";
+import { createOAuthRouter } from "../server/oauth-router.mjs";
 
 const secret = () => randomBytes(32).toString("base64url");
 const digest = (v) => createHash("sha256").update(v).digest("base64url");
@@ -81,6 +85,64 @@ async function fixture(t, { postgres = false } = {}) {
   }
   return { request, start, file, store, revoked, refresh, providerState, mailbox };
 }
+
+async function originFixture(t, env) {
+  const app = express();
+  const providers = createOAuthProviders({ env: { GOOGLE_CLIENT_ID: "google-test", APPLE_SIGNIN_CLIENT_ID: "apple-test" } });
+  app.use("/api/auth/oauth", express.json(), createOAuthRouter({ production: true, env, providers: { ...providers, configured: { google: true, apple: true } } }));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  return async (host, path, { body, type = "application/json", cookie } = {}) => {
+    const response = await new Promise((resolve, reject) => {
+      const req = httpRequest({ hostname: "127.0.0.1", port: server.address().port, path,
+        method: body ? "POST" : "GET", headers: { host, connection: "close", "content-type": type, ...(cookie && { cookie }) } }, resolve);
+      req.on("error", reject);
+      req.end(body);
+    });
+    return { status: response.statusCode, location: response.headers.location,
+      cookie: response.headers["set-cookie"]?.[0].split(";")[0], body: await text(response) };
+  };
+}
+
+test("each registered HTTPS host uses its own Google and Apple callbacks", async (t) => {
+  const custom = "ourever.witnora.com", legacy = "toward-us-private-beta.onrender.com";
+  const request = await originFixture(t, {
+    OAUTH_PUBLIC_ORIGINS: `https://${custom}, https://${legacy}, http://insecure.test`,
+    OAUTH_PUBLIC_ORIGIN: "https://single.test",
+  });
+  const path = "/api/auth/oauth";
+  for (const host of ["unlisted.test", "insecure.test", "single.test"]) {
+    assert.deepEqual(JSON.parse((await request(host, path + "/providers")).body), { google: false, apple: false });
+    assert.equal((await request(host, path + "/google/start", { body: "{}" })).status, 503);
+  }
+  for (const [host, other] of [[custom, legacy], [legacy, custom]]) {
+    assert.deepEqual(JSON.parse((await request(host, path + "/providers")).body), { google: true, apple: true });
+    for (const provider of ["google", "apple"]) {
+      const prefix = path + "/" + provider;
+      const start = await request(host, prefix + "/start", { body: "{}" });
+      const authorizeUrl = new URL(JSON.parse(start.body).url);
+      assert.equal(authorizeUrl.origin, "https://" + host);
+      const authorize = (domain) => request(domain, authorizeUrl.pathname + authorizeUrl.search, { cookie: start.cookie });
+      assert.equal((await authorize(other)).location, "/?signin=failed");
+      const authorization = await authorize(host);
+      const query = new URL(authorization.location).searchParams;
+      assert.equal(query.get("redirect_uri"), "https://" + host + prefix + "/callback");
+      const params = new URLSearchParams({ state: query.get("state"), error: "access_denied" });
+      const callback = (domain) => provider === "apple"
+        ? request(domain, prefix + "/callback", { cookie: authorization.cookie, type: "application/x-www-form-urlencoded", body: params.toString() })
+        : request(domain, prefix + "/callback?" + params, { cookie: authorization.cookie });
+      assert.equal((await callback(other)).location, "/?signin=failed");
+      assert.equal((await callback(host)).location, "/?signin=cancelled");
+    }
+  }
+});
+
+test("a single configured origin continues to work without the list", async (t) => {
+  const request = await originFixture(t, { OAUTH_PUBLIC_ORIGIN: "https://single.test" });
+  assert.deepEqual(JSON.parse((await request("single.test", "/api/auth/oauth/providers")).body), { google: true, apple: true });
+  assert.deepEqual(JSON.parse((await request("unlisted.test", "/api/auth/oauth/providers")).body), { google: false, apple: false });
+});
 
 test("web handshake rejects unbound browsers, bad state, nonce, issuer, audience, unverified email and replay", async (t) => {
   const { start, request } = await fixture(t);
