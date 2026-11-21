@@ -41,7 +41,7 @@
   .ai-consent h1, .first-run .partner-invite-panel h2 { font-size: 1.45em; }
 }
 .conversation-suggestions button, .conversation-retry button, .conversation-empty button,
-.people-main .people-primary, .channel-tabs button { min-height: 44px; }
+.people-main .people-primary { min-height: 44px; }
 .conversation-retry { flex-wrap: wrap; overflow-wrap: anywhere; }
 .conversation-retry q { white-space: pre-wrap; }
 
@@ -66,4 +66,17 @@
 }
 @supports (font: -apple-system-body) {
   .ai-consent-screen .ai-consent h1 { font-size: clamp(1.5rem, 1.15em, 3rem); }
+}
+
+.ai-consent .legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 .4rem;
+}
+.ai-consent .legal-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
 }
