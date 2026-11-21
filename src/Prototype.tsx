@@ -17,7 +17,7 @@ import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
-import { FirstRun } from "./features/conversation/FirstRun";
+import { FirstRun, firstRunInProgress } from "./features/conversation/FirstRun";
 import { SpacePage } from "./features/spaces/SpacePage";
 import { PeoplePage } from "./features/people/PeoplePage";
 import { ImportsPage } from "./features/imports/ImportsPage";
@@ -245,6 +245,7 @@ function AccountPrototype() {
     if (new URLSearchParams(location.search).get("view") === "feedback") window.history.replaceState(null, "", location.pathname);
     setScreen(feedbackReturn);
   };
+  const feedbackEntry = user && <FeedbackEntry key={user.id} userId={user.id} language={language} hidden={screen === "feedback" || !!resetToken} open={image => openFeedback(screen, image)} />;
   const renderScreen = () => {
     if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onRequestLink={() => { setResetToken(""); setScreen("recovery"); }} onDone={() => { setUser(null); setPairing(null); setResetToken(""); setSignInReturn(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "feedback" && user) return <FeedbackPage key={user.id} userId={user.id} language={language} from={feedbackFrom}
@@ -253,7 +254,7 @@ function AccountPrototype() {
       <p className="pairing-lead" role="alert">{inviteNetworkMessage(language)}</p>
       <button className="primary-action" onClick={() => location.reload()}>{retryLabel(language)}</button>
     </InviteFrame>;
-    if (screen === "invite-first" && user) return <FirstRun key={user.id} user={user} language={language} pairing={pairing}
+    if (screen === "invite-first" && user) return <FirstRun key={user.id} feedback={feedbackEntry} user={user} language={language} pairing={pairing}
       onPairingChange={setPairing} onRefreshPairing={refreshPairing}
       onAgreed={at => { setUser({ ...user, aiConsentAt: at }); setScreen("conversation"); }}
       onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
@@ -278,7 +279,7 @@ function AccountPrototype() {
   };
   const showArrivals = user?.aiConsentAt && pairing?.status === "active" && !resetToken &&
     !["booting", "home", "auth", "recovery", "invite", "pairing"].includes(screen);
-  return <>{renderScreen()}{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); window.history.replaceState(null, "", "/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} />}{user && <FeedbackEntry key={user.id} userId={user.id} language={language} hidden={screen === "feedback" || !!resetToken} open={image => openFeedback(screen, image)} />}{showArrivals && <PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} />}</>;
+  return <>{renderScreen()}{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); window.history.replaceState(null, "", "/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} />}{screen !== "invite-first" && feedbackEntry}{showArrivals && <PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} />}</>;
 }
 
 function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; onSignIn: () => void; t: typeof copy.zh }) {
@@ -563,7 +564,7 @@ function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i 
 function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return hasInvite() ? "pairing" : params.get("view") === "feedback" ? "feedback" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "people" ? "people" : params.get("view") === "capabilities" ? "capabilities" : ["membership", "referrals"].includes(params.get("view") || "") ? "privacy" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
 function accountLanding(user: User, pairing: Pairing | null): Screen {
   const screen = landing(pairing);
-  return screen === "conversation" && !user.aiConsentAt && pairing?.status !== "active" ? "invite-first" : screen;
+  return screen === "conversation" && !user.aiConsentAt && (pairing?.status !== "active" || firstRunInProgress(user.id)) ? "invite-first" : screen;
 }
 
 // Keep only the current tab's explicit join intent across authentication and password recovery.

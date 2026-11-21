@@ -976,6 +976,8 @@ ${text}` : text, target);
     const viewport = content?.closest<HTMLElement>(".mobile-scroll");
     if (!conversationVisible || recall.active || !content || !viewport) return;
 
+    // Show an empty conversation from its question, even when large text pushes the suggestions below the fold.
+    if (emptyPrivateChat) { viewport.scrollTop = 0; return; }
     // The viewport does not exist while the opening screen is showing.
     followingLatest.current = true;
     const follow = () => {
@@ -993,9 +995,9 @@ ${text}` : text, target);
       observer.disconnect();
       viewport.removeEventListener("scroll", trackScroll);
     };
-  }, [conversationVisible, channel, currentThread, recall.active, reopenedAt]);
+  }, [conversationVisible, channel, currentThread, recall.active, reopenedAt, Boolean(emptyPrivateChat)]);
 
-  if (!conversationVisible) return <div className="loading-screen" aria-busy="true" data-testid="booting" />;
+  if (!conversationVisible) return <div className="loading-screen" aria-busy="true" data-testid="booting" role="status">{t("正在打开对话…", "Opening your conversation…", "Abriendo tu conversación…")}</div>;
   return <div className={`paper-screen conversation-home ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen" data-feedback-view={gameHall ? "games" : playTogether || openQuestionId ? "questions" : petRoom ? "pet" : call ? "call" : "conversation-" + channel}>
     {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
