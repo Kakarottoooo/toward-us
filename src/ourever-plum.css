@@ -119,3 +119,13 @@ html.plum-entry .plum-welcome .welcome-sign-in { min-height: 44px; font-size: 16
 html.plum-entry .plum-auth .form-notice { background: #ffffff14; border: 1px solid #ff95af66; border-left-width: 1px; border-radius: 10px; color: #ffd6df; padding: 10px 12px; }
 html.plum-entry .plum-auth .auth-consent { margin-bottom: 18px; }
 html.plum-entry .plum-auth form > .signin-method[type=submit]:not(:disabled) { background: #ffdaa0; color: #301125; border-color: transparent; }
+
+/* Opening the app: the same plum and squirrel as the native launch screen, so launch -> welcome never flashes cream. */
+.loading-screen.boot-splash { background: #300e29; display: grid; place-items: center; }
+.boot-splash img { width: min(19dvh, 40vw); height: auto; animation: boot-breathe 1.6s ease-in-out infinite; }
+@keyframes boot-breathe { 50% { transform: scale(1.04); } }
+@media (prefers-reduced-motion: reduce) { .boot-splash img { animation: none; } }
+html:has(.boot-splash), html:has(.boot-splash) body, html:has(.boot-splash) #root { background: #300e29; }
+/* Before React draws anything the page is also plum (it is what the launch screen hands over to). */
+html:not(:has(#root *)), html:not(:has(#root *)) body { background: #300e29; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

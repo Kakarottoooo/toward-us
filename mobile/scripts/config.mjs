@@ -33,7 +33,7 @@ export function shellFiles(raw, { release = false } = {}) {
     appName: 'Ourever',
     webDir: 'www',
     loggingBehavior: 'none',
-    backgroundColor: '#f4efe6',
+    backgroundColor: '#300e29',
     // errorPath: when the server cannot be reached (no network, server down), show the bundled offline page instead of
     // a blank screen; it retries by itself and returns to the app once the server answers.
     server: { url: url.origin, errorPath: 'offline.html', ...(cleartext ? { cleartext: true } : {}) },
