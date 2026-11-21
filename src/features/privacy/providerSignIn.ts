@@ -5,6 +5,21 @@ type SignInOptions = { adultConfirmed: boolean; partnerInviteCode?: string; refe
 type AuthBridge = { open(options: { url: string }): Promise<{ code?: string; error?: string }> };
 type NativeShell = { isNativePlatform(): boolean; getPlatform(): string; Plugins?: { OureverSignIn?: AuthBridge } };
 
+function signInEnvironment() {
+  const shell = (window as Window & { Capacitor?: NativeShell }).Capacitor;
+  const native = shell?.isNativePlatform();
+  const bridge = native && shell?.getPlatform() === "ios" ? shell.Plugins?.OureverSignIn : undefined;
+  return { native, bridge };
+}
+
+export async function providerSignInAvailable(signal: AbortSignal) {
+  const { native, bridge } = signInEnvironment();
+  if (native && !bridge?.open) return false;
+  const providers = await relationshipApi<Record<SignInProvider, boolean>>("/api/auth/oauth/providers", { cache: "no-store", signal });
+  if (typeof providers?.apple !== "boolean" || typeof providers?.google !== "boolean") throw new Error("invalid_provider_status");
+  return providers.apple && providers.google;
+}
+
 function base64url(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -30,9 +45,7 @@ export function restoreSignInNavigation() {
 
 // Keep the verifier in the initiating web view. Only the disposable handoff code travels in the app URL.
 export async function startProviderSignIn(provider: SignInProvider, options: SignInOptions) {
-  const shell = (window as Window & { Capacitor?: NativeShell }).Capacitor;
-  const native = shell?.isNativePlatform();
-  const bridge = native && shell?.getPlatform() === "ios" ? shell.Plugins?.OureverSignIn : undefined;
+  const { native, bridge } = signInEnvironment();
   if (native && !bridge?.open) return "update_required";
   const verifier = bridge ? base64url(crypto.getRandomValues(new Uint8Array(32))) : "";
   const challenge = verifier ? base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))) : undefined;

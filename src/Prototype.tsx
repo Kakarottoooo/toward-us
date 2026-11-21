@@ -14,7 +14,7 @@ import { feedbackView, recentFeedbackActivity } from "./features/feedback/feedba
 import { FeedbackPage } from "./features/feedback/FeedbackPage";
 import { PasswordResetForm } from "./features/privacy/PasswordReset";
 import { AccountRecovery } from "./features/privacy/AccountRecovery";
-import { restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
+import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
 import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
 import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
 import { PartnerInvite } from "./features/conversation/PartnerInvite";
@@ -324,6 +324,24 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
   const [ineligible, setIneligible] = useState(initialError === "referral_ineligible");
   const removeRef = () => { clearReferral(); setRef(""); setIneligible(false); setProviderError(""); setNotice(""); };
   const [providerError, setProviderError] = useState(initialError);
+  const [providers, setProviders] = useState<"checking" | "ready" | "unconfigured" | "failed">("checking");
+  const [providerCheck, setProviderCheck] = useState(0);
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    providerSignInAvailable(controller.signal).then(available => {
+      if (mounted) setProviders(available ? "ready" : "unconfigured");
+    }).catch(() => { if (mounted) setProviders("failed"); }).finally(() => clearTimeout(timeout));
+    const refresh = () => { if (!document.hidden) setProviderCheck(last => last + 1); };
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      mounted = false; clearTimeout(timeout); controller.abort();
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [providerCheck]);
   const [working, setWorking] = useState<SignInProvider | "email" | null>(null);
   const submitting = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -350,6 +368,7 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
       setProviderError(result);
     } catch (error) {
       const status = (error as { status?: number }).status;
+      if (status === 503) setProviderCheck(last => last + 1);
       setProviderError(!navigator.onLine ? "offline" : status === 503 ? "unavailable" : status === 429 ? "throttled" : "failed");
     } finally { if (!redirecting) finish(); }
   };
@@ -395,7 +414,11 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
         <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); onRecover(); }}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>
         <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); setNotice(""); setProviderError(""); }}>{t.back}</button>
       </div> : <>
-      <div className="signin-providers">
+      {providers === "checking" && <p className="auth-hint" role="status">{localized(language, "正在检查其他登录方式…", "Checking other sign-in options…", "Comprobando otros métodos de acceso…")}</p>}
+      {providers === "failed" && <button type="button" className="auth-switch" disabled={busy} onClick={() => { setProviders("checking"); setProviderCheck(last => last + 1); }}>
+        {localized(language, "未能加载其他登录方式，点此重试", "Couldn’t load other sign-in options. Try again", "No se pudieron cargar otros métodos de acceso. Reintentar")}
+      </button>}
+      {providers === "ready" && <div className="signin-providers">
         {(["apple", "google"] as const).map(provider => {
           const brand = provider === "apple" ? "Apple" : "Google";
           return <button className="signin-method" type="button" key={provider} disabled={busy || (mode === "register" && !adultConfirmed)} aria-busy={working === provider} onClick={() => void social(provider)} data-testid={`auth-${provider}`}>
@@ -403,7 +426,7 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
             {localized(language, `使用 ${brand} 继续`, `Continue with ${brand}`, `Continuar con ${brand}`)}
           </button>;
         })}
-      </div>
+      </div>}
       {providerError && providerError !== "cancelled" && <p className="form-notice" role="alert">{signInMessage(providerError, language)}</p>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }}>
       {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} data-testid="register-name" /></label>}
