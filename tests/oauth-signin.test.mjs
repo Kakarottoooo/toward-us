@@ -174,7 +174,7 @@ test("two providers attesting the same authoritative mailbox share one account; 
   assert.equal(await store.getOAuthIdentity("apple", "other-provider"), null);
   assert.equal((await request("/api/auth/reset-request", { body: { email: alternate, language: "en" } })).status, 200);
   await new Promise((resolve) => setImmediate(resolve));
-  const token = new URL(mailbox.at(-1).link).searchParams.get("reset"), password = secret();
+  const token = new URLSearchParams(new URL(mailbox.at(-1).link).hash.slice(1)).get("reset"), password = secret();
   assert.equal((await request("/api/auth/reset", { body: { token, password } })).status, 204);
   assert.equal(await store.getOAuthIdentity("google", "external"), null);
   assert.equal((await (await request("/api/auth/me", { cookie: cookieOf(thirdParty) })).json()).user, null);
