@@ -217,13 +217,13 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   async function registerWithInvitation(tx, user, { referralCode, installId, partnerInviteCode, actor }) {
     if (referralCode && actor && (await tx.getReferralByCode(referralCode))?.ownerUserId === actor) {
-      throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible" });
+      throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible", status: 422 });
     }
     const account = await tx.createUser(user);
     if (!account) return null;
     if (referralCode) {
       if (!(await attachReferral(tx, account.id, { code: referralCode, installId })).accepted) {
-        throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible" });
+        throw Object.assign(new Error("referral_ineligible"), { code: "referral_ineligible", status: 422 });
       }
     } else if (installId || partnerCode(partnerInviteCode)) {
       await rememberReferralInstall(tx, account.id, { installId });

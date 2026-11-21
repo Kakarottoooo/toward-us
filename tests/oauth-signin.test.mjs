@@ -97,6 +97,8 @@ test("web handshake rejects unbound browsers, bad state, nonce, issuer, audience
   }
   assert.equal((await (await start()).callback({}, { cancel: true })).headers.get("location"), "/?signin=cancelled");
   assert.equal((await (await start("google", {})).callback({email: "new@example.invalid"}, {subject: "new"})).headers.get("location"), "/?signin=adult_required");
+  const rejectedReferral = await start("google", { adultConfirmed: true, referralCode: "INVALID" });
+  assert.equal((await rejectedReferral.callback({ email: "referral@example.invalid" }, { subject: "referral" })).headers.get("location"), "/?signin=referral_ineligible");
   assert.equal((await request("/api/auth/logout", { cookie: session, body: {} })).status, 204);
   assert.equal((await (await request("/api/auth/me", { cookie: session })).json()).user, null);
 });

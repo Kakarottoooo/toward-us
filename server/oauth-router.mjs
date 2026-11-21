@@ -51,7 +51,7 @@ export function createOAuthRouter({ store, production, register, providers = cre
     if (++count.hits > max) throw failure("rate_limited", 429);
   };
   const responseError = (res, error) => {
-    const known = [400, 401, 409, 410, 429, 503].includes(error.status);
+    const known = [400, 401, 409, 410, 422, 429, 503].includes(error.status);
     return res.status(known ? error.status : 503).json({ code: known ? error.code : "failed" });
   };
   async function authenticate(identity, signup, confirmation) {
@@ -161,7 +161,7 @@ export function createOAuthRouter({ store, production, register, providers = cre
       const code = random();
       handoffs.put(digest(code), { ...grant, challenge: flow.challenge }, minute);
       return res.redirect(303, "us.toward.app://signin?code=" + code);
-    } catch (error) { return errorRedirect(error.code === "adult_required" ? "adult_required" : "failed"); }
+    } catch (error) { return errorRedirect(["adult_required", "referral_ineligible"].includes(error.code) ? error.code : "failed"); }
   }
   router.get("/:provider/callback", callback);
   router.post("/apple/callback", express.urlencoded({ extended: false, limit: "12kb", parameterLimit: 8 }), (req, res) => {
