@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { KeyboardInput, MobileScroll, useKeyboard } from "../../mobile";
@@ -12,6 +12,9 @@ type Draft = { step: 1 | 2 | 3; name: string };
 type Preferences = { preferredName: string; completed: boolean };
 const endpoint = "/api/privacy/first-run";
 
+const draftKey = (id: string) => "ourever:first-run:" + id;
+export const firstRunInProgress = (id: string) => Boolean(readDraft(draftKey(id)));
+
 function readDraft(key: string): Draft | null {
   try {
     const draft = JSON.parse(localStorage.getItem(key) || "null");
@@ -19,13 +22,13 @@ function readDraft(key: string): Draft | null {
   } catch { return null; }
 }
 
-export function FirstRun({ user, language, pairing, onPairingChange, onRefreshPairing, onAgreed, onDecline }: {
-  user: { id: string; name: string }; language: Language; pairing: Pairing | null;
+export function FirstRun({ user, feedback, language, pairing, onPairingChange, onRefreshPairing, onAgreed, onDecline }: {
+  user: { id: string; name: string }; feedback: ReactNode; language: Language; pairing: Pairing | null;
   onPairingChange: (next: Pairing | null) => void; onRefreshPairing: () => Promise<void>;
   onAgreed: (at: string) => void; onDecline: () => void;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const key = "ourever:first-run:" + user.id;
+  const key = draftKey(user.id);
   const keyboard = useKeyboard();
   const [draft, setDraft] = useState<Draft | null>(() => readDraft(key));
   const [returning, setReturning] = useState(false);
@@ -63,11 +66,12 @@ export function FirstRun({ user, language, pairing, onPairingChange, onRefreshPa
     <button type="button" aria-label={t("返回", "Back", "Volver")} disabled={saving} onClick={() => draft.step === 1 ? onDecline() : go(draft.step === 3 ? 2 : 1)}><ArrowLeft size={21} /></button>
     <span role="status">{t(`第 ${draft.step} 步，共 3 步`, `Step ${draft.step} of 3`, `Paso ${draft.step} de 3`)}</span>
   </nav>;
+  const header = <div className="first-run-top">{!returning && progress}{feedback}</div>;
   const problem = t("暂时连不上 Ourever。检查网络后重试。", "Ourever couldn’t connect. Check your connection and try again.", "No se pudo conectar con Ourever. Comprueba tu conexión y vuelve a intentarlo.");
-  if (draft?.step === 3) return <AiConsentScreen language={language} header={returning ? undefined : progress}
+  if (draft?.step === 3) return <AiConsentScreen language={language} header={header}
     onAgreed={at => { clear(); onAgreed(at); }} onDecline={() => { clear(); onDecline(); }} />;
   return <MobileScroll key={draft?.step} className="paper-screen first-run-screen"><main className="first-run">
-    {progress}
+    {header}
     {!draft ? <><p role="status">{error ? problem : t("正在打开…", "Opening…", "Abriendo…")}</p>
       {error && <button className="primary-action" onClick={() => setAttempt(n => n + 1)}>{t("重试", "Retry", "Reintentar")}</button>}</>
       : draft.step === 1 ? <>

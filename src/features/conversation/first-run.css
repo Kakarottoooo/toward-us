@@ -35,7 +35,7 @@
 .first-run .primary-action, .first-run .secondary-action { width: 100%; padding: .75em 1em; }
 @supports (font: -apple-system-body) {
   .first-run, .ai-consent, .conversation-empty { font: -apple-system-body; }
-  .first-run h1 { font-size: 1.85em; }
+  .first-run h1 { font-size: clamp(1.75rem, 1.25em, 3rem); }
   .first-run p, .first-run label, .first-run button, .first-run .partner-invite-panel p,
   .ai-consent p, .ai-consent li, .ai-consent button, .conversation-empty p { font-size: 1em; }
   .ai-consent h1, .first-run .partner-invite-panel h2 { font-size: 1.45em; }
@@ -44,3 +44,26 @@
 .people-main .people-primary, .channel-tabs button { min-height: 44px; }
 .conversation-retry { flex-wrap: wrap; overflow-wrap: anywhere; }
 .conversation-retry q { white-space: pre-wrap; }
+
+.first-run-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.first-run-top .feedback-launch { position: relative; inset: auto; flex: 0 0 44px; height: 44px; min-width: 44px; padding: 0; }
+.first-run-top .first-run-progress { min-width: 0; }
+.first-run-top .first-run-progress button { flex: 0 0 44px; padding: 0; }
+.conversation-thread:has([data-testid="reply-coach-empty"]) { padding-inline-end: 54px; }
+@supports (font: -apple-system-body) {
+  .conversation-empty h1 { font-size: clamp(1.5rem, 1.15em, 3rem); }
+}
+
+.ai-consent-screen .mobile-scroll-content {
+  width: 100%;
+  min-width: 0;
+}
+.ai-consent-screen .ai-consent {
+  box-sizing: border-box;
+  width: min(100%, 29rem);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@supports (font: -apple-system-body) {
+  .ai-consent-screen .ai-consent h1 { font-size: clamp(1.5rem, 1.15em, 3rem); }
+}
