@@ -63,9 +63,22 @@ test("the native app keeps the plum welcome and sign-in at full-screen iPad widt
     await expect(page.locator(".plum-welcome")).toHaveCSS("background-color", "rgb(48, 14, 41)");
     await expect(page.getByTestId("start-button")).toBeVisible();
     await expect(page.locator("html")).toHaveCSS("background-color", "rgb(48, 14, 41)");
+    const headline = await page.locator(".plum-welcome h1").boundingBox();
+    const feedback = await page.locator(".feedback-launch").boundingBox();
+    expect(headline && feedback && (feedback.y + feedback.height <= headline.y || feedback.x >= headline.x + headline.width)).toBeTruthy();
     await page.locator(".welcome-sign-in").click();
     await expect(page.locator(".paper-screen.plum-auth")).toHaveCSS("background-color", "rgb(48, 14, 41)");
     await expect(page.locator(".plum-auth .editorial-top")).toHaveCSS("background-color", "rgb(48, 14, 41)");
     await app.close();
   }
+});
+
+test("the feedback button does not cover the phone welcome headline", async ({ browser, baseURL }) => {
+  const phone = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
+  const page = await phone.newPage();
+  await page.goto("/");
+  const headline = await page.locator(".plum-welcome h1").boundingBox();
+  const feedback = await page.locator(".feedback-launch").boundingBox();
+  expect(headline && feedback && feedback.y + feedback.height <= headline.y).toBeTruthy();
+  await phone.close();
 });

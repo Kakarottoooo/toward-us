@@ -191,8 +191,49 @@ final class OureverFeedbackPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+/// Paints the safe areas the web view insets (status bar, home indicator) in the page's own background colour, so the
+/// plum welcome and sign-in fill the whole screen and signed-in pages keep their paper colour.
+private final class PinkyPageColor: NSObject, WKScriptMessageHandler {
+    weak var controller: PinkyBridgeViewController?
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let controller, PinkyOrigin.matches(controller.webView?.url), let text = message.body as? String else { return }
+        let parts = text.split(whereSeparator: { !"0123456789.".contains($0) }).compactMap { Double($0) }
+        guard parts.count >= 3, parts.count < 4 || parts[3] > 0.5 else { return }
+        let color = UIColor(red: parts[0] / 255, green: parts[1] / 255, blue: parts[2] / 255, alpha: 1)
+        controller.applyPageColor(color, dark: 0.299 * parts[0] + 0.587 * parts[1] + 0.114 * parts[2] < 128)
+    }
+}
+
 class PinkyBridgeViewController: CAPBridgeViewController {
+    private var pageIsDark = false
+    override var preferredStatusBarStyle: UIStatusBarStyle { pageIsDark ? .lightContent : .darkContent }
+
+    func applyPageColor(_ color: UIColor, dark: Bool) {
+        view.backgroundColor = color
+        webView?.backgroundColor = color
+        webView?.scrollView.backgroundColor = color
+        if dark != pageIsDark { pageIsDark = dark; setNeedsStatusBarAppearanceUpdate() }
+    }
+
     override open func capacitorDidLoad() {
+        let pageColor = PinkyPageColor()
+        pageColor.controller = self
+        webView?.configuration.userContentController.add(pageColor, contentWorld: .defaultClient, name: "pinkyPageColor")
+        webView?.configuration.userContentController.addUserScript(WKUserScript(source: """
+        (() => {
+            let last = '';
+            const report = () => {
+                const body = document.body;
+                if (!body) return;
+                const color = getComputedStyle(body).backgroundColor;
+                if (color && color !== last) { last = color; window.webkit.messageHandlers.pinkyPageColor.postMessage(color); }
+            };
+            let queued = false;
+            const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; report(); }); } };
+            report();
+            new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        })();
+        """, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
         bridge?.registerPluginInstance(OureverFeedbackPlugin())
         bridge?.registerPluginInstance(OureverSignInPlugin())
         bridge?.registerPluginInstance(PinkyPhotosPlugin())
