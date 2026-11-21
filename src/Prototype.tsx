@@ -1,4 +1,4 @@
-import { AppleLogo, ArrowLeft, ArrowRight, ChatCircleText, EnvelopeSimple, Eye, EyeSlash, GoogleLogo, SpinnerGap } from "@phosphor-icons/react";
+import { AppleLogo, ArrowLeft, ArrowRight, ChatCircleText, EnvelopeSimple, Eye, EyeSlash, SpinnerGap } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import DemoFlow from "./DemoFlow";
@@ -107,6 +107,7 @@ function AccountPrototype() {
   const [busy, setBusy] = useState(false);
   const [joinedElsewhere, setJoinedElsewhere] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>(() => referralCode() ? "register" : "login");
+  const [autoProvider, setAutoProvider] = useState<SignInProvider | null>(null);
   const keyboard = useKeyboard();
   const t = copy[language];
 
@@ -181,8 +182,9 @@ function AccountPrototype() {
     void api("/api/usage/push-opened", { method: "POST" }).catch(() => {});
   }, [user?.id]);
 
-  const openAuth = (mode: AuthMode) => {
+  const openAuth = (mode: AuthMode, provider: SignInProvider | null = null) => {
     keyboard.hide();
+    setAutoProvider(provider);
     setNotice("");
     setSignInReturn("");
     setAuthMode(mode);
@@ -275,8 +277,8 @@ function AccountPrototype() {
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
     if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
     if (screen === "invite") return <PartnerJoin language={language} onLanguage={selectLanguage} onAuth={(mode) => { rememberInvite(); openAuth(mode); }} />;
-    if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onStart={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
-    if (screen === "auth") return <AuthScreen initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(hasInvite() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+    if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onProvider={(provider) => user ? setScreen(landing(pairing)) : openAuth("register", provider)} onEmail={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
+    if (screen === "auth") return <AuthScreen key={autoProvider || "form"} autoProvider={autoProvider} onAutoCancel={() => { setAutoProvider(null); setScreen(hasInvite() ? "invite" : "home"); }} initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(hasInvite() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
     if (screen === "pairing" && user) return <PartnerJoin language={language} onLanguage={selectLanguage} account={{ pairing, onJoined: (next) => {
       forgetInvite(); history.replaceState(null, "", "/?channel=us"); setPairing(next); setScreen("conversation");
     }, onBack: () => { forgetInvite(); backToConversation(); } }} />;
@@ -288,15 +290,28 @@ function AccountPrototype() {
   return <>{renderScreen()}{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); window.history.replaceState(null, "", "/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} />}{screen !== "invite-first" && feedbackEntry}{showArrivals && <PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} />}</>;
 }
 
-function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onStart: () => void; onSignIn: () => void; t: typeof copy.zh }) {
+function HomeScreen({ language, onLanguage, onProvider, onEmail, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onProvider: (provider: SignInProvider) => void; onEmail: () => void; onSignIn: () => void; t: typeof copy.zh }) {
+  // Like Mengmoon: the welcome screen is the sign-in screen. Apple and Google appear once the server confirms they work.
+  const [providersReady, setProvidersReady] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    providerSignInAvailable(controller.signal).then(setProvidersReady).catch(() => setProvidersReady(false)).finally(() => clearTimeout(timeout));
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, []);
   return <div className="home-screen" data-testid="home-screen">
     <div className="mobile-home-composition plum-welcome">
       <LanguageSwitch language={language} onLanguage={onLanguage} />
       <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" alt="" draggable={false} />
       <h1>{language === "en" ? <>Not sure how to<br />reply to them?<br />Ask Ourever first.</> : t.homeLine}</h1>
       <div className="welcome-entry-actions">
-        <button type="button" className="plum-primary" data-testid="start-button" onClick={onStart}>{t.start}</button>
-        <button type="button" className="welcome-sign-in" onClick={onSignIn}>{t.login}</button>
+        {providersReady && <>
+          <button type="button" className="entry-method entry-apple" data-testid="welcome-apple" onClick={() => onProvider("apple")}><AppleLogo weight="fill" />{localized(language, "使用 Apple 继续", "Continue with Apple", "Continuar con Apple")}</button>
+          <button type="button" className="entry-method entry-google" data-testid="welcome-google" onClick={() => onProvider("google")}><GoogleMark />{localized(language, "使用 Google 继续", "Continue with Google", "Continuar con Google")}</button>
+        </>}
+        <button type="button" className="entry-method entry-email" data-testid="start-button" onClick={onEmail}><EnvelopeSimple weight="bold" />{localized(language, "使用邮箱继续", "Continue with email", "Continuar con correo")}</button>
+        <p className="entry-consent">{localized(language, "继续即表示你已满 18 岁，并同意", "By continuing, you confirm you are 18 or older and agree to the", "Al continuar, confirmas que tienes 18 años o más y aceptas la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>
+        <button type="button" className="welcome-sign-in" onClick={onSignIn}>{localized(language, "已有邮箱账号？登录", "Have an email account? Sign in", "¿Ya tienes cuenta con correo? Inicia sesión")}</button>
       </div>
     </div>
     <div className="desktop-home-composition" data-testid="desktop-home">
@@ -309,7 +324,7 @@ function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: 
         <PauseMark />
         <p className="desktop-home-support">{localized(language, "把 TA 的话或聊天截图发给 Ourever，它帮你看懂 TA 的意思，写一句你可以直接发的回复。一个人就能用；想两个人一起用时，再邀请 TA。", "Send Ourever what they said, or a screenshot of the chat. It helps you read what they mean and writes a reply you can send as is. It works on your own; invite your partner when you want to use it together.", "Envía a Ourever lo que te dijo, o una captura del chat. Te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Funciona a solas; invita a tu pareja cuando quieran usarlo juntos.")}</p>
         <div className="desktop-home-actions">
-          <button className="desktop-primary-cta" onClick={onStart}>{localized(language, "开始", "Get started", "Comenzar")}<ArrowRight size={24} /></button>
+          <button className="desktop-primary-cta" onClick={onEmail}>{localized(language, "开始", "Get started", "Comenzar")}<ArrowRight size={24} /></button>
           <button className="desktop-secondary-cta" onClick={() => location.assign("/demo")}>{localized(language, "两个人当面试一次（不用注册）", "Try it together in person (no sign-up)", "Pruébenlo juntos en persona (sin registro)")}</button>
         </div>
       </main>
@@ -318,12 +333,13 @@ function HomeScreen({ language, onLanguage, onStart, onSignIn, t }: { language: 
   </div>;
 }
 
-function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
-  initialError: string; mode: AuthMode; onModeChange: (mode: AuthMode) => void; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
+function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChange, language, onLanguage, onBack, onAuth, onRecover, notice, setNotice, busy, setBusy, t }: {
+  autoProvider: SignInProvider | null; onAutoCancel: () => void; initialError: string; mode: AuthMode; onModeChange: (mode: AuthMode) => void; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onRecover: () => void; onAuth: (state: { user: User; pairing: Pairing | null }) => Promise<void>;
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
-  const [adultConfirmed, setAdultConfirmed] = useState(false);
+  // Continuing confirms the person is 18+ and accepts the terms; that is stated beside every sign-in button.
+  const adultConfirmed = true;
   const [ref, setRef] = useState(referralCode);
   const [ineligible, setIneligible] = useState(initialError === "referral_ineligible");
   const removeRef = () => { clearReferral(); setRef(""); setIneligible(false); setProviderError(""); setNotice(""); };
@@ -376,6 +392,14 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
       setProviderError(!navigator.onLine ? "offline" : status === 503 ? "unavailable" : status === 429 ? "throttled" : "failed");
     } finally { if (!redirecting) finish(); }
   };
+  // A provider chosen on the welcome screen starts as soon as this screen knows providers are available.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoProvider || autoStarted.current || providers !== "ready") return;
+    autoStarted.current = true;
+    void social(autoProvider);
+  }, [autoProvider, providers]);
+  useEffect(() => { if (autoProvider && autoStarted.current && providerError === "cancelled") onAutoCancel(); }, [providerError]);
   useEffect(() => {
     const restore = (event: PageTransitionEvent) => { if (event.persisted) finish(); };
     window.addEventListener("pageshow", restore);
@@ -406,8 +430,7 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
     <div className="auth-art red-column" aria-hidden="true" />
     <main className="auth-content">{mode === "login" && <div className="auth-brand"><img src="/assets/brand/ourever-mascot.webp" alt="" />Ourever</div>}<div className="vertical-title"><h1>{mode === "login" ? t.welcome : t.register}</h1><PauseMark /></div><Wordmark language={language} />
       {mode === "register" && (ref ? <SignupReferral code={ref} language={language} remove={removeRef} /> : <p className="auth-hint">{t.registerHint}</p>)}
-      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "创建账号前请阅读", "Before creating an account, read the", "Antes de crear tu cuenta, lee la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
-      {mode === "register" && <label className="auth-consent"><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> {localized(language, "我确认已满 18 岁。", "I confirm that I am 18 or older.", "Confirmo que tengo al menos 18 años.")}</label>}
+      {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "继续即表示你已满 18 岁，并同意", "By continuing, you confirm you are 18 or older and agree to the", "Al continuar, confirmas que tienes 18 años o más y aceptas la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
       {providerError === "link_required" ? <div className="signin-link">
         <p role="status">{signInMessage("link_required", language)}</p>
         <form onSubmit={event => { event.preventDefault(); void confirmLink(); }}>
@@ -418,15 +441,15 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
         <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); onRecover(); }}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>
         <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); setNotice(""); setProviderError(""); }}>{t.back}</button>
       </div> : <>
-      {providers === "checking" && <p className="auth-hint" role="status">{localized(language, "正在检查其他登录方式…", "Checking other sign-in options…", "Comprobando otros métodos de acceso…")}</p>}
-      {providers === "failed" && <button type="button" className="auth-switch" disabled={busy} onClick={() => { setProviders("checking"); setProviderCheck(last => last + 1); }}>
+      {autoProvider && providers === "checking" && <p className="auth-hint" role="status">{localized(language, "正在检查其他登录方式…", "Checking other sign-in options…", "Comprobando otros métodos de acceso…")}</p>}
+      {autoProvider && providers === "failed" && <button type="button" className="auth-switch" disabled={busy} onClick={() => { setProviders("checking"); setProviderCheck(last => last + 1); }}>
         {localized(language, "未能加载其他登录方式，点此重试", "Couldn’t load other sign-in options. Try again", "No se pudieron cargar otros métodos de acceso. Reintentar")}
       </button>}
-      {providers === "ready" && <div className="signin-providers">
+      {autoProvider && providers === "ready" && <div className="signin-providers">
         {(["apple", "google"] as const).map(provider => {
           const brand = provider === "apple" ? "Apple" : "Google";
-          return <button className="signin-method" type="button" key={provider} disabled={busy || (mode === "register" && !adultConfirmed)} aria-busy={working === provider} onClick={() => void social(provider)} data-testid={`auth-${provider}`}>
-            {working === provider ? <SpinnerGap className="signin-spinner" /> : provider === "apple" ? <AppleLogo weight="fill" /> : <GoogleLogo weight="bold" />}
+          return <button className="signin-method" type="button" key={provider} disabled={busy} aria-busy={working === provider} onClick={() => void social(provider)} data-testid={`auth-${provider}`}>
+            {working === provider ? <SpinnerGap className="signin-spinner" /> : provider === "apple" ? <AppleLogo weight="fill" /> : <GoogleMark />}
             {localized(language, `使用 ${brand} 继续`, `Continue with ${brand}`, `Continuar con ${brand}`)}
           </button>;
         })}
@@ -443,7 +466,7 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
       </div>
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       {mode === "register" && ineligible && <button type="button" className="auth-switch" onClick={removeRef}>{localized(language, "不使用邀请注册", "Register without the invitation", "Registrarme sin invitación")}</button>}
-      <button className="signin-method" type="submit" disabled={busy || !email || password.length < 10 || (mode === "register" && (!name.trim() || !adultConfirmed))} aria-busy={working === "email"} data-testid="auth-submit">
+      <button className="signin-method" type="submit" disabled={busy || !email || password.length < 10 || (mode === "register" && !name.trim())} aria-busy={working === "email"} data-testid="auth-submit">
         {working === "email" ? <SpinnerGap className="signin-spinner" /> : <EnvelopeSimple weight="bold" />}
         {mode === "login" ? localized(language, "使用邮箱登录", "Sign in with email", "Entrar con correo") : localized(language, "使用邮箱注册", "Create account with email", "Crear cuenta con correo")}
       </button>
@@ -453,6 +476,11 @@ function AuthScreen({ initialError, mode, onModeChange, language, onLanguage, on
       </>}
     </main>
   </MobileScroll>;
+}
+
+/** Google's four-colour "G", as Google's sign-in branding asks for on light buttons. */
+function GoogleMark() {
+  return <svg className="google-mark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>;
 }
 
 function signInMessage(reason: string, language: Language) {

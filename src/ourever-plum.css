@@ -100,3 +100,22 @@ html.plum-entry:has(.plum-welcome, .plum-auth) #root { background: #300e29; }
 /* The feedback button sat over the welcome headline; on the plum welcome it lives in the top corner instead. */
 html.plum-entry .home-screen:has(.plum-welcome) ~ .feedback-launch,
 html.plum-entry:has(.plum-welcome) .feedback-launch { top: max(22px, env(safe-area-inset-top)); right: 16px; }
+
+/* Welcome = sign-in (like Mengmoon): Apple, Google and email as light buttons on plum, consent in one line below. */
+html.plum-entry .plum-welcome .welcome-squirrel { width: min(44vw, 20dvh, 200px); }
+html.plum-entry .welcome-entry-actions { display: grid; gap: 12px; }
+.entry-method, .plum-auth .signin-providers .signin-method {
+  width: 100%; min-height: 54px; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 10px 16px; border: 0; border-radius: 15px; background: #fffaf3; color: #1d1418;
+  font: 650 18px/1.3 var(--jian-sans); cursor: pointer;
+}
+.entry-method svg, .plum-auth .signin-providers .signin-method svg { width: 22px; height: 22px; flex: none; }
+.entry-method:active { transform: scale(.99); }
+.entry-method:focus-visible { outline: 2px solid #ffdaa0; outline-offset: 2px; }
+.plum-auth .signin-providers .signin-method:disabled { opacity: .7; }
+.entry-consent { margin: 4px 0 0; text-align: center; color: #e4cbd9; font: 400 13px/1.45 var(--jian-sans); }
+.entry-consent a { color: #ffdaa0; text-decoration: underline; text-underline-offset: 2px; }
+html.plum-entry .plum-welcome .welcome-sign-in { min-height: 44px; font-size: 16px; color: #fff3de; opacity: .9; }
+html.plum-entry .plum-auth .form-notice { background: #ffffff14; border: 1px solid #ff95af66; border-left-width: 1px; border-radius: 10px; color: #ffd6df; padding: 10px 12px; }
+html.plum-entry .plum-auth .auth-consent { margin-bottom: 18px; }
+html.plum-entry .plum-auth form > .signin-method[type=submit]:not(:disabled) { background: #ffdaa0; color: #301125; border-color: transparent; }
