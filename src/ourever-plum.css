@@ -32,7 +32,9 @@ html.plum-entry {
   .home-screen .plum-welcome .language-switch button { min-width: clamp(48px, 16vw, 84px); }
   .plum-welcome .welcome-squirrel {
     align-self: center; width: min(56vw, 26dvh, 250px); height: auto; object-fit: contain;
-    filter: drop-shadow(0 0 15px #e4a064) drop-shadow(0 0 30px #b86a38);
+    /* A radial glow painted behind the image: the stacked drop-shadow filter was clipped to a hard square edge on iOS. */
+    padding: clamp(10px, 3vw, 22px); box-sizing: content-box;
+    background: radial-gradient(closest-side, #f0b070 0%, #e4a064e0 38%, #b86a3870 66%, #b86a3800 100%);
   }
   .plum-welcome h1 { margin: 0; color: var(--cream); font: 730 clamp(30px, 8.6vw, 50px)/1.12 var(--jian-sans); letter-spacing: -.035em; }
   .welcome-entry-actions { display: grid; gap: 5px; }
