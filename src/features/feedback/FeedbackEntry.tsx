@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChatCircleText, X } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
-import { startFeedbackDelivery } from "./feedbackQueue";
 import { listenFeedbackDiagnostics } from "./feedbackDiagnostics";
 import "./feedback-entry.css";
 
@@ -18,7 +17,12 @@ export function FeedbackEntry({ userId, language, hidden, open }: {
   const file = useRef<HTMLInputElement>(null);
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   useEffect(() => listenFeedbackDiagnostics(), [userId]);
-  useEffect(() => startFeedbackDelivery(userId), [userId]);
+  // The delivery queue (and its voice queue) is fetched after the first screen is drawn; it only retries saved reports.
+  useEffect(() => {
+    let live = true, stop: (() => void) | undefined;
+    import("./feedbackQueue").then((queue) => { if (live) stop = queue.startFeedbackDelivery(userId); }, () => {});
+    return () => { live = false; stop?.(); };
+  }, [userId]);
   useEffect(() => {
     const controller = new AbortController();
     let revision = 0;

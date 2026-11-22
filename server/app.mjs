@@ -81,8 +81,10 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders() }) {
+export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming }) {
   const app = express();
+  // First, so the time measured covers every middleware and route a request passes through (server/timing.mjs).
+  if (requestTiming) app.use(requestTiming);
   // Every model call below is counted and capped per person and couple per day (server/ai-budget.mjs).
   // Every model call is also costed in the AI ledger, and admitted by the cost controls first (server/ai-ledger.mjs).
   installAiLedger({ store });

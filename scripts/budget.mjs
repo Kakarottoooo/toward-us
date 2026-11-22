@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 const OUT = fileURLToPath(new URL("../dist/client/", import.meta.url));
-const LIMIT = 575 * 1024;
+const LIMIT = 530 * 1024;
 const html = readFileSync(join(OUT, "index.html"), "utf8");
 const seen = new Set();
 const visit = (name) => {
@@ -18,6 +18,10 @@ const visit = (name) => {
   for (const m of code.matchAll(/(?:^|[;\n}])\s*import\s*(?:[^"'()]*?from\s*)?["']\.\/([\w.\-]+\.js)["']/g)) visit(m[1]);
 };
 for (const m of html.matchAll(/<(?:script[^>]*\ssrc|link[^>]*rel="modulepreload"[^>]*\shref)="\/assets\/([\w.\-]+\.js)"/g)) visit(m[1]);
+// The first screen's styles arrive as one stylesheet, in source order. A chunking change that splits it into several
+// files also reorders the cascade, which changes how screens look.
+const sheets = [...html.matchAll(/<link[^>]*rel="stylesheet"/g)].length;
+if (sheets !== 1) { console.error(`budget: index.html links ${sheets} stylesheets, expected 1 (the cascade order would change)`); process.exit(1); }
 if (seen.size === 0) { console.error("budget: no entry script found in dist/client/index.html"); process.exit(1); }
 let total = 0;
 let gzip = 0;
