@@ -17,6 +17,17 @@ export function resetMessage(language, link) {
   };
 }
 
+const linkCopy = {
+  en: ["Your Ourever confirmation code", "Enter this code in Ourever to link your sign-in to your existing account. It expires in 10 minutes.", "If you did not try to sign in, you can ignore this email."],
+  es: ["Tu código de confirmación de Ourever", "Introduce este código en Ourever para vincular tu acceso a tu cuenta. Caduca en 10 minutos.", "Si no intentaste iniciar sesión, puedes ignorar este correo."],
+  zh: ["你的 Ourever 确认码", "在 Ourever 中输入这个确认码，把这次登录关联到你原来的账号。10 分钟内有效。", "如果不是你在登录，请忽略这封邮件。"],
+};
+
+export function linkCodeMessage(language, code) {
+  const [subject, instructions, footer] = linkCopy[language] || linkCopy.en;
+  return { subject, text: `${subject}\n\n${code}\n\n${instructions}\n\n${footer}`, html: `<h1>${subject}</h1><p style="font-size:28px;letter-spacing:6px"><b>${code}</b></p><p>${instructions}</p><p>${footer}</p>` };
+}
+
 export function createEmailSender({ env = process.env, fetchImpl = globalThis.fetch, log = console } = {}) {
   const apiKey = String(env.RESEND_API_KEY || "").trim();
   const senderAddress = String(env.EMAIL_FROM || "").trim();

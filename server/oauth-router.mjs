@@ -1,8 +1,9 @@
 import express from "express";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { createUser, issueSession, setSessionCookie, verifyPassword } from "./auth.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createOAuthProviders } from "./oauth-providers.mjs";
+import { createEmailSender, linkCodeMessage } from "./email.mjs";
 
 const random = () => randomBytes(32).toString("base64url");
 const digest = (value) => createHash("sha256").update(value).digest("base64url");
@@ -32,7 +33,7 @@ function expiringMap(now) {
   };
 }
 
-export function createOAuthRouter({ store, production, register, providers = createOAuthProviders(), env = process.env, now = Date.now }) {
+export function createOAuthRouter({ store, production, register, providers = createOAuthProviders(), env = process.env, now = Date.now, email = createEmailSender({ env }) }) {
   const router = express.Router();
   const starts = expiringMap(now), states = expiringMap(now), handoffs = expiringMap(now), links = expiringMap(now), limits = expiringMap(now);
   const googleOrApple = (provider) => provider === "google" || provider === "apple";
@@ -91,9 +92,18 @@ export function createOAuthRouter({ store, production, register, providers = cre
         // Legacy password registrations did not verify the email. An email claim alone cannot claim that account,
         // including Google accounts with third-party addresses that may no longer belong to the Google user.
         const previouslyVerified = user.passwordHash === "federated" && trustedEmail && bindings.some((link) => link.authoritativeEmail === trustedEmail);
-        if (!previouslyVerified) {
+        // Google is authoritative for Gmail and Workspace mailboxes, and an emailed code proves the mailbox too
+        // (founder 2026-11-21: Google sign-in must not ask a Gmail user for an old password).
+        const mailboxProved = (provider === "google" && trustedEmail === user.email) || (confirmation?.mailbox === true && confirmation.userId === user.id);
+        if (!previouslyVerified && !mailboxProved) {
           if (!confirmation) return { linkUserId: user.id };
           if (confirmation.userId !== user.id || !await verifyPassword(confirmation.password, user.passwordHash)) throw failure("invalid_credentials", 401);
+        }
+        if (mailboxProved && !previouslyVerified && user.passwordHash !== "federated") {
+          // That password was set before the address was verified, so whoever set it may not own the mailbox.
+          // It stops working and every older session ends; the owner can choose a new password by email reset.
+          await tx.updateUserPassword(user.id, "federated");
+          await tx.deleteUserSessions(user.id);
         }
       }
       await tx.bindOAuthIdentity(provider, subject, user.id, revocation, trustedEmail === user.email ? trustedEmail : null);
@@ -186,19 +196,45 @@ export function createOAuthRouter({ store, production, register, providers = cre
       return await finish(res, grant, false);
     } catch (error) { return responseError(res, error); }
   });
+  // Instead of the old password, the account's mailbox can confirm the link with a six-digit code.
+  router.post("/confirm-link/email", async (req, res) => {
+    try {
+      if (!req.is("application/json")) throw failure("invalid_request");
+      const ticket = cookie(req, "ourever_link"), grant = ticket && links.get(digest(ticket));
+      if (!grant || grant.busy) throw failure("expired", 410);
+      attempt("link-mail:" + grant.userId, 3, 15 * minute);
+      attempt("link-ip:" + req.ip, 30, 15 * minute);
+      const user = await store.getUserById(grant.userId);
+      if (!user || user.passwordHash === "deleted") throw failure("expired", 410);
+      const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      Object.assign(grant, { mailCode: digest(code), mailTries: 0, mailExpires: now() + 10 * minute });
+      const language = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : "en";
+      if (!(await email.send({ to: user.email, ...linkCodeMessage(language, code) })).sent) throw failure("unavailable", 503);
+      return res.json({ ok: true });
+    } catch (error) { return responseError(res, error); }
+  });
   router.post("/confirm-link", async (req, res) => {
     try {
       if (!req.is("application/json")) throw failure("invalid_request");
       const ticket = cookie(req, "ourever_link");
       const key = ticket && digest(ticket), grant = links.get(key);
       if (!grant || grant.busy) throw failure("expired", 410);
-      const password = req.body?.password;
-      if (typeof password !== "string" || !password || password.length > 128) throw failure("invalid_credentials", 401);
       attempt("link-user:" + grant.userId, 6, 15 * minute);
       attempt("link-ip:" + req.ip, 30, 15 * minute);
+      let confirmation;
+      if (req.body?.code !== undefined) {
+        const code = req.body.code;
+        if (typeof code !== "string" || !/^\d{6}$/.test(code) || !grant.mailCode || grant.mailExpires < now() || ++grant.mailTries > 5 ||
+            digest(code) !== grant.mailCode) throw failure("invalid_code", 401);
+        confirmation = { userId: grant.userId, mailbox: true };
+      } else {
+        const password = req.body?.password;
+        if (typeof password !== "string" || !password || password.length > 128) throw failure("invalid_credentials", 401);
+        confirmation = { userId: grant.userId, password };
+      }
       grant.busy = true;
       let result;
-      try { result = await authenticate(grant.identity, grant.signup, { userId: grant.userId, password }); }
+      try { result = await authenticate(grant.identity, grant.signup, confirmation); }
       finally { grant.busy = false; }
       links.delete(key);
       setSessionCookie(res, result.token, production);

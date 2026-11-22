@@ -274,3 +274,35 @@ test("PostgreSQL commits simultaneous OAuth signups once, invalidates sessions a
   assert.equal(await store.getOAuthIdentity("google", "stable-subject"), null);
   assert.equal((await (await request("/api/auth/me", { cookie: sessions[1] })).json()).user, null);
 });
+
+test("Google proves a Gmail mailbox: it links to the existing password account without the password, which then stops working", async (t) => {
+  const { request, start } = await fixture(t);
+  const password = secret(), address = "founder.test@gmail.com";
+  const old = await request("/api/auth/register", { body: { email: address, password, name: "One", adultConfirmed: true } });
+  const oldCookie = cookieOf(old), id = (await old.json()).user.id;
+  const google = await (await start()).callback({ email: address });
+  assert.equal(google.headers.get("location"), "/");
+  const me = await (await request("/api/auth/me", { cookie: cookieOf(google) })).json();
+  assert.equal(me.user.id, id); assert.equal(me.user.passwordless, true);
+  assert.equal((await (await request("/api/auth/me", { cookie: oldCookie })).json()).user, null);
+  assert.notEqual((await request("/api/auth/login", { body: { email: address, password } })).status, 200);
+});
+
+test("an emailed code can confirm a link instead of the old password", async (t) => {
+  const { request, start, mailbox } = await fixture(t);
+  const password = secret(), address = "someone@example.invalid";
+  const id = (await (await request("/api/auth/register", { body: { email: address, password, name: "One", adultConfirmed: true } })).json()).user.id;
+  const linked = await (await start()).callback({ email: address });
+  assert.equal(linked.headers.get("location"), "/?signin=link_required");
+  const cookie = cookieOf(linked);
+  assert.equal((await request("/api/auth/oauth/confirm-link", { cookie, body: { code: "123456" } })).status, 401);
+  assert.equal((await request("/api/auth/oauth/confirm-link/email", { cookie, body: { language: "zh" } })).status, 200);
+  const code = mailbox.at(-1).text.match(/\b\d{6}\b/)[0];
+  assert.equal(mailbox.at(-1).to, address);
+  const wrong = code === "000000" ? "111111" : "000000";
+  assert.equal((await request("/api/auth/oauth/confirm-link", { cookie, body: { code: wrong } })).status, 401);
+  const confirmed = await request("/api/auth/oauth/confirm-link", { cookie, body: { code } });
+  assert.equal(confirmed.status, 200);
+  assert.equal((await (await request("/api/auth/me", { cookie: cookieOf(confirmed) })).json()).user.id, id);
+  assert.notEqual((await request("/api/auth/login", { body: { email: address, password } })).status, 200);
+});

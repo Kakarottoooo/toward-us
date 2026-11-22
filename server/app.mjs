@@ -237,7 +237,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     }
     return account;
   }
-  app.use("/api/auth/oauth", createOAuthRouter({ store, production, register: registerWithInvitation, providers: oauthProviders }));
+  app.use("/api/auth/oauth", createOAuthRouter({ store, production, register: registerWithInvitation, providers: oauthProviders, ...(email ? { email } : {}) }));
   app.post("/api/auth/register", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const name = cleanName(req.body?.name, "我");
