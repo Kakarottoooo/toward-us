@@ -4,14 +4,15 @@ import { localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./membership.css";
+import { BETA_KEY, inIosApp } from "./platform";
+
+export { BETA_KEY, inIosApp };
 
 // Ourever 会员 (founder 11-06): one member pays, both are members. In the iPhone app the purchase goes through Apple (the
 // PinkyStore StoreKit plugin); on the web through Stripe Checkout. The server decides who is a member from verified payments.
 export type Membership = { plan: "free" | "member"; until: string | null; source: string | null; paidBy: string | null; outfits: { owned: string[]; equipped: string | null }; providers: { stripe: boolean; apple: boolean }; prices: { monthly: { usd: number }; yearly: { usd: number }; outfit: { usd: number } } };
 type StoreProduct = { id: string; displayPrice: string };
 type StorePlugin = { products(args: { ids: string[] }): Promise<{ products: StoreProduct[] }>; purchase(args: { id: string; appAccountToken: string }): Promise<{ status: string; signedTransaction?: string }>; restore(args?: { sync?: boolean }): Promise<{ signedTransactions: string[] }>; addListener?(event: "transaction", callback: (data: { signedTransaction?: string }) => void): unknown };
-// A beta invite link (/?beta=CODE) keeps its code here until the person is signed in and it is redeemed.
-export const BETA_KEY = "pinky-beta-code";
 export const readBetaCode = () => { try { return localStorage.getItem(BETA_KEY) || ""; } catch { return ""; } };
 export const forgetBetaCode = () => { try { localStorage.removeItem(BETA_KEY); } catch { /* private mode */ } };
 export const APPLE_IDS = { monthly: "us.toward.pinky.member.monthly", yearly: "us.toward.pinky.member.yearly" } as const;
@@ -19,11 +20,6 @@ export const APPLE_IDS = { monthly: "us.toward.pinky.member.monthly", yearly: "u
 /** The StoreKit bridge inside the iPhone app, or null in a browser. */
 export function storePlugin(): StorePlugin | null {
   try { const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string; Plugins?: { PinkyStore?: StorePlugin } } }).Capacitor; return cap?.isNativePlatform?.() && cap.getPlatform?.() === "ios" ? cap.Plugins?.PinkyStore || null : null; } catch { return null; }
-}
-/** True inside the iPhone app. There Apple's rules (App Review 3.1.1) allow only in-app purchase: no web checkout, no
- * links to it, and no codes that unlock membership. Without the StoreKit bridge the iPhone app simply cannot buy yet. */
-export function inIosApp(): boolean {
-  try { const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor; return Boolean(cap?.isNativePlatform?.() && cap.getPlatform?.() === "ios"); } catch { return false; }
 }
 let renewalsBound = false;
 /** Inside the iPhone app, hands every transaction StoreKit reports while the app runs (renewals, Ask to Buy approvals) to the

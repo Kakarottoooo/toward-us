@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import express from "express";
 import { createApiApp } from "./app.mjs";
+import { serveClient } from "./client-static.mjs";
 import { createMediator } from "./mediator.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createStore } from "./store.mjs";
@@ -70,8 +70,7 @@ if (production) {
     res.setHeader("Cache-Control", "private, no-store");
     res.type("html").send(html);
   });
-  app.use(express.static(clientRoot));
-  app.get("*path", (_req, res) => res.sendFile(indexPath));
+  serveClient(app, clientRoot);
 } else {
   const { createServer: createViteServer } = await import("vite");
   // DEV_ALLOWED_HOSTS lets a phone reach the dev server through a tunnel such as Tailscale serve (comma-separated hostnames).

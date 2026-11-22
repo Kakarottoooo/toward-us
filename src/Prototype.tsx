@@ -1,37 +1,94 @@
+// Every screen's stylesheet loads up front, in the order the screens used to be imported, even though their code now loads
+// on demand: the cascade stays exactly as before and a screen never appears before its styles. Keep these first.
+import "./features/feedback/report-reply.css";
+import "./features/privacy/ai-consent.css";
+import "./demo.css";
+import "./features/spaces/spaces.css";
+import "./features/private-agent/private-agent.css";
+import "./features/reminders/reminders.css";
+import "./features/upcoming/upcoming.css";
+import "./features/moments/moments.css";
+import "./features/conversation/partner-invite.css";
+import "./features/agreements/agreements.css";
+import "./features/imports/imports.css";
+import "./features/membership/membership.css";
+import "./features/call/call.css";
+import "./features/story/story.css";
+import "./features/games/play-drawing.css";
+import "./features/conversation/daily-drawing.css";
+import "./features/conversation/agent-working.css";
+import "./features/promises/promises.css";
+import "./features/games/small-games.css";
+import "./features/games/xiangqi.css";
+import "./features/games/ludo.css";
+import "./features/games/soup.css";
+import "./features/games/games.css";
+import "./features/games/play-together.css";
+import "./features/games/play-distance.css";
+import "./features/games/play-plans.css";
+import "./features/people/people.css";
+import "./features/conversation/conversation.css";
+import "./features/private-agent/personal.css";
+import "./features/memories/memory.css";
+import "./features/games/play-week.css";
+import "./features/profile/profile.css";
+import "./features/character/character.css";
+import "./features/membership/referrals.css";
+import "./features/privacy/settings.css";
+import "./features/feedback/feedback-entry.css";
+import "./features/feedback/feedback.css";
+import "./features/privacy/privacy.css";
+import "./features/decisions/decisions.css";
+import "./features/conversation/first-run.css";
+import "./features/people/people-page.css";
+import "./features/capabilities/capabilities.css";
+import "./features/games/play-card-arrival.css";
 import { AppleLogo, ArrowLeft, ArrowRight, ChatCircleText, EnvelopeSimple, Eye, EyeSlash, SpinnerGap } from "@phosphor-icons/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazyScreen, ScreenBoundary } from "./lazyScreen";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
-import DemoFlow from "./DemoFlow";
-import { PersonalHome } from "./features/private-agent/PersonalHome";
-import { SettingsPage } from "./features/privacy/SettingsPage";
 import { AiConsentScreen, LegalLinks, OfflineBanner } from "./features/privacy/AiConsent";
-import { ReferralNotices, SignupReferral } from "./features/membership/ReferralPage";
 import { clearReferral, referralCode, referralInstallId } from "./features/membership/referrals";
-import { BETA_KEY, inIosApp } from "./features/membership/MembershipPage";
+import { BETA_KEY, inIosApp } from "./features/membership/platform";
 import { clearFeedbackForDeletedAccount } from "./features/feedback/feedbackQueue";
 import { FeedbackEntry } from "./features/feedback/FeedbackEntry";
 import { feedbackView, recentFeedbackActivity } from "./features/feedback/feedbackDiagnostics";
-import { FeedbackPage } from "./features/feedback/FeedbackPage";
-import { PasswordResetForm } from "./features/privacy/PasswordReset";
-import { AccountRecovery } from "./features/privacy/AccountRecovery";
 import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
-import { RelationshipHome } from "./features/relationship-home/RelationshipHome";
-import { ConversationHome, PageHeader } from "./features/conversation/ConversationHome";
-import { FirstRun, firstRunInProgress } from "./features/conversation/FirstRun";
-import { SpacePage } from "./features/spaces/SpacePage";
-import { PeoplePage } from "./features/people/PeoplePage";
-import { ImportsPage } from "./features/imports/ImportsPage";
-import { CapabilitiesPage } from "./features/capabilities/CapabilitiesPage";
+import { firstRunInProgress } from "./features/conversation/firstRunDraft";
 import { disableNativePush, inNativeApp, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { InstallHint } from "./features/reminders/InstallHint";
-import { PlayCardArrival } from "./features/games/PlayCardArrival";
 import { apiErrorText, brandLabel, currentLanguage, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import { autoSyncAlbum } from "./features/moments/photoAlbum";
 import "./relationship.css";
 import "./controls.css";
 import "./ourever-plum.css";
+
+// Screens load on demand so opening Ourever only downloads and parses what the first screen needs. The boot sequence
+// fetches the landing screen while it waits for the server and shows it in one step; the rest arrive in the background.
+const DemoFlow = lazyScreen(() => import("./DemoFlow").then((module) => module.default));
+const ConversationHome = lazyScreen(() => import("./features/conversation/ConversationHome").then((module) => module.ConversationHome));
+const PersonalHome = lazyScreen(() => import("./features/private-agent/PersonalHome").then((module) => module.PersonalHome));
+const SettingsPage = lazyScreen(() => import("./features/privacy/SettingsPage").then((module) => module.SettingsPage));
+const FeedbackPage = lazyScreen(() => import("./features/feedback/FeedbackPage").then((module) => module.FeedbackPage));
+const PasswordResetForm = lazyScreen(() => import("./features/privacy/PasswordReset").then((module) => module.PasswordResetForm));
+const AccountRecovery = lazyScreen(() => import("./features/privacy/AccountRecovery").then((module) => module.AccountRecovery));
+const RelationshipHome = lazyScreen(() => import("./features/relationship-home/RelationshipHome").then((module) => module.RelationshipHome));
+const SpacePage = lazyScreen(() => import("./features/spaces/SpacePage").then((module) => module.SpacePage));
+const PeoplePage = lazyScreen(() => import("./features/people/PeoplePage").then((module) => module.PeoplePage));
+const ImportsPage = lazyScreen(() => import("./features/imports/ImportsPage").then((module) => module.ImportsPage));
+const CapabilitiesPage = lazyScreen(() => import("./features/capabilities/CapabilitiesPage").then((module) => module.CapabilitiesPage));
+const FirstRun = lazyScreen(() => import("./features/conversation/FirstRun").then((module) => module.FirstRun));
+const ReferralNotices = lazyScreen(() => import("./features/membership/ReferralPage").then((module) => module.ReferralNotices));
+const SignupReferral = lazyScreen(() => import("./features/membership/ReferralPage").then((module) => module.SignupReferral));
+const PlayCardArrival = lazyScreen(() => import("./features/games/PlayCardArrival").then((module) => module.PlayCardArrival));
+const screenCode: Partial<Record<Screen, { preload: () => Promise<void> }>> = {
+  "invite-first": FirstRun, conversation: ConversationHome, personal: PersonalHome, privacy: SettingsPage, feedback: FeedbackPage, recovery: AccountRecovery,
+  dashboard: RelationshipHome, space: SpacePage, people: PeoplePage, import: ImportsPage, capabilities: CapabilitiesPage,
+};
+/** Fetches the code a screen needs, so it can be shown without a loading step. */
+const preloadScreen = (screen: Screen) => screenCode[screen]?.preload() ?? Promise.resolve();
 
 // The plum welcome and sign-in design applies on phones and everywhere inside the native app, including a full-screen iPad.
 const narrowScreen = window.matchMedia("(max-width: 899px)");
@@ -80,7 +137,7 @@ const copy = {
 };
 
 export default function Prototype() {
-  return <><OfflineBanner />{location.pathname.startsWith("/demo") || location.pathname.startsWith("/j/") ? <><DemoFlow /><FeedbackLink language={initialLanguage()} /></> : <AccountPrototype />}</>;
+  return <><OfflineBanner />{location.pathname.startsWith("/demo") || location.pathname.startsWith("/j/") ? <><Suspense fallback={<BootSplash />}><DemoFlow /></Suspense><FeedbackLink language={initialLanguage()} /></> : <AccountPrototype />}</>;
 }
 
 // Asked once, while the app is still opening, so the welcome screen appears with its final buttons instead of
@@ -161,6 +218,9 @@ function AccountPrototype() {
       if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
       const first: Screen = state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
       if (first === "home") await Promise.race([Promise.all([providersAsked, welcomeArtReady()]), new Promise((done) => setTimeout(done, 3000))]);
+      else await Promise.all([preloadScreen(first), resetToken ? PasswordResetForm.preload() : null]);
+      // An invitation-code sign-up shows its referral card on the sign-in screen from the first frame.
+      if (referralCode()) await SignupReferral.preload();
       setScreen(first);
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen(signInReturn ? "auth" : "identity-error"));
@@ -198,6 +258,18 @@ function AccountPrototype() {
     document.addEventListener("visibilitychange", check);
     return () => document.removeEventListener("visibilitychange", check);
   }, []);
+  // Once the first screen is up, fetch the other screens' code in the background so moving between them stays instant.
+  // On the sign-in screen only the conversation, which comes next.
+  const booted = screen !== "booting";
+  useEffect(() => {
+    if (!booted || (!user && screen !== "auth")) return;
+    const timer = window.setTimeout(() => {
+      if (!user) { void ConversationHome.preload(); return; }
+      void Object.values(screenCode).reduce<Promise<void>>((previous, code) => previous.then(() => code.preload()), Promise.resolve());
+      void PlayCardArrival.preload();
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [booted, user?.id, screen === "auth"]);
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
   // Opened from a push (its link carries from=push): count the open, content-free, then drop the marker from the address.
   useEffect(() => {
@@ -222,8 +294,10 @@ function AccountPrototype() {
     if (referralCode()) clearReferral();
     const next = new URLSearchParams(location.search).get("next");
     if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
+    const landingScreen = accountLanding(state.user, state.pairing);
+    await preloadScreen(landingScreen);
     setUser(state.user); setPairing(state.pairing); setNotice("");
-    setScreen(accountLanding(state.user, state.pairing));
+    setScreen(landingScreen);
     // A signed-in phone with existing permission can reconnect without a system prompt.
     void restoreNativePush();
     // Inside the iPhone App, the home-screen widget gets its own read-only token (a no-op in a browser).
@@ -298,7 +372,7 @@ function AccountPrototype() {
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
-    if (screen === "booting") return <div className="loading-screen boot-splash" aria-busy="true" data-testid="booting" role="status"><span className="visually-hidden">{localized(language, "正在打开 Ourever…", "Opening Ourever…", "Abriendo Ourever…")}</span></div>;
+    if (screen === "booting") return <BootSplash language={language} testId="booting" />;
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
@@ -314,7 +388,16 @@ function AccountPrototype() {
   };
   const showArrivals = user?.aiConsentAt && pairing?.status === "active" && !resetToken &&
     !["booting", "home", "auth", "recovery", "invite", "pairing"].includes(screen);
-  return <>{renderScreen()}{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); window.history.replaceState(null, "", "/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} />}{screen !== "invite-first" && feedbackEntry}{showArrivals && <PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} />}</>;
+  const unavailable = <InviteFrame language={language} onLanguage={selectLanguage} title={localized(language, "暂时连不上 Ourever", "Ourever couldn’t connect", "No se pudo conectar con Ourever")}>
+    <p className="pairing-lead" role="alert">{inviteNetworkMessage(language)}</p>
+    <button className="primary-action" onClick={() => location.reload()}>{retryLabel(language)}</button>
+  </InviteFrame>;
+  return <><ScreenBoundary fallback={unavailable}><Suspense fallback={<BootSplash language={language} />}>{renderScreen()}</Suspense></ScreenBoundary>{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ScreenBoundary fallback={null}><Suspense fallback={null}><ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); window.history.replaceState(null, "", "/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} /></Suspense></ScreenBoundary>}{screen !== "invite-first" && feedbackEntry}{showArrivals && <ScreenBoundary fallback={null}><Suspense fallback={null}><PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} /></Suspense></ScreenBoundary>}</>;
+}
+
+/** The plain paper shown while Ourever opens, and while a screen's code is still arriving. */
+function BootSplash({ language = initialLanguage(), testId }: { language?: Language; testId?: string }) {
+  return <div className="loading-screen boot-splash" aria-busy="true" data-testid={testId} role="status"><span className="visually-hidden">{localized(language, "正在打开 Ourever…", "Opening Ourever…", "Abriendo Ourever…")}</span></div>;
 }
 
 function HomeScreen({ language, onLanguage, onProvider, onEmail, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onProvider: (provider: SignInProvider) => void; onEmail: () => void; onSignIn: () => void; t: typeof copy.zh }) {

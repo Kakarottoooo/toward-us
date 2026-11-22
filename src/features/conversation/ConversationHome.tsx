@@ -1,7 +1,7 @@
 import type { Pairing } from "../../Prototype";
 import { InviteBar, InvitePanel, usePartnerInvite } from "./PartnerInvite";
 import { ReportReply } from "../feedback/ReportReply";
-import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Copy, PawPrint, GameController, Sparkle, UserCircle, Drop, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, ShareNetwork, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
 import { apiErrorText, counted, languageTag, localized, type Language } from "../../i18n";
@@ -27,14 +27,17 @@ import { defaultMascot, useCoupleCharacter } from "../character/character";
 import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking";
 import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
-import { GameHall } from "../games/GameHall";
-import { PlayTogether } from "../games/PlayTogether";
-import { PlayDistance } from "../games/PlayDistance";
-import { PlayPlans } from "../games/PlayPlans";
+// The games open on demand, so their code loads after the conversation is on screen (fetched in the background once it
+// is, so opening one is still instant).
+const GameHall = lazyScreen(() => import("../games/GameHall").then((module) => module.GameHall));
+const PlayTogether = lazyScreen(() => import("../games/PlayTogether").then((module) => module.PlayTogether));
+const PlayDistance = lazyScreen(() => import("../games/PlayDistance").then((module) => module.PlayDistance));
+const PlayPlans = lazyScreen(() => import("../games/PlayPlans").then((module) => module.PlayPlans));
 import { MatchInviteCard } from "../games/MatchInviteCard";
 import { PeopleRow, TogetherSheet, plainName, usePeople, type Person } from "../people/People";
 import { RecallLinks, useConversationRecall, type ConversationSource } from "./RecallHistory";
 import "./conversation.css";
+import { lazyScreen } from "../../lazyScreen";
 
 type Channel = "me" | "us";
 type Card = { id: string; kind: string; title: string; text?: string | null; status: string; version: number; digest?: string; url?: string; localDateTime?: string; openOn?: string; shareKind?: "date" | "agreement" };
@@ -162,6 +165,11 @@ export function ConversationHome({ user, pairing, language, onOpen, onPrivacy, o
   const [petHidden, setPetHidden] = useState(() => { try { return localStorage.getItem(petHiddenKey(user.id)) === "1"; } catch { return false; } });
   const hidePet = (hidden: boolean) => { setPetHidden(hidden); try { if (hidden) localStorage.setItem(petHiddenKey(user.id), "1"); else localStorage.removeItem(petHiddenKey(user.id)); } catch { /* private mode */ } };
   const openPetRoom = () => { keyboard.hide(); setPetRoom(true); };
+  // A link can open a game straight away; otherwise the games' code is fetched once the conversation has settled.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void GameHall.preload(); void PlayTogether.preload(); void PlayDistance.preload(); void PlayPlans.preload(); }, gameHall || playTogether || interaction ? 0 : 3000);
+    return () => clearTimeout(timer);
+  }, []);
   // Present the restored conversation and its character together, with a bounded wait.
   const [firstLook, setFirstLook] = useState({ session: false, together: !paired, grace: false, cap: false });
   const shown = useRef(false);
@@ -1088,12 +1096,12 @@ ${text}` : text, target);
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
     {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
-    {gameHall && paired && <GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image ? (mascot.visible ? mascot.image.still : null) : defaultMascot} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }}
-      onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} />}
+    {gameHall && paired && <Suspense fallback={null}><GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image ? (mascot.visible ? mascot.image.still : null) : defaultMascot} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }}
+      onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} /></Suspense>}
     {interaction && paired && <BottomSheet open onOpenChange={(open) => { if (!open) closeInteraction(); }}
       title={t("互动", "Connect", "Conectar")} description={t("碰一下，或者留张小卡。", "Touch together or leave a little card.", "Tóquense o deja una tarjetita.")} snap={0.76}>
-      <PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
-        readOnly={together?.readOnly} conversationId={together?.conversation.id} incomingCard={interaction === "cards"} onClose={closeInteraction} />
+      <Suspense fallback={null}><PlayDistance key={together?.conversation.id || user.id} language={language} userId={user.id} revision={together?.conversation.version || 0}
+        readOnly={together?.readOnly} conversationId={together?.conversation.id} incomingCard={interaction === "cards"} onClose={closeInteraction} /></Suspense>
       <button type="button" className="connect-poster" onClick={() => { closeInteraction(); open("/?view=moments&ideas=1"); }}>
         <Images size={18} aria-hidden="true" />{t("100 件小事海报", "100 little things poster", "Póster de 100 cosas")}<ArrowRight size={16} aria-hidden="true" />
       </button>
@@ -1104,16 +1112,16 @@ ${text}` : text, target);
     </BottomSheet>}
     {planQuestionId && paired && <BottomSheet open onOpenChange={(open) => { if (!open) { keyboard.hide(); setPlanQuestionId(null); } }}
       title={t("约会点子", "Date ideas", "Ideas para una cita")} snap={0.84}>
-      <PlayPlans key={planQuestionId} exactQuestion questionId={planQuestionId} language={language} userId={user.id}
+      <Suspense fallback={null}><PlayPlans key={planQuestionId} exactQuestion questionId={planQuestionId} language={language} userId={user.id}
         revision={together?.conversation.version || 0} readOnly={together?.readOnly}
-        onOpenCalendar={(url) => { setPlanQuestionId(null); closePlayTogether(); open(url); }} />
+        onOpenCalendar={(url) => { setPlanQuestionId(null); closePlayTogether(); open(url); }} /></Suspense>
     </BottomSheet>}
-    {playTogether && <PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
+    {playTogether && <Suspense fallback={null}><PlayTogether key={`${user.id}:${paired}:${together?.conversation.id || ""}`} language={language} userId={user.id} partnerName={partnerName} paired={paired}
       readOnly={paired && together?.readOnly} conversationId={together?.conversation.id} revision={together?.conversation.version || 0}
       initialCardId={playTogether.cardId} fromGames={playTogether.fromGames} onLeaveDaily={leavePlayDaily}
       onClose={() => { closePlayTogether(); if (playTogether.fromGames) openGames(); }} onInvite={() => { closePlayTogether(); if (usHidden) invitation.primaryAction(); else switchChannel("us"); }}
-      renderPlans={(questionId) => paired && !planQuestionId ? <PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
-        readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /> : null}
+      renderPlans={(questionId) => paired && !planQuestionId ? <Suspense fallback={null}><PlayPlans language={language} userId={user.id} questionId={questionId} revision={together?.conversation.version || 0}
+        readOnly={together?.readOnly} onOpenCalendar={(url) => { closePlayTogether(); open(url); }} /></Suspense> : null}
       onRefreshDaily={() => void loadTogether()} renderDaily={(offline) => todayQuestion ? renderDaily(todayQuestion, true, offline) : null}
       onAskPinky={usHidden ? undefined : ({ question, own, partner: theirChoice }) => {
         const prompt = t(
@@ -1123,7 +1131,7 @@ ${text}` : text, target);
         );
         keyboard.hide(); closePlayTogether(); switchChannel("us"); setAskAgent(true);
         setDraft((current) => current.trim() ? `${current}\n\n${prompt}` : prompt, "us");
-      }} />}
+      }} /></Suspense>}
     {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); keyboard.hide(); onPrivacy("referrals"); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
