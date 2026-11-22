@@ -105,7 +105,7 @@
   .desktop-brand-header .home-wordmark span { margin-top: 4px; font-size: 10px; }
   .desktop-brand-header nav { display: flex; justify-content: center; gap: clamp(24px, 3.5vw, 54px); }
   .desktop-brand-header nav button, .desktop-brand-header nav a { padding: 10px 0; border: 0; background: transparent; color: var(--jian-ink); font-size: 12px; text-decoration: none; letter-spacing: .08em; }
-  .desktop-brand-header nav button:hover, .desktop-brand-header nav a:hover { color: var(--jian-red); }
+  .desktop-brand-header nav button:hover, .desktop-brand-header nav a:hover { color: var(--jian-red-text); }
   .desktop-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 24px; }
   .desktop-header-actions .language-switch { margin: 0; }
   .desktop-login { height: 38px; padding: 0 17px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--jian-ink); background: transparent; color: var(--jian-ink); font-size: 11px; }
@@ -114,7 +114,7 @@
   .desktop-color-field-red { top: 82px; bottom: 73px; left: 0; width: min(28vw, 430px); background: linear-gradient(90deg, var(--jian-red) 0 62%, rgba(255,59,36,.94) 74%, rgba(255,59,36,0) 100%); clip-path: polygon(0 0, 82% 0, 100% 48%, 78% 100%, 0 100%); }
   .desktop-color-field-blue { top: 82px; right: 0; bottom: 73px; width: min(28vw, 430px); background: linear-gradient(270deg, var(--jian-blue) 0 62%, rgba(7,61,185,.94) 74%, rgba(7,61,185,0) 100%); clip-path: polygon(18% 0, 100% 0, 100% 100%, 22% 100%, 0 48%); }
   .desktop-home-hero { position: absolute; z-index: 5; top: 50%; left: 50%; width: min(670px, 52vw); transform: translate(-50%, -48%); text-align: center; }
-  .desktop-kicker { margin: 0 0 28px; color: var(--jian-red); font-size: 10px; font-weight: 800; letter-spacing: .28em; }
+  .desktop-kicker { margin: 0 0 28px; color: var(--jian-red-text); font-size: 10px; font-weight: 800; letter-spacing: .28em; }
   .desktop-home-hero h1 { margin: 0; font-family: var(--jian-serif); font-size: clamp(46px, 5.2vw, 78px); font-weight: 500; line-height: 1.15; letter-spacing: -.045em; }
   .desktop-home-hero .pause-mark { margin: 25px auto 22px; }
   .desktop-home-support { margin: 0 auto 38px; color: var(--jian-muted); font-family: var(--jian-serif); font-size: 16px; letter-spacing: .08em; }

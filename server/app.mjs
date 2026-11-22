@@ -83,7 +83,7 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming, authLimits = DEFAULT_AUTH_LIMITS, trustProxy = process.env.TRUST_PROXY }) {
+export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming, authLimits = DEFAULT_AUTH_LIMITS, trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER ? "1" : undefined) }) {
   const app = express();
   const limits = createAuthLimits(authLimits);
   const rateLimited = (req, res, seconds) => res.status(429).set("Retry-After", String(seconds)).json({ code: "rate_limited", retryAfterSeconds: seconds, error: tooManyTries(languageOf(req), seconds) });
@@ -110,7 +110,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
-  // Only a proxy we run behind may set the client address (TRUST_PROXY=1 on Render); otherwise X-Forwarded-For is ignored.
+  // Only a proxy we run behind may set the client address: TRUST_PROXY, or one hop when Render (which sets RENDER) is in
+  // front; otherwise X-Forwarded-For is ignored. Without this every Render request shares the proxy address and one
+  // per-IP limit (QA 11-22).
   app.set("trust proxy", trustProxySetting(trustProxy));
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use((req, res, next) => {
