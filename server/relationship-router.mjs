@@ -11,7 +11,7 @@ import { recordUsage } from "./usage.mjs";
 import { coupleStreak } from "./streak.mjs";
 import {
   buildJointDecisionContext, buildRelationshipHome, canViewRecord, createRelationshipRecord,
-  projectGraph, projectRecord, publicRelationshipEvent,
+  projectGraph, projectRecord, publicRelationshipEvent, trimHomeGraph,
 } from "./relationship-domain.mjs";
 
 const ISSUE_CATEGORIES = new Set(["money", "time", "chores", "family", "travel", "living_together", "moving", "career", "marriage", "children", "boundaries", "custom"]);
@@ -32,7 +32,9 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const streak = await coupleStreak(store, context.relationship.id, { userId: req.auth.user.id, timezone: String(req.query?.timezone || "").slice(0, 64) || null }).then(({ days, me, partner }) => ({ days, me, partner })).catch(() => null);
     // Each member's last-chosen interface language, so Coming up can show both people's holidays when they differ.
     const languages = await Promise.all(context.members.map(async (member) => (await store.getUserById(member.userId))?.language || null));
-    res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id), graph: projectGraph(snapshot, req.auth.user.id), streak, relationship: { id: context.relationship.id, members: context.members.map((member, index) => ({ id: member.userId, name: member.user.name, role: member.role, language: languages[index] })) }, capabilities: capabilities() });
+    // Projected once for both: the home cards read the full visible graph; the response carries a trimmed one (see trimHomeGraph).
+    const projected = projectGraph(snapshot, req.auth.user.id); const { graph, totals: graphTotals } = trimHomeGraph(projected);
+    res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id, new Date(), projected), graph, graphTotals, streak, relationship: { id: context.relationship.id, members: context.members.map((member, index) => ({ id: member.userId, name: member.user.name, role: member.role, language: languages[index] })) }, capabilities: capabilities() });
   });
 
   router.get("/relationship/events", async (req, res) => {
@@ -435,7 +437,8 @@ export function decisionErrorHandler(error, req, res, next) {
   res.status(error.statusCode || 400).json({ error: copy[language === "en" ? 1 : language === "es" ? 2 : 0], code: error.decisionCode });
 }
 // The reader's language: what the request says, else the member's saved interface language (the App keeps it current).
-const languageOf = (req) => [req.body?.language, req.query?.language, req.auth?.user?.language].find((value) => ["zh", "en", "es"].includes(value)) || "zh";
+// With no language anywhere, the browser's Accept-Language, else English (QA round 5: not Chinese by default).
+const languageOf = (req) => [req.body?.language, req.query?.language, req.auth?.user?.language].find((value) => ["zh", "en", "es"].includes(value)) || String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1] || "en";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 async function activeRelationship(store, req, res) { const context = await store.getRelationshipContext(req.auth.user.id); if (!context || context.relationship.status !== "active" || context.members.length !== 2) { res.status(409).json({ error: say(languageOf(req), "需要双方账号完成伴侣绑定。", "Both accounts must be paired first.", "Ambas cuentas deben vincularse primero.") }); return null; } return context; }
 function responsibilityIds(context, ownerType) { return context.members.filter((member) => ownerType === "both" || ownerType === `member_${member.role.toLowerCase()}`).map((member) => member.userId); }

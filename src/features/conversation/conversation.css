@@ -18,11 +18,15 @@
 .conversation-stream { position: relative; flex: 1 1 auto; min-height: 0; }
 .conversation-scroll { position: absolute !important; inset: 0 !important; }
 .conversation-thread { width: min(100%, 760px); margin: 0 auto; padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 14px; overflow-wrap: anywhere; }
+/* Earlier Us pages, windowed in chunks (OlderWindow): a chunk lays its bubbles out exactly as the thread does. */
+.conversation-older-chunk { display: flex; flex-direction: column; gap: 14px; flex: 0 0 auto; }
 .conversation-turn { display: flex; flex-direction: column; gap: 10px; }
 .conversation-message > .reply-report-menu,
 .together-ask > .reply-report-menu,
 .private-note-actions > .reply-report-menu { float: inline-end; margin-inline-start: 4px; }
-.conversation-message:has(> .reply-report-menu), .private-note-actions { display: flow-root; }
+/* QA round 5: class-based instead of :has(). Each :has() on the thread made every inserted bubble restyle the whole
+   conversation (with 2,000 messages, 60 ms per inserted chunk at 4x CPU). ReportReply marks its parent. */
+.conversation-message.has-report-menu, .private-note-actions { display: flow-root; }
 .conversation-message { max-width: 86%; }
 .conversation-message > span { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; color: #5d574f; font-size: 14px; font-weight: 600; }
 .conversation-message > span em { display: inline-flex; align-items: center; gap: 4px; font-style: normal; font-weight: 500; color: var(--jian-green); }
@@ -39,7 +43,7 @@
 .us-row.from-partner > .conversation-message { max-width: calc(86% - 36px); }
 .us-row.from-agent > .conversation-message { max-width: calc(100% - 36px); }
 .us-row.is-continued { margin-top: -8px; }
-.us-avatar { flex: 0 0 28px; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 50%; background: var(--jian-red-soft); color: var(--jian-red); font-size: 13px; font-style: normal; font-weight: 700; }
+.us-avatar { flex: 0 0 28px; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 50%; background: var(--jian-red-soft); color: var(--jian-red-text); font-size: 13px; font-style: normal; font-weight: 700; }
 .us-avatar.is-pinky { background: #fce69f var(--ourever-avatar) center / cover no-repeat; }
 .conversation-message > .assistant-byline::before { content: ""; display: inline-block; width: 22px; height: 22px; margin-inline-end: 6px; vertical-align: middle; border-radius: 50%; background: #fce69f var(--ourever-avatar) center / cover no-repeat; }
 .us-row.is-continued .us-avatar { visibility: hidden; }
@@ -67,7 +71,7 @@
 .recall-date-picker, .recall-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 6px 16px; font-size: 14px; }
 .recall-date-picker label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .recall-date-picker input { max-width: 170px; min-height: 40px; padding: 6px; border: 1px solid #b6b1aa; border-radius: 10px; background: #fffdf8; color: var(--jian-ink); font: inherit; }
-.recall-error { margin: 4px 16px 8px; color: var(--jian-red); font-size: 14px; }
+.recall-error { margin: 4px 16px 8px; color: var(--jian-red-text); font-size: 14px; }
 .recall-original { border-radius: 12px; transition: background-color .3s; scroll-margin-block: 16px; }
 .recall-original time { display: block; margin-bottom: 6px; color: #625c54; font-size: 13px; }
 .recall-original.is-highlighted { background-color: #ffe7a3; outline: 2px solid #b78420; outline-offset: 4px; }
@@ -149,7 +153,7 @@
 .relationship-shell > .page-header ~ .relationship-main { top: calc(var(--page-top) + 54px); bottom: 0; padding: 8px 18px calc(40px + env(safe-area-inset-bottom)); }
 .home-columns.page-sections { grid-template-columns: 1fr; gap: 16px; width: 100%; max-width: none; margin: 0; }
 .settings-language { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; margin-bottom: 18px; padding: 6px 2px 14px; border-bottom: 1px solid rgba(37,37,37,.1); }
-.settings-language .language-switch { position: static; gap: 4px; color: #8a837a; font-size: 16px; }
+.settings-language .language-switch { position: static; gap: 4px; color: #6e675f; font-size: 16px; }
 .settings-language .language-switch > span { gap: 4px; }
 .settings-language .language-switch button { min-width: 44px; min-height: 44px; padding: 0 6px; border-bottom-width: 2px; }
 .settings-language h2 { margin: 0; color: var(--jian-ink); font-size: 16px; font-weight: 600; letter-spacing: 0; }
@@ -240,7 +244,7 @@
 /* 想你了 (11-06): a heart beside the call button in Us; a soft line in the thread; hearts floating up when one is sent or arrives. */
 .conversation-heart { color: #e0457b; }
 .conversation-nudge { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 6px auto; padding: 6px 14px; width: fit-content; border-radius: 16px; background: #fbe6ee; color: #993556; font-size: 14px; font-weight: 650; }
-.conversation-nudge time { color: #b06a86; font-size: 12px; font-weight: 500; }
+.conversation-nudge time { color: #94536d; font-size: 12px; font-weight: 500; }
 .miss-you-hearts { position: absolute; inset: 0; z-index: 40; overflow: hidden; pointer-events: none; }
 .miss-you-hearts svg { position: absolute; bottom: 18%; color: #e0457b; opacity: 0; animation: miss-you-float 1.8s ease-out forwards; filter: drop-shadow(0 2px 4px rgba(224,69,123,.3)); }
 @keyframes miss-you-float { 0% { opacity: 0; transform: translateY(0) scale(.6); } 15% { opacity: 1; transform: translateY(-30px) scale(1); } 100% { opacity: 0; transform: translateY(-420px) scale(1.15) rotate(-12deg); } }
@@ -281,7 +285,7 @@
 .distance-bar .distance-interact { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: #8c352c; font: inherit; font-weight: 650; }
 .distance-bar .distance-interact:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: -2px; }
 .distance-clock, .distance-meet { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: rgba(37,37,37,.05); white-space: nowrap; }
-.distance-clock small { color: #8a837a; font-size: 12px; }
+.distance-clock small { color: #6e675f; font-size: 12px; }
 .distance-clock svg { color: #b08a3e; }
 .distance-meet { background: rgba(214,112,140,.12); color: #8f4458; font-weight: 600; }
 .distance-care { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: #fbeef0; color: #a2394f; font-weight: 600; white-space: nowrap; }
@@ -348,11 +352,11 @@
 .conversation-message :is(p, li) { unicode-bidi: plaintext; }
 
 /* Message times like iMessage (QA round 4): a centered time where half an hour passed; a tapped message shows its time. */
-.conversation-time { margin: 14px 0 6px; text-align: center; color: #7a716b; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
-.message-time { display: block; margin: 2px 6px 4px; color: #7a716b; font-size: 12px; }
-.shared-reportable:has(> .us-row.from-me) > .message-time, .conversation-turn:has(> .from-me) > .message-time { text-align: end; }
+.conversation-time { margin: 14px 0 6px; text-align: center; color: #6b635d; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.message-time { display: block; margin: 2px 6px 4px; color: #6b635d; font-size: 12px; }
+.shared-reportable.from-me > .message-time, .conversation-turn.from-me > .message-time { text-align: end; }
 .shared-reportable > .message-time { grid-column: 1; }
-.shared-reportable:has(> .us-row:not(.from-me)) > .message-time { padding-inline-start: 40px; }
+.shared-reportable:not(.from-me) > .message-time { padding-inline-start: 40px; }
 /* Reply coach first (QA round 4): someone here only to answer a message sees that entry above the reflective prompt. */
 .reply-coach-entry { display: grid; gap: 6px; margin: 0 0 22px; padding: 14px 16px; border: 1px solid rgba(143,68,88,.22); border-radius: 18px; background: rgba(255,255,255,.6); }
 .reply-coach-entry strong { font-size: 17px; color: #2b2622; }

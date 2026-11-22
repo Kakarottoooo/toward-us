@@ -20,6 +20,9 @@ services:
         value: production
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: "0"
+      # Render's proxy is the one hop in front: req.ip is the address it appended to X-Forwarded-For (server/auth-limits.mjs).
+      - key: TRUST_PROXY
+        value: "1"
       - key: DATABASE_URL
         fromDatabase:
           name: toward-us-private-beta-db

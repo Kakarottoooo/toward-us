@@ -236,7 +236,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       if (!session || session.expiresAt <= new Date().toISOString()) return null;
       return { ...session };
     },
-    async updateUserName(userId, name) { if (!state().users[userId]) return false; own(state().users, userId).name = name; await persist(); return true; },
+    async updateUserName(userId, name) { if (!state().users[userId]) return false; own(state().users, userId).name = name; own(state().users, userId).nameSource = "user"; await persist(); return true; },
     async deleteUserSessions(userId, except = null) { for (const [id, session] of Object.entries(state().sessions)) if (session.userId === userId && id !== except) delete state().sessions[id]; await persist(); },
     async updateUserPassword(userId, passwordHash) { if (!state().users[userId]) return false; own(state().users, userId).passwordHash = passwordHash; await persist(); return true; },
     async updateUserLanguage(userId, language) { if (!state().users[userId]) return false; own(state().users, userId).language = language; await persist(); return true; },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ComponentProps } from "react";
+import { useEffect, useRef, type ComponentProps, type RefObject } from "react";
 import { BottomSheet as DeviceSheet } from "../../mobile";
 
 // The phone's or browser's Back closes the topmost open sheet first, instead of leaving the page under it (QA round 3).
@@ -59,8 +59,65 @@ export function useSheetHistory(shown: boolean, close: () => void) {
   }, [shown]);
 }
 
-/** The device BottomSheet, with Back closing it. Same props. */
+/** Keyboard users get back to where they were (QA round 5): once the closed overlay has let go of focus (it lands on the
+ * body), the control that opened it takes focus again. */
+function returnFocus(opener: Element | null) {
+  if (!(opener instanceof HTMLElement)) return;
+  let tries = 0;
+  const tick = () => {
+    if (!opener.isConnected) return;
+    const at = document.activeElement;
+    if (!at || at === document.body) { opener.focus({ preventScroll: true }); return; }
+    if (at.closest("[role=dialog]") && ++tries < 30) window.setTimeout(tick, 50);
+  };
+  window.setTimeout(tick, 0);
+}
+
+// While a sheet, the menu drawer or a full-screen layer is open, body.layer-open hides the floating feedback button. A class
+// set here replaced body:has(...), which made every DOM insertion restyle the page (QA round 5).
+let layers = 0;
+export function useLayerOpen(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    layers += 1; document.body.classList.add("layer-open");
+    return () => { layers = Math.max(0, layers - 1); if (!layers) document.body.classList.remove("layer-open"); };
+  }, [open]);
+}
+
+/** The device BottomSheet, with Back closing it and focus returned to its opener. Same props. */
 export function BottomSheet(props: ComponentProps<typeof DeviceSheet>) {
   useSheetHistory(props.open, () => props.onOpenChange(false));
+  useLayerOpen(props.open);
+  useEffect(() => {
+    if (!props.open) return;
+    const opener = document.activeElement;
+    return () => returnFocus(opener);
+  }, [props.open]);
   return <DeviceSheet {...props} />;
+}
+
+const FOCUSABLE = "button:not([disabled]):not([tabindex='-1']), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
+/** A modal layer that isn't a BottomSheet (the menu drawer): focus moves into it, Tab stays inside, Escape closes it, the
+ * rest of the screen is inert while it is open, and focus returns to the opener afterwards (QA round 5). */
+export function useModalFocus(layer: RefObject<HTMLElement | null>, close: () => void) {
+  const latest = useRef(close); latest.current = close;
+  useEffect(() => {
+    const root = layer.current;
+    if (!root) return;
+    const opener = document.activeElement;
+    const others = [...(root.parentElement?.children || [])].filter((element) => element !== root && !element.hasAttribute("inert"));
+    others.forEach((element) => element.setAttribute("inert", ""));
+    const focusable = () => [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((element) => element.getClientRects().length > 0);
+    (root.querySelector<HTMLElement>("[data-autofocus]") || focusable()[0])?.focus({ preventScroll: true });
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.stopPropagation(); latest.current(); return; }
+      if (event.key !== "Tab") return;
+      const list = focusable(); if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !root.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+    };
+    root.addEventListener("keydown", key);
+    return () => { root.removeEventListener("keydown", key); others.forEach((element) => element.removeAttribute("inert")); returnFocus(opener); };
+  }, [layer]);
 }

@@ -48,6 +48,20 @@ export async function sharePhotoCopy(tx, { photo, userId, relationshipId }) {
   return record;
 }
 
+// A shared photo is screened by Ourever's AI first. When that check can't run (AI declined or unavailable), say so in photo
+// words with the way out, not the text-message copy (QA round 5).
+function photoScreeningError(error, req) {
+  if (!["ai_screening_unavailable", "ai_consent_required"].includes(error?.code)) return error;
+  const language = [req.query?.language, req.auth?.user?.language].find((value) => ["zh", "en", "es"].includes(value)) || String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1] || "en";
+  const off = error.code === "ai_consent_required";
+  const text = language === "zh"
+    ? off ? "发到“我们俩”的照片要先经过 Ourever 的 AI 安全检查，你关掉了 AI，所以这张照片暂时发不出去。可以先存为只有你能看的照片，或在设置里打开 AI。" : "发到“我们俩”的照片要先经过 Ourever 的 AI 安全检查，现在检查不了，所以这张照片暂时发不出去。可以先存为只有你能看的照片，稍后再发。"
+    : language === "es"
+      ? off ? "Las fotos que se comparten en Nosotros pasan primero por la revisión de seguridad con IA de Ourever. Tienes la IA desactivada, así que esta foto no se puede compartir por ahora. Guárdala en privado o activa la IA en Ajustes." : "Las fotos que se comparten en Nosotros pasan primero por la revisión de seguridad con IA de Ourever, que ahora no está disponible, así que esta foto no se puede compartir todavía. Guárdala en privado y compártela más tarde."
+      : off ? "Photos shared in Us go through Ourever's AI safety check first. AI is off for you, so this photo can't be shared for now. Keep it private, or turn AI on in Settings." : "Photos shared in Us go through Ourever's AI safety check first, and it isn't available right now, so this photo can't be shared yet. Keep it private for now and share it later.";
+  return Object.assign(new Error(text), { code: error.code, statusCode: error.statusCode || (off ? 403 : 503) });
+}
+
 export function createPhotoRouter({ store }) {
   const router = express.Router();
   router.use("/photos", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
@@ -58,7 +72,7 @@ export function createPhotoRouter({ store }) {
     const context = await store.getRelationshipContext(userId);
     const shared = req.query.scope === "shared";
     if (shared && !(context?.relationship.status === "active" && context.members.length === 2)) throw fail(409, "Invite your partner before sharing photos.");
-    if (shared) await screenImage(req.body, mime);
+    if (shared) await screenImage(req.body, mime).catch((error) => { throw photoScreeningError(error, req); });
     const record = createRelationshipRecord({ relationshipId: shared ? context.relationship.id : null, userId, visibility: shared ? "shared" : "private", aiAccessScope: shared ? "joint" : "private", mime, bytes: req.body.length, fileId: randomUUID() });
     await store.transaction(shared ? `relationship:${context.relationship.id}` : `user:${userId}`, async (tx) => {
       const mine = (await tx.listRelationshipRecordsForUser("photos", userId)).filter((photo) => photo.ownerUserId === userId && !photo.archivedAt);

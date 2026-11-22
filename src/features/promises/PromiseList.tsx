@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowCounterClockwise, CheckCircle, DotsThree, Handshake, LockKey, PaperPlaneRight } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { bareName, isolate, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, useKeyboard } from "../../mobile";
 import { actOnPromise, listPromises, type PromiseAction, type PromiseItem } from "./promises";
 import "./promises.css";
@@ -20,7 +20,9 @@ export function PromiseList({ language, partnerName, refreshKey, onChanged, hide
     try { await actOnPromise(item, action, language, extra); setMore(""); setSharing(null); await load(); if (action === "agreement" || action === "share") await onChanged?.(); }
     catch (error) { setNotice((error as Error).message); await load(); } finally { setBusy(""); }
   };
-  const who = (item: PromiseItem) => item.by === "me" ? t("你答应的", "Your promise", "Tu promesa") : item.by === "partner" ? t(`${partnerName} 答应的`, `${partnerName}'s promise`, `Promesa de ${partnerName}`) : t("你们俩说好的", "You both agreed", "Acordado por los dos");
+  // Set inside sentences in its own direction (QA round 5); bareName first so an already isolated name isn't wrapped twice.
+  const partner = isolate(bareName(partnerName));
+  const who = (item: PromiseItem) => item.by === "me" ? t("你答应的", "Your promise", "Tu promesa") : item.by === "partner" ? t(`${partner} 答应的`, `${partner}'s promise`, `Promesa de ${partner}`) : t("你们俩说好的", "You both agreed", "Acordado por los dos");
   const day = (value: string) => new Date(value).toLocaleDateString(languageTag(language), { month: "short", day: "numeric" });
   const agreementState = (item: PromiseItem) => !item.agreement ? null : item.agreement.status === "active" ? t("已成约定", "Now an agreement", "Ya es un acuerdo") : item.agreement.status === "awaiting_approvals" ? t("约定等你们批准", "Agreement waiting for approval", "Acuerdo esperando aprobación") : t("约定在修改", "Agreement being revised", "Acuerdo en revisión");
   if (!items || (hideEmpty && !items.length && !notice)) return null;
@@ -38,7 +40,7 @@ export function PromiseList({ language, partnerName, refreshKey, onChanged, hide
         {agreementState(item) && <span><Handshake size={14} />{agreementState(item)}</span>}
       </div>
       {sharing?.id === item.id ? <div className="promise-share">
-        <small>{t(`确认后会发到“我们俩”，${partnerName} 会看到这句话（你的原话不会）：`, `Once you confirm, ${partnerName} sees exactly this in Us (never your own words from Just me):`, `Al confirmar, ${partnerName} verá exactamente esto en Nosotros (nunca tus palabras de Solo yo):`)}</small>
+        <small>{t(`确认后会发到“我们俩”，${partner} 会看到这句话（你的原话不会）：`, `Once you confirm, ${partner} sees exactly this in Us (never your own words from Just me):`, `Al confirmar, ${partner} verá exactamente esto en Nosotros (nunca tus palabras de Solo yo):`)}</small>
         <KeyboardTextarea aria-label={t("要分享的话", "What to share", "Lo que compartirás")} value={sharing.text} maxLength={600} rows={2} onChange={(event) => setSharing({ id: item.id, text: event.target.value })} onBlur={() => keyboard.hide()} />
         <div className="promise-actions"><button className="is-primary" disabled={busy === item.id || !sharing.text.trim()} onClick={() => void act(item, "share", { confirm: true, text: sharing.text.trim() })}><PaperPlaneRight size={16} weight="fill" />{t("确认分享", "Share it", "Compartir")}</button><button disabled={busy === item.id} onClick={() => { keyboard.hide(); setSharing(null); }}>{t("取消", "Cancel", "Cancelar")}</button></div>
       </div> : <div className="promise-actions">
@@ -49,7 +51,7 @@ export function PromiseList({ language, partnerName, refreshKey, onChanged, hide
         <button className="promise-more" aria-expanded={more === item.id} aria-label={t("更多", "More", "Más")} onClick={() => setMore(more === item.id ? "" : item.id)}><DotsThree size={20} weight="bold" /></button>
       </div>}
       {more === item.id && !sharing && <div className="promise-actions is-more">
-        {!item.shared && <button disabled={busy === item.id} onClick={() => setSharing({ id: item.id, text: item.shareText || item.description })}><PaperPlaneRight size={16} />{t(`告诉 ${partnerName}`, `Tell ${partnerName}`, `Contárselo a ${partnerName}`)}</button>}
+        {!item.shared && <button disabled={busy === item.id} onClick={() => setSharing({ id: item.id, text: item.shareText || item.description })}><PaperPlaneRight size={16} />{t(`告诉 ${partner}`, `Tell ${partner}`, `Contárselo a ${partner}`)}</button>}
         {item.shared && item.status === "open" && !item.agreement && <button disabled={busy === item.id} onClick={() => void act(item, "agreement")}><Handshake size={16} />{t("定成约定（两人都批准才算）", "Make it an agreement (both approve)", "Convertir en acuerdo (ambos aprueban)")}</button>}
         <button disabled={busy === item.id} onClick={() => void act(item, "dismiss")}>{t("这不算承诺", "Not a promise", "No es una promesa")}</button>
       </div>}

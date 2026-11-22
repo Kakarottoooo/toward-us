@@ -306,3 +306,15 @@ test("an emailed code can confirm a link instead of the old password", async (t)
   assert.equal((await (await request("/api/auth/me", { cookie: cookieOf(confirmed) })).json()).user.id, id);
   assert.notEqual((await request("/api/auth/login", { body: { email: address, password } })).status, 200);
 });
+
+test("QA round 5: a provider sign-up keeps the interface language, and an email local part is not a chosen name", async (t) => {
+  const { start, request, store } = await fixture(t);
+  const plain = await (await start("google", { adultConfirmed: true, language: "es" })).callback({ email: "plainname@example.invalid" }, { subject: "plain-name" });
+  assert.equal(plain.headers.get("location"), "/");
+  const me = (await (await request("/api/auth/me", { cookie: cookieOf(plain) })).json()).user;
+  assert.equal(me.name, "plainname");
+  assert.equal(me.nameSet, false, "first run still asks for a name");
+  assert.equal((await store.getUserById(me.id)).language, "es");
+  const given = await (await start("google", { adultConfirmed: true })).callback({ email: "given@example.invalid", name: "Lucía" }, { subject: "given-name" });
+  assert.equal((await (await request("/api/auth/me", { cookie: cookieOf(given) })).json()).user.nameSet, true, "the provider's name counts");
+});

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AirplaneTilt, HandHeart, Heart, Moon, Sun } from "@phosphor-icons/react";
-import { counted, languageTag, localized, type Language } from "../../i18n";
+import { counted, isolate, languageTag, localized, bareName, type Language } from "../../i18n";
 
 /** Minutes a zone is ahead of UTC at `at`. */
 export function zoneOffset(zone: string, at = new Date()): number | null {
@@ -16,8 +16,10 @@ export const daysUntil = (date: string, today = new Date().toLocaleDateString("e
 
 /** 异地 (founder 11-06): under the top of Us, the partner's own time when it differs from yours, and how long until you meet.
  * The optional interaction shortcut stays available across time zones. */
-export function DistanceBar({ language, partnerName, partnerZone, nextMeeting, care = false, onInteract }: { language: Language; partnerName: string; partnerZone: string | null; nextMeeting: { date: string; title: string } | null; care?: boolean; onInteract?: () => void }) {
+export function DistanceBar({ language, partnerName: rawName, partnerZone, nextMeeting, care = false, onInteract }: { language: Language; partnerName: string; partnerZone: string | null; nextMeeting: { date: string; title: string } | null; care?: boolean; onInteract?: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  // The caller passes the raw name: isolate it only where it sits inside a sentence, never for the avatar initial.
+  const raw = bareName(rawName), partnerName = isolate(raw);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
   const mine = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -36,7 +38,7 @@ export function DistanceBar({ language, partnerName, partnerZone, nextMeeting, c
     clock = <span className="distance-clock" data-testid="partner-clock">{night ? <Moon size={14} weight="fill" /> : <Sun size={14} weight="fill" />}{t(`${partnerName} 那边 ${time}`, `${partnerName}'s time ${time}`, `Hora de ${partnerName}: ${time}`)}<small>{diff > 0 ? t(`比你早 ${hours} 小时`, `${hours}h ahead`, `${hours} h más`) : t(`比你晚 ${hours} 小时`, `${hours}h behind`, `${hours} h menos`)}</small></span>;
   }
   const meet = days !== null ? <span className="distance-meet" data-testid="meet-countdown"><AirplaneTilt size={14} weight="fill" />{days === 0 ? t("今天见面！", "You meet today!", "¡Hoy se ven!") : days === 1 ? t("明天见面", "You meet tomorrow", "Se ven mañana") : t(`还有 ${days} 天见面`, `${counted(days, "day", "days")} until you meet`, `${counted(days, "día", "días")} para verse`)}</span> : null;
-  return <div className="distance-bar">{onInteract && <strong className="shared-partner-name"><span aria-hidden="true">{Array.from(partnerName)[0]}</span>{partnerName}</strong>}{caring}{clock}{meet}
+  return <div className="distance-bar">{onInteract && <strong className="shared-partner-name"><span aria-hidden="true">{Array.from(raw)[0]}</span><bdi>{raw}</bdi></strong>}{caring}{clock}{meet}
     {onInteract && <button className="distance-interact" type="button" onClick={onInteract} data-testid="conversation-interaction">
       <HandHeart size={16} aria-hidden="true" />{t("互动", "Connect", "Conectar")}
     </button>}

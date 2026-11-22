@@ -88,13 +88,13 @@ export async function createPostgresStore(databaseUrl) {
       if (!result.rowCount) throw new Error("Identity already linked");
     },
     async createUser(user) {
-      const result = await pool.query("insert into users (id,email,name,password_hash,created_at) values ($1,$2,$3,$4,$5) on conflict (email) do nothing returning *", [user.id, user.email, user.name, user.passwordHash, user.createdAt]);
+      const result = await pool.query("insert into users (id,email,name,password_hash,created_at,name_source,language) values ($1,$2,$3,$4,$5,$6,$7) on conflict (email) do nothing returning *", [user.id, user.email, user.name, user.passwordHash, user.createdAt, user.nameSource || null, user.language || null]);
       return mapUser(result.rows[0]);
     },
     async createSession(session) { await pool.query("insert into sessions (id,user_id,created_at,expires_at,provider) values ($1,$2,$3,$4,$5)", [session.id, session.userId, session.createdAt, session.expiresAt, session.provider || null]); return session; },
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
     async deleteUserSessions(userId, except = null) { await pool.query("delete from sessions where user_id=$1 and id is distinct from $2", [userId, except]); },
-    async updateUserName(userId, name) { return (await pool.query("update users set name=$2 where id=$1", [userId, name])).rowCount > 0; },
+    async updateUserName(userId, name) { return (await pool.query("update users set name=$2, name_source='user' where id=$1", [userId, name])).rowCount > 0; },
     async updateUserPassword(userId, passwordHash) { return (await pool.query("update users set password_hash=$2 where id=$1", [userId, passwordHash])).rowCount > 0; },
     async updateUserLanguage(userId, language) { return (await pool.query("update users set language=$2 where id=$1", [userId, language])).rowCount > 0; },
     async leaveRelationship(userId) {
@@ -435,6 +435,7 @@ async function migrate(pool) {
   await pool.query(`
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
     alter table users add column if not exists language text;
+    alter table users add column if not exists name_source text;
     alter table relationships add column if not exists imessage_group_id text;
     alter table invitations add column if not exists opened_at timestamptz;
     alter table invitations add column if not exists sent_at timestamptz;
@@ -500,7 +501,7 @@ function mapGraphRecord(row) {
 }
 
 const iso = (value) => value ? new Date(value).toISOString() : null;
-const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, language: row.language || null, createdAt: iso(row.created_at) } : null;
+const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, passwordHash: row.password_hash, language: row.language || null, nameSource: row.name_source || null, createdAt: iso(row.created_at) } : null;
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), ...(row.provider ? { provider: row.provider } : {}) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;

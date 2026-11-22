@@ -86,6 +86,11 @@ export function createCycleRouter({ store, emit = () => {} }) {
   const router = express.Router();
   router.use("/cycle", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
   const today = (req) => { try { return new Date().toLocaleDateString("en-CA", { timeZone: String(req.query?.timezone || req.body?.timezone || "UTC") }); } catch { return new Date().toISOString().slice(0, 10); } };
+  // The last day a log may name (QA round 5): with a real time zone, today there; without one, a day of grace for zones
+  // ahead of UTC.
+  const latest = (req) => { const zone = String(req.query?.timezone || req.body?.timezone || ""); try { if (zone) { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return today(req); } } catch { /* unknown zone */ } return plus(today(req), 1); };
+  // The reader's language: the request's, the saved one, the browser's, else English (never Chinese by default).
+  const lang = (req) => [req.body?.language, req.query?.language, req.auth.user.language].find((value) => ["zh", "en", "es"].includes(value)) || String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1] || "en";
   const lock = async (userId) => `user:${userId}`;
   router.get("/cycle", async (req, res) => {
     const userId = req.auth.user.id, day = today(req), records = await mine(store, userId), logs = logsOf(records);
@@ -114,10 +119,10 @@ export function createCycleRouter({ store, emit = () => {} }) {
   const changed = (context) => { if (context?.relationship) emit({ id: `cycle:${context.userId}`, relationshipId: context.relationship.id }, "cycle.updated"); };
   router.post("/cycle/log", async (req, res) => {
     const userId = req.auth.user.id, event = req.body?.event, date = String(req.body?.date || today(req));
-    if (!isDay(date) || date > plus(today(req), 1)) throw fail(400, say(req.body?.language || req.auth.user.language, "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
+    if (!isDay(date) || date > latest(req)) throw fail(400, say(lang(req), "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
     let record;
-    try { record = await store.transaction(await lock(userId), (tx) => logPeriod(tx, { userId, event, date, strict: true, language: req.body?.language || req.auth.user.language })); }
-    catch (error) { if (error.statusCode === 409 && !error.code) throw fail(409, say(req.body?.language || req.auth.user.language, "这一天之前 12 天内没有记过开始。", "There is no start logged in the 12 days before that day.", "No hay un inicio registrado en los 12 días anteriores.")); throw error; }
+    try { record = await store.transaction(await lock(userId), (tx) => logPeriod(tx, { userId, event, date, strict: true, language: lang(req) })); }
+    catch (error) { if (error.statusCode === 409 && !error.code) throw fail(409, say(lang(req), "这一天之前 12 天内没有记过开始。", "There is no start logged in the 12 days before that day.", "No hay un inicio registrado en los 12 días anteriores.")); throw error; }
     changed({ ...(await store.getRelationshipContext(userId)), userId });
     res.status(201).json({ log: { id: record.id, version: record.version, start: record.start, end: record.end } });
   });
@@ -125,12 +130,12 @@ export function createCycleRouter({ store, emit = () => {} }) {
   // could make two logs share days, or a period that hasn't happened yet).
   const checkDays = (req, language, start, end) => {
     if (!isDay(start) || (end && (!isDay(end) || end < start || between(start, end) > 11))) throw fail(400, say(language, "日期不对：结束要在开始之后 12 天内。", "Those dates don't work: the end must be within 12 days after the start.", "Esas fechas no sirven: el final debe estar en los 12 días siguientes al inicio."));
-    if ((end || start) > plus(today(req), 1)) throw fail(400, say(language, "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
+    if ((end || start) > latest(req)) throw fail(400, say(language, "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
   };
   const clash = (language, log) => fail(409, say(language, `这几天已经记在 ${log.start} 开始的那条里了，请改那一条。`, `Those days are already in the log that starts ${log.start}. Edit that one instead.`, `Esos días ya están en el registro que empieza el ${log.start}. Edita ese.`));
   // Corrects one log's start and end (end may be cleared).
   router.patch("/cycle/:id", async (req, res) => {
-    const userId = req.auth.user.id, language = req.body?.language || req.auth.user.language;
+    const userId = req.auth.user.id, language = lang(req);
     const start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
     checkDays(req, language, start, end);
     const record = await store.transaction(await lock(userId), async (tx) => {
@@ -146,7 +151,7 @@ export function createCycleRouter({ store, emit = () => {} }) {
   // An undone delete: the same days come back as a new log. Idempotent: if those exact days are already logged (a double tap,
   // or logged again before Undo), that log is the answer; days that overlap a different log are refused, never doubled.
   router.post("/cycle/restore", async (req, res) => {
-    const userId = req.auth.user.id, language = req.body?.language || req.auth.user.language;
+    const userId = req.auth.user.id, language = lang(req);
     const start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
     checkDays(req, language, start, end);
     const { record, created } = await store.transaction(await lock(userId), async (tx) => {

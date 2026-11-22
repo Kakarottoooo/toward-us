@@ -457,7 +457,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     return { status: transcript ? "ready" : record.status, names, transcript, truncated: full.length > 40_000 };
   };
 
-  const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : ["en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh";
+  const languageOf = (req) => ["zh", "en", "es"].includes(req.query.language || req.body?.language) ? req.query.language || req.body.language : ["zh", "en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1] || "en";
   // Behind a TLS proxy (Tailscale, Render) the app sees plain http; only a local address keeps it.
   const originOf = (req) => { const host = req.get("x-forwarded-host") || req.get("host"); return `${req.get("x-forwarded-proto") || (/^(localhost|127.|[::1])/.test(host) ? req.protocol : "https")}://${host}`; };
   const hashToken = (token) => createHash("sha256").update(String(token)).digest("hex");

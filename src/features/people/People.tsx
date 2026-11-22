@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Plus } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { isolate, localized, type Language } from "../../i18n";
 import { Carousel } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
 import { relationshipApi } from "../relationship/api";
@@ -41,7 +41,8 @@ export const plainName = (name: string) => name.replace(/[（(][^）)]*[）)]/g,
 /** The moment someone is the one: what happens to everyone else and what the person invited will and will not see. */
 export function TogetherSheet({ language, person, others, onClose, onInvite }: { language: Language; person: Person | null; others: number; onClose: () => void; onInvite: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const name = person ? plainName(person.name) : "";
+  // Isolated inside sentences (QA round 5): an Arabic or Hebrew name doesn't reorder the words around it.
+  const name = person ? isolate(plainName(person.name)) : "";
   return <BottomSheet open={Boolean(person)} onOpenChange={(next) => { if (!next) onClose(); }} title={t(`你和${name}确定了`, `You and ${name}`, `Tú y ${name}`)} description={t("恭喜。接下来会这样：", "Congratulations. Here is what happens next:", "Enhorabuena. Esto es lo que pasa ahora:")}>
     {person && <div className="person-sheet" data-testid="together-sheet">
       <ul>

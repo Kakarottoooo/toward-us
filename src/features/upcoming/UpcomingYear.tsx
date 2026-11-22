@@ -81,8 +81,9 @@ export function UpcomingYear({ language, entries, onAsk, counted, partnerLanguag
       <button type="button" onClick={() => setYear(year + 1)} aria-label={t("下一年", "Next year", "Año siguiente")}><CaretRight size={18} weight="bold" /></button>
       <button type="button" className={`upcoming-holidays ${showHolidays ? "on" : ""}`} aria-pressed={showHolidays} onClick={toggleHolidays}>{t("节日", "Holidays", "Festivos")}</button>
     </header>
-    <div className="upcoming-months" role="list">
-      {Array.from({ length: 12 }, (_, index) => <button key={index} type="button" role="listitem" className={`upcoming-month ${index === month ? "selected" : ""}`} onClick={() => setMonth(index)} aria-label={monthTitle(index)} aria-pressed={index === month}>
+    {/* Twelve toggle buttons in a labelled group (QA round 5: role=listitem can't carry aria-pressed). */}
+    <div className="upcoming-months" role="group" aria-label={t("月份", "Months", "Meses")}>
+      {Array.from({ length: 12 }, (_, index) => <button key={index} type="button" className={`upcoming-month ${index === month ? "selected" : ""}`} onClick={() => setMonth(index)} aria-label={monthTitle(index)} aria-pressed={index === month}>
         <span>{monthName(index, "short")}</span>
         <i className="upcoming-mini">{cells(index).map((day, position) => <b key={position} className={day ? `${day === today ? "today " : ""}${tone(strongest(byDay.get(day)) || "plain" as CalendarKind)}` : "blank"} />)}</i>
       </button>)}

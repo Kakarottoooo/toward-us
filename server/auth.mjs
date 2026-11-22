@@ -76,12 +76,26 @@ export function clearDemoCookie(res, production) {
   res.append("Set-Cookie", `${DEMO_COOKIE}=; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
-export function createUser({ email, name, passwordHash }) {
-  return { id: randomUUID(), email, name, passwordHash, createdAt: new Date().toISOString() };
+// nameSource (QA round 5): "user" when the member typed the name, "provider" when Google/Apple gave it, "fallback" when the
+// server made one up ("我", an email's local part). Onboarding asks for a name only in the last case. language is the
+// interface language at sign-up, so Coming up can show both partners' holidays before either changes it.
+export function createUser({ email, name, passwordHash, nameSource = "user", language = null }) {
+  return { id: randomUUID(), email, name, passwordHash, nameSource, language, createdAt: new Date().toISOString() };
 }
 
 export function publicUser(user) {
-  return user ? { id: user.id, email: user.email, name: user.name, createdAt: user.createdAt } : null;
+  return user ? { id: user.id, email: user.email, name: user.name, nameSet: nameWasChosen(user), createdAt: user.createdAt } : null;
+}
+
+// Accounts from before nameSource was stored: only the register fallback "我" is known not to be chosen.
+export function nameWasChosen(user) { return user.nameSource ? user.nameSource !== "fallback" : user.name !== "我"; }
+
+const SIGNUP_LANGUAGES = new Set(["zh", "en", "es"]);
+/** The interface language a sign-up came from: the body's, else the browser's Accept-Language, else null. */
+export function signupLanguage(req) {
+  if (SIGNUP_LANGUAGES.has(req.body?.language)) return req.body.language;
+  const hint = String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1];
+  return hint || null;
 }
 
 export function normalizeEmail(value) { return String(value || "").trim().toLowerCase().slice(0, 254); }

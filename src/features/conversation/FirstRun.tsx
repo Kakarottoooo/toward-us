@@ -15,7 +15,7 @@ type Preferences = { preferredName: string; completed: boolean };
 const endpoint = "/api/privacy/first-run";
 
 export function FirstRun({ user, feedback, language, pairing, onPairingChange, onRefreshPairing, onAgreed, onDecline, onDeclineAi = onDecline }: {
-  user: { id: string; name: string }; feedback: ReactNode; language: Language; pairing: Pairing | null;
+  user: { id: string; name: string; nameSet?: boolean }; feedback: ReactNode; language: Language; pairing: Pairing | null;
   onPairingChange: (next: Pairing | null) => void; onRefreshPairing: () => Promise<void>;
   onAgreed: (at: string) => void; onDecline: () => void; onDeclineAi?: () => void;
 }) {
@@ -27,8 +27,9 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
-  // The name given at sign-up is not asked again (QA round 4): those members start on the invite step, one step fewer.
-  const named = Boolean(user.name.trim());
+  // The name given at sign-up is not asked again (QA round 4): those members start on the invite step, one step fewer. A name
+  // the server made up ("我" for an empty one, an email's local part) is not theirs, so it is still asked (QA round 5).
+  const named = user.nameSet !== false && Boolean(user.name.trim());
   useEffect(() => {
     if (readDraft(key)) return;
     let active = true;
@@ -36,7 +37,7 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
     relationshipApi<Preferences>(endpoint, { signal: AbortSignal.timeout(12000) }).then(prefs => {
       if (!active) return;
       setReturning(prefs.completed);
-      setDraft({ step: prefs.completed ? 3 : named ? 2 : 1, name: prefs.preferredName || user.name });
+      setDraft({ step: prefs.completed ? 3 : named ? 2 : 1, name: prefs.preferredName || (named || user.name !== "我" ? user.name : "") });
     }).catch(() => { if (active) setError(true); });
     return () => { active = false; };
   }, [key, user.name, attempt]);

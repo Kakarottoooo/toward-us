@@ -1,6 +1,6 @@
 import express from "express";
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import { createUser, issueSession, setSessionCookie, verifyPassword } from "./auth.mjs";
+import { createUser, issueSession, setSessionCookie, signupLanguage, verifyPassword } from "./auth.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createOAuthProviders } from "./oauth-providers.mjs";
 import { createEmailSender, linkCodeMessage } from "./email.mjs";
@@ -77,7 +77,8 @@ export function createOAuthRouter({ store, production, register, providers = cre
         user = await tx.getUserByEmail(email);
         if (!user && !confirmation) {
           if (!signup.adultConfirmed) throw failure("adult_required", 409);
-          const candidate = createUser({ email, name: identity.name || email.split("@")[0].replace(/[<>]/g, "").slice(0, 24) || "Ourever", passwordHash: "federated" });
+          // A provider name counts as theirs; the email's local part is only a placeholder first run asks to replace (QA round 5).
+          const candidate = createUser({ email, name: identity.name || email.split("@")[0].replace(/[<>]/g, "").slice(0, 24) || "Ourever", nameSource: identity.name ? "provider" : "fallback", language: signup.language || null, passwordHash: "federated" });
           user = await register(tx, candidate, signup);
           if (user) {
             await tx.bindOAuthIdentity(provider, subject, user.id, revocation, trustedEmail);
@@ -135,7 +136,7 @@ export function createOAuthRouter({ store, production, register, providers = cre
       attempt("start:" + req.ip, 30, 10 * minute);
       const id = random(), binding = random();
       const short = (value) => typeof value === "string" ? value.slice(0, 128) : undefined;
-      const signup = { adultConfirmed: adultConfirmed === true, referralCode: short(referralCode), installId: short(installId), partnerInviteCode: short(partnerInviteCode), actor: req.auth?.user?.id };
+      const signup = { adultConfirmed: adultConfirmed === true, referralCode: short(referralCode), installId: short(installId), partnerInviteCode: short(partnerInviteCode), actor: req.auth?.user?.id, language: signupLanguage(req) };
       starts.put(id, { provider, base, binding, challenge, signup }, 2 * minute);
       if (!challenge) res.cookie("ourever_start", binding, options(2 * minute));
       res.json({ url: `${base}${path}/${provider}/authorize?request=${id}` });

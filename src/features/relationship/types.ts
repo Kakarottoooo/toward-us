@@ -17,7 +17,10 @@ export type CoupleStreak = { days: number; me: boolean; partner: boolean };
 export type RelationshipHomePayload = {
   relationship: { id: string; members: Array<{ id: string; name: string; role: "A" | "B"; language?: "zh" | "en" | "es" | null }> };
   home: { pending: Array<{ type: string; id: string; title: string }>; upcoming: Array<{ type: string; id: string; title: string; at: string }>; plans: Array<{ type: string; id: string; title: string; status: string; dueAt?: string }>; recentMoment: null; notifications: GraphRecord[] };
+  /** memories, checkins, consentEvents, notifications, togetherConversations, spaces, spaceItems and photos hold only
+   * the newest 20 here; their full lists come from their own endpoints. graphTotals gives each one's visible total. */
   graph: RelationshipGraph;
+  graphTotals?: Record<string, number>;
   capabilities: Record<string, boolean>;
   streak?: CoupleStreak | null;
 };

@@ -24,7 +24,8 @@ before(async () => {
   directory = await mkdtemp(join(process.cwd(), "work", "decisions-"));
   store = await createFileStore(join(directory, "state.json"));
   const previousKey = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "";
-  server = createApiApp({ store, mediator }).listen(0, "127.0.0.1");
+  // This suite signs up more people from one address than the production cap allows.
+  server = createApiApp({ store, mediator, authLimits: { registerPerIp: { max: 1000, windowMs: 60 * 60_000 } } }).listen(0, "127.0.0.1");
   if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
   await new Promise((resolve) => server.once("listening", resolve));
   base = `http://127.0.0.1:${server.address().port}`;

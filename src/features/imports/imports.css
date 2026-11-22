@@ -4,12 +4,12 @@
 .import-choices { display: grid; gap: 8px; }
 .import-choices button { display: grid; gap: 2px; min-height: 52px; padding: 10px 14px; border: 1px solid rgba(37,37,37,.16); border-radius: 12px; background: #fffdf8; color: var(--jian-ink); text-align: left; cursor: pointer; }
 .import-choices button strong { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
-.import-choices button small { color: #7a736b; font-size: 13px; }
+.import-choices button small { color: #6b645c; font-size: 13px; }
 .import-choices button:disabled { opacity: .6; }
 .import-link { justify-self: start; padding: 4px 0; border: 0; background: none; color: var(--jian-blue); font-size: 14px; font-weight: 600; cursor: pointer; }
 .import-progress { height: 8px; overflow: hidden; border-radius: 4px; background: rgba(37,37,37,.08); }
 .import-progress i { display: block; height: 100%; border-radius: 4px; background: var(--jian-blue); transition: width .6s ease; }
-.import-card small, .import-error { color: #7a736b; font-size: 13px; }
+.import-card small, .import-error { color: #6b645c; font-size: 13px; }
 .import-error { color: #903e38; }
 
 .import-main { display: flex; flex-direction: column; gap: 16px; }
@@ -24,11 +24,11 @@
 .import-block li { display: grid; gap: 3px; }
 .import-block li strong, .import-pattern strong { color: var(--jian-ink); font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .import-block li p, .import-pattern p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.55; }
-.import-block li small { color: #7a736b; font-size: 13px; }
+.import-block li small { color: #6b645c; font-size: 13px; }
 .import-block li.is-open strong { color: #903e38; }
 .import-pattern { display: grid; gap: 6px; padding: 14px 16px; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
 .import-pattern blockquote { display: grid; gap: 2px; margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid rgba(37,37,37,.18); color: #3d3934; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
-.import-pattern blockquote small { color: #8a837a; font-size: 12px; }
+.import-pattern blockquote small { color: #6e675f; font-size: 12px; }
 .import-stats { width: 100%; border-collapse: collapse; font-size: 15px; }
 .import-stats th, .import-stats td { padding: 8px 4px; border-bottom: 1px solid rgba(37,37,37,.09); text-align: right; font-weight: 500; }
 .import-stats th:first-child, .import-stats tbody th { text-align: left; color: #6f6860; font-weight: 500; }
@@ -44,7 +44,7 @@
 .import-list > button, .import-way { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 14px; border: 0; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); color: var(--jian-ink); text-align: left; cursor: pointer; }
 .import-list > button > span:nth-child(2), .import-way > span { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .import-list strong, .import-way strong { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
-.import-list small, .import-way small { color: #7a736b; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.import-list small, .import-way small { color: #6b645c; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .import-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--jian-blue-soft); color: var(--jian-blue); }
 .import-way > svg { flex: 0 0 auto; color: var(--jian-blue); }
 .import-way:disabled { opacity: .6; }

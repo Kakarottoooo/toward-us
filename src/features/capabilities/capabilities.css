@@ -1,8 +1,8 @@
 .capabilities-body { display: flex; flex-direction: column; gap: 22px; padding-bottom: 32px; }
 .capabilities-lead { margin: 0 4px; color: #5f5952; font-size: 15px; line-height: 1.6; }
 .capabilities-body section { display: flex; flex-direction: column; gap: 8px; }
-.capabilities-body h2 { margin: 0 4px; color: #7a736a; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
-.capabilities-note { margin: 0 4px; color: #8a837a; font-size: 13px; }
+.capabilities-body h2 { margin: 0 4px; color: #6b645c; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.capabilities-note { margin: 0 4px; color: #6e675f; font-size: 13px; }
 .capability-list { overflow: hidden; border-radius: 16px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
 .capability { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 14px 16px; border: 0; background: transparent; color: var(--jian-ink); font: inherit; text-align: left; cursor: pointer; }
 .capability + .capability { border-top: 1px solid rgba(37,37,37,.07); }

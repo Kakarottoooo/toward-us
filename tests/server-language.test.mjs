@@ -135,3 +135,68 @@ test("a one-year anniversary heads-up is singular in Spanish", async (t) => {
   assert.match(spanish, /su aniversario de 1 año\./);
   noChinese(spanish, "heads-up es");
 });
+
+test("QA round 5: sign-up saves the interface language and whether the name was chosen; home shows both members' languages at once", async (t) => {
+  const store = await createFileStore(join(await workDir(t, "language-signup-"), "store.json"));
+  const app = createApiApp({ store, mediator: {}, production: false });
+  const server = app.listen(0, "127.0.0.1"); await new Promise((done) => server.once("listening", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, { method = "GET", cookie, body, headers = {} } = {}) => {
+    const response = await fetch(`${base}${path}`, { method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+    return { status: response.status, body: response.status === 204 ? null : await response.json(), headers: response.headers };
+  };
+  const register = async (body, headers) => {
+    const response = await call("/api/auth/register", { method: "POST", headers, body: { adultConfirmed: true, email: `u-${randomUUID()}@example.com`, password: "correct-horse-battery", ...body } });
+    assert.equal(response.status, 201);
+    return { cookie: (response.headers.get("set-cookie") || "").split(";")[0], user: response.body.user };
+  };
+  // An empty name gets the "我" placeholder, which is not theirs: first run still asks for one.
+  const unnamed = await register({ name: "", language: "en" });
+  assert.equal(unnamed.user.name, "我");
+  assert.equal(unnamed.user.nameSet, false);
+  const named = await register({ name: "Ziwei" }, { "accept-language": "zh-CN,zh;q=0.9" });
+  assert.equal(named.user.nameSet, true);
+  // The language comes from the body, else Accept-Language.
+  assert.equal((await store.getUserById(unnamed.user.id)).language, "en");
+  assert.equal((await store.getUserById(named.user.id)).language, "zh");
+  // Changing the name in Settings makes it theirs.
+  await store.updateUserName(unnamed.user.id, "Mia");
+  assert.equal((await call("/api/auth/me", { cookie: unnamed.cookie })).body.user.nameSet, true);
+  // Paired straight after sign-up: home carries both languages, so Coming up shows both sets of holidays.
+  const invitation = await call("/api/partner/invitations", { method: "POST", cookie: named.cookie });
+  assert.equal((await call("/api/partner/accept", { method: "POST", cookie: unnamed.cookie, body: { code: invitation.body.pairing.invitation.code } })).status, 200);
+  const home = await call("/api/relationship/home", { cookie: named.cookie });
+  assert.deepEqual(home.body.relationship.members.map((member) => member.language).sort(), ["en", "zh"]);
+  // With no language anywhere, an error is English, not Chinese.
+  const missing = await call("/api/issues/does-not-exist", { cookie: (await register({ name: "Ana" }, { "accept-language": "*" })).cookie, headers: { "accept-language": "*" } });
+  assert.equal(missing.status, 404);
+  noChinese(missing.body.error, "no language: English");
+});
+
+test("QA round 5: a shared photo that can't be screened says so in photo words, in the reader's language", async (t) => {
+  const store = await createFileStore(join(await workDir(t, "language-photo-"), "store.json"));
+  const app = createApiApp({ store, mediator: { aiReady: false, model: "test" }, production: false });
+  const server = app.listen(0, "127.0.0.1"); await new Promise((done) => server.once("listening", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, { method = "GET", cookie, body, type = "application/json" } = {}) => {
+    const response = await fetch(`${base}${path}`, { method, headers: { ...(body ? { "content-type": type } : {}), ...(cookie ? { cookie } : {}) }, body: body ? (Buffer.isBuffer(body) ? body : JSON.stringify(body)) : undefined });
+    return { status: response.status, body: response.status === 204 ? null : await response.json(), headers: response.headers };
+  };
+  const register = async (name) => (await call("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `${name}-${randomUUID()}@example.com`, password: "correct-horse-battery", language: "en" } })).headers.get("set-cookie").split(";")[0];
+  const a = await register("Ann"), b = await register("Ben");
+  const invitation = await call("/api/partner/invitations", { method: "POST", cookie: a });
+  await call("/api/partner/accept", { method: "POST", cookie: b, body: { code: invitation.body.pairing.invitation.code } });
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]);
+  for (const [consent, expected] of [[false, /AI is off for you/], [true, /isn't available right now/]]) {
+    if (consent) await call("/api/privacy/ai-consent", { method: "POST", cookie: a, body: { agree: true, noticeVersion: "2026-11-18" } });
+    const shared = await call("/api/photos?scope=shared&language=en", { method: "POST", cookie: a, body: jpeg, type: "image/jpeg" });
+    assert.ok([403, 503].includes(shared.status), String(shared.status));
+    assert.match(shared.body.error, /photo/);
+    assert.match(shared.body.error, expected);
+    assert.doesNotMatch(shared.body.error, /message/);
+  }
+  const spanish = await call("/api/photos?scope=shared&language=es", { method: "POST", cookie: a, body: jpeg, type: "image/jpeg" });
+  assert.match(spanish.body.error, /foto/);
+});

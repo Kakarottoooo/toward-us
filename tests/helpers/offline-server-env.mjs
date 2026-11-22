@@ -4,6 +4,8 @@
 // real service. Callers add PORT and TOWARD_US_DATA_FILE.
 export const offlineServerEnv = (run = "work/test-server") => ({
   TOWARD_US_TEST: "1",
+  // Suites sign up far more people from one machine than the production cap allows (server/auth-limits.mjs).
+  TOWARD_US_TEST_REGISTER_LIMIT: "10000",
   TOWARD_US_ENV_FILE: `${run}/no-secrets.env`,
   DATABASE_URL: "",
   AI_PROVIDER: "",

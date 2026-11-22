@@ -11,7 +11,7 @@
 .call-hint { margin: 0; color: #5f5952; font-size: 14px; line-height: 1.5; }
 .call-captions { display: grid; gap: 6px; max-height: 150px; margin: 0; padding: 0; overflow: hidden; list-style: none; }
 .call-captions li, .call-record li { color: var(--jian-ink); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
-.call-captions li span, .call-record li span { margin-right: 6px; color: #8a837a; font-size: 13px; font-weight: 650; }
+.call-captions li span, .call-record li span { margin-right: 6px; color: #6e675f; font-size: 13px; font-weight: 650; }
 .call-captions li.from-agent span, .call-record li.from-agent span { color: var(--jian-blue); }
 .call-controls { display: flex; align-items: center; justify-content: space-around; padding-top: 2px; }
 .call-controls > button:not(.call-hangup) { display: grid; justify-items: center; gap: 4px; min-width: 72px; padding: 8px 4px; border: 0; border-radius: 14px; background: transparent; color: var(--jian-ink); font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -19,7 +19,7 @@
 .call-controls > button.on svg { background: var(--jian-ink); color: #fff; }
 .call-hangup { display: grid; place-items: center; width: 64px; height: 64px; border: 0; border-radius: 50%; background: #e2412e; color: #fff; box-shadow: 0 6px 18px rgba(226,65,46,.35); cursor: pointer; }
 .call-controls button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
-.call-note { color: #8a837a; font-size: 12px; text-align: center; }
+.call-note { color: #6e675f; font-size: 12px; text-align: center; }
 
 .conversation-call { order: 2; display: grid; place-items: center; width: 40px; height: 40px; margin-left: auto; border: 0; border-radius: 12px; background: transparent; color: var(--jian-ink); cursor: pointer; }
 .conversation-call:disabled { opacity: .4; }

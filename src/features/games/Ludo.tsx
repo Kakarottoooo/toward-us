@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AirplaneTakeoff, AirplaneTilt, ArrowsClockwise, Bridge, Check, Coins, DiceFive, DiceFour, DiceOne, DiceSix, DiceThree, DiceTwo, Flag, HandHeart, Heart, House, ShieldCheck, SkipForward, Snowflake, Sparkle, Star } from "@phosphor-icons/react";
-import { counted, localized, type Language } from "../../i18n";
+import { counted, localized, bareName, type Language } from "../../i18n";
 import type { ScreenProps } from "./MatchScreen";
 import { PET } from "./types";
 import "./ludo.css";
@@ -112,7 +112,7 @@ export function Ludo({ match, language, userId, partnerName, opponent, act, onRe
 
   const planesAt = new Map<string, Array<{ owner: string; plane: number }>>();
   if (!legacy) for (const id of state.players) (state.planes[id] || []).forEach((plane, index) => { const cell = cellOf(state, id, plane); if (cell) planesAt.set(cell, [...(planesAt.get(cell) || []), { owner: id, plane: index }]); });
-  const planeIcon = (owner: string, index: number, count = 1, pickable = false) => <span key={`${owner}${index}`} className={`ludo-plane ${side(owner)} ${pickable ? "is-pick" : ""}`} aria-label={t(`${name(owner)}的 ${index + 1} 号飞机`, `${name(owner)}: plane ${index + 1}`, `${name(owner)}: avión ${index + 1}`)}><AirplaneTilt size={20} weight="fill" /><b>{count > 1 ? `×${count}` : index + 1}</b></span>;
+  const planeIcon = (owner: string, index: number, count = 1, pickable = false) => <span key={`${owner}${index}`} className={`ludo-plane ${side(owner)} ${pickable ? "is-pick" : ""}`} aria-label={bareName(t(`${name(owner)}的 ${index + 1} 号飞机`, `${name(owner)}: plane ${index + 1}`, `${name(owner)}: avión ${index + 1}`))}><AirplaneTilt size={20} weight="fill" /><b>{count > 1 ? `×${count}` : index + 1}</b></span>;
   const square = (id: string, className: string, marks: ReactNode, label: string) => {
     const here = planesAt.get(id) || [], picks = here.filter((item) => item.owner === userId && choices.some((choice) => choice.index === item.plane)).map((item) => item.plane);
     const content = <>{marks}{here.length > 0 && planeIcon(here[0].owner, here[0].plane, here.length, picks.length > 0)}</>;

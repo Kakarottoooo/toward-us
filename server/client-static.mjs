@@ -8,6 +8,11 @@ import express from "express";
 const HASHED_NAME = /-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/;
 export const IMMUTABLE = "public, max-age=31536000, immutable";
 export const REVALIDATE = "no-cache";
+// The phone-frame images (Bezel.png alone is 354 KB) are protected runtime files under fixed names that change only with
+// an explicit runtime change: kept a week, then served from cache while revalidating (QA round 5: max-age=0 refetched
+// them on every open).
+export const DEVICE_CHROME = "public, max-age=604800, stale-while-revalidate=2592000";
+const DEVICE_DIRS = new Set(["iphone", "android", "status"]);
 
 /** Serves the built web app from `clientRoot`, falling back to index.html for the app's own routes. */
 export function serveClient(app, clientRoot) {
@@ -16,6 +21,7 @@ export function serveClient(app, clientRoot) {
   app.use(express.static(clientRoot, {
     setHeaders(res, file) {
       if (dirname(file) === assets && HASHED_NAME.test(basename(file))) res.setHeader("Cache-Control", IMMUTABLE);
+      else if (dirname(dirname(file)) === assets && DEVICE_DIRS.has(basename(dirname(file)))) res.setHeader("Cache-Control", DEVICE_CHROME);
       else if (file.endsWith(".html")) res.setHeader("Cache-Control", REVALIDATE);
     },
   }));
