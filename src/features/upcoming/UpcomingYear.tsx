@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { CaretLeft, CaretRight, ChatCircleDots, LockKey } from "@phosphor-icons/react";
 import { counted as countOf, languageTag, localized, type Language } from "../../i18n";
-import { holidaysFor } from "./holidays";
+import { coupleHolidays } from "./holidays";
 import "./upcoming.css";
 
 export type CalendarKind = "date" | "holiday" | "plan" | "reminder";
-/** One thing on the calendar. `yearly` dates repeat every year on the same month and day. */
-export type CalendarEntry = { id: string; date: string; title: string; kind: CalendarKind; yearly?: boolean; private?: boolean; note?: string; onOpen?: () => void };
+/** One thing on the calendar. `yearly` dates repeat every year on the same month and day. `owner` marks a holiday only one
+ * of a couple with different languages keeps. */
+export type CalendarEntry = { id: string; date: string; title: string; kind: CalendarKind; yearly?: boolean; private?: boolean; note?: string; owner?: "mine" | "partner"; onOpen?: () => void };
 type Placed = CalendarEntry & { day: string };
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -26,17 +27,17 @@ export function placeInYear(entries: CalendarEntry[], year: number): Placed[] {
 const kindOrder = (kind: CalendarKind) => ["date", "plan", "reminder", "holiday"].indexOf(kind);
 
 /** The year at a glance: the next date as a countdown, twelve small months with colored days, one month opened, then a list. */
-export function UpcomingYear({ language, entries, onAsk, counted }: { language: Language; entries: CalendarEntry[]; onAsk: (text: string) => void; counted?: string }) {
+export function UpcomingYear({ language, entries, onAsk, counted, partnerLanguage = null, partnerName = "" }: { language: Language; entries: CalendarEntry[]; onAsk: (text: string) => void; counted?: string; partnerLanguage?: Language | null; partnerName?: string }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const today = todayIso(), thisYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(thisYear);
   const [month, setMonth] = useState(() => Number(today.slice(5, 7)) - 1);
   const [showHolidays, setShowHolidays] = useState(() => { try { return localStorage.getItem(holidayKey) !== "off"; } catch { return true; } });
   const toggleHolidays = () => { setShowHolidays((on) => { try { localStorage.setItem(holidayKey, on ? "off" : "on"); } catch { /* Kept for this visit only. */ } return !on; }); };
-  const withHolidays = (target: number) => [...entries, ...(showHolidays ? holidaysFor(target, language).map((holiday) => ({ id: `holiday:${holiday.key}`, date: holiday.date, title: holiday.title, kind: "holiday" as const })) : [])];
-  const placed = useMemo(() => placeInYear(withHolidays(year), year), [entries, year, showHolidays, language]);
+  const withHolidays = (target: number) => [...entries, ...(showHolidays ? coupleHolidays(target, language, partnerLanguage).map((holiday) => ({ id: `holiday:${holiday.key}`, date: holiday.date, title: holiday.title, kind: "holiday" as const, owner: holiday.owner })) : [])];
+  const placed = useMemo(() => placeInYear(withHolidays(year), year), [entries, year, showHolidays, language, partnerLanguage]);
   // What comes next always looks from today, across the turn of the year.
-  const ahead = useMemo(() => [...placeInYear(withHolidays(thisYear), thisYear), ...placeInYear(withHolidays(thisYear + 1), thisYear + 1)].filter((entry) => entry.day >= today && daysBetween(today, entry.day) < 366), [entries, showHolidays, language, today]);
+  const ahead = useMemo(() => [...placeInYear(withHolidays(thisYear), thisYear), ...placeInYear(withHolidays(thisYear + 1), thisYear + 1)].filter((entry) => entry.day >= today && daysBetween(today, entry.day) < 366), [entries, showHolidays, language, partnerLanguage, today]);
   // Coming up is for the whole relationship, not next week (founder 11-06): "next" and the list ahead are the dates that come
   // back (anniversaries, birthdays, holidays); one-off plans and reminders stay as dots on the calendar and in their month.
   const lasting = ahead.filter((entry) => entry.kind === "date" || entry.kind === "holiday");
@@ -54,10 +55,14 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
   const left = (day: string) => { const count = daysBetween(today, day); return count === 0 ? t("今天", "Today", "Hoy") : count === 1 ? t("明天", "Tomorrow", "Mañana") : t(`${count} 天`, `${countOf(count, "day", "days")}`, `${countOf(count, "día", "días")}`); };
   const dateLabel = (day: string, withYear = false) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { month: "short", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
   const tone = (kind: CalendarKind) => `kind-${kind}`;
+  // Whose holiday it is, when the two of them keep different ones.
+  const name = partnerName ? <bdi>{partnerName}</bdi> : null;
+  const owner = (entry: CalendarEntry) => entry.owner === "mine" ? <> · {t("你的节日", "your holiday", "tu festivo")}</>
+    : entry.owner === "partner" ? <> · {language === "zh" ? <>{name || "TA"}的节日</> : language === "es" ? <>festivo de {name || "tu pareja"}</> : name ? <>{name}'s holiday</> : "your partner's holiday"}</> : null;
   const strongest = (list: Placed[] | undefined) => list?.slice().sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind))[0]?.kind;
   const row = (entry: Placed, showLeft: boolean) => <li key={`${entry.id}:${entry.day}`}><button type="button" onClick={entry.onOpen} disabled={!entry.onOpen}>
     <span className={`upcoming-dot ${tone(entry.kind)}`} aria-hidden="true" />
-    <span className="upcoming-row-text"><strong>{entry.title}</strong><small>{dateLabel(entry.day, entry.day.slice(0, 4) !== String(thisYear))}{entry.note ? ` · ${entry.note}` : ""}</small></span>
+    <span className="upcoming-row-text"><strong>{entry.title}</strong><small>{dateLabel(entry.day, entry.day.slice(0, 4) !== String(thisYear))}{entry.note ? ` · ${entry.note}` : ""}{owner(entry)}</small></span>
     {entry.private && <LockKey size={14} className="upcoming-lock" aria-label={t("只有你能看到", "Only you can see this", "Solo tú lo ves")} />}
     {showLeft && <em>{left(entry.day)}</em>}
   </button></li>;
@@ -67,7 +72,7 @@ export function UpcomingYear({ language, entries, onAsk, counted }: { language: 
     {next ? <section className={`upcoming-next ${tone(next.kind)}`}>
       <small>{t("下一个", "Next", "Lo próximo")}</small>
       <div><strong>{next.title}</strong><span>{daysBetween(today, next.day) === 0 ? t("就是今天", "It's today", "Es hoy") : t(`还有 ${daysBetween(today, next.day)} 天`, `in ${countOf(daysBetween(today, next.day), "day", "days")}`, `en ${countOf(daysBetween(today, next.day), "día", "días")}`)}</span></div>
-      <small>{dateLabel(next.day, next.day.slice(0, 4) !== String(thisYear))}{next.note ? ` · ${next.note}` : ""}</small>
+      <small>{dateLabel(next.day, next.day.slice(0, 4) !== String(thisYear))}{next.note ? ` · ${next.note}` : ""}{owner(next)}</small>
     </section> : <section className="upcoming-next kind-empty"><strong>{t("还没有要记住的日子", "No dates to remember yet", "Aún no hay fechas que recordar")}</strong><small>{t("跟 Ourever 说说你们的纪念日和生日。", "Tell Ourever your anniversary and birthdays.", "Cuéntale a Ourever su aniversario y cumpleaños.")}</small></section>}
 
     <header className="upcoming-yearbar">

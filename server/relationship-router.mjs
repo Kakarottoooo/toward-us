@@ -30,7 +30,9 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const snapshot = await store.relationshipSnapshotForUser(req.auth.user.id);
     // 连续一起来 on the top card of Coming up, counted from the reader's own "today".
     const streak = await coupleStreak(store, context.relationship.id, { userId: req.auth.user.id, timezone: String(req.query?.timezone || "").slice(0, 64) || null }).then(({ days, me, partner }) => ({ days, me, partner })).catch(() => null);
-    res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id), graph: projectGraph(snapshot, req.auth.user.id), streak, relationship: { id: context.relationship.id, members: context.members.map((member) => ({ id: member.userId, name: member.user.name, role: member.role })) }, capabilities: capabilities() });
+    // Each member's last-chosen interface language, so Coming up can show both people's holidays when they differ.
+    const languages = await Promise.all(context.members.map(async (member) => (await store.getUserById(member.userId))?.language || null));
+    res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id), graph: projectGraph(snapshot, req.auth.user.id), streak, relationship: { id: context.relationship.id, members: context.members.map((member, index) => ({ id: member.userId, name: member.user.name, role: member.role, language: languages[index] })) }, capabilities: capabilities() });
   });
 
   router.get("/relationship/events", async (req, res) => {
