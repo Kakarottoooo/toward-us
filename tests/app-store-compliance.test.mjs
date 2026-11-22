@@ -94,7 +94,7 @@ test("privacy policy, terms and support are public pages in all three languages,
 }));
 
 test("the contact line uses the configured support address, and nothing else is a placeholder", () => {
-  const withEmail = renderLegalPage("support", "en", { PINKY_SUPPORT_EMAIL: "help@pinky.example", PINKY_OPERATOR: "Example Labs LLC" });
+  const withEmail = renderLegalPage("support", "en", { OUREVER_SUPPORT_EMAIL: "help@pinky.example", PINKY_OPERATOR: "Example Labs LLC" });
   assert.ok(withEmail.includes('href="mailto:help@pinky.example"'));
   assert.ok(renderLegalPage("privacy", "en", { PINKY_OPERATOR: "Example Labs LLC" }).includes("Ourever is operated by Example Labs LLC."));
   const without = renderLegalPage("support", "zh", {});

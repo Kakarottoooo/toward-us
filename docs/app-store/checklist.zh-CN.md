@@ -52,7 +52,7 @@
 | B. Fly.io（和人脉一样） | 约 $5–15 + 数据库 | 你已经熟悉运维 | Pinky 没有 Fly 配置，要新写；Postgres 要另找（Fly 或 Neon） |
 | C. 这台电脑 + Tailscale Funnel 公开 | $0 | 不花钱、数据不用迁 | 电脑关机、重启、断网 App 就挂，审核期间挂了直接被拒；家里电脑暴露到公网；不建议正式用户用 |
 
-**推荐 A**：Linus 会说"用已经被测试覆盖的那条路"——Postgres 存储有 CI 真库测试，Render 蓝图现成；钱只在提交审核前一周开始花。内测（你们俩）可以先继续用这台电脑，正式用户走 Render，两边互不影响。定了之后要做的：买/指定域名 → Render 上填环境变量（含 `PINKY_SUPPORT_EMAIL`、`PINKY_OPERATOR`、AI 密钥）→ 用 `TOWARD_US_APP_URL=https://<域名> npm run sync:release` 打正式包。
+**推荐 A**：Linus 会说"用已经被测试覆盖的那条路"——Postgres 存储有 CI 真库测试，Render 蓝图现成；钱只在提交审核前一周开始花。内测（你们俩）可以先继续用这台电脑，正式用户走 Render，两边互不影响。定了之后要做的：买/指定域名 → Render 上填环境变量（含 `OUREVER_SUPPORT_EMAIL`、`PINKY_OPERATOR`、AI 密钥）→ 用 `TOWARD_US_APP_URL=https://<域名> npm run sync:release` 打正式包。
 
 > 注意 AI 费用：正式后端要用 API（OpenAI 语音、Anthropic 文字），这部分按量付费，和"先不花钱"冲突；每天额度在 `server/ai-budget.mjs`。这一点请和后端一起定。
 
@@ -68,7 +68,7 @@
 ### 3. 审核账号
 
 - 要你用两个能收信的邮箱在**正式服务器**上建 Mia 和 Leo 两个虚构账号并连上（`review-notes.md` 最后一节，5 分钟），密码只填在 App Store Connect 里。
-- 也要决定 `PINKY_SUPPORT_EMAIL` 用哪个邮箱（会公开在支持页上，审核员和用户都能看到），以及隐私政策里的运营者名称 `PINKY_OPERATOR`（个人就填英文名）。
+- 也要决定 `OUREVER_SUPPORT_EMAIL` 用哪个邮箱（会公开在支持页上，审核员和用户都能看到），以及隐私政策里的运营者名称 `PINKY_OPERATOR`（个人就填英文名）。
 
 ### 4. 小决定（有推荐，不回复就按推荐）
 

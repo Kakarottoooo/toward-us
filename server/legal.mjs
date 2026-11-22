@@ -1,7 +1,8 @@
 // Public pages App Review and every user can open without signing in (App Review 5.1.1(i), 1.2, 1.5): the privacy
 // policy, the terms of use and support. In Simplified Chinese, English and Spanish (?lang=zh|en|es, else the browser's
 // language). The contact address and the operator's name come from the environment so nothing here is a placeholder:
-//   PINKY_SUPPORT_EMAIL  the address people write to (support, privacy requests, reports)
+//   OUREVER_SUPPORT_EMAIL  the address people write to (support, privacy requests, reports); default patric@witnora.com,
+//                          the support inbox (founder 2026-11-22). The old PINKY_SUPPORT_EMAIL is no longer read.
 //   PINKY_OPERATOR       company operating Ourever (defaults to Witnora, Inc.)
 // What the policy says must stay true to the code: update it with any change to what is collected or who processes it.
 export const LEGAL_PAGES = ["privacy", "terms", "support"];
@@ -148,7 +149,7 @@ const NAV = { zh: { back: "返回 Ourever", updated: "更新于", privacy: "隐�
 
 export function renderLegalPage(page, language, env = process.env, standalone = false) {
   const operator = String(env.PINKY_OPERATOR || "").trim() || "Witnora, Inc.";
-  const { title, sections } = content(page, language, { email: String(env.PINKY_SUPPORT_EMAIL || "").trim() || "patric@witnora.com", operator });
+  const { title, sections } = content(page, language, { email: String(env.OUREVER_SUPPORT_EMAIL || "").trim() || "patric@witnora.com", operator });
   const nav = NAV[language];
   const pageUrl = (name, code) => standalone
     ? `/${code === "en" ? "" : code + "/"}${name}`
