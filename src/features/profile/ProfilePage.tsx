@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CaretRight, FilmSlate, LockSimple, PencilSimple, ShareFat, Sparkle, Trash, Users } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
-import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
+import { KeyboardInput, useKeyboard } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { PlayWeek } from "../games/PlayWeek";
 import "./profile.css";

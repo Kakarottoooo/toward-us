@@ -187,6 +187,8 @@ function AccountPrototype() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [joinedElsewhere, setJoinedElsewhere] = useState(false);
+  const [refNotice, setRefNotice] = useState(false);
+  useEffect(() => { if (!refNotice) return; const timer = window.setTimeout(() => setRefNotice(false), 8000); return () => clearTimeout(timer); }, [refNotice]);
   const [authMode, setAuthMode] = useState<AuthMode>(() => referralCode() ? "register" : "login");
   const [autoProvider, setAutoProvider] = useState<SignInProvider | null>(null);
   // Bumped when Back or Forward moves through history, so pages keyed by the address show the one it now names.
@@ -211,6 +213,8 @@ function AccountPrototype() {
     const providersAsked = welcomeProvidersReady();
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me", { signal: AbortSignal.timeout(12000) }).then(async (state) => {
       setUser(state.user); setPairing(state.pairing);
+      // Signed in already: an invitation code is for new sign-ups. Say so once and drop it from the address (QA round 3).
+      if (state.user && !returning && referralCode()) { clearReferral(); setRefNotice(true); }
       if (returning && state.user && !resetToken) {
         if (referralCode()) clearReferral();
         const next = new URLSearchParams(location.search).get("next");
@@ -449,7 +453,7 @@ function AccountPrototype() {
     <p className="pairing-lead" role="alert">{inviteNetworkMessage(language)}</p>
     <button className="primary-action" onClick={retry}>{retryLabel(language)}</button>
   </InviteFrame>;
-  return <><ScreenBoundary fallback={unavailable}><Suspense fallback={<BootSplash language={language} />}>{renderScreen()}</Suspense></ScreenBoundary>{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ScreenBoundary fallback={null}><Suspense fallback={null}><ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); setUrl("/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} /></Suspense></ScreenBoundary>}{screen !== "invite-first" && feedbackEntry}{showArrivals && <ScreenBoundary fallback={null}><Suspense fallback={null}><PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} /></Suspense></ScreenBoundary>}</>;
+  return <><ScreenBoundary fallback={unavailable} resetKey={screen}><Suspense fallback={<BootSplash language={language} />}>{renderScreen()}</Suspense></ScreenBoundary>{refNotice && user && <div className="partner-arrival-notice" role="status" data-testid="ref-signed-in">{localized(language, "你已经有账号了。邀请码只用于新用户注册。", "You already have an account. Invitation codes are for new sign-ups.", "Ya tienes una cuenta. Los códigos de invitación son para registros nuevos.")}</div>}{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ScreenBoundary fallback={null}><Suspense fallback={null}><ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); setUrl("/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} /></Suspense></ScreenBoundary>}{screen !== "invite-first" && feedbackEntry}{showArrivals && <ScreenBoundary fallback={null}><Suspense fallback={null}><PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} /></Suspense></ScreenBoundary>}</>;
 }
 
 /** The plain paper shown while Ourever opens, and while a screen's code is still arriving. */
@@ -664,7 +668,7 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
       </div>}
       {providerError && providerError !== "cancelled" && <p className="form-notice" role="alert">{signInMessage(providerError, language)}</p>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }}>
-      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} data-testid="register-name" /></label>}
+      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} aria-describedby="register-name-count" data-testid="register-name" /><small id="register-name-count" className="field-count" aria-live="polite">{name.length >= 18 ? `${name.length}/24` : ""}</small></label>}
       <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <div className="editorial-field auth-password-field">
         <label htmlFor="auth-password">{t.password}</label>

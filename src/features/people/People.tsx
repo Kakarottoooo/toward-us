@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Plus } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
-import { BottomSheet, Carousel } from "../../mobile";
+import { Carousel } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { relationshipApi } from "../relationship/api";
 import "./people.css";
 

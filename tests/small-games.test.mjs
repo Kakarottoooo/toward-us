@@ -9,6 +9,7 @@ import { createMatchRouter } from "../server/match-router.mjs";
 import { createTogetherRouter } from "../server/together-router.mjs";
 import { fourFrom } from "../server/matches/connect-four.mjs";
 import { legalMoves } from "../server/matches/reversi.mjs";
+import { privacyExport } from "../server/privacy-router.mjs";
 
 // 黑白棋, 四子棋, 两个真相一个谎言, 石头剪刀布 (founder 11-06, game batch 2).
 async function couple(t) {
@@ -31,7 +32,7 @@ async function couple(t) {
     return { status: response.status, body: await response.json() };
   };
   const move = (id, body, userId = ids[0]) => request(`/matches/${id}/actions`, "POST", body, userId);
-  return { ids, request, move };
+  return { ids, request, move, store };
 }
 
 test("黑白棋: only flipping moves, flips the line, black first, resign hands it over", async (t) => {
@@ -123,4 +124,29 @@ test("石头剪刀布: 小家伙 picks right after me, and nothing is said in Us
   assert.ok((await request(`/matches/${match.id}`)).body.match.state.winner);
   const said = (await request("/together?language=zh")).body.conversation.messages.filter((message) => String(message.handle || "").startsWith("match-end:"));
   assert.equal(said.length, 0);
+});
+
+// QA round 3 N1: the data export shows each game as the app shows it to that member, for the games they started and the ones
+// their partner started, and never the server's screening bookkeeping.
+test("data export: a partner's hidden pick, lie and word stay hidden, in either member's export", async (t) => {
+  const { ids, request, move, store } = await couple(t);
+  const exportOf = async (userId) => privacyExport(await store.getPrivacySnapshot(userId), { id: userId, name: "", email: "" });
+  const rps = (await request("/matches", "POST", { game: "rps" })).body.match;
+  assert.equal((await move(rps.id, { type: "pick", choice: "scissors" }, ids[1])).status, 200);
+  const truths = (await request("/matches", "POST", { game: "truths" })).body.match;
+  const teller = truths.state.rounds.at(-1).teller, other = ids.find((id) => id !== teller);
+  assert.equal((await move(truths.id, { type: "tell", statements: ["one", "two", "three"], lie: 2 }, teller)).status, 200);
+  const draw = (await request("/matches", "POST", { game: "draw" })).body.match;
+  const drawer = draw.state.rounds.at(-1).drawer, guesser = ids.find((id) => id !== drawer);
+  await request("/together/messages", "POST", { text: "hi", itemId: randomUUID(), recipient: "partner" });
+  const found = (exported, id) => exported.graph.matches.find((match) => match.id === id);
+  const starter = await exportOf(ids[0]);
+  assert.equal(found(starter, rps.id).state.rounds[0].picks[ids[1]], "picked", "the starter's own record hides the partner's pick");
+  assert.ok(!JSON.stringify(found(starter, rps.id)).includes("scissors"));
+  assert.equal(found(await exportOf(other), truths.id).state.rounds[0].lie, null, "the guesser's export has no lie index");
+  assert.equal(found(await exportOf(teller), truths.id).state.rounds[0].lie, 2, "the teller keeps their own");
+  const guesserDraw = found(await exportOf(guesser), draw.id).state;
+  assert.equal(guesserDraw.rounds[0].word, null, "the guesser's export has no word");
+  assert.equal(guesserDraw.used, undefined); assert.equal(guesserDraw.seed, undefined);
+  for (const userId of ids) for (const record of (await exportOf(userId)).graph.togetherConversations || []) assert.equal(record.screeningQueue, undefined, "no screening bookkeeping");
 });

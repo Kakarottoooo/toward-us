@@ -328,6 +328,30 @@ test("screening down: a partner's message is delivered and queued, Pinky stays q
   assert.deepEqual(await screenDeferredMessages({ store }), { screened: 0, removed: 0 }, "idempotent");
 });
 
+test("screening down past the queue cap: the couple's chat keeps delivering and the oldest entries leave the queue (QA3 R3)", async (t) => {
+  const { setScreeningQueueLimitForTests } = await import("../server/together-domain.mjs");
+  const previous = setScreeningQueueLimitForTests(3);
+  t.after(() => setScreeningQueueLimitForTests(previous));
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args.join(" ")));
+  const f = await deferredScreeningCouple(t);
+  const ids = [];
+  for (let index = 0; index < 5; index += 1) {
+    const sent = await f.say(`while down ${index}`);
+    assert.equal(sent.status, 201, JSON.stringify(sent.body));
+    assert.equal(sent.body.screeningDeferred, true);
+    ids.push(sent.body.message.id);
+  }
+  const seen = (await f.call("/together?language=en", f.b)).body.conversation.messages.map((item) => item.text);
+  for (let index = 0; index < 5; index += 1) assert.ok(seen.includes(`while down ${index}`), "every message reaches the partner");
+  assert.deepEqual((await f.conversation()).screeningQueue.map((entry) => entry.messageId), ids.slice(2), "the newest stay queued, capped");
+  assert.equal(logged.filter((line) => /screening queue over 3/.test(line)).length, 2);
+  // Back up: the capped queue drains as usual (and leaves the shared store clean for the next test).
+  f.set("ok");
+  const { screenDeferredMessages } = await import("../server/together-domain.mjs");
+  assert.deepEqual(await screenDeferredMessages({ store }), { screened: 3, removed: 0 });
+});
+
 test("a deferred message that fails screening afterwards is removed for both partners and its author is told", async (t) => {
   const { screenDeferredMessages } = await import("../server/together-domain.mjs");
   const f = await deferredScreeningCouple(t);

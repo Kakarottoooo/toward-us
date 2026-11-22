@@ -100,6 +100,40 @@ export function createCycleRouter({ store, emit = () => {} }) {
     if (context?.relationship) emit({ id: `cycle:${userId}`, relationshipId: context.relationship.id }, "cycle.updated");
     res.json({ sharing: on });
   });
+  // Logged by hand on Coming up (QA round 3: it used to work only by telling Ourever, so not at all with AI declined or down).
+  // A start or an end on a day, by the same rule as the conversation: a start within a week of an open one is the same period.
+  const changed = (context) => { if (context?.relationship) emit({ id: `cycle:${context.userId}`, relationshipId: context.relationship.id }, "cycle.updated"); };
+  router.post("/cycle/log", async (req, res) => {
+    const userId = req.auth.user.id, event = req.body?.event, date = String(req.body?.date || today(req));
+    if (!isDay(date) || date > plus(today(req), 1)) throw fail(400, say(req.body?.language || req.auth.user.language, "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
+    let record;
+    try { record = await store.transaction(await lock(userId), (tx) => logPeriod(tx, { userId, event, date })); }
+    catch (error) { if (error.statusCode === 409) throw fail(409, say(req.body?.language || req.auth.user.language, "这一天之前 12 天内没有记过开始。", "There is no start logged in the 12 days before that day.", "No hay un inicio registrado en los 12 días anteriores.")); throw error; }
+    changed({ ...(await store.getRelationshipContext(userId)), userId });
+    res.status(201).json({ log: { id: record.id, version: record.version, start: record.start, end: record.end } });
+  });
+  // Corrects one log's start and end (end may be cleared); also how an undone delete comes back.
+  router.patch("/cycle/:id", async (req, res) => {
+    const userId = req.auth.user.id, language = req.body?.language || req.auth.user.language;
+    const start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
+    if (!isDay(start) || start > plus(today(req), 1) || (end && (!isDay(end) || end < start || between(start, end) > 11))) throw fail(400, say(language, "日期不对：结束要在开始之后 12 天内。", "Those dates don't work: the end must be within 12 days after the start.", "Esas fechas no sirven: el final debe estar en los 12 días siguientes al inicio."));
+    const record = await store.transaction(await lock(userId), async (tx) => {
+      const current = await tx.getRelationshipRecordForUser("checkins", req.params.id, userId);
+      if (!current || current.kind !== CYCLE || current.ownerUserId !== userId) throw fail(404, say(language, "没有找到", "Not found", "No encontrado"));
+      return tx.updateRelationshipRecordForUser("checkins", current.id, userId, (draft) => { draft.start = start; draft.end = end; draft.version += 1; });
+    });
+    changed({ ...(await store.getRelationshipContext(userId)), userId });
+    res.json({ log: { id: record.id, version: record.version, start: record.start, end: record.end } });
+  });
+  // An undone delete: the same days come back as a new log.
+  router.post("/cycle/restore", async (req, res) => {
+    const userId = req.auth.user.id, start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
+    if (!isDay(start) || (end && (!isDay(end) || end < start || between(start, end) > 11))) throw fail(400, "Invalid dates.");
+    const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "private", kind: CYCLE, start, end, provenanceSource: "member" });
+    await store.transaction(await lock(userId), (tx) => tx.createRelationshipRecord("checkins", record));
+    changed({ ...(await store.getRelationshipContext(userId)), userId });
+    res.status(201).json({ log: { id: record.id, version: record.version, start, end } });
+  });
   router.delete("/cycle/:id", async (req, res) => {
     const userId = req.auth.user.id;
     await store.transaction(await lock(userId), async (tx) => {

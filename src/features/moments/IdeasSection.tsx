@@ -1,7 +1,8 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Buildings, CalendarPlus, Camera, Check, ForkKnife, Gift, Heart, House, Mountains, PaintBrush, RocketLaunch, Shuffle } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet } from "../../mobile";
+import { jsonBody, relationshipApi } from "../relationship/api";
+import { BottomSheet } from "../navigation/Sheet";
 import { IDEA_CATEGORIES, IDEAS, ideaText, type Idea, type IdeaCategory } from "./ideas";
 
 type Done = Map<number, { photo: string | null; date: string }>;
@@ -21,8 +22,31 @@ const LOOK: Record<IdeaCategory, { icon: (size: number) => ReactNode; tone: stri
 /** "100 small things to do together" (founder 11-06, design A, then readable cards): all hundred by kind, each card with its words
  * and turning into the couple's own photo once they have done it. "今天做什么" picks one they haven't done. A card opens the
  * idea: tell Ourever you did it (it keeps the memory and ticks the card) or that you want to (it helps plan it). */
-export function IdeasSection({ language, done, onDid, onPlan }: { language: Language; done: Done; onDid: (text: string) => void; onPlan?: (text: string) => void }) {
+export function IdeasSection({ language, done, onDid, onPlan, onChanged }: { language: Language; done: Done; onDid: (text: string) => void; onPlan?: (text: string) => void; onChanged?: () => Promise<void> | void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
+  // "We did it" ticks the card directly (QA round 3: it used to work only through Ourever, so not with AI declined or down);
+  // telling Ourever, with photos, stays a choice when AI is on. Undo takes the memory back.
+  const [aiOn, setAiOn] = useState(false);
+  useEffect(() => { void relationshipApi<{ user: { aiConsentAt?: string | null } | null }>("/api/auth/me").then((state) => setAiOn(Boolean(state.user?.aiConsentAt))).catch(() => {}); }, []);
+  const [marking, setMarking] = useState(false), [markError, setMarkError] = useState("");
+  const [justDid, setJustDid] = useState<{ idea: number; id: string; version: number } | null>(null);
+  const today = () => new Date().toLocaleDateString("en-CA");
+  const markDone = async (idea: Idea) => {
+    setMarking(true); setMarkError("");
+    try {
+      const { record } = await relationshipApi<{ record: { id: string; version: number } }>(`/api/spaces/moments/ideas/${idea.number}`, jsonBody({ title: ideaText(idea, language), date: today() }));
+      setJustDid({ idea: idea.number, id: record.id, version: record.version });
+      await onChanged?.();
+    } catch { setMarkError(t("没有保存，请重试。", "That wasn't saved. Try again.", "No se guardó. Inténtalo de nuevo.")); }
+    finally { setMarking(false); }
+  };
+  const undoMark = async () => {
+    if (!justDid) return;
+    setMarking(true); setMarkError("");
+    try { await relationshipApi(`/api/space-items/${encodeURIComponent(justDid.id)}/moment/archive`, jsonBody({ version: justDid.version })); setJustDid(null); await onChanged?.(); }
+    catch { setMarkError(t("没有撤销，请重试。", "That wasn't undone. Try again.", "No se deshizo. Inténtalo de nuevo.")); }
+    finally { setMarking(false); }
+  };
   const [category, setCategory] = useState<IdeaCategory | "all">("all");
   const [open, setOpen] = useState<Idea | null>(null), [picked, setPicked] = useState(false);
   const left = useMemo(() => IDEAS.filter((idea) => !done.has(idea.number) && (category === "all" || idea.category === category)), [done, category]);
@@ -73,14 +97,17 @@ export function IdeasSection({ language, done, onDid, onPlan }: { language: Lang
         {mark ? <>
           {mark.photo && <img className="ideas-sheet-photo" decoding="async" src={`/api/photos/${encodeURIComponent(mark.photo)}?w=640`} alt={t(`${ideaText(open, language)}，拍摄于 ${day(mark.date)}`, `${ideaText(open, language)}, ${day(mark.date)}`, `${ideaText(open, language)}, ${day(mark.date)}`)} draggable={false} />}
           <p>{t(`你们在 ${day(mark.date)} 一起做过了 ♡`, `You did this together on ${day(mark.date)} ♡`, `Lo hicieron juntos el ${day(mark.date)} ♡`)}</p>
+          {!mark.photo && aiOn && <div className="ideas-sheet-actions"><button type="button" className="ideas-quiet" onClick={() => { setOpen(null); did(open); }} data-testid="idea-tell"><Camera size={18} />{t("告诉 Ourever，加几张照片", "Tell Ourever and add photos", "Contárselo a Ourever y añadir fotos")}</button></div>}
+          {justDid?.idea === open.number && <button type="button" className="ideas-undo" disabled={marking} onClick={() => void undoMark()} data-testid="idea-undo">{t("撤销", "Undo", "Deshacer")}</button>}
         </> : <>
-          <p>{t("做过了就告诉 Ourever，发几张那天的照片，它会存进你们的回忆，这一张就会换成你们的照片。", "Done it? Tell Ourever and send a few photos from that day: it keeps them in your memories and this card becomes your photo.", "¿Ya lo hicieron? Díganselo a Ourever con unas fotos de ese día: las guarda en sus recuerdos y esta tarjeta será su foto.")}</p>
+          <p>{t("做过了就点“我们做过了”，这一张会打上勾，你们俩都能看到。", "Done it? Tap We did it and this card is ticked for both of you.", "¿Ya lo hicieron? Toquen «Ya lo hicimos» y la tarjeta quedará marcada para los dos.")}</p>
           <div className="ideas-sheet-actions">
-            <button type="button" className="ideas-primary" onClick={() => { setOpen(null); plan(open); }} data-testid="idea-plan"><CalendarPlus size={18} weight="bold" />{t("就做这件，帮我们安排", "Let's do it: help us plan", "Hagámoslo: ayúdanos a planearlo")}</button>
-            <button type="button" className="ideas-quiet" onClick={() => { setOpen(null); did(open); }} data-testid="idea-did"><Camera size={18} />{t("我们做过了", "We did it", "Ya lo hicimos")}</button>
+            {aiOn && <button type="button" className="ideas-primary" onClick={() => { setOpen(null); plan(open); }} data-testid="idea-plan"><CalendarPlus size={18} weight="bold" />{t("就做这件，帮我们安排", "Let's do it: help us plan", "Hagámoslo: ayúdanos a planearlo")}</button>}
+            <button type="button" className={aiOn ? "ideas-quiet" : "ideas-primary"} disabled={marking} onClick={() => void markDone(open)} data-testid="idea-did"><Check size={18} weight="bold" />{marking ? t("正在保存…", "Saving…", "Guardando…") : t("我们做过了", "We did it", "Ya lo hicimos")}</button>
             {picked && <button type="button" className="ideas-quiet" onClick={surprise} data-testid="idea-again"><Shuffle size={18} />{t("换一件", "Another one", "Otra")}</button>}
           </div>
         </>}
+        {markError && <p className="space-error" role="alert">{markError}</p>}
       </div>}
     </BottomSheet>
   </section>;

@@ -64,3 +64,24 @@ test("一起养: petting in Us, what they do together feeds it, and a new level 
   assert.equal(announcements.length, 1);
   assert.equal((await open()).pet.mood, "happy");
 });
+
+test("petting before Us was ever opened creates the conversation instead of a 500 (QA round 3)", async (t) => {
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "pet-fresh-"));
+  const store = await createFileStore(join(directory, "store.json"));
+  const ids = [randomUUID(), randomUUID()];
+  for (const [index, id] of ids.entries()) await store.createUser({ id, email: `${id}@example.invalid`, name: ["Ziwei", "Mia"][index], passwordHash: "test", createdAt: new Date().toISOString() });
+  const relationshipId = randomUUID();
+  await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
+  await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id: ids[0] } }; next(); });
+  app.use("/api", createTogetherRouter({ store, mediator: {} }));
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  assert.equal(await store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, ids[0]), null);
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/together/pet`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ timezone: "UTC" }) });
+  assert.equal(response.status, 200);
+  const { pet } = await response.json();
+  assert.deepEqual([pet.points, pet.pettedByMe], [1, true]);
+});

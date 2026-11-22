@@ -1,7 +1,7 @@
 // Ourever's installed web app: notifications, plus an offline page. It never caches the app, an API response or anything
 // private: the only cached file is the static /offline.html, shown when a page navigation finds no network.
 // A new cache version refreshes the branded offline page for previously installed apps.
-const SHELL = "ourever-shell-v4";
+const SHELL = "ourever-shell-v5";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {

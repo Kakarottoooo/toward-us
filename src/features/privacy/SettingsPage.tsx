@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Brain, CaretRight, Crown, Check, ClockCounterClockwise, DownloadSimple, Eye, FileText, Flag, Heart, Key, Lifebuoy, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
 import { counted, languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet, KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
+import { KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { PageHeader, readUsHidden, usHiddenKey } from "../conversation/ConversationHome";
 import { MemoryWorkspace } from "../memories/MemoryWorkspace";
 import { ProfilePage } from "../profile/ProfilePage";
@@ -51,7 +52,8 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
       setVersion([import.meta.env.VITE_WEB_VERSION, import.meta.env.VITE_WEB_COMMIT?.slice(0, 8)].filter(Boolean).join(" · "));
     }
   }, []);
-  const [page, setPage] = useState<Page>(initialPage || "main");
+  // A reload (or Back from a page opened here) shows the Settings page this history entry names (QA round 3).
+  const [page, setPage] = useState<Page>(() => { const state = history.state as { ourever?: string; settings?: Page } | null; return (state?.ourever === "privacy" && state.settings) || initialPage || "main"; });
   // The couple's character: made by either of them, shown to both; showing it on this screen is each member's own choice.
   const { character, setCharacter } = useCoupleCharacter(Boolean(relationshipId));
   const [characterNotice, setCharacterNotice] = useState("");

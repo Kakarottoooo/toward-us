@@ -59,6 +59,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .editorial-field > span { display: block; margin-bottom: 8px; color: var(--jian-muted); font-size: 13px; font-weight: 750; letter-spacing: .12em; }
 .editorial-field input { width: 100%; height: 50px; border: 0; border-bottom: 1px solid var(--jian-ink); border-radius: 0; outline: none; background: transparent; color: var(--jian-ink); font-family: var(--jian-serif); font-size: 20px; }
 .editorial-field input::placeholder { color: #aaa49d; }
+.editorial-field .field-count { display: block; margin-top: 4px; color: var(--jian-muted); font-size: 13px; text-align: right; } .editorial-field .field-count:empty { display: none; }
 .form-notice, .room-notice { padding: 10px 12px; background: #fff2c6; border-left: 3px solid #ca8b00; color: #614a14; font-size: 12px; line-height: 1.45; }
 .primary-action, .secondary-action { width: 100%; height: 54px; border: 0; display: flex; align-items: center; justify-content: center; gap: 11px; cursor: pointer; }
 .primary-action { background: var(--jian-red); color: white; font-weight: 750; letter-spacing: .08em; }

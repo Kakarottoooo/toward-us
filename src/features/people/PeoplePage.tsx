@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { ChatCircleDots, Trash } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet, useKeyboard } from "../../mobile";
+import { useKeyboard } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { Avatar, plainName, type PeopleState, type Person } from "./People";

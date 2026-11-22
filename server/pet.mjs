@@ -1,4 +1,4 @@
-import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
+import { appendTogetherMessage, ensureTogetherConversation, togetherI18n } from "./together-domain.mjs";
 import { MOMENTS } from "./space-domain.mjs";
 import { markShowedUp } from "./streak.mjs";
 
@@ -93,6 +93,8 @@ export async function syncPet(tx, { relationshipId, userId, zone, language = "zh
 export async function petIt(tx, { relationshipId, userId, zone, language }) {
   const id = `together:${relationshipId}`;
   const today = dayOf(new Date().toISOString(), zone);
+  // A couple who never opened Us has no conversation record yet; petting creates it instead of failing (QA round 3).
+  await ensureTogetherConversation(tx, { relationshipId, userId });
   await tx.updateRelationshipRecordForUser("togetherConversations", id, userId, (draft) => {
     const pets = { ...(draft.pets || {}) };
     if (!(pets[today] || []).includes(userId)) pets[today] = [...(pets[today] || []), userId];

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, ShareNetwork, Gift, X } from "@phosphor-icons/react";
 import { counted, languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { inIosApp } from "./MembershipPage";
 import { loadReferrals, referralInstallId, type ReferralAccount, type ReferralPreview, type Reward } from "./referrals";
 import { relationshipApi } from "../relationship/api";

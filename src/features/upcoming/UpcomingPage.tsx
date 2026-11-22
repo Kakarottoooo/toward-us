@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChatCircleDots, Trash } from "@phosphor-icons/react";
 import { counted, languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { relationshipApi } from "../relationship/api";
 import type { CoupleStreak, GraphRecord } from "../relationship/types";
 import { RemindersPanel } from "../reminders/RemindersPanel";

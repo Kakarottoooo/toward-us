@@ -57,7 +57,10 @@ test("recovery codes are private, single-use, rotated and invalidate every old s
   const privacy = await request("/api/privacy", { cookie: a.cookie });
   assert.equal(privacy.recoveryEnabled, true); assert.equal(JSON.stringify(privacy).includes(second.recoveryCode), false); assert.equal(JSON.stringify(privacy).includes("recoveryCodeHash"), false);
   await request("/api/auth/recover", { method: "POST", body: { email: "recovery-a@example.test", recoveryCode: first.recoveryCode, password: "new-synthetic-password" }, status: 401 });
-  await request("/api/auth/recover", { method: "POST", body: { email: "recovery-a@example.test", recoveryCode: second.recoveryCode, password: "new-synthetic-password" }, status: 204 });
+  // Typed back in capitals, with spaces instead of dashes, it still works (QA round 3: codes were case-sensitive).
+  const typed = ` ${second.recoveryCode.toUpperCase().replaceAll("-", " ")} `;
+  assert.notEqual(typed.trim(), second.recoveryCode);
+  await request("/api/auth/recover", { method: "POST", body: { email: "recovery-a@example.test", recoveryCode: typed, password: "new-synthetic-password" }, status: 204 });
   assert.equal((await request("/api/auth/me", { cookie: a.cookie })).user, null);
   await request("/api/auth/recover", { method: "POST", body: { email: "recovery-a@example.test", recoveryCode: second.recoveryCode, password: "another-password-26" }, status: 401 });
   await request("/api/auth/login", { method: "POST", body: { email: "recovery-a@example.test", password: "new-synthetic-password" } });
@@ -159,4 +162,24 @@ test("a new display name needs no password, but a new password still asks for th
   await request("/api/privacy/account", { cookie: a.cookie, method: "PATCH", body: { name: "Again", newPassword: "another-synthetic-pass", password: "wrong" }, status: 403 });
   assert.equal((await request("/api/auth/me", { cookie: a.cookie })).user.name, "Renamed");
   await request("/api/privacy/account", { cookie: a.cookie, method: "PATCH", body: { newPassword: "another-synthetic-pass", password }, status: 204 });
+}));
+
+// QA round 3 N4: the deletion copy says what they wrote in Us "stays for your partner"; it does, read-only, with a one-time note.
+test("after a partner deletes their account, the one left keeps their Us history read-only and is told once", () => fixture(async ({ register, request }) => {
+  const a = await register("former-a"); const b = await register("former-b");
+  for (const member of [a, b]) await request("/api/privacy/ai-consent", { cookie: member.cookie, method: "POST", body: { agree: true, noticeVersion: "2026-11-18" } }).catch(() => {});
+  const invite = await request("/api/partner/invitations", { cookie: a.cookie, method: "POST", body: {}, status: 201 });
+  await request("/api/partner/accept", { cookie: b.cookie, method: "POST", body: { code: invite.pairing.invitation.code } });
+  await request("/api/together/messages", { cookie: a.cookie, method: "POST", body: { text: "A_SAID_THIS_IN_US", itemId: "former-1", recipient: "partner" }, status: 201 });
+  await request("/api/together/messages", { cookie: b.cookie, method: "POST", body: { text: "B_REPLIED", itemId: "former-2", recipient: "partner" }, status: 201 });
+  assert.equal((await request("/api/privacy/former-us", { cookie: b.cookie })).former, null, "nothing while the pair is active");
+  await request("/api/privacy/account", { cookie: a.cookie, method: "DELETE", body: { password, confirm: true }, status: 204 });
+  assert.equal((await request("/api/auth/me", { cookie: b.cookie })).pairing, null);
+  const { former } = await request("/api/privacy/former-us?language=en", { cookie: b.cookie });
+  assert.equal(former.name, "former-a"); assert.equal(former.seen, false);
+  assert.deepEqual(former.messages.filter((line) => line.role === "member").map((line) => [line.text, line.mine]), [["A_SAID_THIS_IN_US", false], ["B_REPLIED", true]]);
+  assert.equal(JSON.stringify(former).includes(a.user.id), false, "no ids of the deleted account");
+  await request("/api/privacy/former-us/seen", { cookie: b.cookie, method: "POST", body: {} });
+  assert.equal((await request("/api/privacy/former-us", { cookie: b.cookie })).former.seen, true);
+  await request("/api/privacy/former-us", { status: 401 });
 }));

@@ -1,5 +1,5 @@
-.profile-page { display: flex; flex-direction: column; gap: 16px; }
-.profile-tabs { display: flex; padding: 3px; border-radius: 12px; background: rgba(37,37,37,.08); }
+.profile-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.profile-tabs { display: flex; min-width: 0; max-width: 100%; padding: 3px; border-radius: 12px; background: rgba(37,37,37,.08); }
 .profile-tabs button { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; overflow: hidden; border: 0; border-radius: 9px; background: transparent; color: #5f5952; font: inherit; font-size: 15px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
 .profile-tabs button.active { background: #fffdf8; color: var(--jian-ink); box-shadow: 0 1px 3px rgba(37,37,37,.14); }
 .profile-tabs button:focus-visible, .profile-actions button:focus-visible, .profile-share button:focus-visible, .profile-edit button:focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, ShareNetwork, UserPlus } from "@phosphor-icons/react";
 import type { Pairing } from "../../Prototype";
 import { languageTag, localized, type Language } from "../../i18n";
-import { BottomSheet, useKeyboard } from "../../mobile";
+import { useKeyboard } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { closeRelationshipEvents, relationshipEvents } from "../relationship/events";
 import "./partner-invite.css";
@@ -243,6 +244,8 @@ export function InviteBar({ state, onEnterCode }: { state: InviteState; onEnterC
   const { sent, usable, title, primary, primaryAction, details, setDetails, working, loadingText, disabled, t } = state;
   const waiting = sent && usable;
   return <div className="partner-invite-bar">
+    {/* The invitee said no: say so here too, not only inside the invite sheet (QA round 3). */}
+    {state.invitation?.declinedAt && !usable && <p className="partner-invite-declined" role="status" data-testid="invite-declined">{title}</p>}
     {waiting ? <div className="partner-invite-summary" data-testid="invite-waiting"><strong>{title}</strong>
       <button type="button" onClick={() => setDetails(true)}>{t("查看邀请", "View invite", "Ver invitación")}</button>
     </div> : <button type="button" className="invite-primary" disabled={disabled} onClick={primaryAction} data-testid="empty-invite">
