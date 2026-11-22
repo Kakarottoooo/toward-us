@@ -27,7 +27,7 @@ export function CycleCard({ language, view, onChanged, showEmpty = false }: { la
   const log = (event: "start" | "end", date: string) => run(async () => { await relationshipApi("/api/cycle/log", jsonBody({ event, date, timezone: zone, language })); setPicking(null); });
   const save = (edit: { id: string; start: string; end: string }) => run(async () => { await relationshipApi(`/api/cycle/${encodeURIComponent(edit.id)}`, { ...jsonBody({ start: edit.start, end: edit.end || null, timezone: zone, language }), method: "PATCH" }); setEditing(null); });
   const remove = (entry: { id: string; start: string; end: string | null }) => run(async () => { await relationshipApi(`/api/cycle/${encodeURIComponent(entry.id)}`, { method: "DELETE" }); setUndo({ start: entry.start, end: entry.end }); });
-  const restore = () => { const entry = undo; setUndo(null); if (entry) void run(() => relationshipApi("/api/cycle/restore", jsonBody(entry))); };
+  const restore = () => { const entry = undo; setUndo(null); if (entry) void run(() => relationshipApi("/api/cycle/restore", jsonBody({ ...entry, timezone: zone, language }))); };
   const quick = (event: "start" | "end") => <span className="cycle-actions">
     <button type="button" className="cycle-start" disabled={busy} onClick={() => void log(event, today)} data-testid={`cycle-${event}`}>{event === "start" ? t("今天来了", "It started today", "Hoy empezó") : t("今天结束了", "It ended today", "Hoy terminó")}</button>
     <button type="button" className="cycle-other" disabled={busy} onClick={() => { setPicked(today); setPicking(picking === event ? null : event); }} aria-expanded={picking === event} data-testid={`cycle-${event}-other`}>{t("选别的日期", "Another day", "Otro día")}</button>

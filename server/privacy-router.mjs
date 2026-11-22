@@ -62,16 +62,31 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   };
   const confirm = (req) => { if (req.body?.confirm !== true) throw fail(400, local(req, "请明确确认这项操作。", "Explicit confirmation is required.", "Se requiere una confirmación explícita.")); };
   const audit = async (tx, userId, eventType, extras = {}) => tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", eventType, status: "recorded", ...extras }));
+  // Seconds until every [key, max] may try again, at most `max` tries each in 15 minutes; 0 means go, and the try counts
+  // against all of them (a blocked try counts against none, so hammering one bucket can't drain the others).
+  const waitFor = (limits) => {
+    const now = Date.now(); const recent = limits.map(([key]) => (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000));
+    const wait = Math.max(0, ...limits.map(([, max], index) => recent[index].length >= max ? Math.max(1, Math.ceil((recent[index][recent[index].length - max] + 15 * 60_000 - now) / 1000)) : 0));
+    if (!wait) limits.forEach(([key], index) => attempts.set(key, [...recent[index], now]));
+    return wait;
+  };
   // A recovery code is hex, shown in dashed groups of 8; typed back with any case, spaces or dashes it still matches (QA round 3).
+  // Limited per account from one network (QA round 4: one IP-wide limit locked out a second person on the same Wi-Fi), with
+  // looser caps per account and per network against spraying; the answer says how long to wait.
   router.post("/auth/recover", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
-    if (limited(`recovery:${req.ip}`) || limited(`recovery-account:${email}`)) throw fail(429, local(req, "尝试过多，请稍后再试。", "Too many attempts. Try later.", "Demasiados intentos. Inténtalo más tarde."));
+    const wait = waitFor([[`recovery:${req.ip}:${hash(email)}`, 6], [`recovery-account:${hash(email)}`, 20], [`recovery-ip:${req.ip}`, 30]]);
+    if (wait) {
+      const minutes = Math.ceil(wait / 60);
+      return res.status(429).set("Retry-After", String(wait)).json({ retryAfter: wait, error: local(req, `尝试次数过多，请 ${minutes} 分钟后再试。`, `Too many tries. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`, `Demasiados intentos. Vuelve a intentarlo en ${minutes} minuto${minutes === 1 ? "" : "s"}.`) });
+    }
     if (!validPassword(req.body?.password)) throw fail(400, local(req, "新密码需要10–128个字符。", "Use 10–128 characters for the new password.", "Usa entre 10 y 128 caracteres para la nueva contraseña."));
     const user = await store.getUserByEmail(email);
     const result = user && await store.transaction(`user:${user.id}`, async (tx) => {
       const liveUser = await tx.getUserForUpdate(user.id); if (!liveUser || liveUser.email !== email || liveUser.passwordHash === "deleted") return false;
       const current = await settings(user.id, tx);
-      const provided = hash(String(req.body?.recoveryCode || "").toLowerCase().replace(/[\s\-\u2010-\u2015\u2212_.]/g, ""));
+      // NFKC first: a code typed on a full-width (CJK) keyboard is the same letters and digits (QA round 4).
+      const provided = hash(String(req.body?.recoveryCode || "").normalize("NFKC").toLowerCase().replace(/[\s\-\u2010-\u2015\u2212\u30fc_.]/g, ""));
       const expected = current?.recoveryCodeHash || "0".repeat(64);
       if (!timingSafeEqual(Buffer.from(provided, "hex"), Buffer.from(expected, "hex")) || !current?.recoveryCodeHash) return false;
       await tx.updateUserPassword(user.id, await hashPassword(req.body.password));

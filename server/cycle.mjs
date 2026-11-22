@@ -32,21 +32,30 @@ export function predict(logs, today) {
   return { cycle, length, lastStart: last.start, inPeriod, nextStart: next, daysUntil: between(today, next), learned: gaps.length };
 }
 
-/** Logs a start or an end from the conversation. A start within a week of an open one is the same period. */
-export async function logPeriod(tx, { userId, relationshipId = null, event, date }) {
+/** Logs a start or an end from the conversation. A start within a week of an open one is the same period; a start inside an
+ * ended period (or up to a week before it) is that period too, never merged past its end (QA round 4: a start a few days
+ * after a finished period vanished into it). With `strict` (logged by hand), ending a period that already ended is refused
+ * with the day it ended, instead of silently moving it; the conversation may still correct it ("其实 5 号就结束了"). */
+export async function logPeriod(tx, { userId, relationshipId = null, event, date, strict = false, language }) {
   if (!["start", "end"].includes(event) || !isDay(date)) throw fail(400, "When?");
   const logs = logsOf(await mine(tx, userId));
   if (event === "start") {
-    const same = logs.find((log) => Math.abs(between(log.start, date)) <= 7);
-    if (same) return tx.updateRelationshipRecordForUser("checkins", same.id, userId, (draft) => { draft.start = date < same.start ? date : same.start; draft.version += 1; });
+    const same = logs.find((log) => log.end ? between(date, log.start) <= 7 && date <= log.end : Math.abs(between(log.start, date)) <= 7);
+    if (same) return date < same.start ? tx.updateRelationshipRecordForUser("checkins", same.id, userId, (draft) => { draft.start = date; draft.version += 1; }) : same;
     const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "private", kind: CYCLE, start: date, end: null, provenanceSource: "assistant" });
     await tx.createRelationshipRecord("checkins", record);
     return record;
   }
   const open = logs.filter((log) => log.start <= date && between(log.start, date) <= 12).at(-1);
   if (!open) throw fail(409, "No period to end.");
+  if (strict && open.end === date) return open;
+  if (strict && open.end) throw Object.assign(fail(409, say(language, `这次经期已在 ${open.end} 结束，要改请编辑这条记录。`, `This period already ended on ${open.end}. Edit it instead.`, `Este periodo ya terminó el ${open.end}. Edítalo en su lugar.`)), { code: "cycle_already_ended" });
   return tx.updateRelationshipRecordForUser("checkins", open.id, userId, (draft) => { draft.end = date; draft.version += 1; });
 }
+
+/** Days a log covers, for overlap checks: to its end, or a week on while it is still open (the same-period window). */
+const reach = (log) => log.end || plus(log.start, 7);
+const overlapping = (logs, start, end, exceptId) => logs.find((log) => log.id !== exceptId && log.start <= (end || plus(start, 7)) && start <= reach(log));
 
 const sharing = (records) => records.find((item) => item.kind === CYCLE_SETTINGS)?.shareCare === true;
 
@@ -107,32 +116,51 @@ export function createCycleRouter({ store, emit = () => {} }) {
     const userId = req.auth.user.id, event = req.body?.event, date = String(req.body?.date || today(req));
     if (!isDay(date) || date > plus(today(req), 1)) throw fail(400, say(req.body?.language || req.auth.user.language, "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
     let record;
-    try { record = await store.transaction(await lock(userId), (tx) => logPeriod(tx, { userId, event, date })); }
-    catch (error) { if (error.statusCode === 409) throw fail(409, say(req.body?.language || req.auth.user.language, "这一天之前 12 天内没有记过开始。", "There is no start logged in the 12 days before that day.", "No hay un inicio registrado en los 12 días anteriores.")); throw error; }
+    try { record = await store.transaction(await lock(userId), (tx) => logPeriod(tx, { userId, event, date, strict: true, language: req.body?.language || req.auth.user.language })); }
+    catch (error) { if (error.statusCode === 409 && !error.code) throw fail(409, say(req.body?.language || req.auth.user.language, "这一天之前 12 天内没有记过开始。", "There is no start logged in the 12 days before that day.", "No hay un inicio registrado en los 12 días anteriores.")); throw error; }
     changed({ ...(await store.getRelationshipContext(userId)), userId });
     res.status(201).json({ log: { id: record.id, version: record.version, start: record.start, end: record.end } });
   });
-  // Corrects one log's start and end (end may be cleared); also how an undone delete comes back.
+  // A corrected or restored log: real days, none in the future, and none already in another log (QA round 4: edits and undo
+  // could make two logs share days, or a period that hasn't happened yet).
+  const checkDays = (req, language, start, end) => {
+    if (!isDay(start) || (end && (!isDay(end) || end < start || between(start, end) > 11))) throw fail(400, say(language, "日期不对：结束要在开始之后 12 天内。", "Those dates don't work: the end must be within 12 days after the start.", "Esas fechas no sirven: el final debe estar en los 12 días siguientes al inicio."));
+    if ((end || start) > plus(today(req), 1)) throw fail(400, say(language, "请选择今天或更早的日期。", "Pick today or an earlier date.", "Elige hoy o una fecha anterior."));
+  };
+  const clash = (language, log) => fail(409, say(language, `这几天已经记在 ${log.start} 开始的那条里了，请改那一条。`, `Those days are already in the log that starts ${log.start}. Edit that one instead.`, `Esos días ya están en el registro que empieza el ${log.start}. Edita ese.`));
+  // Corrects one log's start and end (end may be cleared).
   router.patch("/cycle/:id", async (req, res) => {
     const userId = req.auth.user.id, language = req.body?.language || req.auth.user.language;
     const start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
-    if (!isDay(start) || start > plus(today(req), 1) || (end && (!isDay(end) || end < start || between(start, end) > 11))) throw fail(400, say(language, "日期不对：结束要在开始之后 12 天内。", "Those dates don't work: the end must be within 12 days after the start.", "Esas fechas no sirven: el final debe estar en los 12 días siguientes al inicio."));
+    checkDays(req, language, start, end);
     const record = await store.transaction(await lock(userId), async (tx) => {
       const current = await tx.getRelationshipRecordForUser("checkins", req.params.id, userId);
       if (!current || current.kind !== CYCLE || current.ownerUserId !== userId) throw fail(404, say(language, "没有找到", "Not found", "No encontrado"));
+      const other = overlapping(logsOf(await mine(tx, userId)), start, end, current.id);
+      if (other) throw clash(language, other);
       return tx.updateRelationshipRecordForUser("checkins", current.id, userId, (draft) => { draft.start = start; draft.end = end; draft.version += 1; });
     });
     changed({ ...(await store.getRelationshipContext(userId)), userId });
     res.json({ log: { id: record.id, version: record.version, start: record.start, end: record.end } });
   });
-  // An undone delete: the same days come back as a new log.
+  // An undone delete: the same days come back as a new log. Idempotent: if those exact days are already logged (a double tap,
+  // or logged again before Undo), that log is the answer; days that overlap a different log are refused, never doubled.
   router.post("/cycle/restore", async (req, res) => {
-    const userId = req.auth.user.id, start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
-    if (!isDay(start) || (end && (!isDay(end) || end < start || between(start, end) > 11))) throw fail(400, "Invalid dates.");
-    const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "private", kind: CYCLE, start, end, provenanceSource: "member" });
-    await store.transaction(await lock(userId), (tx) => tx.createRelationshipRecord("checkins", record));
-    changed({ ...(await store.getRelationshipContext(userId)), userId });
-    res.status(201).json({ log: { id: record.id, version: record.version, start, end } });
+    const userId = req.auth.user.id, language = req.body?.language || req.auth.user.language;
+    const start = String(req.body?.start || ""), end = req.body?.end ? String(req.body.end) : null;
+    checkDays(req, language, start, end);
+    const { record, created } = await store.transaction(await lock(userId), async (tx) => {
+      const logs = logsOf(await mine(tx, userId));
+      const same = logs.find((log) => log.start === start && (log.end || null) === end);
+      if (same) return { record: same, created: false };
+      const other = overlapping(logs, start, end);
+      if (other) throw clash(language, other);
+      const fresh = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "private", kind: CYCLE, start, end, provenanceSource: "member" });
+      await tx.createRelationshipRecord("checkins", fresh);
+      return { record: fresh, created: true };
+    });
+    if (created) changed({ ...(await store.getRelationshipContext(userId)), userId });
+    res.status(created ? 201 : 200).json({ log: { id: record.id, version: record.version, start: record.start, end: record.end } });
   });
   router.delete("/cycle/:id", async (req, res) => {
     const userId = req.auth.user.id;

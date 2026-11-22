@@ -128,3 +128,61 @@ test("经期: manual log, end, edit, delete and undo through /api/cycle, no assi
   assert.deepEqual(mine.logs.map((log) => [log.start, log.end]), [[day(0), null], [day(-31), day(-27)]]);
   assert.equal(mine.prediction.cycle, 31, "the corrected days count");
 });
+
+// QA round 4 D2: hand edits and Undo never make overlapping or future logs, and a start or end never silently rewrites a finished period.
+test("经期: no overlaps or future days on edit and undo; undo is idempotent; a finished period is not merged into or re-ended", async (t) => {
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "cycle-guard-"));
+  const store = await createFileStore(join(directory, "store.json"));
+  const id = randomUUID();
+  await store.createUser({ id, email: `${id}@example.invalid`, name: "Mia", passwordHash: "test", createdAt: new Date().toISOString() });
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id, language: "en" } }; next(); });
+  app.use("/api", createCycleRouter({ store }));
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  const call = async (path, method = "GET", body) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify({ timezone: "UTC", ...body }) } : {}) });
+    return { status: response.status, body: response.status === 204 ? null : await response.json() };
+  };
+  const logs = async () => (await call("/cycle?timezone=UTC")).body.mine?.logs.map((log) => [log.start, log.end]) || [];
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(-60) })).status, 201);
+  assert.equal((await call("/cycle/log", "POST", { event: "end", date: day(-56) })).status, 201);
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(-30) })).status, 201);
+  assert.equal((await call("/cycle/log", "POST", { event: "end", date: day(-26) })).status, 201);
+
+  // Ending a period that already ended says so instead of moving its end; the same day again is a no-op.
+  const reEnd = await call("/cycle/log", "POST", { event: "end", date: day(-25) });
+  assert.equal(reEnd.status, 409); assert.equal(reEnd.body.error, `This period already ended on ${day(-26)}. Edit it instead.`);
+  assert.equal((await call("/cycle/log", "POST", { event: "end", date: day(-26) })).status, 201, "the same end again is fine");
+  // A start two days after a finished period is a new period, not folded into the old one.
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(-24) })).status, 201);
+  assert.deepEqual(await logs(), [[day(-24), null], [day(-30), day(-26)], [day(-60), day(-56)]]);
+  // A start inside a finished period is that period, unchanged.
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(-28) })).status, 201);
+  assert.equal((await logs()).length, 3);
+  const [newest, middle, oldest] = (await call("/cycle?timezone=UTC")).body.mine.logs;
+  await call(`/cycle/${newest.id}`, "DELETE");
+
+  // Edits: no future days, no overlap with another log.
+  const future = await call(`/cycle/${middle.id}`, "PATCH", { start: day(-1), end: day(4) });
+  assert.equal(future.status, 400); assert.equal(future.body.error, "Pick today or an earlier date.");
+  const overlap = await call(`/cycle/${middle.id}`, "PATCH", { start: day(-58), end: day(-54) });
+  assert.equal(overlap.status, 409); assert.match(overlap.body.error, new RegExp(`starts ${day(-60)}`));
+  assert.equal((await call(`/cycle/${middle.id}`, "PATCH", { start: day(-31), end: day(-27) })).status, 200, "moving within its own days is fine");
+
+  // Undo: delete, Undo twice (double tap) → one log; re-log the same start before Undo → a clear 409, never a duplicate.
+  await call(`/cycle/${oldest.id}`, "DELETE");
+  assert.equal((await call("/cycle/restore", "POST", { start: day(-60), end: day(-56) })).status, 201);
+  const again = await call("/cycle/restore", "POST", { start: day(-60), end: day(-56) });
+  assert.equal(again.status, 200, "the same days again return the log already there");
+  assert.deepEqual(await logs(), [[day(-31), day(-27)], [day(-60), day(-56)]]);
+  const restoredId = (await call("/cycle?timezone=UTC")).body.mine.logs[1].id;
+  assert.equal(again.body.log.id, restoredId);
+  await call(`/cycle/${restoredId}`, "DELETE");
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(-60) })).status, 201, "logged again by hand before Undo");
+  const clash = await call("/cycle/restore", "POST", { start: day(-60), end: day(-56) });
+  assert.equal(clash.status, 409); assert.match(clash.body.error, /already in the log/);
+  assert.deepEqual(await logs(), [[day(-31), day(-27)], [day(-60), null]]);
+  assert.equal((await call("/cycle/restore", "POST", { start: day(0), end: day(3) })).status, 400, "Undo can't bring back future days");
+});
