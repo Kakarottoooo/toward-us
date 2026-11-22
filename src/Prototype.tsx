@@ -86,6 +86,13 @@ export default function Prototype() {
 // Asked once, while the app is still opening, so the welcome screen appears with its final buttons instead of
 // growing Apple and Google a moment later (founder 11-21: opening Ourever "moved").
 let welcomeProviders: Promise<boolean> | null = null;
+// The squirrel is fetched and decoded while the app opens too; until it arrives its box keeps its square size, so
+// nothing below it moves (founder 11-21: the welcome screen still "jumped" when the picture landed and pushed it down).
+let welcomeArt: Promise<void> | null = null;
+function welcomeArtReady() {
+  if (!welcomeArt) { const art = new Image(); art.src = "/assets/brand/ourever-mascot.webp"; welcomeArt = art.decode().catch(() => {}); }
+  return welcomeArt;
+}
 let welcomeProvidersKnown = false;
 function welcomeProvidersReady() {
   if (!welcomeProviders) {
@@ -153,7 +160,7 @@ function AccountPrototype() {
       // Signed out with a partner's invite link: the page that says who invited them comes first, not the generic home.
       if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
       const first: Screen = state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
-      if (first === "home") await Promise.race([providersAsked, new Promise((done) => setTimeout(done, 3000))]);
+      if (first === "home") await Promise.race([Promise.all([providersAsked, welcomeArtReady()]), new Promise((done) => setTimeout(done, 3000))]);
       setScreen(first);
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen(signInReturn ? "auth" : "identity-error"));
@@ -322,7 +329,7 @@ function HomeScreen({ language, onLanguage, onProvider, onEmail, onSignIn, t }: 
   return <div className="home-screen" data-testid="home-screen">
     <div className="mobile-home-composition plum-welcome">
       <LanguageSwitch language={language} onLanguage={onLanguage} />
-      <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" alt="" draggable={false} />
+      <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" width={384} height={384} alt="" draggable={false} />
       <h1>{language === "en" ? <>Not sure how to<br />reply to them?<br />Ask Ourever first.</> : t.homeLine}</h1>
       <div className="welcome-entry-actions">
         {providersReady && <>

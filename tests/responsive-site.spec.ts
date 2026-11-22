@@ -94,3 +94,19 @@ test("the welcome screen offers email sign-up directly, with consent instead of 
   await expect(page.getByTestId("auth-apple")).toHaveCount(0);
   await phone.close();
 });
+
+test("the welcome screen does not move when the squirrel finishes loading", async ({ browser, baseURL }) => {
+  const phone = await browser.newContext({ baseURL, viewport: { width: 393, height: 852 } });
+  const page = await phone.newPage();
+  let release = () => {};
+  const held = new Promise<void>((done) => { release = done; });
+  await page.route("**/ourever-mascot.webp", async (route) => { await held; await route.continue(); });
+  await page.goto("/");
+  const headline = page.locator(".plum-welcome h1");
+  await expect(headline).toBeVisible({ timeout: 10_000 });
+  const before = await headline.boundingBox();
+  release();
+  await expect.poll(() => page.locator(".welcome-squirrel").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  expect((await headline.boundingBox())?.y).toBe(before?.y);
+  await phone.close();
+});
