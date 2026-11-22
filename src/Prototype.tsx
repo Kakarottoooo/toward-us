@@ -437,6 +437,37 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
     try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed, ...(inviteCode() ? { partnerInviteCode: inviteCode() } : {}), installId: referralInstallId(), ...(ref ? { referralCode: ref } : {}) }) })); }
     catch (error) { if (ref && (error as { code?: string }).code === "referral_ineligible") { setIneligible(true); setNotice(localized(language, "这次注册无法获得邀请奖励。你仍可不使用邀请创建账号。", "This registration is ineligible for referral rewards. You can still create an account without the invitation.", "Este registro no cumple los requisitos de la invitación. Aún puedes crear una cuenta sin ella.")); } else setNotice(error instanceof TypeError ? inviteNetworkMessage(language) : accountError((error as Error).message, language)); } finally { finish(); }
   };
+  // Instead of the old password, a six-digit code sent to the account's mailbox can confirm the link.
+  const [linkCode, setLinkCode] = useState("");
+  const [linkCodeSent, setLinkCodeSent] = useState(false);
+  const sendLinkCode = async () => {
+    if (submitting.current) return;
+    if (!navigator.onLine) { setNotice(inviteNetworkMessage(language)); return; }
+    keyboard.hide(); submitting.current = true; setBusy(true); setWorking("email"); setNotice("");
+    try {
+      await api("/api/auth/oauth/confirm-link/email", { method: "POST", body: JSON.stringify({ language }) });
+      setLinkCodeSent(true); setLinkCode("");
+      setNotice(localized(language, "确认码已发到这个邮箱，10 分钟内有效。", "We emailed a code to this address. It expires in 10 minutes.", "Enviamos un código a este correo. Caduca en 10 minutos."));
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 410) setProviderError("expired");
+      else setNotice(!navigator.onLine ? inviteNetworkMessage(language) : signInMessage(status === 429 ? "throttled" : "failed", language));
+    } finally { finish(); }
+  };
+  const confirmLinkCode = async () => {
+    if (submitting.current || !/^\d{6}$/.test(linkCode)) return;
+    keyboard.hide(); submitting.current = true; setBusy(true); setWorking("email"); setNotice("");
+    try {
+      await api("/api/auth/oauth/confirm-link", { method: "POST", body: JSON.stringify({ code: linkCode }) });
+      setLinkCode(""); setLinkCodeSent(false);
+      await onAuth(await api("/api/auth/me"));
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 410) { setProviderError("expired"); setLinkCodeSent(false); }
+      else if (status === 401) setNotice(localized(language, "确认码不正确或已过期，请重试。", "That code is wrong or has expired. Try again.", "El código no es correcto o caducó. Inténtalo de nuevo."));
+      else setNotice(!navigator.onLine ? inviteNetworkMessage(language) : signInMessage(status === 429 ? "throttled" : "failed", language));
+    } finally { finish(); }
+  };
   const confirmLink = async () => {
     if (submitting.current || !password) return;
     if (!navigator.onLine) { setNotice(inviteNetworkMessage(language)); return; }
@@ -460,12 +491,17 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
       {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "继续即表示你已满 18 岁，并同意", "By continuing, you confirm you are 18 or older and agree to the", "Al continuar, confirmas que tienes 18 años o más y aceptas la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
       {providerError === "link_required" ? <div className="signin-link">
         <p role="status">{signInMessage("link_required", language)}</p>
-        <form onSubmit={event => { event.preventDefault(); void confirmLink(); }}>
+        {linkCodeSent ? <form onSubmit={event => { event.preventDefault(); void confirmLinkCode(); }}>
+          <label className="editorial-field"><span>{localized(language, "邮箱确认码", "Code from your email", "Código del correo")}</span><KeyboardInput inputMode="numeric" autoComplete="one-time-code" required maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onBlur={() => keyboard.hide()} data-testid="link-code" /></label>
+          <button className="signin-method" type="submit" disabled={busy || linkCode.length !== 6}>{localized(language, "确认并关联账号", "Confirm and link account", "Confirmar y vincular cuenta")}</button>
+        </form> : <form onSubmit={event => { event.preventDefault(); void confirmLink(); }}>
           <label className="editorial-field"><span>{t.password}</span><KeyboardInput type="password" required autoComplete="current-password" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} onBlur={() => keyboard.hide()} /></label>
           <button className="signin-method" type="submit" disabled={busy || !password}>{localized(language, "确认并关联账号", "Confirm and link account", "Confirmar y vincular cuenta")}</button>
-        </form>
+        </form>}
         {notice && <p className="form-notice" role="alert">{notice}</p>}
-        <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); onRecover(); }}>{localized(language, "忘记密码？", "Forgot password?", "¿Olvidaste tu contraseña?")}</button>
+        <button className="auth-switch" type="button" disabled={busy} onClick={() => void sendLinkCode()} data-testid="link-send-code">{linkCodeSent
+          ? localized(language, "重新发送确认码", "Send the code again", "Enviar el código de nuevo")
+          : localized(language, "忘了密码？改用邮箱验证码", "Use a code from my email instead", "Usar un código de mi correo")}</button>
         <button className="auth-switch" type="button" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); setNotice(""); setProviderError(""); }}>{t.back}</button>
       </div> : <>
       {autoProvider && providers === "checking" && <p className="auth-hint" role="status">{localized(language, "正在检查其他登录方式…", "Checking other sign-in options…", "Comprobando otros métodos de acceso…")}</p>}
