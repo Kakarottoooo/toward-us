@@ -213,6 +213,7 @@ export async function createPostgresStore(databaseUrl) {
     // Only the first time the link is opened is kept: the inviter sees it, and the partner-join report counts it.
     async markInvitationOpened(code, openedAt) { await pool.query("update invitations set opened_at=$2 where code=$1 and opened_at is null and accepted_at is null and cancelled_at is null and expires_at>$2", [code, openedAt]); },
     async markInvitationAction(code, action, at) {
+      if (action === "decline") { await pool.query("update invitations set cancelled_at=coalesce(cancelled_at,$2), declined_at=coalesce(declined_at,$2) where code=$1", [code, at]); return; }
       const column = action === "sent" ? "sent_at" : "cancelled_at";
       await pool.query(`update invitations set ${column}=$2 where code=$1 and ${column} is null`, [code, at]);
     },
@@ -438,6 +439,7 @@ async function migrate(pool) {
     alter table invitations add column if not exists opened_at timestamptz;
     alter table invitations add column if not exists sent_at timestamptz;
     alter table invitations add column if not exists cancelled_at timestamptz;
+    alter table invitations add column if not exists declined_at timestamptz;
     alter table invitations add column if not exists prepared boolean not null default false;
     create index if not exists invitations_current_idx on invitations(relationship_id,created_at desc) where accepted_at is null;
     create table if not exists phone_links (code_hash text primary key, phone text not null, created_at timestamptz not null, expires_at timestamptz not null);
@@ -502,4 +504,4 @@ const mapUser = (row) => row ? { id: row.id, email: row.email, name: row.name, p
 const mapSession = (row) => row ? { id: row.id, userId: row.user_id, createdAt: iso(row.created_at), expiresAt: iso(row.expires_at), ...(row.provider ? { provider: row.provider } : {}) } : null;
 const mapRelationship = (row) => row ? { id: row.id, status: row.status, imessageGroupId: row.imessage_group_id || null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } : null;
 const mapMembership = (row) => row ? { relationshipId: row.relationship_id, userId: row.user_id, role: row.role, joinedAt: iso(row.joined_at) } : null;
-const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), prepared: row.prepared, expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), sentAt: iso(row.sent_at), cancelledAt: iso(row.cancelled_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;
+const mapInvitation = (row) => row ? { code: row.code, relationshipId: row.relationship_id, createdByUserId: row.created_by_user_id, createdAt: iso(row.created_at), prepared: row.prepared, expiresAt: iso(row.expires_at), openedAt: iso(row.opened_at), sentAt: iso(row.sent_at), cancelledAt: iso(row.cancelled_at), declinedAt: iso(row.declined_at), acceptedAt: iso(row.accepted_at), acceptedByUserId: row.accepted_by_user_id || null } : null;

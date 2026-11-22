@@ -53,6 +53,8 @@ export function projectRecord(record, userId) {
   }
   // Distance cards and the short-lived touch handshake have their own member-scoped projection.
   delete projected.playDistance;
+  // Us messages still waiting for safety screening (together-domain screenDeferredMessages) are server bookkeeping.
+  delete projected.screeningQueue;
   if (projected.ownerUserId !== userId) {
     delete projected.privateNotes;
     delete projected.estimatedCostRange;

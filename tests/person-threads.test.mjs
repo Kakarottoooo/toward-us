@@ -30,6 +30,17 @@ async function setup(t) {
   return { store, id, plans, call, add };
 }
 
+test("a new member with no main conversation yet gets an empty answer, not a 404; a person's thread is not one", async (t) => {
+  const { call, add } = await setup(t);
+  const none = await call("/assistant/sessions/latest");
+  assert.equal(none.status, 200); assert.deepEqual(none.body, { session: null });
+  const jie = await add("阿杰");
+  await call("/assistant/sessions", { language: "zh", timezone: "UTC", personId: jie.id });
+  assert.deepEqual((await call("/assistant/sessions/latest")).body, { session: null }, "a person's own conversation is never the brain");
+  const main = (await call("/assistant/sessions", { language: "zh", timezone: "UTC" })).body.session;
+  assert.equal((await call("/assistant/sessions/latest")).body.session.id, main.id);
+});
+
 test("each person has one conversation of their own, and the brain is never one of them", async (t) => {
   const { call, add, plans } = await setup(t);
   const jie = await add("阿杰"), lily = await add("Lily");

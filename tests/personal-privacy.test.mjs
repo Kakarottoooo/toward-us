@@ -150,3 +150,13 @@ test("deleting private data or the account also deletes private photo and chat-h
     else process.env.TOWARD_US_MEDIA_DIR = previous;
   }
 }));
+
+test("a new display name needs no password, but a new password still asks for the current one", () => fixture(async ({ register, request }) => {
+  const a = await register("rename-a");
+  await request("/api/privacy/account", { cookie: a.cookie, method: "PATCH", body: { name: "Renamed" }, status: 204 });
+  assert.equal((await request("/api/auth/me", { cookie: a.cookie })).user.name, "Renamed");
+  await request("/api/privacy/account", { cookie: a.cookie, method: "PATCH", body: { newPassword: "another-synthetic-pass" }, status: 403 });
+  await request("/api/privacy/account", { cookie: a.cookie, method: "PATCH", body: { name: "Again", newPassword: "another-synthetic-pass", password: "wrong" }, status: 403 });
+  assert.equal((await request("/api/auth/me", { cookie: a.cookie })).user.name, "Renamed");
+  await request("/api/privacy/account", { cookie: a.cookie, method: "PATCH", body: { newPassword: "another-synthetic-pass", password }, status: 204 });
+}));

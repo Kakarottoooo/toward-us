@@ -114,7 +114,8 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
   router.get("/assistant/sessions/latest", async (req, res) => {
     const sessions = (await store.listRelationshipRecordsForUser("privateAgentThreads", req.auth.user.id)).filter((record) => record.intentType === "assistant" && record.ownerUserId === req.auth.user.id && record.visibility === "private" && !record.archivedAt && record.status === "active" && !record.personId && !record.channel);
     const latest = sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-    if (!latest) throw fail(404, "No conversation yet.");
+    // A new member simply has none yet: that is an answer, not a missing page.
+    if (!latest) return res.json({ session: null });
     res.json({ session: await output((await askToKnow(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAfterDate(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || (await askAboutPromise(store, { userId: req.auth.user.id, session: latest }).catch(() => null)) || latest) });
   });
   // The earlier pages of a long conversation (oldest first within a page); page 1 is the most recent page.

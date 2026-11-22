@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { offlineServerEnv } from "./tests/helpers/offline-server-env.mjs";
 
 // Two-person runs (tests/couple-onboarding.spec.ts, tests/conversation-pages.spec.ts) against a throwaway local server: its own data file under
 // work/, no secrets file, no AI keys (Pinky answers with its fixed local copy) and the stand-in character maker, so the
@@ -19,18 +20,10 @@ export default defineConfig({
     timeout: 120_000,
     reuseExistingServer: false,
     env: {
+      ...offlineServerEnv(run),
       PORT: String(port),
       TOWARD_US_DATA_FILE: `${run}/store.json`,
-      TOWARD_US_ENV_FILE: `${run}/no-secrets.env`,
-      DATABASE_URL: "",
-      AI_PROVIDER: "",
-      OPENAI_API_KEY: "",
-      ANTHROPIC_API_KEY: "",
       CHARACTER_MAKER: "fake",
-      RESEND_API_KEY: "",
-      SENDBLUE_API_KEY: "",
-      VAPID_PRIVATE_KEY: "",
-      FCM_SERVICE_ACCOUNT_JSON: "",
     },
   },
 });

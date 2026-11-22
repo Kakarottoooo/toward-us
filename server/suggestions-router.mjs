@@ -38,7 +38,7 @@ export function createSuggestionsRouter({ store, mediator }) {
     const snapshot = await store.relationshipSnapshotForUser(userId);
     const visible = (collection) => (snapshot[collection] || []).filter((record) => canViewRecord(record, userId));
     const conversation = channel === "us"
-      ? (snapshot.togetherConversations || []).find((item) => item.relationshipId === relationshipId)?.messages || []
+      ? ((snapshot.togetherConversations || []).find((item) => item.relationshipId === relationshipId)?.messages || []).filter((item) => !item.noAi)
       : visible("privateAgentThreads").filter((item) => item.intentType === "assistant" && item.ownerUserId === userId && !item.channel).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.messages || [];
     const last = conversation.at(-1);
     // New suggestions when the conversation moves on, the language changes, or a few hours pass.

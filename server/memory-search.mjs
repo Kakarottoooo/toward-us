@@ -42,7 +42,7 @@ export function recallLookup(result, query) {
 export function conversationTurns(messages) {
   const turns = [], questions = new Map();
   for (const message of messages) {
-    if (!message?.text || message.kind && message.kind !== "text" || !["user", "assistant", "member", "agent"].includes(message.role)) continue;
+    if (!message?.text || message.noAi || message.kind && message.kind !== "text" || !["user", "assistant", "member", "agent"].includes(message.role)) continue;
     const answer = ["assistant", "agent"].includes(message.role);
     const previous = message.replyTo ? questions.get(message.replyTo) : turns.at(-1);
     if (answer && previous?.question && !previous.answer) previous.answer = message;

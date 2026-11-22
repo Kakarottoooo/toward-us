@@ -1,5 +1,8 @@
 import { chatSignal } from "./chat-response.mjs";
-import { screenText, isAiPolicyError } from "./ai-screening.mjs";
+import { screenText, screenTextOrDefer, isAiPolicyError } from "./ai-screening.mjs";
+import { asAiUser } from "./ai-budget.mjs";
+import { aiConsentAt, requireAiPermission } from "./ai-permission.mjs";
+import { servingAiAccounts } from "./ai-ledger.mjs";
 import { keepMessages } from "./thread-pages.mjs";
 import { checkPlanConstraints } from "./plan-constraints.mjs";
 import { createWebTurn, pageUrls, webSourceText } from "./readonly-web.mjs";
@@ -29,6 +32,9 @@ const LANGUAGES = new Set(["zh", "en", "es"]);
 // the front is not lost: it moves, KEEP_AFTER_ARCHIVE at a time, into archive chunks of up to ARCHIVE_CHUNK messages each,
 // which /together/history and the daily question read on demand.
 const MESSAGE_LIMIT = 200, KEEP_AFTER_ARCHIVE = 150, ARCHIVE_CHUNK = 200;
+// Messages delivered while screening was unavailable wait on the conversation for screening (screenDeferredMessages). Past
+// this many waiting, a new message is refused as before, so an outage never builds an unbounded backlog.
+const SCREENING_QUEUE_LIMIT = 50;
 const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotiation_requested"]);
 const togetherId = (relationshipId) => `together:${relationshipId}`;
 const archiveId = (relationshipId, seq) => `${togetherId(relationshipId)}:archive:${seq}`;
@@ -72,7 +78,8 @@ export function buildTogetherContext(snapshot, relationshipId, { userId = null, 
   // One pending agreement per couple, whatever path created it (together, full decision flow).
   const pending = agreements.filter((item) => item.status === "awaiting_approvals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return {
-    messages: (conversation?.messages || []).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call, answers }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Ourever" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}),
+    // Words a member sent without AI consent (`noAi`, continueTogetherTurn) never reach a model.
+    messages: (conversation?.messages || []).filter((item) => !item.noAi).slice(-40).map(({ id, role, actorUserId, kind, text, replyTo, createdAt, photoIds, call, answers }) => ({ id, role, actorUserId, kind, text: call ? `${text}\n${call.rows.map((row) => `${row.role === "agent" ? "Ourever" : "Speaker"}: ${row.text}`).join("\n")}`.slice(-4000) : text, replyTo, createdAt, ...(photoIds?.length ? { photoIds } : {}),
       // A daily question carries its answers only once both have answered; before that neither answer reaches the model.
       ...(answers && Object.keys(answers).length >= 2 ? { answers: Object.entries(answers).map(([userId, answer]) => ({ userId, text: answer.text })) } : {}) })),
     activeAgreements: agreements.filter((item) => item.status === "active").map(agreement),
@@ -110,7 +117,7 @@ const cleanI18n = (value) => value && typeof value === "object" && [...LANGUAGES
 // `userId` is the member whose access scope performs the write; it defaults to the author and is required for agent turns.
 // `i18n` is only for the Agent's fixed system copy; each variant carries exactly the same shared fields as `text`.
 // `answersCheckIn`: a member's turn without a `replyTo` of its own answers an open check-in (see openCheckIn).
-export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, awaiting = null, recipient = null, answersCheckIn = false }) {
+export async function appendTogetherMessage(tx, { relationshipId, actorUserId = null, userId = actorUserId, source, kind = "text", text, handle = null, refs = [], replyTo = null, i18n = null, photoIds = [], recordedByUserId = null, call = null, story = null, watch = null, awaiting = null, recipient = null, answersCheckIn = false, noAi = false }) {
   const body = clean(text, 4000);
   if (!body && !photoIds.length) throw decisionError(400, "message_required");
   if (!SOURCES.has(source) || !KINDS.has(kind) || !userId) throw decisionError(400, "message_required");
@@ -122,6 +129,7 @@ export async function appendTogetherMessage(tx, { relationshipId, actorUserId = 
   const message = {
     id: randomUUID(), role: actorUserId ? "member" : "agent", actorUserId: actorUserId || null, source, kind, text: body,
     ...(recipient ? { recipient } : {}),
+    ...(noAi ? { noAi: true } : {}),
     refs: Array.isArray(refs) ? refs.slice(0, 8) : [], handle: key, replyTo: repliesTo, createdAt: new Date().toISOString(),
     ...(!actorUserId && cleanI18n(i18n) ? { i18n: cleanI18n(i18n) } : {}),
     ...(photoIds.length ? { photoIds: photoIds.slice(0, 6) } : {}),
@@ -211,7 +219,7 @@ export async function previousDailyQuestions(store, { relationshipId, userId, li
 /** One member turn in the together conversation, shared by every channel (App, iMessage). The member's words are saved
  * before the model is called so a slow or failed reply never loses them; repeating the same `handle` re-runs only a missing
  * Agent reply. `emit` receives each changed conversation. Returns { conversation, message, reply|null, duplicate }. */
-export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, recipient = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {}, progress = () => {} }) {
+export async function continueTogetherTurn({ store, mediator, relationshipId, actorUserId, recordedByUserId = null, recipient = null, text, photoIds = [], timezone = "UTC", source = "app", handle = null, replyTo = null, language = "zh", emit = () => {}, notifyPrivate = () => {}, progress = () => {}, deferScreening = false }) {
   // Every write re-checks membership inside the relationship lock; an ended relationship is read-only.
   const transaction = (action) => store.transaction(`relationship:${relationshipId}`, async (tx) => {
     const context = await tx.getRelationshipContext(actorUserId);
@@ -221,8 +229,28 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
     chatSignal()?.throwIfAborted();
     return result;
   });
-  await screenText(text);
-  const saved = await transaction((tx) => appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, recipient, answersCheckIn: recipient !== "partner" }));
+  // Founder 11-22: a human message to the partner never needs AI consent. When the writer (or, on a shared phone, the member
+  // recording the line) has not consented, the words are still delivered, but nothing about them reaches any AI provider:
+  // no model screening now or later (no screening queue), no Ourever reply, and the line is marked `noAi` so every model
+  // reader (the Us context, promise and profile scans, composer suggestions, recaps, recall search) leaves it out. Only the
+  // deterministic, non-AI rules apply to it: the writer must be in an active pair (re-checked in the lock below), the text is
+  // capped (2,000 characters at the route, 4,000 here), photos must be this couple's shared ones (checked at the route), and
+  // the idempotency handle dedupes retries. Anything addressed to Ourever (recipient "assistant", or an @Ourever call with
+  // no recipient) still requires consent and is refused with ai_consent_required, as is every other AI path.
+  const writers = [...new Set([actorUserId, recordedByUserId].filter(Boolean))];
+  const noAi = servingAiAccounts() && (await Promise.all(writers.map((id) => aiConsentAt(store, id)))).some((at) => !at);
+  if (noAi && (recipient === "assistant" || (!recipient && AGENT_CALL.test(String(text || ""))))) await requireAiPermission(store, recordedByUserId || actorUserId, language, "together_turn");
+  // A partner's words to the other partner are delivered even while screening is down (founder 11-22, `deferScreening`),
+  // and queued to be screened later; anywhere else an unavailable screen still refuses the message.
+  const unscreened = noAi ? null : deferScreening ? await screenTextOrDefer(text) : await screenText(text);
+  const saved = await transaction(async (tx) => {
+    const queue = unscreened ? (await tx.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), actorUserId))?.screeningQueue || [] : [];
+    if (queue.length >= SCREENING_QUEUE_LIMIT) throw unscreened;
+    const result = await appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, recipient, answersCheckIn: recipient !== "partner", noAi });
+    if (!unscreened || result.duplicate) return result;
+    const entry = { messageId: result.message.id, userId: recordedByUserId || actorUserId, language, queuedAt: new Date().toISOString() };
+    return { ...result, conversation: await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.screeningQueue = [...(draft.screeningQueue || []), entry]; draft.version += 1; }) };
+  });
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.
   const agentLastMessageId = messages.slice(0, messages.findIndex((item) => item.id === message.id)).findLast((item) => item.role === "agent")?.id || null;
@@ -230,7 +258,9 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (!saved.duplicate) emit(saved.conversation);
   const repliedTo = message.replyTo ? messages.find((item) => item.id === message.replyTo) || null : null;
   const awaited = awaitedBy(messages.slice(0, messages.findIndex((item) => item.id === message.id)), message.actorUserId);
-  if (!shouldAgentSpeak(message, { agentLastMessageId, repliedTo, awaited }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate };
+  // Unscreened words never reach the model: Pinky stays quiet on a deferred turn. Retrying the same `handle` once screening
+  // is back runs the missing reply, as for any failed one.
+  if (noAi || message.noAi || unscreened || !shouldAgentSpeak(message, { agentLastMessageId, repliedTo, awaited }) || (saved.duplicate && answered(saved.conversation))) return { conversation: saved.conversation, message, reply: null, duplicate: saved.duplicate, ...(unscreened ? { screeningDeferred: true } : {}), ...(noAi ? { noAi: true } : {}) };
   // From here Pinky works on a reply both of them will see; `progress` tells the App which step it is on (the caller ends it).
   progress("thinking");
   await ensureMomentSpaces(store, actorUserId);
@@ -327,6 +357,53 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   if (!replied.duplicate && recaps.length) void composeStory({ store, mediator, relationshipId, userId: actorUserId, language, occasion: recaps[0].title || "", key: `asked-${message.id}`, emit });
   for (const session of asked) notifyPrivate(session);
   return { conversation: replied.conversation, message, reply: replied.message, duplicate: saved.duplicate };
+}
+
+/** Screens the words delivered in Us while screening was unavailable (continueTogetherTurn `deferScreening`), at most
+ * `limit` per run, from the maintenance tick. A message that passes simply leaves the queue. One that fails is handled as the
+ * synchronous path would have refused it: it is removed for both of them (like an unsent message) and its author is told, in
+ * their private chat and by push. While the provider is still down the run stops and everything waits for the next tick;
+ * a message already gone (unsent, archived) leaves the queue unscreened. Idempotent: each entry is settled once, by id. */
+export async function screenDeferredMessages({ store, emit = () => {}, postNote = async () => {}, notify = async () => {}, limit = 20 }) {
+  const result = { screened: 0, removed: 0 };
+  for (const record of await store.listRecordsForJob("togetherConversations")) {
+    for (const entry of record.screeningQueue || []) {
+      if (result.screened >= limit) return result;
+      const line = record.messages?.find((item) => item.id === entry.messageId);
+      let blocked = false;
+      if (line && !line.removedAt) {
+        result.screened += 1;
+        try { await asAiUser({ userId: entry.userId, language: entry.language }, () => screenText(line.text)); }
+        catch (error) {
+          if (error?.code === "ai_screening_unavailable") return result;
+          // Consent withdrawn since: the words cannot be sent for screening any more, and were already delivered.
+          if (error?.code !== "ai_content_blocked") console.error("A deferred Us message left the screening queue unscreened:", error?.code || error?.name || "error");
+          blocked = error?.code === "ai_content_blocked";
+        }
+      }
+      try {
+        const updated = await store.transaction(`relationship:${record.relationshipId}`, (tx) => tx.updateRelationshipRecordForUser("togetherConversations", record.id, entry.userId, (draft) => {
+          draft.screeningQueue = (draft.screeningQueue || []).filter((item) => item.messageId !== entry.messageId);
+          const index = blocked ? draft.messages.findIndex((item) => item.id === entry.messageId && !item.removedAt) : -1;
+          if (index >= 0) {
+            const { id, role, kind, actorUserId, source, createdAt, handle } = draft.messages[index];
+            draft.messages[index] = { id, role, kind, actorUserId, source, createdAt, handle, refs: [], text: "", removedAt: new Date().toISOString(), removedReason: "screening" };
+          }
+          draft.version += 1;
+        }));
+        if (!blocked) continue;
+        result.removed += 1;
+        emit(updated);
+        const language = entry.language || "zh";
+        const text = language === "en" ? "A message you sent in Us did not pass safety screening, so it was removed for both of you. Revise it or contact Support in Settings."
+          : language === "es" ? "Un mensaje que enviaste en Nosotros no pasó la revisión de seguridad y se retiró para ambos. Edítalo o contacta con soporte en Ajustes."
+            : "你在「我们俩」里发的一条消息未通过安全检查，已对你们两人撤下。请调整内容，或在设置中联系支持。";
+        await postNote(entry.userId, { language, text }).catch(() => {});
+        await notify(entry.userId, { body: { zh: "一条消息未通过安全检查，已撤下", en: "A message didn't pass safety screening and was removed", es: "Un mensaje no pasó la revisión de seguridad y se retiró" }, url: "/?channel=me", tag: `pinky-screen-${entry.messageId}`.slice(0, 64) }).catch(() => {});
+      } catch (error) { console.error("A deferred Us message will be screened again on the next tick:", error?.code || error?.name || "error"); }
+    }
+  }
+  return result;
 }
 
 /** The agent speaks in the shared conversation on its own only for real business: an agreement card, a due joint reminder,

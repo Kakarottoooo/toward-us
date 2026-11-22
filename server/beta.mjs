@@ -51,8 +51,11 @@ export function createBetaRouter({ store, grant, env = process.env, now = () => 
     res.json({ ok: true, plan: (await membershipFor(store, userId, { now: now() })).plan });
   });
 
-  router.get("/founder/beta", auth, founderOnly, async (req, res) => {
+  // Settings asks this for every signed-in member to decide whether to show the board, so anyone else gets a plain "no"
+  // instead of a 404 in their console. The founder's board below is unchanged.
+  router.get("/founder/beta", auth, async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
+    if (!(await isFounder(req.auth.user.id))) return res.json({ founder: false });
     const at = now(), codes = (await store.listRecordsForJob(COLLECTION)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const relationships = (await store.listRelationshipsForJob()).filter((item) => item.status === "active").sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
     const weeks = await weeklyUsage(store, { weeks: 2, now: at }), ai = await aiUsageReport(store, { days: 7, now: at });

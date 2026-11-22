@@ -34,7 +34,10 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   });
 
   router.get("/relationship/events", async (req, res) => {
-    const context = await activeRelationship(store, req, res); if (!context) return;
+    // An inviter still waiting on a pending pairing may listen too, so "pairing.updated" reaches them the moment their
+    // partner accepts (or declines) instead of on the next poll. A pending space has no shared records to leak.
+    const pending = await store.getRelationshipContext(req.auth.user.id);
+    const context = pending?.relationship.status === "pending" ? pending : await activeRelationship(store, req, res); if (!context) return;
     res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache, no-transform"); res.setHeader("Connection", "keep-alive"); res.flushHeaders?.();
     const client = { res, relationshipId: context.relationship.id, userId: req.auth.user.id };
     const bucket = clients.get(context.relationship.id) || new Set(); bucket.add(client); clients.set(context.relationship.id, bucket);
@@ -412,6 +415,10 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
   function archiveOwned(collection) { return async (req, res) => { const current = await store.getRelationshipRecordForUser(collection, req.params.id, req.auth.user.id); if (!current || current.createdByUserId !== req.auth.user.id) return res.status(404).json({ error: say(languageOf(req), "没有找到可归档的对象。", "There is nothing here to archive.", "No hay nada que archivar aquí.") }); const record = await store.updateRelationshipRecordForUser(collection, current.id, req.auth.user.id, (draft) => { draft.status = "archived"; draft.archivedAt = new Date().toISOString(); draft.version += 1; }); await audit(store, record, req.auth.user.id, `${collection}.archived`); emit(record, `${collection}.updated`, PRIVATE_VISIBILITY(record) ? req.auth.user.id : null); res.status(204).end(); }; }
   function emit(record, eventType, ownerUserId = null, actorUserId = null) { if (!record) return; if (eventType === "together.updated") onTogether(record, actorUserId); const payload = publicRelationshipEvent(eventType, record.id, record.version); for (const client of clients.get(record.relationshipId) || []) if (!ownerUserId || client.userId === ownerUserId) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); }
   router.emitRecord = emit;
+  // Pairing changes (accepted, declined, ended) go to the named members wherever their stream is open: an inviter's stream
+  // is keyed by their pending space, an invitee's by their own solo space, if any. Payload: { eventType: "pairing.updated",
+  // objectId: relationshipId, version, status: "active" | "declined" | "ended" }.
+  router.emitToUsers = (userIds, payload) => { for (const bucket of clients.values()) for (const client of bucket) if (userIds.includes(client.userId)) client.res.write(`event: relationship\ndata: ${JSON.stringify(payload)}\n\n`); };
   // True while the member has the App open (its live event stream is connected).
   router.isOnline = (userId) => [...clients.values()].some((bucket) => [...bucket].some((client) => client.userId === userId));
   router.closeUserConnections = (userIds) => { for (const bucket of clients.values()) for (const client of bucket) if (userIds.includes(client.userId)) { client.res.write('event: access-ended\ndata: {}\n\n'); client.res.end(); } };
