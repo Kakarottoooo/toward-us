@@ -82,7 +82,7 @@ export function ReferralPage({ language }: { language: Language }) {
     {failed && retry}
     <section className="referral-section">
       <h2>{t("你的邀请链接", "Your invitation link", "Tu enlace de invitación")}</h2>
-      <p>{t(`好友通过此链接注册，在 ${rules.windowDays} 天内至少分 ${rules.days} 天与 AI 互动共 ${rules.calls} 次，你们各得 ${days(rules.rewardDays, language)}会员。`, `When a friend joins through your link and interacts with AI ${rules.calls} times across at least ${rules.days} days in their first ${rules.windowDays} days, you each earn ${days(rules.rewardDays, language)} of membership.`, `Si un amigo se registra con tu enlace y usa la IA ${rules.calls} veces en al menos ${rules.days} días durante sus primeros ${rules.windowDays} días, cada uno recibe ${days(rules.rewardDays, language)} de membresía.`)}</p>
+      <p>{t(`好友通过此链接注册后，在头 ${rules.windowDays} 天里，在至少 ${rules.days} 个不同的日子收到 Ourever 的 ${rules.calls} 条回复，你们就各得 ${days(rules.rewardDays, language)}会员。`, `When a friend signs up with your link and, in their first ${rules.windowDays} days, gets ${rules.calls} replies from Ourever on at least ${rules.days} different days, you each get ${days(rules.rewardDays, language)} of membership.`, `Si un amigo se registra con tu enlace y, en sus primeros ${rules.windowDays} días, recibe ${rules.calls} respuestas de Ourever en al menos ${rules.days} días distintos, cada uno recibe ${days(rules.rewardDays, language)} de membresía.`)}</p>
       <a href={link.href} className="referral-link" data-testid="referral-link">{link.href}</a>
       <div className="referral-actions">
         <button type="button" className="card-primary" onClick={() => void share()}><ShareNetwork size={17} />{t("分享", "Share", "Compartir")}</button>

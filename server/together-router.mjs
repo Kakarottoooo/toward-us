@@ -1,3 +1,4 @@
+import { eitherWord, nameOr } from "./display-name.mjs";
 import { requireAiPermission } from "./ai-permission.mjs";
 import { withChatRequest, chatSignal, regenerateChatReply } from "./chat-response.mjs";
 import express from "express";
@@ -16,7 +17,7 @@ import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { answerGame, answerPlayCard, GAME_TYPES, playTogetherView, replyToPlayCard, startGame } from "./games.mjs";
 import { careNoteFor } from "./cycle.mjs";
 import { petIt, syncPet } from "./pet.mjs";
-import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
+import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, findTogetherMessage, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { createSharedTranslator } from "./shared-translate.mjs";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
@@ -142,14 +143,14 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     if (!read && req.body?.state !== "delivered") throw decisionError(400, "invalid_receipt");
     const updated = await transaction(req, async (tx, context, relationshipId) => {
       const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
-      const line = conversation.messages.find((item) => item.id === req.params.id);
+      // An older message may already have moved to the archive; its receipt still lands there.
+      const { line, update } = await findTogetherMessage(tx, conversation, userId, req.params.id);
       if (!line || line.role !== "member" || line.actorUserId === userId || line.removedAt) throw decisionError(404, "message_unavailable");
       if (read ? line.readAt : line.deliveredAt) return null;
-      return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, draft => {
-        const target = draft.messages.find(item => item.id === line.id), now = new Date().toISOString();
+      return update(messages => {
+        const target = messages.find(item => item.id === line.id), now = new Date().toISOString();
         target.deliveredAt ||= now;
         if (read) target.readAt ||= now;
-        draft.version += 1;
       });
     });
     if (updated) emit(updated, "together.updated", null, userId);
@@ -160,15 +161,15 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id;
     const updated = await transaction(req, async (tx, context, relationshipId) => {
       const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
-      const line = conversation.messages.find(item => item.id === req.params.id);
+      // A busy chat can archive a message within its two minutes; it can still be unsent from there.
+      const { line, update } = await findTogetherMessage(tx, conversation, userId, req.params.id);
       if (!line || line.role !== "member" || line.kind !== "text" || line.actorUserId !== userId || line.recordedByUserId) throw decisionError(404, "message_unavailable");
       if (line.removedAt) return null;
       if (Date.now() - Date.parse(line.createdAt) > 120_000) throw decisionError(409, "unsend_expired");
-      return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, draft => {
-        const index = draft.messages.findIndex(item => item.id === line.id);
+      return update(messages => {
+        const index = messages.findIndex(item => item.id === line.id);
         const { id, role, kind, actorUserId, source, createdAt, handle } = line;
-        draft.messages[index] = { id, role, kind, actorUserId, source, createdAt, handle, refs: [], text: "", removedAt: new Date().toISOString() };
-        draft.version += 1;
+        messages[index] = { id, role, kind, actorUserId, source, createdAt, handle, refs: [], text: "", removedAt: new Date().toISOString() };
       });
     });
     if (updated) emit(updated, "together.updated", null, userId);
@@ -253,7 +254,7 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const result = await transaction(req, async (tx, context) => {
       const done = await answerAgreementPoint(tx, { agreementId: req.params.id, version: req.body?.version, userId, index: req.body?.index, text: req.body?.text, term });
       const me = context.members.find((member) => member.userId === userId)?.user?.name || "";
-      const i18n = togetherI18n((language) => language === "en" ? `${me} settled "${done.point}": ${done.answer}. It's a new version now, so you both say yes again.` : language === "es" ? `${me} resolvió «${done.point}»: ${done.answer}. Ahora es una versión nueva: los dos tienen que aceptarla otra vez.` : `${me} 补上了「${done.point}」：${done.answer}。这样就是新的一版，你们俩再各点一次同意。`);
+      const i18n = togetherI18n((language) => language === "en" ? `${nameOr(me, eitherWord(language))} settled "${done.point}": ${done.answer}. It's a new version now, so you both say yes again.` : language === "es" ? `${nameOr(me, eitherWord(language))} resolvió «${done.point}»: ${done.answer}. Ahora es una versión nueva: los dos tienen que aceptarla otra vez.` : `${nameOr(me, eitherWord(language))} 补上了「${done.point}」：${done.answer}。这样就是新的一版，你们俩再各点一次同意。`);
       const posted = await appendTogetherMessage(tx, { relationshipId: done.agreement.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: i18n.zh, i18n, handle: `agreement-answer:${done.agreement.id}:${done.agreement.version}` });
       // And the new version's card, which is the one to approve now.
       const card = await announceAgreement(tx, { agreement: done.agreement, userId, language: hint(req) });

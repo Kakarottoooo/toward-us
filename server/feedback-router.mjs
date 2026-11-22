@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { createHash } from "node:crypto";
 import { readableConversation, conversationMessages } from "./conversation-recall.mjs";
@@ -19,7 +20,7 @@ export function createFeedbackRouter({ store, mediator, notify, now = () => new 
   feedbackRewardRoutes(router, { store, now });
   router.use("/feedback", (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
-    return req.auth ? next() : res.status(401).json({ error: "Please sign in." });
+    return req.auth ? next() : res.status(401).json({ error: signInText(req) });
   });
   feedbackVoiceRoute(router, { store, mediator, now });
   router.post("/feedback/reply", async (req, res) => {

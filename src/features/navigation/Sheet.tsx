@@ -84,6 +84,19 @@ export function useLayerOpen(open: boolean) {
   }, [open]);
 }
 
+// A tap on a sheet's button (or checkbox) while one of its text fields has the keyboard up must act on the first tap (QA
+// round 7): pressing would blur the field, the keyboard would hide and the sheet would move before the click lands, so the
+// press keeps focus where it is. The button's own handler hides the keyboard when it runs.
+if (typeof document !== "undefined") document.addEventListener("mousedown", (event) => {
+  const field = document.activeElement;
+  const target = event.target instanceof Element ? event.target.closest("button, label") : null;
+  if (!target || !(field instanceof HTMLElement) || !field.matches("input:not([type=checkbox]):not([type=radio]), textarea")) return;
+  const sheet = field.closest("[data-testid=bottom-sheet]");
+  if (!sheet || target.closest("[data-testid=bottom-sheet]") !== sheet) return;
+  if (target.tagName === "LABEL" && !target.querySelector("input[type=checkbox], input[type=radio]")) return;
+  event.preventDefault();
+}, true);
+
 /** The device BottomSheet, with Back closing it and focus returned to its opener. Same props. */
 export function BottomSheet(props: ComponentProps<typeof DeviceSheet>) {
   useSheetHistory(props.open, () => props.onOpenChange(false));

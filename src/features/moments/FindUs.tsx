@@ -41,7 +41,7 @@ export function FindUs({ language, partnerName, onClose }: { language: Language;
   const keep = () => { void addChosenPhotos(found.filter((item) => chosen.has(item.id)), language); setStep("done"); };
   const faceSlot = (who: "me" | "partner") => <button type="button" className="find-us-face" onClick={() => void pick(who)} data-testid={`find-us-${who}`}>
     {faces[who] ? <img src={`data:image/jpeg;base64,${faces[who]!.face}`} alt="" draggable={false} /> : <UserCircle size={44} />}
-    <span>{who === "me" ? t("你的照片", "A photo of you", "Una foto tuya") : t(`${partnerName} 的照片`, `A photo of ${partnerName}`, `Una foto de ${partnerName}`)}</span>
+    <span>{who === "me" ? t("你的照片", "A photo of you", "Una foto tuya") : t(`${partnerName}的照片`, `A photo of ${partnerName}`, `Una foto de ${partnerName}`)}</span>
   </button>;
 
   return <section className="photo-album find-us" data-testid="find-us">

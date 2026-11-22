@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { appendTogetherMessage, togetherI18n } from "./together-domain.mjs";
 import { addSpaceItem, ensureMomentSpaces } from "./space-domain.mjs";
@@ -59,7 +60,7 @@ Write in ${language === "en" ? "English" : language === "es" ? "Spanish" : "Simp
 
 export function createPhotoMemoryRouter({ store, mediator, emit = () => {} }) {
   const router = express.Router();
-  router.use("/photo-memories", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/photo-memories", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
 
   const pair = async (userId) => {
     const context = await store.getRelationshipContext(userId);

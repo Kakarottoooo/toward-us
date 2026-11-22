@@ -1,3 +1,4 @@
+import { unauthorizedText } from "./request-language.mjs";
 import express from "express";
 import { internalBearerStatus } from "./reminder-router.mjs";
 import { aiCostReport } from "./ai-ledger.mjs";
@@ -10,7 +11,7 @@ export function createAiCostRouter({ store, internalSecret = () => "" }) {
   router.get("/api/internal/ai-cost", async (req, res, next) => {
     const status = internalBearerStatus(req, internalSecret());
     if (status === 503) return res.status(503).json({ error: "Cost reporting is not configured." });
-    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    if (status !== 200) return res.status(401).json({ error: unauthorizedText(req) });
     const requested = req.query.days === undefined ? 7 : Number(req.query.days);
     if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "days must be a positive integer.", code: "invalid_days" });
     res.setHeader("Cache-Control", "no-store");

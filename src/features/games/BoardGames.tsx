@@ -20,10 +20,10 @@ function Footer({ props, mine, resign }: { props: ScreenProps; mine: boolean; re
 
 function result(props: ScreenProps, state: { winner: string | null; draw: boolean; resignedBy: string | null }, turnLabel: string) {
   const t = (zh: string, en: string, es: string) => localized(props.language, zh, en, es);
-  if (props.match.status === "active") return props.match.turn === props.userId ? turnLabel : t(`等 ${props.partnerName} 下…`, `Waiting for ${props.partnerName}…`, `Esperando a ${props.partnerName}…`);
+  if (props.match.status === "active") return props.match.turn === props.userId ? turnLabel : t(`等${props.partnerName}下…`, `Waiting for ${props.partnerName}…`, `Esperando a ${props.partnerName}…`);
   if (state.draw) return t("平局！", "A draw!", "¡Empate!");
-  if (state.winner === props.userId) return state.resignedBy ? t(`${props.partnerName} 认输了，你赢了！`, `${props.partnerName} resigned. You win!`, `${props.partnerName} se rindió. ¡Ganaste!`) : t("你赢了！", "You win!", "¡Ganaste!");
-  return state.resignedBy ? t("你认输了，下一盘再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!") : t(`${props.partnerName} 赢了这盘。`, `${props.partnerName} won this one.`, `${props.partnerName} ganó esta.`);
+  if (state.winner === props.userId) return state.resignedBy ? t(`${props.partnerName}认输了，你赢了！`, `${props.partnerName} resigned. You win!`, `${props.partnerName} se rindió. ¡Ganaste!`) : t("你赢了！", "You win!", "¡Ganaste!");
+  return state.resignedBy ? t("你认输了，下一盘再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!") : t(`${props.partnerName}赢了这盘。`, `${props.partnerName} won this one.`, `${props.partnerName} ganó esta.`);
 }
 
 export function Reversi(props: ScreenProps<ReversiState>) {
@@ -41,7 +41,7 @@ export function Reversi(props: ScreenProps<ReversiState>) {
       <span className={state.next === "w" && match.status === "active" ? "is-turn" : ""}><i className="stone is-white" />{state.white === userId ? t("你", "You", "Tú") : partnerName} · {state.counts.w}</span>
     </div>
     <p className={`gomoku-status ${match.status !== "active" && state.winner === userId ? "is-win" : ""}`} role="status" data-testid="reversi-status">{status}</p>
-    {state.passed && match.status === "active" && <p className="game-note">{state.passed === userId ? t("你没地方下，这一手跳过了。", "You had no move, so your turn was skipped.", "No tenías jugada; se saltó tu turno.") : t(`${partnerName} 没地方下，又轮到你。`, `${partnerName} had no move; your turn again.`, `${partnerName} no tenía jugada; te toca otra vez.`)}</p>}
+    {state.passed && match.status === "active" && <p className="game-note">{state.passed === userId ? t("你没地方下，这一手跳过了。", "You had no move, so your turn was skipped.", "No tenías jugada; se saltó tu turno.") : t(`${partnerName}没地方下，又轮到你。`, `${partnerName} had no move; your turn again.`, `${partnerName} no tenía jugada; te toca otra vez.`)}</p>}
     <div className="reversi-board" role="grid" aria-label={t("黑白棋棋盘", "Reversi board", "Tablero de Reversi")} data-testid="reversi-board">
       {state.board.split("").map((cell, index) => {
         const x = index % 8, y = Math.floor(index / 8), can = mine && legal.has(`${x},${y}`), last = state.last?.[0] === x && state.last?.[1] === y;

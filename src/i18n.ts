@@ -80,10 +80,12 @@ const KNOWN_ERRORS: Record<string, [en: string, es: string]> = {
 };
 
 /** "Too many tries, wait N seconds/minutes" in `language` (sign-in, sign-up and recovery limits, QA round 5). */
-export function tooManyTries(language: Language, seconds: number) {
+export function tooManyTries(language: Language, seconds: number, reset = false) {
   const [count, zh, en, es] = seconds < 60 ? [Math.ceil(seconds), "秒", "second", "segundo"] : [Math.ceil(seconds / 60), "分钟", "minute", "minuto"];
   const plural = count === 1 ? "" : "s";
-  return localized(language, `尝试次数过多，请 ${count} ${zh}后再试。`, `Too many tries. Try again in ${count} ${en}${plural}.`, `Demasiados intentos. Vuelve a intentarlo en ${count} ${es}${plural}.`);
+  // Sign-in waits add that the email reset works right now (QA round 7).
+  return localized(language, `尝试次数过多，请 ${count} ${zh}后再试。`, `Too many tries. Try again in ${count} ${en}${plural}.`, `Demasiados intentos. Vuelve a intentarlo en ${count} ${es}${plural}.`)
+    + (reset ? localized(language, "也可以现在点“忘记密码？”，用邮件重设密码。", " You can also tap “Forgot password?” and reset it by email right now.", " También puedes tocar «¿Olvidaste tu contraseña?» y restablecerla por correo ahora mismo.") : "");
 }
 
 /** A message to show on an `language` screen: Chinese text never reaches an English or Spanish screen (known messages are
@@ -127,11 +129,11 @@ export function apiErrorCode(payload: { code?: string; error?: string }, status:
   return (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
 }
 
-export function apiErrorText(payload: { code?: string; error?: string; retryAfterSeconds?: number }, status: number, language: Language) {
+export function apiErrorText(payload: { code?: string; error?: string; retryAfterSeconds?: number; reset?: boolean }, status: number, language: Language) {
   const code = apiErrorCode(payload, status);
   // Sign-in, sign-up and recovery limits say how long to wait (QA round 5).
   const wait = payload.retryAfterSeconds;
-  if (code === "rate_limited" && typeof wait === "number" && wait > 0) return tooManyTries(language, wait);
+  if (code === "rate_limited" && typeof wait === "number" && wait > 0) return tooManyTries(language, wait, payload.reset);
   const fallback = (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
   // Legacy routes can already supply a specific translated explanation. Keep it over the HTTP category.
   const message = typeof payload.error === "string" ? payload.error : "";

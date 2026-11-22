@@ -52,7 +52,7 @@ export function MatchScreen({ matchId, language, userId, members, pet, changed, 
       {error && <p className="space-error" role="alert">{error}</p>}
       {!match && !error && <p className="game-wait" role="status">{t("正在打开…", "Opening…", "Abriendo…")}</p>}
       {match?.status === "ended" && <section className="game-ended" data-testid="match-ended">
-        <p>{match.endedBy === userId ? t("你结束了这局。没下完，不算输赢。", "You ended this game. It doesn't count for anyone.", "Terminaste esta partida. No cuenta para nadie.") : t(`${partnerName} 结束了这局。没下完，不算输赢。`, `${partnerName} ended this game. It doesn't count for anyone.`, `${partnerName} terminó esta partida. No cuenta para nadie.`)}</p>
+        <p>{match.endedBy === userId ? t("你结束了这局。没下完，不算输赢。", "You ended this game. It doesn't count for anyone.", "Terminaste esta partida. No cuenta para nadie.") : t(`${partnerName}结束了这局。没下完，不算输赢。`, `${partnerName} ended this game. It doesn't count for anyone.`, `${partnerName} terminó esta partida. No cuenta para nadie.`)}</p>
         <button type="button" className="game-primary" onClick={() => void rematch()} data-testid="game-rematch"><ArrowsClockwise size={16} />{t("再来一局", "Play again", "Otra partida")}</button>
       </section>}
       {match && match.status !== "ended" && SCREENS[match.game] && (() => { const Screen = SCREENS[match.game]; return <Screen match={match} language={language} userId={userId} partnerName={partnerName} opponent={opponent} act={act} onRematch={rematch} />; })()}

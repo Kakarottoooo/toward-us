@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
@@ -62,7 +63,7 @@ export function createWidgetRouter({ store, perHour = 60 }) {
     const record = createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", privateRetentionDays: null });
     record.id = `account:${userId}`; updater(record); return tx.createRelationshipRecord("accountSettings", record);
   };
-  const signedIn = (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." });
+  const signedIn = (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) });
 
   router.post("/widget/token", signedIn, async (req, res) => {
     const userId = req.auth.user.id, secret = randomBytes(32).toString("base64url");

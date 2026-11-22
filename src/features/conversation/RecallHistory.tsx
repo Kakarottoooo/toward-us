@@ -75,7 +75,7 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
       }
       const mine = message.role === "user" || message.actorUserId === userId;
       const agent = message.role === "assistant" || message.role === "agent";
-      const author = agent ? "Ourever" : members.find((member) => member.id === message.actorUserId)?.name || t("我", "Me", "Yo");
+      const author = agent ? "Ourever" : members.find((member) => member.id === message.actorUserId)?.name || (mine ? t("我", "Me", "Yo") : t("对方", "Your partner", "Tu pareja"));
       const row = <article key={message.id} ref={message.id === page.messageId ? target : undefined} tabIndex={-1} data-message-id={message.id} data-highlighted={highlight === message.id ? "true" : undefined}
         className={`conversation-message ${mine ? "from-me" : agent ? "from-agent" : "from-partner"} recall-original${highlight === message.id ? " is-highlighted" : ""}`}>
         {agent && page.channel === "me" && <ReportReply messageMenu replyText={message.text} language={language} channel="me" conversationId={page.conversationId} messageId={message.id} />}<span>{author}</span><time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleString(languageTag(language), { dateStyle: "medium", timeStyle: "short" })}</time>
@@ -87,5 +87,5 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
     })}
     {page.after && <button type="button" className="conversation-earlier" disabled={busy} onClick={() => browse(page.after!, "after")}>{t("较新的消息", "Newer messages", "Mensajes más recientes")}<ArrowRight size={16} /></button>}
   </>;
-  return { active: Boolean(page), busy, jump, close, controls, history, dateButton: <button type="button" className="conversation-call" disabled={busy || channel === "me" && !sessionId} onClick={() => { keyboard.hide(); setPicker(!picker); setError(""); }} aria-expanded={picker} aria-label={t("按日期查找对话", "Find conversation by date", "Buscar conversación por fecha")} data-testid="recall-calendar"><CalendarBlank size={21} /></button> };
+  return { active: Boolean(page), busy, jump, close, controls, history, dateButton: <button type="button" className="conversation-call" disabled={busy || channel === "me" && !sessionId} onClick={() => { keyboard.hide(); setPicker(!picker); setError(""); }} aria-expanded={picker} aria-label={t("按日期查找对话", "Find conversation by date", "Buscar conversación por fecha")} title={t("按日期查找对话", "Find conversation by date", "Buscar conversación por fecha")} data-testid="recall-calendar"><CalendarBlank size={21} /></button> };
 }

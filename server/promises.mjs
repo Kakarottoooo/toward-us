@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { agreementValues, assertVersion, audit, clean, decisionError } from "./agreement-actions.mjs";
 import { canViewRecord, createRelationshipRecord } from "./relationship-domain.mjs";
@@ -207,7 +208,7 @@ export async function promiseToMention(store, { userId, relationshipId, now = Da
  * one they may not see exactly like one that does not exist. */
 export function createPromisesRouter({ store, keeper = null, emit = () => {} }) {
   const router = express.Router();
-  router.use("/promises", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/promises", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   const language = (req) => ["zh", "en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : ["en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh";
   const pairing = async (req) => { const context = await store.getRelationshipContext(req.auth.user.id); if (!activePair(context)) throw decisionError(409, "pairing_required"); return context; };
   const project = async (req, records, context) => {

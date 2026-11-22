@@ -1,4 +1,4 @@
-import { Bell, BellSlash, Plus } from "@phosphor-icons/react";
+import { BellSlash, Plus, Trash } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
@@ -11,6 +11,14 @@ type Delivery = { id: string; status: string; attempts: number; acceptedAt?: str
 type Reminder = { id: string; title?: string; dueAt?: string; frequency?: string; timezone?: string; status: string; target?: ReminderTarget; deliveries: Delivery[]; occurrenceOriginalDueAt?: string | null; localTime?: string; lastUndeliveredDueAt?: string | null };
 class ReminderError extends Error { constructor(public code: string) { super(code); } }
 function safeTimeZone(value: string) { try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); return value; } catch { return "UTC"; } }
+/** A time zone as people say it ("Pacific Time", "协调世界时间"), not its id (QA round 7: rows showed a raw "UTC"). */
+function zoneName(value: string, language: Language) {
+  const zone = safeTimeZone(value);
+  for (const timeZoneName of ["longGeneric", "long"] as const) {
+    try { const name = new Intl.DateTimeFormat(languageTag(language), { timeZone: zone, timeZoneName }).formatToParts(new Date()).find((part) => part.type === "timeZoneName")?.value; if (name) return name; } catch { /* older engines */ }
+  }
+  return zone.split("/").pop()!.replace(/_/g, " ");
+}
 async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, { method, credentials: "same-origin", headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   const result = await response.json();
@@ -50,6 +58,24 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     if (code === "no_failed_delivery") return text("没有需要重试的失败投递。", "There are no failed deliveries to retry.", "No hay envíos fallidos que reintentar.");
     return text("操作未完成，请检查连接后重试。", "The action could not be completed. Check your connection and retry.", "No se pudo completar la acción. Comprueba la conexión y reintenta.");
   };
+  // Delete with Undo (QA round 7): the row disappears at once and the delete is sent after five seconds, or straight away
+  // when the page is left meanwhile; Undo within that time keeps it.
+  const pendingDelete = useRef<{ id: string; timer: number } | null>(null);
+  const [hidden, setHidden] = useState<string | null>(null);
+  const commitDelete = (leaving = false) => {
+    const pending = pendingDelete.current; if (!pending) return;
+    window.clearTimeout(pending.timer); pendingDelete.current = null;
+    if (leaving) { void fetch(`/api/reminders/${pending.id}`, { method: "DELETE", credentials: "same-origin", keepalive: true }).catch(() => {}); return; }
+    const shown = () => setHidden((current) => current === pending.id ? null : current);
+    void api(`/reminders/${pending.id}`, "DELETE").then(async () => { await load(); shown(); await onChanged?.(); }).catch((error) => { shown(); setNotice(errorText(error)); });
+  };
+  const remove = (reminder: Reminder) => {
+    commitDelete(); setNotice("");
+    if (editing?.id === reminder.id) { setEditing(null); setTitle(""); setLocalDateTime(""); }
+    setHidden(reminder.id); pendingDelete.current = { id: reminder.id, timer: window.setTimeout(() => commitDelete(), 5000) };
+  };
+  const undo = () => { if (pendingDelete.current) window.clearTimeout(pendingDelete.current.timer); pendingDelete.current = null; setHidden(null); };
+  useEffect(() => { const flush = () => commitDelete(true); window.addEventListener("pagehide", flush); return () => { window.removeEventListener("pagehide", flush); flush(); }; }, []);
   const perform = async (operation: () => Promise<unknown>) => { setBusy(true); setNotice(""); try { await operation(); await load(); await onChanged?.(); } catch (error) { setNotice(errorText(error)); } finally { setBusy(false); } };
   const connect = async () => {
     if (!settings?.configured) return;
@@ -103,8 +129,8 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
       setLocalDateTime(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`);
     }
   };
-  return <section className="relationship-feature reminders-feature" aria-labelledby="reminders-title">
-    <header><div><Bell size={23} /><h2 id="reminders-title">{text("我的提醒", "My reminders", "Mis recordatorios")}</h2></div><p>{text("给计划、复盘或一句关心留个时间。提醒名称只对你可见：手机和浏览器通知只显示一句模糊提示，发到你自己 iMessage 的提醒会带上提醒名称。", "Make time for a plan, a review or a caring moment. Reminder names stay private: phone and browser notifications only show a vague line, while reminders sent to your own iMessage include the reminder name.", "Haz espacio para un plan, una revisión o un gesto de cariño. Los nombres son privados: las notificaciones del teléfono y del navegador solo muestran un aviso general, y los recordatorios enviados a tu propio iMessage incluyen el nombre.")}</p></header>
+  return <section className="relationship-feature reminders-feature" aria-label={text("我的提醒", "My reminders", "Mis recordatorios")}>
+    <p className="reminders-intro">{text("提醒的名字只有你能看到。手机和浏览器通知只写“你有一条提醒”；发到你自己 iMessage 的会写上名字。", "Only you see what a reminder is called. Phone and browser notifications just say you have a reminder; ones sent to your own iMessage show the name.", "Solo tú ves cómo se llama cada recordatorio. Las notificaciones del teléfono y del navegador solo dicen que tienes un recordatorio; las que van a tu propio iMessage muestran el nombre.")}</p>
     <div className="reminders-settings">
       <p>{settings ? nativeApp ? notificationsOn ? text("此手机的通知已开启", "Notifications are on for this phone", "Notificaciones activadas en este teléfono") : text("此手机的通知未开启或已关闭", "Notifications for this phone are not on", "Las notificaciones de este teléfono no están activadas") : notificationsOn ? text("浏览器通知已开启", "Browser notifications are on", "Notificaciones del navegador activadas") : text("浏览器通知未连接或已关闭", "Browser notifications are disconnected or off", "Notificaciones desconectadas o desactivadas") : text("正在读取提醒…", "Loading reminders…", "Cargando recordatorios…")}</p>
       {nativeApp && !notificationsOn && pushReady && <p>{text("开启后，这台手机会收到伴侣消息、每日一问和提醒。可在设置中按类型关闭。", "This phone can notify you about partner messages, daily questions and reminders. Choose the types in Settings.", "Recibe mensajes de tu pareja, preguntas diarias y recordatorios. Elige los tipos en Ajustes.")}</p>}
@@ -113,7 +139,7 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
         {settings && !settings.enabled && ((settings.devices.length > 0 && settings.configured) || (settings.imessage && !settings.imessageEnabled)) && <button type="button" disabled={busy} onClick={() => void perform(() => api("/reminder-settings", "PATCH", { enabled: true, timezone, language }))}>{text("重新开启通知", "Turn notifications back on", "Reactivar notificaciones")}</button>}
       </div>
       {settings && !pushReady && <p>{text("推送服务尚未配置，你可以先保存提醒。", "Push is not configured yet. You can save reminders now.", "Las notificaciones aún no están configuradas. Puedes guardar recordatorios.")}</p>}
-      <small>{text("提醒会尽力在所选时间后发送，后台调度和设备离线可能造成延迟。服务接受投递不代表设备已显示或本人已读。已开始投递的通知无法撤回。", "Reminders are sent on a best-effort basis after the chosen time. Scheduling or offline devices may cause delays. Provider acceptance does not confirm display or reading. Notifications already in flight cannot be recalled.", "Los recordatorios se envían cuando es posible después de la hora elegida. La programación o los dispositivos sin conexión pueden causar retrasos. La aceptación no confirma que se hayan mostrado o leído. Los envíos en curso no se pueden retirar.")}</small>
+      <small>{text("提醒会在你选的时间或稍晚一点送到；手机没联网时可能会晚到。已经发出的通知收不回来。", "Reminders arrive at the time you pick or a little after. If your phone is offline they may be late. A notification that has already gone out can't be taken back.", "Los recordatorios llegan a la hora elegida o un poco después. Si tu teléfono no tiene conexión, pueden llegar tarde. Una notificación ya enviada no se puede retirar.")}</small>
       {settings && settings.devices.length > 0 && <details><summary>{text("管理已连接浏览器", "Manage connected browsers", "Gestionar navegadores conectados")}</summary>{settings.devices.map((device, index) => <div className="reminders-device" key={device.id}><span>{text("浏览器", "Browser", "Navegador")} {index + 1} · {new Date(device.createdAt).toLocaleDateString(languageTag(language))}</span><button type="button" disabled={busy} onClick={() => void perform(async () => { await api(`/push-subscriptions/${device.id}`, "DELETE"); if (localStorage.getItem("toward-us-push-device") === device.id) { const registration = await navigator.serviceWorker?.getRegistration("/"); await (await registration?.pushManager.getSubscription())?.unsubscribe(); localStorage.removeItem("toward-us-push-device"); } })}>{text("断开", "Disconnect", "Desconectar")}</button></div>)}</details>}
     </div>
     {notice && <p role="status" className="relationship-notice">{notice}</p>}
@@ -125,12 +151,14 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
       <div className="row-actions"><button type="submit" disabled={busy || !title.trim() || !localDateTime}><Plus size={16} />{editing ? text("保存时间修改", "Save changes", "Guardar cambios") : text("保存私人提醒", "Save private reminder", "Guardar recordatorio privado")}</button>{editing && <button type="button" disabled={busy} onClick={() => { setEditing(null); setTitle(""); setLocalDateTime(""); }}>{text("取消修改", "Cancel edit", "Cancelar edición")}</button>}</div>
       <small className="reminders-time-note">{text("每周提醒保留所选当地时间。夏令时跳过的时间会顺延，重复的时间取第一次。", "Weekly reminders keep the chosen local time. Clock-change gaps move forward; repeated times use the first occurrence.", "Los recordatorios semanales mantienen la hora local. Los huecos del cambio horario se adelantan; las horas repetidas usan la primera aparición.")}</small>
     </form>}
-    <div className="relationship-rows reminders-list">{reminders.length ? reminders.map((reminder) => <article key={reminder.id} id={`reminder-${reminder.id}`}>
-      <div><strong>{reminder.title || text("计划提醒", "Plan reminder", "Recordatorio de plan")}</strong><span>{reminder.dueAt ? new Date(reminder.dueAt).toLocaleString(languageTag(language), { timeZone: safeTimeZone(reminder.timezone || timezone) }) : text("尚未选择时间", "Time not chosen", "Hora sin elegir")} · {reminder.timezone || timezone} · {reminder.occurrenceOriginalDueAt ? text("仅下次改期，之后恢复原每周安排", "Next occurrence moved; original weekly schedule resumes", "Solo cambia la próxima vez; después vuelve el horario semanal original") : reminder.frequency === "weekly" ? text("每周", "Weekly", "Semanal") : text("一次", "Once", "Una vez")}{reminder.occurrenceOriginalDueAt && ` · ${reminder.localTime}`}</span></div>
+    <div className="relationship-rows reminders-list">{reminders.some((reminder) => reminder.id !== hidden) ? reminders.filter((reminder) => reminder.id !== hidden).map((reminder) => <article key={reminder.id} id={`reminder-${reminder.id}`}>
+      <div><strong>{reminder.title || text("计划提醒", "Plan reminder", "Recordatorio de plan")}</strong><span>{reminder.dueAt ? new Date(reminder.dueAt).toLocaleString(languageTag(language), { timeZone: safeTimeZone(reminder.timezone || timezone) }) : text("尚未选择时间", "Time not chosen", "Hora sin elegir")} · {zoneName(reminder.timezone || timezone, language)} · {reminder.occurrenceOriginalDueAt ? text("仅下次改期，之后恢复原每周安排", "Next occurrence moved; original weekly schedule resumes", "Solo cambia la próxima vez; después vuelve el horario semanal original") : reminder.frequency === "weekly" ? text("每周", "Weekly", "Semanal") : text("一次", "Once", "Una vez")}{reminder.occurrenceOriginalDueAt && ` · ${reminder.localTime}`}</span></div>
       <p>{reminder.status === "paused" ? text("已暂停", "Paused", "En pausa") : reminder.status === "cancelled" ? text("来源不可用，已取消", "Cancelled: source unavailable", "Cancelado: origen no disponible") : reminder.deliveries[0] && !(reminder.lastUndeliveredDueAt && reminder.lastUndeliveredDueAt > (reminder.deliveries[0].dueAt || "")) ? statusText(reminder.deliveries[0].status) : reminder.lastUndeliveredDueAt ? text("到点了，已在“只有我”里提醒你（还没有连上通知的设备）", "Came due and showed in Just me (no device is set up for notifications)", "Llegó la hora y se mostró en Solo yo (ningún dispositivo tiene notificaciones activadas)") : text("已保存，待发送", "Saved, waiting to send", "Guardado, pendiente de envío")}</p>
       <div className="row-actions"><button type="button" disabled={busy || reminder.status === "cancelled"} onClick={() => edit(reminder)}>{text("修改时间", "Change time", "Cambiar hora")}</button><button type="button" disabled={busy || reminder.status === "cancelled"} onClick={() => void perform(() => api(`/reminders/${reminder.id}`, "PATCH", { enabled: reminder.status !== "active" }))}>{reminder.status === "active" ? text("暂停", "Pause", "Pausar") : text("开启", "Enable", "Activar")}</button>
+        <button type="button" className="reminders-delete" disabled={busy} onClick={() => remove(reminder)} data-testid="reminder-delete"><Trash size={16} aria-hidden="true" />{text("删除", "Delete", "Borrar")}</button>
         {reminder.deliveries.some((delivery) => ["failed", "retry"].includes(delivery.status)) && <button type="button" disabled={busy || !settings?.enabled} onClick={() => void perform(() => api(`/reminders/${reminder.id}/retry`, "POST", {}))}>{text("重试失败投递", "Retry failed delivery", "Reintentar envío fallido")}</button>}
       </div>
     </article>) : <p className="relationship-empty">{text("还没有提醒。可以先给下一次关心留个时间。", "No reminders yet. Make time for your next caring moment.", "Aún no hay recordatorios. Reserva un momento para expresar cariño.")}</p>}</div>
+    {hidden && <div className="undo-snackbar" role="status" data-testid="reminder-undo-bar"><span>{text("提醒已删除", "Reminder deleted", "Recordatorio borrado")}</span><button type="button" onClick={undo} data-testid="reminder-undo">{text("撤销", "Undo", "Deshacer")}</button></div>}
   </section>;
 }

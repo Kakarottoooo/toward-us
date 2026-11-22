@@ -1,3 +1,4 @@
+import { nameOr, partnerWord } from "./display-name.mjs";
 import express from "express";
 import { createHash } from "node:crypto";
 import { recordUsage } from "./usage.mjs";
@@ -61,10 +62,10 @@ export function createMatchRouter({ store, mediator = null, emit = () => {}, not
     // The partner hears about it when it becomes their move, or when the game ends, unless they are looking at the App.
     const theirs = (turn) => turn === partner || turn === BOTH;
     if (partner && !online(partner) && match.status !== "ended" && (match.status !== "active" || (theirs(match.turn) && !theirs(before)))) {
-      const context = await store.getRelationshipContext(userId), me = context?.members.find((member) => member.userId === userId)?.user?.name || "";
+      const context = await store.getRelationshipContext(userId), myName = context?.members.find((member) => member.userId === userId)?.user?.name || "";
       const drawn = match.game === "draw" && match.state.rounds.at(-1)?.strokes && match.status === "active";
       const body = (language) => {
-        const game = gameName(match.game, language);
+        const game = gameName(match.game, language), me = nameOr(myName, partnerWord(language, true));
         if (match.status !== "active") return say(language, `${me} 结束了这局${game}，去看看结果`, `${me} finished your game of ${game}. See how it went`, `${me} terminó su partida de ${game}. Mira el resultado`);
         if (drawn) return say(language, `${me} 画好了，来猜猜是什么`, `${me} finished a drawing. Can you guess it?`, `${me} terminó un dibujo. ¿Adivinas qué es?`);
         return say(language, `轮到你了 · ${game}`, `Your turn · ${game}`, `Te toca · ${game}`);

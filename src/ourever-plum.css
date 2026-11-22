@@ -159,3 +159,16 @@ body { background: var(--jian-paper, #f4efe6); }
   .conversation-segments button { gap: 2px; padding: 0 2px; font-size: 13px; line-height: 1.1; white-space: normal; hyphens: auto; overflow-wrap: anywhere; text-align: center; }
   .conversation-segments button > svg { display: none; }
 }
+
+/* Account recovery matches sign-in: plum, with Back and the language switch on top (QA round 7). */
+html.plum-entry .plum-auth.recovery-screen {
+  .recovery-content { padding-top: 8px; }
+  .account-recovery :is(h2, h3, label, p) { color: var(--cream); }
+  .account-recovery > p, .account-recovery .reset-link p { color: var(--soft-ink); }
+  .account-recovery input { background: var(--mauve); color: var(--cream); border: 1px solid #98718a; border-radius: 10px; }
+  .account-recovery button:not(.privacy-quiet) { background: var(--apricot); color: #301125; border-color: transparent; border-radius: 12px; font-weight: 650; }
+  .account-recovery button.privacy-quiet { color: var(--rose); text-decoration: underline; text-underline-offset: 3px; }
+  .account-recovery button.privacy-quiet:hover:not(:disabled) { background: #ffffff14; }
+  .account-recovery .reset-link { border-color: #ffffff26; }
+  .account-recovery :is(.privacy-notice, .privacy-success, .privacy-success h3) { color: #ffd6df; }
+}

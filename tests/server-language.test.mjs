@@ -153,9 +153,9 @@ test("QA round 5: sign-up saves the interface language and whether the name was 
     assert.equal(response.status, 201);
     return { cookie: (response.headers.get("set-cookie") || "").split(";")[0], user: response.body.user };
   };
-  // An empty name gets the "我" placeholder, which is not theirs: first run still asks for one.
+  // An empty name stays empty (QA round 7: the old "我" placeholder showed up in English and Spanish); first run still asks.
   const unnamed = await register({ name: "", language: "en" });
-  assert.equal(unnamed.user.name, "我");
+  assert.equal(unnamed.user.name, "");
   assert.equal(unnamed.user.nameSet, false);
   const named = await register({ name: "Ziwei" }, { "accept-language": "zh-CN,zh;q=0.9" });
   assert.equal(named.user.nameSet, true);
@@ -236,4 +236,28 @@ test("QA round 6: the name an unnamed member gives first run becomes the name th
   assert.equal((await call("/api/privacy/first-run", { cookie: old.cookie })).body.preferredName, "Olu");
   const caughtUp = (await call("/api/auth/me", { cookie: old.cookie })).body.user;
   assert.equal(caughtUp.name, "Olu"); assert.equal(caughtUp.nameSet, true);
+});
+
+test("QA round 7: sign-in refusals and a wrong confirm password read in the request's language", async (t) => {
+  const store = await createFileStore(join(await workDir(t, "language-401-"), "store.json"));
+  const server = createApiApp({ store, mediator: {}, production: false }).listen(0, "127.0.0.1"); await new Promise((done) => server.once("listening", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, { method = "GET", cookie, body, headers = {} } = {}) => {
+    const response = await fetch(`${base}${path}`, { method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+    return { status: response.status, body: response.status === 204 ? null : await response.json() };
+  };
+  for (const path of ["/api/people", "/api/cycle", "/api/profile", "/api/photos", "/api/voice/session", "/api/spaces", "/api/privacy", "/api/partner/invitations"]) {
+    const es = await call(path, { headers: { "accept-language": "es-MX,es;q=0.9" } });
+    assert.equal(es.status, 401, path); assert.match(es.body.error, /^Inicia sesión/, path);
+    const en = await call(`${path}?language=en`, { headers: { "accept-language": "zh-CN" } });
+    assert.equal(en.status, 401, path); assert.match(en.body.error, /^Please sign in/, path);
+  }
+  // The confirm sheets' re-check of the password says the password is wrong, with a code.
+  const signup = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Ana", adultConfirmed: true, email: `w-${randomUUID()}@example.com`, password: "correct-horse-battery", language: "es" }) });
+  const cookie = signup.headers.getSetCookie().find((line) => line.startsWith("toward_us_session=")).split(";")[0];
+  for (const [language, text] of [["en", "That password isn't right."], ["es", "Esa contraseña no es correcta."], ["zh", "这个密码不对。"]]) {
+    const wrong = await call("/api/privacy/delete-private", { method: "POST", cookie, body: { confirm: true, password: "not-the-password", language } });
+    assert.equal(wrong.status, 403); assert.equal(wrong.body.code, "wrong_password"); assert.equal(wrong.body.error, text);
+  }
 });

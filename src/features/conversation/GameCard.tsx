@@ -39,7 +39,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
   const aboutMe = game.aboutUserId === userId;
   const aboutName = members.find((member) => member.id === game.aboutUserId)?.name || partnerName;
   const label = game.type === "choice" ? t("二选一", "Would you rather", "¿Qué prefieres?") : game.type === "guess" ? t(`默契问答 · 关于${aboutMe ? "你" : ` ${aboutName}`}`, `How well do you know ${aboutMe ? "me" : aboutName}?`, `¿Cuánto conoces a ${aboutMe ? "mí" : aboutName}?`) : t("真心话", "Heart to heart", "De corazón");
-  const hint = game.type === "guess" ? (aboutMe ? t(`选你自己的答案，看 ${partnerName} 能不能猜中`, `Pick your own answer and see if ${partnerName} guesses it`, `Elige tu respuesta y mira si ${partnerName} acierta`) : t(`猜猜 ${aboutName} 会选哪个`, `Guess what ${aboutName} picked`, `Adivina qué eligió ${aboutName}`)) : "";
+  const hint = game.type === "guess" ? (aboutMe ? t(`选你自己的答案，看${partnerName}能不能猜中`, `Pick your own answer and see if ${partnerName} guesses it`, `Elige tu respuesta y mira si ${partnerName} acierta`) : t(`猜猜${aboutName}会选哪个`, `Guess what ${aboutName} picked`, `Adivina qué eligió ${aboutName}`)) : "";
   const send = async (answer: { choice?: number; text?: string }) => { if (busy || readOnly) return; keyboard.hide(); setBusy(true); try { if (await onAnswer(answer)) setDraft(""); } finally { setBusy(false); } };
   const who = (index: number) => [mine?.choice === index ? t("你", "You", "Tú") : "", theirs?.choice === index ? partnerName : ""].filter(Boolean).join(" · ");
   const outcome = () => {
@@ -67,7 +67,7 @@ export function GameCard({ questionId, prompt, game, answers, userId, members, l
       : <><div className="daily-input"><KeyboardTextarea aria-label={t("你的回答", "Your answer", "Tu respuesta")} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onBlur={() => keyboard.hide()} rows={2} maxLength={400} placeholder={t("写下你的真心话…", "Write your answer…", "Escribe tu respuesta…")} /></div>
         <div className="card-actions"><button className="card-primary" disabled={busy || !draft.trim()} onClick={() => void send({ text: draft.trim() })}>{t("回答", "Answer", "Responder")}</button></div></>}
     {!mine && !revealed && <div className="card-actions"><button type="button" disabled={busy} onClick={() => defer(true)} data-testid="game-defer">{t("这题先不玩", "Pass on this question", "Pasar esta pregunta")}</button></div>}
-    {mine && !revealed && <small className="game-wait"><LockKey size={14} />{t(`等 ${partnerName} 也答完，一起揭晓`, `Revealed together once ${partnerName} answers`, `Se revela cuando ${partnerName} también responda`)}</small>}
+    {mine && !revealed && <small className="game-wait"><LockKey size={14} />{t(`等${partnerName}也答完，一起揭晓`, `Revealed together once ${partnerName} answers`, `Se revela cuando ${partnerName} también responda`)}</small>}
     {revealed && outcome()}
     {revealed && !readOnly && <div className="card-actions">{onOpenDeck
       ? <button type="button" onClick={onOpenDeck} data-testid="game-open-deck"><ChatCircleDots size={16} />{t("接着聊这题", "Keep talking", "Seguir hablando")}</button>

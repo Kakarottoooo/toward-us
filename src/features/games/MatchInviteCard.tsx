@@ -7,7 +7,7 @@ import "./games.css";
 export function MatchInviteCard({ match, userId, partnerName, language, onOpen }: { match: { id: string; game: string; invitedBy: string }; userId: string; partnerName: string; language: Language; onOpen: (id: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const name = gameCatalog(language).find((game) => game.id === match.game)?.name || match.game;
-  const line = match.invitedBy === userId ? t(`你开了一局${name}，等 ${partnerName} 来玩`, `You started a game of ${name} with ${partnerName}`, `Empezaste una partida de ${name} con ${partnerName}`) : t(`${partnerName} 开了一局${name}，来一起玩吧`, `${partnerName} started a game of ${name}. Come play`, `${partnerName} empezó una partida de ${name}. Ven a jugar`);
+  const line = match.invitedBy === userId ? t(`你开了一局${name}，等${partnerName}来玩`, `You started a game of ${name} with ${partnerName}`, `Empezaste una partida de ${name} con ${partnerName}`) : t(`${partnerName}开了一局${name}，来一起玩吧`, `${partnerName} started a game of ${name}. Come play`, `${partnerName} empezó una partida de ${name}. Ven a jugar`);
   return <article className="conversation-card match-invite" data-testid="match-invite">
     <GameController size={22} weight="duotone" aria-hidden="true" />
     <p>{line}</p>

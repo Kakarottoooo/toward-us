@@ -1,3 +1,4 @@
+import { signInText, unauthorizedText } from "./request-language.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 
@@ -6,10 +7,10 @@ export function createReminderRouter({ service }) {
   router.post("/internal/reminders/run", async (req, res, next) => {
     const status = internalBearerStatus(req, service.internalSecret);
     if (status === 503) return res.status(503).json({ error: "Reminder scheduler is not configured." });
-    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    if (status !== 200) return res.status(401).json({ error: unauthorizedText(req) });
     try { res.json(await service.runDue()); } catch (error) { next(error); }
   });
-  router.use((req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: "Please sign in.", code: "unauthenticated" }));
+  router.use((req, res, next) => req.auth?.user ? next() : res.status(401).json({ error: signInText(req), code: "unauthenticated" }));
   const handle = (operation, status = 200) => async (req, res) => {
     try { const result = await operation(req); res.status(typeof status === "function" ? status(result) : status).json(result ?? {}); }
     catch (error) {
@@ -32,6 +33,7 @@ export function createReminderRouter({ service }) {
     return duplicate ? { reminder, duplicate: true } : { reminder };
   }, (result) => result.duplicate ? 200 : 201));
   router.patch("/reminders/:id", handle(async (req) => ({ reminder: await service.updateReminder(req.auth.user.id, req.params.id, req.body) })));
+  router.delete("/reminders/:id", handle((req) => service.deleteReminder(req.auth.user.id, req.params.id)));
   router.post("/reminders/:id/retry", handle((req) => service.retryReminder(req.auth.user.id, req.params.id)));
   return router;
 }

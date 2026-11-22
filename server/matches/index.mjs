@@ -1,4 +1,5 @@
 import { createRelationshipRecord } from "../relationship-domain.mjs";
+import { eitherWord, nameOr } from "../display-name.mjs";
 import { appendTogetherMessage, memberLanguage, togetherI18n } from "../together-domain.mjs";
 import { drawGuess } from "./draw-guess.mjs";
 import { asAiUser } from "../ai-budget.mjs";
@@ -72,7 +73,7 @@ export async function createMatch({ store, userId, game, pet = false }) {
     await tx.createRelationshipRecord(COLLECTION, record);
     if (pet) return { match: record, created: true, conversation: null };
     const inviter = context.members.find((member) => member.userId === userId)?.user?.name || "";
-    const i18n = togetherI18n((language) => language === "en" ? `${inviter} started a game of ${gameName(game, language)}` : language === "es" ? `${inviter} empezó una partida de ${gameName(game, language)}` : `${inviter} 开了一局${gameName(game, language)}`);
+    const i18n = togetherI18n((language) => language === "en" ? `${nameOr(inviter, eitherWord(language))} started a game of ${gameName(game, language)}` : language === "es" ? `${nameOr(inviter, eitherWord(language))} empezó una partida de ${gameName(game, language)}` : `${nameOr(inviter, eitherWord(language))} 开了一局${gameName(game, language)}`);
     const posted = await appendTogetherMessage(tx, { relationshipId, actorUserId: null, userId, source: "app", kind: "match_invite", text: i18n.zh, i18n, handle: `match:${record.id}` });
     const conversation = await tx.updateRelationshipRecordForUser("togetherConversations", posted.conversation.id, userId, (draft) => { draft.messages = draft.messages.map((item) => item.id === posted.message.id ? { ...item, match: { id: record.id, game, invitedBy: userId } } : item); draft.version += 1; });
     return { match: record, created: true, conversation };
@@ -127,7 +128,7 @@ async function endMatch(tx, { match, userId, as, context }) {
   });
   if (withPet(updated)) return { match: updated, before: match.turn, conversation: null };
   const me = context.members.find((member) => member.userId === userId)?.user?.name || "";
-  const i18n = togetherI18n((language) => language === "en" ? `${me} ended your game of ${gameName(match.game, language)}. It doesn't count for anyone.` : language === "es" ? `${me} terminó su partida de ${gameName(match.game, language)}. No cuenta para nadie.` : `${me} 结束了这局${gameName(match.game, language)}，没下完，不算输赢。`);
+  const i18n = togetherI18n((language) => language === "en" ? `${nameOr(me, eitherWord(language))} ended your game of ${gameName(match.game, language)}. It doesn't count for anyone.` : language === "es" ? `${nameOr(me, eitherWord(language))} terminó su partida de ${gameName(match.game, language)}. No cuenta para nadie.` : `${nameOr(me, eitherWord(language))} 结束了这局${gameName(match.game, language)}，没下完，不算输赢。`);
   const posted = await appendTogetherMessage(tx, { relationshipId: updated.relationshipId, actorUserId: null, userId, source: "app", kind: "text", text: i18n.zh, i18n, handle: `match-end:${updated.id}` });
   return { match: updated, before: match.turn, conversation: posted.duplicate ? null : posted.conversation };
 }

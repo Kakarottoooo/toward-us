@@ -17,6 +17,8 @@ function contactLine(language, email) {
 function content(page, language, { email, operator }) {
   const contact = contactLine(language, email);
   const op = escape(operator);
+  // "Witnora, Inc." already ends a sentence: no second period after it (QA round 7).
+  const opEnd = op.endsWith(".") ? op : `${op}.`;
   const T = {
     privacy: {
       zh: { title: "Ourever 隐私政策", sections: [
@@ -35,13 +37,13 @@ function content(page, language, { email, operator }) {
           "注册账号后，Ourever 会单独询问第三方 AI 授权。相关聊天记录、他人的导入消息、截图、所选照片及语音可发送给 OpenAI 或 Anthropic，以生成回复、转录及理解图片。OpenAI 还对相关文字和图片进行安全审核。选择制作动态角色时，处理后的角色图片发送给 Replicate。你可以在设置中撤回。",
           "你选择 Google 或 Apple 登录时，对应服务会验证你的身份。申请重设密码时，Resend 会处理收件地址并投递含一次性链接的邮件。",
           "其他处理方包括云服务器和数据库托管商、Apple 和 Google 的推送服务、Sendblue 和 Apple（用于 iMessage），以及 Apple 和 Stripe（付款）。我们只给它们完成该项工作所需的数据，并要求它们提供不低于本政策的保护。"]],
-        ["保留与删除", ["私人内容默认保留到你自己删除，你也可以在“设置 → 私人内容保留”里改成 7、30、90 或 365 天没更新就自动删除。“设置 → 下载我的数据”可以导出全部数据；“删除我的私人内容”立即删除私人内容；“删除账号”立即删除账号、私人内容、私人照片和导入的聊天记录，并让你退出关系。你在“我们俩”里说过的话会留给对方。"]],
+        ["保留与删除", ["私人内容默认保留到你自己删除，你也可以在“设置 → 私人内容保留”里改成 7、30、90 或 365 天没更新就自动删除。“设置 → 下载我的数据”可以导出全部数据；“删除我的私人内容”立即删除私人内容；“删除账号”会结束你们的连接、让所有设备退出登录、立即删除你的私人内容（包括私人照片和导入的聊天记录），并把账号匿名化。你在“我们俩”里说过的话和双方确认过的约定会留给对方；同意记录会保留，作为你曾同意的凭证。"]],
         ["撤回同意", ["你可以随时撤回第三方 AI 同意（设置 → AI 与数据处理方），撤回后 Ourever 不再把你的内容发给 AI，需要重新同意才能继续使用 AI 功能。也可以随时退出关系、删除内容或删除账号，都不需要对方批准。"]],
         ["儿童", ["Ourever 只面向 18 岁及以上的人，我们不会有意收集未成年人的数据。"]],
         ["安全", ["数据全程 HTTPS 传输；密码只保存加密后的散列；每个对象都记录可见范围，服务器按人返回，不依赖前端隐藏。"]],
         ["联系我们", [contact]]] },
       en: { title: "Ourever Privacy Policy", sections: [
-        ["Who we are", [`Ourever is operated by ${op}. Ourever is a private relationship assistant: first a coach for you alone, and, once you connect with a partner, a shared assistant for the two of you.`]],
+        ["Who we are", [`Ourever is operated by ${opEnd} Ourever is a private relationship assistant: first a coach for you alone, and, once you connect with a partner, a shared assistant for the two of you.`]],
         ["Invitations and rewards", ["We use a hash of a random installation identifier, account details and existing payment identifiers to check reward eligibility. The inviter sees a friend’s initial and progress. After account deletion we retain pseudonymous grant and fraud-prevention records."]],
         ["What we collect", [
           "We store your display name and email. If you use a password, we store its hash. If you sign in with Google or Apple, we store the account identifier and verified email the service provides. Choosing Hide My Email with Apple gives us a relay address. We also store your phone number if you link it for iMessage.",
@@ -55,14 +57,14 @@ function content(page, language, { email, operator }) {
         ["Third-party AI and other processors", [
           "After signup, Ourever separately asks permission for third-party AI. Relevant chats (including imported messages from others), screenshots, selected photos and voice may go to OpenAI or Anthropic for replies, transcription and image understanding. OpenAI also screens relevant text and images for safety. If you animate a character, the processed image is sent to Replicate. You can withdraw in Settings.",
           "When you choose Google or Apple sign-in, that provider verifies your identity. When you request a password reset, Resend processes your email address to deliver a one-time reset link.",
-          "Other processors include our cloud server and database host, Apple and Google push services, Sendblue and Apple for iMessage, and Apple and Stripe for payments. Each receives only what its job needs, and we require protection at least equal to this policy."]],
-        ["Retention and deletion", ["Private content stays until you delete it, or you can choose in Settings → Keep private content to delete it after 7, 30, 90 or 365 days without changes. Settings → Download my data exports everything; Delete my private content removes it at once; Delete account immediately removes your account, private content, private photos and imported chats, and ends your relationship space. What you wrote in Us stays for your partner."]],
+          "Other processors include our cloud server and database host, Apple and Google push services, Sendblue and Apple for iMessage, and Apple and Stripe for payments. Each receives only what it needs for its job, and we require each of them to protect your data at least as well as this policy does."]],
+        ["Retention and deletion", ["Private content stays until you delete it, or you can choose in Settings → Keep private content to delete it after 7, 30, 90 or 365 days without changes. Settings → Download my data exports everything; Delete my private content removes it at once; Delete account ends your connection, signs you out on every device, immediately deletes your private content (including private photos and imported chats) and anonymizes your account. What you wrote in Us and agreements you both confirmed stay for your partner; consent records are kept as proof of what you agreed to."]],
         ["Withdrawing consent", ["You can withdraw third-party AI consent at any time (Settings → AI and data processors); Ourever then stops sending your content to AI until you agree again. You can also leave a relationship, delete content or delete your account at any time, without your partner's approval."]],
         ["Children", ["Ourever is only for people 18 and older. We do not knowingly collect data from minors."]],
         ["Security", ["All traffic uses HTTPS; passwords are stored only as hashes; every object records who may see it and the server returns each person only what they may see, never relying on the app to hide it."]],
         ["Contact", [contact]]] },
       es: { title: "Política de privacidad de Ourever", sections: [
-        ["Quiénes somos", [`Ourever lo opera ${op}. Ourever es un asistente privado de pareja: primero un coach solo para ti y, cuando te conectas con tu pareja, un asistente compartido para los dos.`]],
+        ["Quiénes somos", [`Ourever lo opera ${opEnd} Ourever es un asistente privado de pareja: primero un coach solo para ti y, cuando te conectas con tu pareja, un asistente compartido para los dos.`]],
         ["Invitaciones y recompensas", ["Usamos un resumen criptográfico de un identificador aleatorio de instalación, los datos de la cuenta y los identificadores de pago existentes para comprobar las recompensas. Quien invita ve la inicial y el progreso de su amigo. Al borrar la cuenta, conservamos registros seudónimos de concesión y prevención de duplicados."]],
         ["Qué recopilamos", [
           "Guardamos tu nombre visible y tu correo. Si usas una contraseña, guardamos su hash. Si accedes con Google o Apple, guardamos el identificador de cuenta y el correo verificado que nos comunica el proveedor. Si ocultas tu correo con Apple, recibimos una dirección de reenvío. También guardamos tu número de teléfono si lo vinculas a iMessage.",
@@ -76,8 +78,8 @@ function content(page, language, { email, operator }) {
         ["IA de terceros y otros encargados", [
           "Después de registrarte, Ourever solicita permiso específico para usar IA de terceros. Los chats pertinentes (incluidos mensajes importados de otras personas), capturas, fotos elegidas y voz pueden enviarse a OpenAI o Anthropic para responder, transcribir e interpretar imágenes. OpenAI también revisa el texto y las imágenes por seguridad. Si animas un personaje, la imagen procesada se envía a Replicate. Puedes retirar el permiso en Ajustes.",
           "Si accedes con Google o Apple, el proveedor que elijas verifica tu identidad. Si solicitas un cambio de contraseña, Resend utiliza tu dirección de correo para enviarte un enlace de un solo uso.",
-          "Otros encargados incluyen nuestro proveedor de servidor y base de datos, los servicios de notificaciones de Apple y Google, Sendblue y Apple para iMessage, y Apple y Stripe para pagos. Cada uno recibe solo lo necesario para su tarea y les exigimos una protección al menos igual a esta política."]],
-        ["Conservación y borrado", ["Lo privado se conserva hasta que lo borres, o puedes elegir en Ajustes → Conservar lo privado que se borre tras 7, 30, 90 o 365 días sin cambios. Ajustes → Descargar mis datos lo exporta todo; Borrar mi contenido privado lo elimina al instante; Borrar la cuenta elimina de inmediato tu cuenta, lo privado, las fotos privadas y los chats importados, y termina el espacio de pareja. Lo que escribiste en Nosotros queda para tu pareja."]],
+          "Otros encargados incluyen nuestro proveedor de servidor y base de datos, los servicios de notificaciones de Apple y Google, Sendblue y Apple para iMessage, y Apple y Stripe para pagos. Cada uno recibe solo lo que necesita para su tarea, y les exigimos que protejan tus datos al menos tanto como esta política."]],
+        ["Conservación y borrado", ["Lo privado se conserva hasta que lo borres, o puedes elegir en Ajustes → Conservar lo privado que se borre tras 7, 30, 90 o 365 días sin cambios. Ajustes → Descargar mis datos lo exporta todo; Borrar mi contenido privado lo elimina al instante; Borrar la cuenta termina la conexión, cierra la sesión en todos tus dispositivos, borra de inmediato tu contenido privado (incluidas las fotos privadas y los chats importados) y anonimiza tu cuenta. Lo que escribiste en Nosotros y los acuerdos que los dos confirmaron se conservan para tu pareja; los registros de consentimiento se guardan como prueba de lo que aceptaste."]],
         ["Retirar el consentimiento", ["Puedes retirar el consentimiento de IA de terceros en cualquier momento (Ajustes → IA y encargados de datos); Ourever deja de enviar tu contenido a la IA hasta que vuelvas a aceptar. También puedes salir de una relación, borrar contenido o borrar tu cuenta cuando quieras, sin la aprobación de tu pareja."]],
         ["Menores", ["Ourever es solo para mayores de 18 años. No recopilamos a sabiendas datos de menores."]],
         ["Seguridad", ["Todo viaja por HTTPS; las contraseñas se guardan solo como hash; cada objeto registra quién puede verlo y el servidor devuelve a cada persona solo lo suyo, sin depender de que la app lo oculte."]],
@@ -96,7 +98,7 @@ function content(page, language, { email, operator }) {
         ["变更", ["条款有重要变化时我们会在 App 里告知。继续使用即表示接受新条款。"]],
         ["联系我们", [contact]]] },
       en: { title: "Ourever Terms of Use", sections: [
-        ["Accepting these terms", [`By using Ourever you agree to these terms and the Privacy Policy. Ourever is provided by ${op}.`]],
+        ["Accepting these terms", [`By using Ourever you agree to these terms and the Privacy Policy. Ourever is provided by ${opEnd}`]],
         ["Who can use Ourever", ["You must be 18 or older. Each account belongs to one person; keep your password and recovery code safe."]],
         ["AI-generated content", ["Ourever's replies, suggestions, summaries and drafts are generated by AI and can be wrong. They are not therapy, medical, legal or financial advice; in danger or an emergency, contact your local emergency services. Check anything important yourself."]],
         ["Your content", ["What you give Ourever is yours. You let us store and process it to provide the service (including by the AI providers named in the Privacy Policy). Only upload content you have the right to share."]],
@@ -107,7 +109,7 @@ function content(page, language, { email, operator }) {
         ["Changes", ["We will tell you in the app about important changes. Using Ourever afterwards means you accept them."]],
         ["Contact", [contact]]] },
       es: { title: "Condiciones de uso de Ourever", sections: [
-        ["Aceptación", [`Al usar Ourever aceptas estas condiciones y la Política de privacidad. Ourever lo ofrece ${op}.`]],
+        ["Aceptación", [`Al usar Ourever aceptas estas condiciones y la Política de privacidad. Ourever lo ofrece ${opEnd}`]],
         ["Quién puede usarlo", ["Debes tener 18 años o más. Cada cuenta es de una sola persona; guarda bien tu contraseña y tu código de recuperación."]],
         ["Contenido generado por IA", ["Las respuestas, sugerencias, resúmenes y borradores de Ourever los genera una IA y pueden equivocarse. No son terapia ni consejo médico, legal o financiero; ante un peligro o una emergencia, llama a los servicios de emergencia locales. Comprueba tú mismo lo importante."]],
         ["Tu contenido", ["Lo que le das a Ourever es tuyo. Nos permites guardarlo y procesarlo para dar el servicio (también mediante los proveedores de IA indicados en la Política de privacidad). Sube solo contenido que tengas derecho a compartir."]],
@@ -122,20 +124,20 @@ function content(page, language, { email, operator }) {
       zh: { title: "Ourever 帮助与支持", sections: [
         ["联系我们", [contact]],
         ["举报内容或用户", ["在 App 里打开“设置 → 举报或求助”，选择要举报的是对方的内容还是 Ourever 的回复，写下发生了什么。我们会在 24 小时内处理。需要立刻停止联系时，在“设置 → 退出当前关系”结束连接，对方将无法再看到你或给你发消息。"]],
-        ["删除账号和数据", ["“设置 → 删除账号”会立即删除你的账号和私人内容。“设置 → 下载我的数据”可以先导出一份。"]],
-        ["忘记密码", ["在登录页点“使用恢复码找回账号”，或使用邮件重设密码（如果已开通）。"]],
+        ["删除账号和数据", ["“设置 → 删除账号”会结束你们的连接、立即删除你的私人内容，并把账号匿名化；你在“我们俩”里说过的话和双方确认过的约定会留给对方。“设置 → 下载我的数据”可以先导出一份。"]],
+        ["忘记密码", ["在登录页点“忘记密码？”，再点“给我发重设链接”，用邮件里的链接重设密码；如果你保存过恢复码，也可以在同一页的“我有恢复码”里输入它。"]],
         ["紧急情况", ["Ourever 不是紧急服务。如果你或别人有危险，请立刻联系当地的紧急电话。"]]] },
       en: { title: "Ourever Help and Support", sections: [
         ["Contact us", [contact]],
         ["Report content or a person", ["In the app, open Settings → Report or get help, choose whether it is about your partner's content or a reply from Ourever, and tell us what happened. We act within 24 hours. To stop contact right away, use Settings → Leave this relationship; the other person can no longer see you or message you."]],
-        ["Delete your account and data", ["Settings → Delete account removes your account and private content immediately. Settings → Download my data gives you a copy first."]],
-        ["Forgot your password", ["On the sign-in screen tap “Recover with a recovery code”, or reset it by email where available."]],
+        ["Delete your account and data", ["Settings → Delete account ends your connection, immediately deletes your private content and anonymizes your account; what you wrote in Us and agreements you both confirmed stay for your partner. Settings → Download my data gives you a copy first."]],
+        ["Forgot your password", ["On the sign-in screen tap “Forgot password?”, then “Send me a reset link” and use the link we email you. If you saved a recovery code, you can instead enter it under “I have a recovery code” on the same screen."]],
         ["Emergencies", ["Ourever is not an emergency service. If you or someone else is in danger, call your local emergency number now."]]] },
       es: { title: "Ayuda y soporte de Ourever", sections: [
         ["Contacto", [contact]],
         ["Denunciar contenido o a una persona", ["En la app, abre Ajustes → Denunciar o pedir ayuda, elige si se trata de contenido de tu pareja o de una respuesta de Ourever y cuéntanos qué pasó. Lo atendemos en 24 horas. Para cortar el contacto al instante, usa Ajustes → Salir de esta relación; la otra persona ya no puede verte ni escribirte."]],
-        ["Borrar la cuenta y los datos", ["Ajustes → Borrar la cuenta elimina tu cuenta y lo privado al instante. Ajustes → Descargar mis datos te da una copia antes."]],
-        ["Olvidé la contraseña", ["En la pantalla de inicio toca “Recuperar con un código”, o restablécela por correo si está disponible."]],
+        ["Borrar la cuenta y los datos", ["Ajustes → Borrar la cuenta termina la conexión, borra al instante tu contenido privado y anonimiza tu cuenta; lo que escribiste en Nosotros y los acuerdos que los dos confirmaron se conservan para tu pareja. Ajustes → Descargar mis datos te da una copia antes."]],
+        ["Olvidé la contraseña", ["En la pantalla de inicio de sesión toca “¿Olvidaste tu contraseña?” y luego “Envíame un enlace para restablecer”; usa el enlace que te enviamos por correo. Si guardaste un código de recuperación, también puedes escribirlo en “Tengo un código de recuperación”, en esa misma pantalla."]],
         ["Emergencias", ["Ourever no es un servicio de emergencias. Si tú u otra persona están en peligro, llama ya al número de emergencias local."]]] },
     },
   };

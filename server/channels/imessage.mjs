@@ -1,4 +1,6 @@
+import { unauthorizedText } from "../request-language.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { eitherWord, nameOr } from "../display-name.mjs";
 import express from "express";
 import { createPhoneLink, normalizePhone } from "../phone-identity.mjs";
 import { approveAgreement } from "../agreement-actions.mjs";
@@ -254,7 +256,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
         const authorLanguage = author ? await memberLanguage(store, author.userId) : null;
         // The Agent's hand-off buttons travel as plain links; photos stay in the App.
         const links = !author ? (item.refs || []).filter((ref) => ref.type === "link" && ref.url).map((ref) => `· ${ref.title}: ${ref.url.startsWith("/") ? `${process.env.TOWARD_US_BASE_URL || ""}${ref.url}` : ref.url}`) : [];
-        const text = !author ? [item.text, ...links].filter(Boolean).join("\n") : item.source === "relay" ? `${TEXT[authorLanguage].relay(author.user.name)}${item.text}` : `${author.user.name}${authorLanguage === "zh" ? "：" : ": "}${item.text}`;
+        const text = !author ? [item.text, ...links].filter(Boolean).join("\n") : item.source === "relay" ? `${TEXT[authorLanguage].relay(nameOr(author.user.name, eitherWord(authorLanguage)))}${item.text}` : `${nameOr(author.user.name, eitherWord(authorLanguage))}${authorLanguage === "zh" ? "：" : ": "}${item.text}`;
         await groupSend(context.relationship.imessageGroupId, text);
       }
     }).catch((error) => console.error("imessage_mirror_failed", error?.code || error?.name || "error"));
@@ -312,7 +314,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
   router.post(["/api/channels/sendblue/webhook", "/api/channels/sendblue/webhook/:secret"], (req, res) => {
     const secret = process.env.SENDBLUE_WEBHOOK_SECRET || "";
     if (!secret) return res.status(503).json({ error: "iMessage intake is not configured." });
-    if (!sameSecret(req.params.secret || req.get(SIGNATURE_HEADER) || "", secret)) return res.status(401).json({ error: "Unauthorized." });
+    if (!sameSecret(req.params.secret || req.get(SIGNATURE_HEADER) || "", secret)) return res.status(401).json({ error: unauthorizedText(req) });
     if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) return res.status(400).json({ error: "Invalid payload." });
     // Answer Sendblue at once; the turn (a model call) continues after the 200.
     const work = handleInbound(req.body);

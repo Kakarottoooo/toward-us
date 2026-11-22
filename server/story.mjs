@@ -51,7 +51,7 @@ export function storyMaterial(snapshot, relationshipId, members, week = null) {
   if (week) {
     const inWeek = (date) => Boolean(date) && date.slice(0, 10) >= week.from && date.slice(0, 10) <= week.to;
     const all = storyMaterial(snapshot, relationshipId, members);
-    const name = (userId) => members.find((member) => member.userId === userId)?.user?.name || "";
+    const name = (userId) => { const member = members.find((item) => item.userId === userId); return member?.user?.name || `partner ${member?.role || ""}`.trim(); };
     return {
       ...all,
       moments: all.moments.filter((moment) => inWeek(moment.date)),
@@ -65,7 +65,7 @@ export function storyMaterial(snapshot, relationshipId, members, week = null) {
     };
   }
   return {
-    names: members.map((member) => member.user?.name || ""),
+    names: members.map((member) => member.user?.name || `partner ${member.role}`),
     moments: (snapshot.spaceItems || []).filter((item) => shared(item) && album && item.spaceId === album.id).map(({ title, text, date, photoId, createdAt }) => ({ title, text: String(text || "").slice(0, 300), date: date || createdAt.slice(0, 10), photoId: photoId || null })).slice(-40),
     dates: (snapshot.milestones || []).filter(shared).map(({ title, date, type }) => ({ title, date, type })),
     agreements: (snapshot.agreements || []).filter(shared).map(({ title, status, createdAt }) => ({ title, status, since: createdAt.slice(0, 10) })),

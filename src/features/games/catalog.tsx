@@ -32,7 +32,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("横、竖、斜任意方向先连成五个（或更多）的人赢。", "The first to get five (or more) in a row, across, down or diagonally, wins.", "Gana quien primero ponga cinco (o más) en línea: horizontal, vertical o diagonal."),
         t("点一下选位置，再点一次或按“落子”确认。", "Tap a spot to pick it, then tap again or press Place to confirm.", "Toca un punto para elegirlo y vuelve a tocar o pulsa Colocar para confirmar."),
         t("不用两个人同时在线：轮到 TA 时会收到提醒。下一盘换另一个人执黑。", "You don't both need to be online: your partner is told when it's their move. Next game, the other one plays black.", "No hace falta estar los dos conectados: a tu pareja le avisamos cuando le toca. En la siguiente, el otro lleva negras."),
-        t("TA 不在的时候，可以和小家伙下，它马上就会回你一步。", "When your partner's away, play your little one: it answers right away.", "Si tu pareja no está, juega con tu pequeñín: responde enseguida."),
+        t("TA 不在的时候，可以和小家伙下，它马上就会回你一步。", "When your partner's away, play your little one: it answers right away.", "Si tu pareja no está, juega con tu pequeño: responde enseguida."),
       ],
     },
     {
@@ -43,7 +43,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("点一下自己的棋子，能走的位置会亮起来，再点一下就走过去。", "Tap one of your pieces to light up where it can go, then tap a spot to move there.", "Toca una de tus piezas para ver adónde puede ir y luego toca el punto para moverla."),
         t("帅（将）和仕（士）不出九宫，相（象）不过河、塞象眼不能走，马被绊腿不能走，炮隔一个子才能吃，兵（卒）过河后可以横走，两个将不能在同一条线上照面。", "K general and A advisors stay in the palace. E elephants never cross the river and are blocked by a piece in between. H horses are blocked by a piece next to them. R chariots move straight. C cannons move like chariots but capture by jumping exactly one piece. P soldiers go forward, and sideways too after the river.", "K general y A consejeros no salen del palacio. E elefantes no cruzan el río y se bloquean con una pieza en medio. H caballos se bloquean con una pieza al lado. R carros van en línea recta. C cañones se mueven como carros pero capturan saltando exactamente una pieza. P soldados avanzan, y tras el río también de lado."),
         t("不能让自己的将被吃，两个将也不能在没有子隔开时照面。把对方将死，或让对方无棋可走就赢；也可以认输。", "You may never leave your own general in check, and the two generals may never face each other on an open line. Win by checkmate, or when the other side has no legal move; either of you may resign.", "Nunca puedes dejar a tu general en jaque, y los dos generales no pueden mirarse en una línea abierta. Ganas con jaque mate o si el otro no tiene ningún movimiento; cualquiera puede rendirse."),
-        t("各走 150 步还没分出胜负就算和棋。TA 不在的时候，可以和小家伙下。", "No result after 150 moves each is a draw. When your partner's away, play your little one.", "Sin resultado tras 150 movimientos cada uno, es empate. Si tu pareja no está, juega con tu pequeñín."),
+        t("各走 150 步还没分出胜负就算和棋。TA 不在的时候，可以和小家伙下。", "No result after 150 moves each is a draw. When your partner's away, play your little one.", "Sin resultado tras 150 movimientos cada uno, es empate. Si tu pareja no está, juega con tu pequeño."),
       ],
     },
     {
@@ -54,7 +54,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("画好了交给 TA，TA 有 3 次机会猜。会提示是哪一类、几个字。", "Pass it on when you're done; your partner gets 3 guesses, with a hint of the kind of thing and its length.", "Cuando termines, pásalo; tu pareja tiene 3 intentos, con una pista del tipo y la longitud."),
         t("猜中或者 3 次用完，答案揭晓，换另一个人画。", "Guessed or out of guesses, the word is revealed and you swap roles.", "Con acierto o sin intentos, se revela la palabra y cambian los papeles."),
         t("你们是一队的：大厅里记着一起猜中了几幅。", "You're on the same team: the hall keeps count of how many drawings you got.", "Son un equipo: en la sala se cuenta cuántos dibujos acertaron."),
-        t("也可以和小家伙玩：你画它猜，它画你猜。", "You can also play your little one: you draw and it guesses, then it draws for you.", "También puedes jugar con tu pequeñín: tú dibujas y adivina, luego dibuja para ti."),
+        t("也可以和小家伙玩：你画它猜，它画你猜。", "You can also play your little one: you draw and it guesses, then it draws for you.", "También puedes jugar con tu pequeño: tú dibujas y adivina, luego dibuja para ti."),
       ],
     },
     {
@@ -65,7 +65,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("外圈有 8 个约会地点：没人的可以买，自己的可以升级一次；停在对方的地点要付门票，也可以用一个真实的小承诺抵，Ourever 会记在“我们俩”里。", "8 date spots on the outer ring: buy one nobody owns, upgrade your own once. Stop on your partner's and pay rent, in coins or with a real little promise Ourever writes down in Us.", "8 lugares de cita en el anillo exterior: compra uno libre y mejora el tuyo una vez. Si caes en uno de tu pareja, pagas en monedas o con una pequeña promesa real que Ourever anota en Nosotros."),
         t("停在桥头可以走爱心内圈：一样长，有爱心任务和 60 币格，但不能买地、不用付门票。每经过一座桥 +30 币。", "Stop on a bridge to take the heart ring: the same length, with heart tasks and 60-coin squares, but nothing to buy and no rent. Every bridge you pass pays 30.", "Detente en un puente para tomar el anillo de corazones: igual de largo, con tareas y casillas de 60, sin compras ni entradas. Cada puente que pasas paga 30."),
         t("紫色格抽心动卡：前进、后退、收钱、换位置、护身符、一起拍照或回答问题……冷静角会让你歇一回合，掷出 6 或对方说句好听的话就能出来。", "Purple squares draw a heart card: move, coins, swap places, a charm, a photo or a question together… The calm corner holds you a turn: a 6, or a sweet word from your partner, gets you out.", "Las casillas moradas dan una carta: avanzar, monedas, cambiar de sitio, un amuleto, una foto o una pregunta… El rincón de calma te detiene un turno: un 6 o unas palabras bonitas de tu pareja te sacan."),
-        t("自己颜色的格子再跳 4 格，自己的飞行格沿虚线飞 12 格；停在对方飞机上会把它撞回去。也可以和小家伙玩，它会自己做选择。", "Your colour hops 4, your flight square flies 12 along the dashed line; land on your partner's plane to send it back. You can play your little one too: it makes its own choices.", "Tu color salta 4, tu casilla de vuelo vuela 12 por la línea; cae sobre el avión de tu pareja para devolverlo. También puedes jugar con tu pequeñín: decide solo."),
+        t("自己颜色的格子再跳 4 格，自己的飞行格沿虚线飞 12 格；停在对方飞机上会把它撞回去。也可以和小家伙玩，它会自己做选择。", "Your colour hops 4, your flight square flies 12 along the dashed line; land on your partner's plane to send it back. You can play your little one too: it makes its own choices.", "Tu color salta 4, tu casilla de vuelo vuela 12 por la línea; cae sobre el avión de tu pareja para devolverlo. También puedes jugar con tu pequeño: decide solo."),
       ],
     },
     {
@@ -112,7 +112,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("8×8 的棋盘，开局的人执黑先走。", "An 8 x 8 board; whoever starts plays black and goes first.", "Tablero de 8 x 8; quien empieza lleva negras y sale primero."),
         t("每一步都要把对方的一排（横、竖、斜）夹在你的两颗子之间，被夹住的全部翻成你的颜色。能下的位置会有小圆点提示。", "Each move must trap a line of their discs (across, down or diagonal) between two of yours; every trapped disc flips. Spots you can play show a small dot.", "Cada jugada debe atrapar una línea de sus fichas entre dos tuyas; todas las atrapadas se voltean. Los puntos donde puedes jugar llevan un puntito."),
         t("没地方下就自动跳过；两个人都下不了时，棋子多的人赢。", "No move means your turn is skipped; when neither can move, more discs wins.", "Sin jugada se salta tu turno; cuando nadie puede jugar, gana quien tenga más fichas."),
-        t("TA 不在时可以和小家伙下，它特别爱抢角。", "When your partner's away, play your little one: it loves the corners.", "Si tu pareja no está, juega con tu pequeñín: adora las esquinas."),
+        t("TA 不在时可以和小家伙下，它特别爱抢角。", "When your partner's away, play your little one: it loves the corners.", "Si tu pareja no está, juega con tu pequeño: adora las esquinas."),
       ],
     },
     {
@@ -131,7 +131,7 @@ export function gameCatalog(language: Language): GameEntry[] {
         t("轮到你时写三件关于你的事，其中一件是编的，再点“这句是假的”标出来。", "On your turn write three things about you, one made up, and mark it with This one's the lie.", "En tu turno escribe tres cosas sobre ti, una inventada, y márcala."),
         t("TA 只看到三句话，猜哪句是假的。猜完揭晓，然后换 TA 来说。", "They only see the three lines and guess the lie; then it's revealed and you swap.", "Solo ve las tres frases y adivina la mentira; luego se revela y cambian."),
         t("越像真的越好玩，也是更了解对方的好机会。", "The more believable the better, and you'll learn things about each other.", "Cuanto más creíble, mejor, y se conocerán un poco más."),
-        t("也可以和小家伙玩，它也会说三件关于自己的事。", "You can play your little one too: it tells three things about itself.", "También con tu pequeñín: cuenta tres cosas de sí mismo."),
+        t("也可以和小家伙玩，它也会说三件关于自己的事。", "You can play your little one too: it tells three things about itself.", "También con tu pequeño: cuenta tres cosas de sí mismo."),
       ],
     },
     {

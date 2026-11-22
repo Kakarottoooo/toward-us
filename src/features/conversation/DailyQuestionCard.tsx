@@ -102,7 +102,7 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
     <header><ChatCircleDots size={16} />{current ? modeLabel : t(`${day} 的问题`, `Question from ${day}`, `Pregunta del ${day}`)}</header>
     {dailyPlay?.kind === "guess" && <small>{dailyPlay.aboutUserId === userId
       ? t("这题关于你。选你真的会做的事。", "This one's about you. Pick what you'd actually do.", "Esta va sobre ti. Elige lo que harías.")
-      : t(`猜猜 ${partnerName} 会怎么选。`, `Guess what ${partnerName} would choose.`, `Adivina qué elegiría ${partnerName}.`)}</small>}
+      : t(`猜猜${partnerName}会怎么选。`, `Guess what ${partnerName} would choose.`, `Adivina qué elegiría ${partnerName}.`)}</small>}
     <strong>{question}</strong>
     {revealed ? <>
       {revealText && <small role="status">{revealText}</small>}
@@ -119,8 +119,8 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
     </> : mine && !editing ? <>
       <div className="daily-mine">{renderAnswer(mine)}</div>
       <small><LockKey size={14} />{onOpenPlan && !readOnly
-        ? t(`等 ${partnerName} 也回答，就能一起翻牌、看约会点子。`, `Once ${partnerName} answers, reveal the card and see date ideas.`, `Cuando ${partnerName} responda, podrán revelar la carta y ver ideas para una cita.`)
-        : t(`等 ${partnerName} 也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partnerName} answers too`, `Sus respuestas aparecen juntas cuando ${partnerName} también responda`)}</small>
+        ? t(`等${partnerName}也回答，就能一起翻牌、看约会点子。`, `Once ${partnerName} answers, reveal the card and see date ideas.`, `Cuando ${partnerName} responda, podrán revelar la carta y ver ideas para una cita.`)
+        : t(`等${partnerName}也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partnerName} answers too`, `Sus respuestas aparecen juntas cuando ${partnerName} también responda`)}</small>
       {!readOnly && <div className="card-actions"><button type="button" onClick={() => {
         setDraft(mine.choice === undefined && !mine.drawing ? mine.text : "");
         setChoice(mine.choice); setSketch(mine.drawing || []); setUseWords(drawing && !mine.drawing); setEditing(true);

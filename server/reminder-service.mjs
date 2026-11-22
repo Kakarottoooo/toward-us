@@ -408,6 +408,16 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         return updated;
       });
     },
+    /** Deletes one reminder for good and cancels its queued deliveries. The App offers Undo for a few seconds before it
+     * calls this (QA round 7), so nothing needs restoring here. */
+    async deleteReminder(userId, id) {
+      return store.transaction(LOCK, async (db) => {
+        const reminder = await getOwnedReminder(db, id, userId);
+        await cancelJobs(db, userId, (job) => job.reminderId === reminder.id);
+        await db.deleteRelationshipRecordForUser("reminders", reminder.id, userId);
+        return { deleted: true };
+      });
+    },
     async retryReminder(userId, id) {
       return store.transaction(LOCK, async (db) => {
         const reminder = await getOwnedReminder(db, id, userId);

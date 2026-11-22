@@ -13,3 +13,8 @@
 .reminders-feature button:focus-visible, .reminders-feature summary:focus-visible, .reminders-feature select:focus-visible, .reminders-feature input:focus-visible { outline: 2px solid #355e83; outline-offset: 3px; }
 .reminders-feature button:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 600px) { .reminders-feature .reminders-form { grid-template-columns: minmax(0, 1fr); } .reminders-feature .reminders-list article { display: grid; gap: 8px; } }
+.reminders-feature .reminders-intro { margin: 0 0 4px; color: #71665a; line-height: 1.6; }
+.reminders-feature .row-actions .reminders-delete { display: inline-flex; align-items: center; gap: 6px; color: #9b2c2c; }
+/* Undo after a delete (reminders, About us): stays in view at the bottom until it times out or is tapped (QA round 7). */
+.undo-snackbar { position: sticky; bottom: calc(16px + var(--mobile-safe-area-height, 0px)); z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 10px 10px 10px 16px; border-radius: 14px; background: #2f2620; color: #fffaf3; box-shadow: 0 8px 24px rgba(47, 38, 32, .25); }
+.undo-snackbar button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: transparent; color: #ffd28a; font: inherit; font-weight: 700; }

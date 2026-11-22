@@ -27,7 +27,7 @@ async function fixture(run, options = {}) {
     return { status: response.status, body: payload, retryAfter: response.headers.get("retry-after"), device };
   };
   const register = (name, extra = {}, opts = {}) => call("/api/auth/register", { name, adultConfirmed: true, email: `${name}@example.test`, password, ...extra }, opts);
-  const login = (name, pass, opts = {}) => call("/api/auth/login", { email: `${name}@example.test`, password: pass, language: opts.language || "en" }, opts);
+  const login = (name, pass, opts = {}) => call("/api/auth/login", { email: `${name}@example.test`, password: pass, language: opts.language || "en", ...opts.body }, opts);
   const resetByEmail = async (name, newPassword) => {
     await call("/api/auth/reset-request", { email: `${name}@example.test`, language: "en" }, { status: 200 });
     await new Promise((resolve) => setImmediate(resolve));
@@ -39,7 +39,7 @@ async function fixture(run, options = {}) {
     assert.equal(result.body.code, "rate_limited");
     assert.ok(result.body.retryAfterSeconds > 0, JSON.stringify(result.body));
     assert.equal(result.retryAfter, String(result.body.retryAfterSeconds));
-    const pattern = { en: /^Too many tries\. Try again in \d+ (second|minute)s?\.$/, zh: /^尝试次数过多，请 \d+ (秒|分钟)后再试。$/, es: /^Demasiados intentos\. Vuelve a intentarlo en \d+ (segundo|minuto)s?\.$/ }[language];
+    const pattern = { en: /^Too many tries\. Try again in \d+ (second|minute)s?\.( .+)?$/, zh: /^尝试次数过多，请 \d+ (秒|分钟)后再试。(.+)?$/, es: /^Demasiados intentos\. Vuelve a intentarlo en \d+ (segundo|minuto)s?\.( .+)?$/ }[language];
     assert.match(result.body.error, pattern);
   };
   try { await run({ call, register, login, resetByEmail, assertLimited, sent }); }
@@ -68,74 +68,169 @@ test("sign-up has a global cap across networks", () => fixture(async ({ register
   assertLimited(await register("g3", { language: "en" }, { ip: "203.0.113.3" }));
 }, { trustProxy: 1, authLimits: { registerGlobal: { max: 2, windowMs: 10 * 60_000 } } }));
 
-test("a stranger cannot lock the owner out: the right password always works; only wrong ones are slowed", () => fixture(async ({ register, login, resetByEmail }) => {
-  await register("owner", {}, { status: 201 });
-  // Two free failures from two networks; further wrong passwords are answered with the same 401 after the backoff.
-  await login("owner", "wrong-password-1", { ip: "198.51.100.1", status: 401 });
-  await login("owner", "wrong-password-2", { ip: "198.51.100.2", status: 401 });
+// QA round 7: reserve-then-check, email step-up instead of an account lockout, trusted devices that survive restarts and
+// end with a password change, and no timing tell for addresses without an account.
+const codeFrom = (message) => message.text.match(/\b(\d{6})\b/)[1];
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("spray from 26 networks in parallel: the owner on a new device and network gets an email code (not 429) and gets in", () => fixture(async ({ register, login, sent }) => {
+  const home = await register("sprayed", {}, { ip: "203.0.113.5", status: 201 });
+  assert.ok(home.device, "the sign-up browser is trusted");
+  const results = await Promise.all(Array.from({ length: 26 }, (_, network) => Array.from({ length: 5 }, (_, guess) =>
+    login("sprayed", `wrong-password-${guess}`, { ip: `198.51.100.${network + 1}` }))).flat());
+  const statuses = results.reduce((count, { status }) => ({ ...count, [status]: (count[status] || 0) + 1 }), {});
+  assert.deepEqual(statuses, { 401: 130 }, "every guess is answered the same, nobody is locked out");
+  // The owner, new device, new network, right password: asked for the emailed code.
+  const mailsBefore = sent.length;
+  const stepUp = await login("sprayed", password, { ip: "192.0.2.77", status: 202 });
+  assert.equal(stepUp.body.code, "verify_email");
+  assert.match(stepUp.body.error, /6-digit code/);
+  assert.equal(stepUp.device, null, "no session or trust before the code");
+  await settle();
+  assert.equal(sent.length, mailsBefore + 1);
+  assert.equal(sent.at(-1).to, "sprayed@example.test");
+  assert.match(sent.at(-1).subject, /sign-in code/);
+  // A wrong code is refused (and the right password alone never signs in); the right code signs in and trusts the device.
+  const wrongCode = codeFrom(sent.at(-1)) === "000000" ? "111111" : "000000";
+  assert.equal((await login("sprayed", password, { ip: "192.0.2.77", body: { emailCode: wrongCode }, status: 401 })).body.code, "invalid_email_code");
+  const asked = await login("sprayed", password, { ip: "192.0.2.77", status: 202 });
+  assert.equal(asked.body.code, "verify_email");
+  await settle();
+  assert.equal(sent.length, mailsBefore + 1, "a second email isn't sent within a minute; the first code still works");
+  const done = await login("sprayed", password, { ip: "192.0.2.77", body: { emailCode: codeFrom(sent.at(-1)) }, status: 200 });
+  assert.ok(done.device);
+  // That device, and the sign-up browser, now sign in directly from anywhere while the attack goes on.
+  await login("sprayed", password, { ip: "192.0.2.78", cookie: done.device, status: 200 });
+  await login("sprayed", password, { ip: "192.0.2.79", cookie: home.device, status: 200 });
+  // A code is used once.
+  await login("sprayed", password, { ip: "192.0.2.80", body: { emailCode: codeFrom(sent.at(-1)) }, status: 401 });
+}, { trustProxy: 1 }));
+
+test("wrong passwords at an account under attack get the normal 401 after a short fixed delay", () => fixture(async ({ register, login }) => {
+  await register("slowed", {}, { status: 201 });
+  for (let index = 0; index < 3; index += 1) await login("slowed", "wrong-password-1", { ip: `198.51.100.${index + 1}`, status: 401 });
   const started = Date.now();
-  const held = await login("owner", "wrong-password-3", { ip: "198.51.100.3", status: 401 });
+  const held = await login("slowed", "wrong-password-2", { ip: "198.51.100.9", status: 401 });
   assert.equal(held.body.code, "invalid_credentials");
-  assert.ok(Date.now() - started >= 900, "the wrong answer waited for the backoff");
-  // An unknown address behaves identically (no hint that the account exists).
-  await login("nobody", "wrong-password-1", { ip: "198.51.100.1", status: 401 });
-  // The owner, from a network that never failed, signs in at once while the account is backing off.
-  await login("owner", password, { ip: "198.51.100.9", status: 200 });
-  // A reset by email still works.
-  const replacement = "replacement-password-26";
-  await resetByEmail("owner", replacement);
-  await login("owner", replacement, { ip: "198.51.100.6", status: 200 });
-}, { trustProxy: 1, authLimits: { accountBackoff: { free: 2, maxSeconds: 900, maxHoldSeconds: 2 } } }));
+  assert.ok(Date.now() - started >= 280, "held for the fixed delay");
+  // An address with no account behaves the same once it is being sprayed.
+  for (let index = 0; index < 3; index += 1) await login("ghost", "wrong-password-1", { ip: `198.51.100.${index + 20}`, status: 401 });
+  const ghostStarted = Date.now();
+  await login("ghost", "wrong-password-1", { ip: "198.51.100.30", status: 401 });
+  assert.ok(Date.now() - ghostStarted >= 280);
+}, { trustProxy: 1, authLimits: { accountAttack: { threshold: 3, windowMs: 60 * 60_000, delayMs: 300 } } }));
 
-test("lockout simulation (QA round 6): an attacker hammering an account never makes the owner wait", () => fixture(async ({ register, login }) => {
-  await register("victim", {}, { status: 201 });
-  // The attacker's own network runs out of tries; the owner's network never does.
-  for (let index = 0; index < 4; index += 1) await login("victim", `wrong-password-${index}`, { ip: "198.51.100.7", status: 401 });
-  assert.equal((await login("victim", "wrong-password-9", { ip: "198.51.100.7" })).status, 429);
-  for (let index = 0; index < 5; index += 1) await login("victim", password, { ip: "203.0.113.10", status: 200 });
-}, { trustProxy: 1, authLimits: { loginPerIpEmail: { max: 4, windowMs: 10 * 60_000 }, accountBackoff: { free: 1000, maxSeconds: 900 } } }));
+test("120 parallel wrong tries from one network: at most the cap is evaluated, the rest wait (with the reset hint)", () => fixture(async ({ register, login, assertLimited }) => {
+  await register("race", {}, { status: 201 });
+  const same = await Promise.all(Array.from({ length: 120 }, () => login("race", "wrong-password-1", { ip: "198.51.100.40" })));
+  assert.equal(same.filter(({ status }) => status === 401).length, 10, "per network and address: 10 compares");
+  assert.equal(same.filter(({ status }) => status === 429).length, 110);
+  assertLimited(same.find(({ status }) => status === 429));
+  const spread = await Promise.all(Array.from({ length: 120 }, (_, index) => login(`race${index}`, "wrong-password-1", { ip: "198.51.100.41" })));
+  assert.equal(spread.filter(({ status }) => status === 401).length, 50, "per network across addresses: 50 compares");
+  assert.equal(spread.filter(({ status }) => status === 429).length, 70);
+}, { trustProxy: 1 }));
 
-test("lockout simulation in virtual time (QA round 6 out/lockout-sim): an hour of attack, then the owner every minute is never refused", async () => {
-  const { createAuthLimits } = await import("../server/auth-limits.mjs");
-  const realNow = Date.now; let t = 1_000_000; Date.now = () => t;
+test("the owner's right password gives back the network's slots, so typos never add up to a wait", () => fixture(async ({ register, login }) => {
+  await register("typo", {}, { status: 201 });
+  for (let round = 0; round < 3; round += 1) {
+    for (let index = 0; index < 3; index += 1) await login("typo", "wrong-password-1", { ip: "198.51.100.50", status: 401 });
+    await login("typo", password, { ip: "198.51.100.50", status: 200 });
+  }
+}, { trustProxy: 1, authLimits: { loginPerIpEmail: { max: 4, windowMs: 10 * 60_000 } } }));
+
+test("a too-many-tries answer says when to retry and that the email reset works now, in each language", () => fixture(async ({ login, assertLimited }) => {
+  for (let index = 0; index < 2; index += 1) await login("hint", "wrong-password-1", { ip: "198.51.100.60", status: 401 });
+  for (const [language, pattern] of [["en", /Forgot password\?.*reset it by email right now\.$/], ["zh", /忘记密码？.*用邮件重设密码。$/], ["es", /¿Olvidaste tu contraseña\?.*por correo ahora mismo\.$/]]) {
+    const limited = await login("hint", "wrong-password-1", { ip: "198.51.100.60", language });
+    assertLimited(limited, language);
+    assert.match(limited.body.error, pattern);
+    assert.equal(limited.body.reset, true);
+  }
+}, { trustProxy: 1, authLimits: { loginPerIpEmail: { max: 2, windowMs: 10 * 60_000 } } }));
+
+test("trusted devices survive a restart; a password change or reset un-trusts them", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "toward-trusted-device-"));
+  const file = join(directory, "state.json");
+  const start = async () => {
+    const sent = [];
+    const store = await createFileStore(file);
+    const server = createApiApp({ store, mediator: { aiReady: false, model: "test" }, email: { configured: true, send: async (message) => { sent.push(message); return { sent: true }; } }, trustProxy: 1, authLimits: { accountAttack: { threshold: 3, windowMs: 60 * 60_000, delayMs: 0 } } }).listen(0, "127.0.0.1");
+    await new Promise((resolve) => server.once("listening", resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const call = async (path, body, { ip = "203.0.113.1", cookie = "", method = "POST" } = {}) => {
+      const response = await fetch(base + path, { method, headers: { "content-type": "application/json", "x-forwarded-for": ip, ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+      const cookies = response.headers.getSetCookie().map((line) => line.split(";")[0]);
+      return { status: response.status, body: response.status === 204 ? null : await response.json(), device: cookies.find((line) => line.startsWith("toward_us_device=")) || null, session: cookies.find((line) => line.startsWith("toward_us_session=")) || null };
+    };
+    const login = (pass, options) => call("/api/auth/login", { email: "keeps@example.test", password: pass, language: "en" }, options);
+    const spray = async () => { for (let index = 0; index < 3; index += 1) assert.equal((await login("wrong-password-1", { ip: `198.51.100.${index + 1}` })).status, 401); };
+    const stop = async () => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); };
+    return { call, login, spray, stop, sent };
+  };
   try {
-    const limits = createAuthLimits(); const email = "victim@example.invalid";
-    while (t < 1_000_000 + 60 * 60_000) { const wait = limits.loginWait("198.51.100.7", email); if (wait) { t += wait * 1000; continue; } limits.loginFailed("198.51.100.7", email); t += 1; }
-    let refused = 0;
-    for (let minute = 0; minute < 60; minute += 1) {
-      t += 60_000;
-      if (!limits.loginWait("198.51.100.7", email)) limits.loginFailed("198.51.100.7", email);
-      if (limits.loginWait("203.0.113.10", email)) refused += 1;
-    }
-    assert.equal(refused, 0);
-  } finally { Date.now = realNow; }
+    let app = await start();
+    const created = await app.call("/api/auth/register", { name: "Keeps", email: "keeps@example.test", password, adultConfirmed: true });
+    assert.equal(created.status, 201);
+    await app.stop();
+    // A new process (fresh counts): under attack, the sign-up browser's cookie still signs in directly; a new one is asked.
+    app = await start();
+    await app.spray();
+    assert.equal((await app.login(password, { ip: "192.0.2.10", cookie: created.device })).status, 200);
+    assert.equal((await app.login(password, { ip: "192.0.2.11" })).status, 202);
+    // Changing the password un-trusts every device, including this one.
+    const signedIn = await app.login(password, { ip: "192.0.2.12", cookie: created.device });
+    const newPassword = "changed-password-26";
+    assert.equal((await app.call("/api/privacy/account", { password, newPassword }, { method: "PATCH", cookie: signedIn.session })).status, 204);
+    assert.equal((await app.login(newPassword, { ip: "192.0.2.13", cookie: created.device })).status, 202);
+    // Trusted again after the email code; a reset by email then un-trusts it again.
+    await settle();
+    const again = await app.login(newPassword, { ip: "192.0.2.13", cookie: created.device });
+    const confirmed = await app.call("/api/auth/login", { email: "keeps@example.test", password: newPassword, emailCode: codeFrom(app.sent.at(-1)) }, { ip: "192.0.2.13", cookie: created.device });
+    assert.equal(again.status, 202); assert.equal(confirmed.status, 200);
+    assert.equal((await app.login(newPassword, { ip: "192.0.2.14", cookie: confirmed.device })).status, 200);
+    await app.call("/api/auth/reset-request", { email: "keeps@example.test", language: "en" });
+    await settle();
+    const token = new URLSearchParams(new URL(app.sent.at(-1).link).hash.slice(1)).get("reset");
+    assert.equal((await app.call("/api/auth/reset", { token, password: "after-reset-password-26" })).status, 204);
+    // The reset proved the mailbox, so the attack window starts over: everyone signs in directly until a new attack.
+    assert.equal((await app.login("after-reset-password-26", { ip: "192.0.2.15", cookie: confirmed.device })).status, 200);
+    await app.spray();
+    assert.equal((await app.login("after-reset-password-26", { ip: "192.0.2.16", cookie: confirmed.device })).status, 202, "the reset un-trusted the old cookie");
+    await app.stop();
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("distributed guessing hits a per-account ceiling that never blocks a device or network that signed in before", () => fixture(async ({ register, login, resetByEmail }) => {
-  const first = await register("ceiling", {}, { ip: "203.0.113.50", status: 201 });
-  const known = await login("ceiling", password, { ip: "203.0.113.51", status: 200 });
-  assert.ok(known.device && first.device, "a device cookie is set on sign-up and sign-in");
-  // Ten networks, one wrong guess each: the account's hourly ceiling (5) is passed.
-  for (let index = 0; index < 10; index += 1) {
-    const result = await login("ceiling", "wrong-password-1", { ip: `198.51.100.${100 + index}` });
-    assert.ok([401, 429].includes(result.status), JSON.stringify(result.body));
-  }
-  // A brand-new device on a brand-new network is refused, whether or not the password is right.
-  const wrong = await login("ceiling", "wrong-password-2", { ip: "192.0.2.200" });
-  const right = await login("ceiling", password, { ip: "192.0.2.201" });
-  assert.equal(wrong.status, 429); assert.equal(right.status, 429);
-  // The browser that signed in before, from anywhere, and the network that signed in before, are never refused.
-  await login("ceiling", password, { ip: "192.0.2.202", cookie: known.device, status: 200 });
-  await login("ceiling", password, { ip: "192.0.2.203", cookie: first.device, status: 200 });
-  await login("ceiling", password, { ip: "203.0.113.51", status: 200 });
-  // A device cookie for another account proves nothing here.
-  await register("other", {}, { ip: "203.0.113.60", status: 201 });
-  const otherDevice = (await login("other", password, { ip: "203.0.113.60", status: 200 })).device;
-  assert.equal((await login("ceiling", password, { ip: "192.0.2.204", cookie: otherDevice })).status, 429);
-  // A reset by email clears the ceiling.
-  await resetByEmail("ceiling", "after-reset-password-26");
-  await login("ceiling", "after-reset-password-26", { ip: "192.0.2.205", status: 200 });
-}, { trustProxy: 1, authLimits: { accountCeiling: { max: 5, windowMs: 60 * 60_000 }, accountBackoff: { free: 1000, maxSeconds: 900 } } }));
+test("a device cookie for another account, or a forged one, proves nothing", () => fixture(async ({ register, login }) => {
+  await register("victim", {}, { status: 201 });
+  const other = await register("bystander", {}, { status: 201 });
+  for (let index = 0; index < 3; index += 1) await login("victim", "wrong-password-1", { ip: `198.51.100.${index + 1}`, status: 401 });
+  await login("victim", password, { ip: "192.0.2.20", cookie: other.device, status: 202 });
+  await login("victim", password, { ip: "192.0.2.21", cookie: "toward_us_device=" + "A".repeat(32), status: 202 });
+  // The bystander's own cookie still works for the bystander.
+  await login("bystander", password, { ip: "192.0.2.22", cookie: other.device, status: 200 });
+}, { trustProxy: 1, authLimits: { accountAttack: { threshold: 3, windowMs: 60 * 60_000, delayMs: 0 } } }));
+
+test("without a configured proxy, one shared address past its caps is never a global lockout: new devices take the email step", () => fixture(async ({ register, login }) => {
+  const home = await register("shared", {}, { status: 201 });
+  for (let index = 0; index < 6; index += 1) await login(`stranger${index}`, "wrong-password-1", { status: 401 });
+  // Past the per-network cap nobody gets 429: the owner on a new device is asked for the emailed code, the known device
+  // signs in directly, and wrong passwords still get the normal answer.
+  assert.equal((await login("shared", password)).status, 202);
+  await login("shared", password, { cookie: home.device, status: 200 });
+  await login("stranger9", "wrong-password-1", { status: 401 });
+}, { trustProxy: "", authLimits: { loginPerIp: { max: 3, windowMs: 15 * 60_000 } } }));
+
+test("timing: a wrong password for an address without an account takes as long as for one with an account", () => fixture(async ({ register, login }) => {
+  await register("timed", {}, { status: 201 });
+  const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const time = async (name, index) => { const started = performance.now(); await login(name, "wrong-password-1", { ip: `198.51.100.${index}`, status: 401 }); return performance.now() - started; };
+  const existing = [], missing = [];
+  for (let index = 0; index < 7; index += 1) { existing.push(await time("timed", 100 + index)); missing.push(await time("nobody-here", 150 + index)); }
+  const [a, b] = [median(existing), median(missing)];
+  assert.ok(b > 20, `the missing-account answer pays for a compare (${b.toFixed(1)} ms)`);
+  assert.ok(Math.abs(a - b) < Math.max(15, 0.35 * a), `existing ${a.toFixed(1)} ms vs missing ${b.toFixed(1)} ms`);
+}, { trustProxy: 1 }));
 
 test("a wrong password is answered in the reader's language with a code the App maps itself", () => fixture(async ({ login, call }) => {
   for (const [language, pattern] of [["en", /^The email or password is incorrect\.$/], ["es", /^El correo o la contraseña son incorrectos\.$/], ["zh", /^邮箱或密码不正确。$/]]) {
@@ -211,11 +306,13 @@ test("one network is capped across all addresses; another network is not", () =>
   await login("d", "wrong-password-1", { ip: "192.0.2.11", status: 401 });
 }, { trustProxy: 1, authLimits: { loginPerIp: { max: 3, windowMs: 15 * 60_000 } } }));
 
-test("X-Forwarded-For is ignored unless TRUST_PROXY is set", () => fixture(async ({ login, assertLimited }) => {
-  // No proxy configured: every request is the socket address, whatever the header claims.
+test("X-Forwarded-For is ignored unless TRUST_PROXY is set", () => fixture(async ({ register, login }) => {
+  // No proxy configured: every request is the socket address, whatever the header claims. The shared address is past its
+  // cap after two tries, so x3's right password from an unknown device takes the email step (never a 429 there).
+  await register("x3", {}, { status: 201 });
   await login("x1", "wrong-password-1", { ip: "203.0.113.21", status: 401 });
   await login("x2", "wrong-password-1", { ip: "203.0.113.22", status: 401 });
-  assertLimited(await login("x3", "wrong-password-1", { ip: "203.0.113.23" }));
+  assert.equal((await login("x3", password, { ip: "203.0.113.23" })).body.code, "verify_email");
 }, { trustProxy: "", authLimits: { loginPerIp: { max: 2, windowMs: 15 * 60_000 } } })); // "" = not configured, even on Render (RENDER is set there)
 
 test("with TRUST_PROXY=1 the client is the right-most X-Forwarded-For entry (what the one proxy appended)", () => fixture(async ({ login, assertLimited }) => {

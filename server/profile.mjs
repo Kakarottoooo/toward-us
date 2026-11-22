@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import { keepMessages } from "./thread-pages.mjs";
 import { wantsOneSentence } from "./reply-contract.mjs";
 import express from "express";
@@ -373,7 +374,7 @@ export function createProfileRouter({ store, emit = () => {} }) {
   const router = express.Router();
   const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
   const language = (req) => ["en", "es"].includes(req.body?.language || req.query?.language) ? req.body?.language || req.query?.language : !(req.body?.language || req.query?.language) && ["en", "es"].includes(req.auth?.user?.language) ? req.auth.user.language : "zh";
-  router.use("/profile", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/profile", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   const scope = async (db, userId) => { const context = await db.getRelationshipContext(userId); return activePair(context) ? context : null; };
   const find = async (db, req) => {
     const context = await scope(db, req.auth.user.id);

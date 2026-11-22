@@ -82,6 +82,18 @@ test("disabled reminders and revoked browser subscriptions stop delivery", async
   assert.equal(f.sent.length, 0);
 });
 
+test("QA round 7: a deleted reminder is gone for good, never delivered, and only its owner can delete it", async (t) => {
+  const f = await fixture(t);
+  const otherId = randomUUID(); await f.store.createUser({ id: otherId, email: `${otherId}@example.invalid`, name: "Other", createdAt: new Date().toISOString() });
+  await assert.rejects(() => f.service.deleteReminder(otherId, f.reminder.id), /not found/);
+  assert.deepEqual(await f.service.deleteReminder(f.userId, f.reminder.id), { deleted: true });
+  assert.deepEqual(await f.service.listReminders(f.userId), []);
+  await assert.rejects(() => f.service.deleteReminder(f.userId, f.reminder.id), /not found/);
+  f.advance("2026-09-07T12:02Z");
+  assert.equal((await f.service.runDue()).accepted, 0);
+  assert.equal(f.sent.length, 0);
+});
+
 test("expired provider subscriptions fail honestly and need browser reconnection", async (t) => {
   let expired = true;
   const f = await fixture(t, async () => { if (expired) throw Object.assign(new Error("gone"), { statusCode: 410 }); return { statusCode: 201 }; });
@@ -143,6 +155,7 @@ test("reminder HTTP routes enforce owner identity and independent scheduler bear
   const base = `http://127.0.0.1:${server.address().port}/api`;
   assert.equal((await fetch(`${base}/reminders`)).status, 401);
   assert.equal((await fetch(`${base}/reminders/${f.reminder.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-test-user": randomUUID() }, body: '{"enabled":false}' })).status, 404);
+  assert.equal((await fetch(`${base}/reminders/${f.reminder.id}`, { method: "DELETE", headers: { "x-test-user": randomUUID() } })).status, 404);
   assert.equal((await fetch(`${base}/internal/reminders/run`, { method: "POST" })).status, 401);
   assert.equal((await fetch(`${base}/internal/reminders/run`, { method: "POST", headers: { authorization: "Bearer wrong" } })).status, 401);
   const response = await fetch(`${base}/internal/reminders/run`, { method: "POST", headers: { authorization: `Bearer ${f.service.internalSecret}` } });

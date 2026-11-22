@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { choose, markAsked, settle, stageOf, unchoose } from "./people-stages.mjs";
@@ -58,7 +59,7 @@ async function publicStage(store, userId) {
 export function createPeopleRouter({ store, emit = () => {} }) {
   const router = express.Router();
   const fail = (status, message) => Object.assign(new Error(message), { statusCode: status });
-  router.use("/people", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/people", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   const owned = async (db, id, userId) => {
     const record = await db.getRelationshipRecordForUser("memories", id, userId);
     if (!record || record.kind !== PERSON_KIND || record.visibility !== "private" || record.ownerUserId !== userId || record.deletedAt) throw fail(404, "Not found.");

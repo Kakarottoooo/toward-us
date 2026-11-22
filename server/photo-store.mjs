@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import { screenImage } from "./ai-screening.mjs";
 import { randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
@@ -64,7 +65,7 @@ function photoScreeningError(error, req) {
 
 export function createPhotoRouter({ store }) {
   const router = express.Router();
-  router.use("/photos", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/photos", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   // Upload: private by default; "shared" only inside an active couple, because sending to Us is itself the share.
   router.post("/photos", express.raw({ type: Object.keys(TYPES), limit: MAX_BYTES }), async (req, res) => {
     const userId = req.auth.user.id, mime = String(req.headers["content-type"] || "").split(";")[0];

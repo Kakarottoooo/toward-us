@@ -1,10 +1,11 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { addSpaceItem, archiveSpaceRecord, changeMoment, ensureMomentSpaces, listSpaces, migrateLegacyLists, MOMENTS, updateSpaceItem } from "./space-domain.mjs";
 
 // Pages only show spaces and make small changes; Pinky creates spaces and items from the conversation.
 export function createSpaceRouter({ store, emit = () => {} }) {
   const router = express.Router();
-  router.use(["/spaces", "/space-items"], (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use(["/spaces", "/space-items"], (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   // Shared changes take the couple's lock; private ones only the person's own.
   const transact = async (req, action) => {
     const context = await store.getRelationshipContext(req.auth.user.id);

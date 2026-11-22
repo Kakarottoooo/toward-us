@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import { randomUUID } from "node:crypto";
 import express from "express";
 
@@ -49,7 +50,7 @@ export function createAgentActivity({ now = () => Date.now(), staleMs = 120_000,
 export function createAgentActivityRouter({ store, activity }) {
   const router = express.Router();
   router.get("/agent/activity", async (req, res) => {
-    if (!req.auth) return res.status(401).json({ error: "Please sign in." });
+    if (!req.auth) return res.status(401).json({ error: signInText(req) });
     const userId = req.auth.user.id;
     if (req.query?.channel !== "us") return res.json({ activity: activity.member(userId) });
     // Membership is checked here on every read; an ended or unpaired relationship shows nothing.
