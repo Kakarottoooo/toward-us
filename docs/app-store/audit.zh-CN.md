@@ -53,7 +53,7 @@
 
 ## 5.1.1 数据收集与存储 —— ✅
 
-- **(i) 隐私政策**：新增 `server/legal.mjs`，公开页面 `/privacy`、`/terms`、`/support`，中英西三语，写清收集什么、怎么用、第三方（OpenAI、Anthropic、托管商、推送、Resend、Sendblue、Apple/Stripe）、保留与删除、怎么撤回同意。入口：注册页按钮上方、设置 → 帮助与条款。联系邮箱和运营主体从环境变量 `PINKY_SUPPORT_EMAIL`、`PINKY_OPERATOR` 读，**创始人要填**。
+- **(i) 隐私政策**：新增 `server/legal.mjs`，公开页面 `/privacy`、`/terms`、`/support`，中英西三语，写清收集什么、怎么用、第三方（OpenAI、Anthropic、托管商、推送、Resend、Sendblue、Apple/Stripe）、保留与删除、怎么撤回同意。入口：注册页按钮上方、设置 → 帮助与条款。联系邮箱和运营主体从环境变量 `OUREVER_SUPPORT_EMAIL`、`PINKY_OPERATOR` 读，**创始人要填**。
 - **(ii) 权限说明**：`Info.plist` 和三个 `InfoPlist.strings` 都有麦克风、相册、相机、语音识别四项，中英西齐全（之前相机、语音识别只有英文）；相册说明加上"找你们俩的合照（人脸只在手机上比对，不会上传）"。`tests/mobile-shell.test.mjs` 检查每个权限三语都在。
 - **(iii) 最小化**：选照片用系统选择器（`PHPickerViewController`）；只有"连接相册"和"找合照"才申请整库读取，且在用户点了之后才问。
 - **(v) 删除账号**：设置 → 危险操作 → 删除账号，输入密码确认；服务器 `DELETE /api/privacy/account` 会退出关系、删私人内容和私人照片/导入记录文件、删会话和手机号绑定、匿名化账号（`server/store.mjs` `deleteAccount`，Postgres 版同样）。审核员能在 App 里自己完成。
@@ -78,7 +78,7 @@
 
 - **举报**（新增）：设置 → 举报或求助，可选"TA 发的内容 / Pinky 的回复 / 其他问题"，进团队队列、标为紧急、不经模型分类（`server/feedback-router.mjs`）。`npm run feedback` 能看到。**创始人要承诺 24 小时内处理**（条款和支持页都这么写了）。
 - **屏蔽**：设置 → 退出当前关系，立即生效，不需要对方同意；对方不能再看到你或发消息。
-- **联系方式**：`/support` 页面（填好 `PINKY_SUPPORT_EMAIL` 后显示邮箱）。
+- **联系方式**：`/support` 页面（填好 `OUREVER_SUPPORT_EMAIL` 后显示邮箱）。
 - **过滤**：内容只在两个互相邀请的人之间，不是公开社区；AI 回复由 OpenAI/Anthropic 自带安全策略，私聊里遇到危险会先给求助热线（`docs/features.zh-CN.md` 已有）。
 - **残余**：没有对伴侣之间消息做自动过滤。私密双人空间一般不会因此被拒；如果审核员追问，回复说明双人邀请制 + 举报 + 一键退出。
 
