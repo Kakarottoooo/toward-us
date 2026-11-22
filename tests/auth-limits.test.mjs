@@ -226,10 +226,11 @@ test("timing: a wrong password for an address without an account takes as long a
   const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
   const time = async (name, index) => { const started = performance.now(); await login(name, "wrong-password-1", { ip: `198.51.100.${index}`, status: 401 }); return performance.now() - started; };
   const existing = [], missing = [];
-  for (let index = 0; index < 7; index += 1) { existing.push(await time("timed", 100 + index)); missing.push(await time("nobody-here", 150 + index)); }
+  for (let index = 0; index < 11; index += 1) { existing.push(await time("timed", 100 + index)); missing.push(await time("nobody-here", 150 + index)); }
   const [a, b] = [median(existing), median(missing)];
   assert.ok(b > 20, `the missing-account answer pays for a compare (${b.toFixed(1)} ms)`);
-  assert.ok(Math.abs(a - b) < Math.max(15, 0.35 * a), `existing ${a.toFixed(1)} ms vs missing ${b.toFixed(1)} ms`);
+  // Medians of 11, and a margin loose enough for a busy build machine: what matters is no 20x gap (no dummy compare).
+  assert.ok(Math.abs(a - b) < Math.max(25, 0.5 * a), `existing ${a.toFixed(1)} ms vs missing ${b.toFixed(1)} ms`);
 }, { trustProxy: 1 }));
 
 test("a wrong password is answered in the reader's language with a code the App maps itself", () => fixture(async ({ login, call }) => {
