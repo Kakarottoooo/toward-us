@@ -184,7 +184,7 @@ export async function answerDailyQuestion({ store, mediator, relationshipId, use
 async function reactToAnswers({ store, mediator, relationshipId, userId, question, members, language, emit }) {
   try {
     if (!mediator?.structured) return;
-    const name = (id) => members.find((member) => member.userId === id)?.user?.name || "";
+    const name = (id) => { const member = members.find((item) => item.userId === id); return member?.user?.name || `partner ${member?.role || ""}`.trim(); };
     const answers = Object.entries(question.answers).map(([id, item]) => ({ from: name(id), text: item.text }));
     const input = JSON.stringify({ question: question.text, answers });
     const reply = inLanguage(clean((await mediator.structured({ name: "daily_reaction", schema: reactionSchema, instructions: reactionInstructions(language), input, maxOutputTokens: 300 })).reply, 600), language);

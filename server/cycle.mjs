@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 
@@ -84,7 +85,7 @@ export async function careNoteFor(db, viewerId, today) {
 /** The member's own view for Coming up, plus a care note if their partner shares one. */
 export function createCycleRouter({ store, emit = () => {} }) {
   const router = express.Router();
-  router.use("/cycle", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/cycle", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   const today = (req) => { try { return new Date().toLocaleDateString("en-CA", { timeZone: String(req.query?.timezone || req.body?.timezone || "UTC") }); } catch { return new Date().toISOString().slice(0, 10); } };
   // The last day a log may name (QA round 5): with a real time zone, today there; without one, a day of grace for zones
   // ahead of UTC.

@@ -76,7 +76,7 @@ export function Soup({ match, language, userId, partnerName, act, onRematch }: S
 
     {over ? <section ref={truth} className="soup-truth" data-testid="soup-truth">
       <h2>{outcome === "solved" ? pick(match.state.cheer) || t("答对啦！", "You got it!", "¡Lo tienen!") : t("汤底揭晓", "The answer", "La solución")}</h2>
-      {outcome === "solved" && match.state.endedBy && <p className="soup-by">{match.state.endedBy === userId ? t("是你猜中的。", "You cracked it.", "Lo resolviste tú.") : t(`${partnerName} 猜中的。`, `${partnerName} cracked it.`, `Lo resolvió ${partnerName}.`)}</p>}
+      {outcome === "solved" && match.state.endedBy && <p className="soup-by">{match.state.endedBy === userId ? t("是你猜中的。", "You cracked it.", "Lo resolviste tú.") : t(`${partnerName}猜中的。`, `${partnerName} cracked it.`, `Lo resolvió ${partnerName}.`)}</p>}
       <p className="soup-truth-text">{pick(puzzle.truth)}</p>
       {puzzle.facts && <ul className="soup-facts">{puzzle.facts.map((fact, index) => <li key={index} className={found.includes(index) ? "is-found" : ""}>{found.includes(index) ? <CheckCircle size={18} weight="fill" /> : <Circle size={18} />}{pick(fact)}</li>)}</ul>}
       <div className="game-actions"><button type="button" className="game-primary" onClick={onRematch} data-testid="game-rematch"><ArrowsClockwise size={16} />{t("再来一碗", "Another one", "Otro más")}</button></div>

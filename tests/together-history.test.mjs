@@ -124,3 +124,24 @@ test("shared recall and HTTP jump use the same membership boundary, including ar
   assert.equal((await f.request(`/together/locate?messageId=${question.id}`, "GET", null, "")).status, 401);
   assert.equal((await f.request("/together/locate?messageId=missing")).status, 404);
 });
+
+test("read receipts and unsend still reach a message after it moved to the archive (QA round 7, finding 6)", async (t) => {
+  const f = await fixture(t);
+  const first = await f.say(f.a, "archived soon"), second = await f.say(f.b, "partner line archived soon");
+  for (let index = 0; index < 220; index += 1) await f.say(index % 2 ? f.b : f.a, `filler ${index}`);
+  assert.ok(!(await f.conversation()).messages.some((item) => item.id === first.id), "the first line is archived");
+  // Alex reads Blair's archived line: the receipt lands in the archive.
+  assert.equal((await f.request(`/together/messages/${second.id}/receipt`, "POST", { state: "read" }, f.a)).status, 204);
+  // Alex unsends their own archived line inside its two minutes.
+  assert.equal((await f.request(`/together/messages/${first.id}/unsend`, "POST", {}, f.a)).status, 204);
+  const archived = (await olderTogetherMessages(f.store, { relationshipId: f.relationshipId, userId: f.a, before: (await f.conversation()).messages[0].id, limit: 400 })).messages;
+  assert.ok(archived.find((item) => item.id === second.id).readAt, "read receipt stored on the archived line");
+  const removed = archived.find((item) => item.id === first.id);
+  assert.ok(removed.removedAt); assert.equal(removed.text, "");
+  // Another member's line, and unknown ids, are still refused; the two-minute window still applies.
+  assert.equal((await f.request(`/together/messages/${second.id}/unsend`, "POST", {}, f.a)).status, 404);
+  assert.equal((await f.request(`/together/messages/no-such-id/receipt`, "POST", { state: "read" }, f.a)).status, 404);
+  const old = await f.say(f.a, "old line");
+  await f.store.transaction(`relationship:${f.relationshipId}`, (tx) => tx.updateRelationshipRecordForUser("togetherConversations", `together:${f.relationshipId}`, f.a, (draft) => { draft.messages.find((item) => item.id === old.id).createdAt = new Date(Date.now() - 5 * 60_000).toISOString(); }));
+  assert.equal((await f.request(`/together/messages/${old.id}/unsend`, "POST", {}, f.a)).status, 409);
+});

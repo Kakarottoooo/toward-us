@@ -78,7 +78,9 @@ import { sendblue } from "./sendblue.mjs";
 import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
 import { installAiLedger, meterMediator, runAiLedgerMaintenance } from "./ai-ledger.mjs";
 import { createAiCostRouter } from "./ai-cost-router.mjs";
-import { createAuthLimits, SHARED_ADDRESS_LIMITS, tooManyTries, trustProxySetting } from "./auth-limits.mjs";
+import { requestLanguage } from "./request-language.mjs";
+import { createAuthLimits, deviceTrusted, SHARED_ADDRESS_LIMITS, tooManyTries, trustDevice, trustProxySetting } from "./auth-limits.mjs";
+import { createEmailSender, signinCodeMessage } from "./email.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const LANGUAGES = new Set(["zh", "en", "es"]);
@@ -86,13 +88,16 @@ const DEMO_CREATE_WINDOW_MS = 10 * 60 * 1000;
 const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
+// Compared against when a sign-in names an address with no account (same scrypt cost as a real hash).
+const DUMMY_PASSWORD_HASH = await hashPassword("no account has this password");
 
 export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming, authLimits = {}, trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER ? "1" : undefined) }) {
   const app = express();
   // Without a configured proxy every client may share one address, so per-network caps are raised (QA round 6, finding 11).
   const sharedAddress = trustProxySetting(trustProxy) === false;
-  const limits = createAuthLimits({ ...(sharedAddress ? SHARED_ADDRESS_LIMITS : {}), ...authLimits });
-  const rateLimited = (req, res, seconds) => res.status(429).set("Retry-After", String(seconds)).json({ code: "rate_limited", retryAfterSeconds: seconds, error: tooManyTries(languageOf(req), seconds) });
+  const limits = createAuthLimits({ ...(sharedAddress ? SHARED_ADDRESS_LIMITS : {}), ...authLimits }, { sharedAddress });
+  const rateLimited = (req, res, seconds, reset = false) => res.status(429).set("Retry-After", String(seconds)).json({ code: "rate_limited", retryAfterSeconds: seconds, ...(reset ? { reset: true } : {}), error: tooManyTries(languageOf(req), seconds, { reset }) });
+  const mailer = email || createEmailSender();
   // First, so the time measured covers every middleware and route a request passes through (server/timing.mjs).
   if (requestTiming) app.use(requestTiming);
   // Every model call below is counted and capped per person and couple per day (server/ai-budget.mjs).
@@ -282,7 +287,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (registerWait) return rateLimited(req, res, registerWait);
     // An empty name stays a placeholder the first-run screen asks to replace (QA round 5), and the sign-up's interface
     // language is saved at once so both partners' holidays show before either opens Settings.
-    const user = createUser({ email, name: name || "我", nameSource: name ? "user" : "fallback", language: signupLanguage(req), passwordHash: await hashPassword(password) });
+    const user = createUser({ email, name, nameSource: name ? "user" : "fallback", language: signupLanguage(req), passwordHash: await hashPassword(password) });
     const { referralCode, partnerInviteCode, installId = req.get("x-install-id") } = req.body || {};
     let created;
     if (referralCode || installId || partnerCode(partnerInviteCode)) {
@@ -299,35 +304,49 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
-    setDeviceCookie(res, limits.deviceToken(email), production);
+    // The browser that created the account is trusted for it, so a later attack never asks it for an email code.
+    setDeviceCookie(res, trustDevice(readDeviceToken(req), created), production);
     res.status(201).json(await appState(store, created));
   });
 
   app.post("/api/auth/login", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
-    // The password is checked before any per-account limit, so nobody can lock a known person out of their account
-    // (QA round 6, finding 1). Only this network's own failures, or a flood across networks against an account this
-    // device and network never signed in to, can refuse first; that answer never depends on the password.
-    const trustedDevice = limits.deviceTrusted(readDeviceToken(req), email);
-    const wait = limits.loginWait(req.ip, email, { trustedDevice });
-    if (wait) return rateLimited(req, res, wait);
+    const language = languageOf(req);
+    // Counted before the password is compared and before anything awaits, so parallel tries can't exceed the caps (QA
+    // round 7). Only this network's own tries can refuse here; a correct password is never refused account-wide.
+    const ticket = limits.reserveLogin(req.ip, email);
+    if (ticket.wait) return rateLimited(req, res, ticket.wait, true);
     const candidate = await store.getUserByEmail(email);
-    const authenticated = candidate && await store.transaction(`user:${candidate.id}`, async (tx) => {
+    // An address with no account still pays for one password compare, so timing doesn't tell whether it exists.
+    if (!candidate) await verifyPassword(String(req.body?.password || ""), DUMMY_PASSWORD_HASH);
+    const checked = candidate && await store.transaction(`user:${candidate.id}`, async (tx) => {
       const user = await tx.getUserForUpdate(candidate.id);
       if (!user || user.email !== email || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) return null;
+      const trusted = deviceTrusted(readDeviceToken(req), user);
+      // Someone has been guessing at this account: a device it doesn't know also proves the mailbox.
+      if (mailer.configured && limits.stepUpNeeded(ticket, { trusted })) {
+        const code = req.body?.emailCode;
+        if (!code) return { user, stepUp: "send" };
+        if (!limits.checkEmailCode(user.id, code)) return { user, stepUp: "wrong" };
+      }
       return { user, ...(await issueSession(tx, user.id)) };
     });
-    if (!authenticated) {
-      // A wrong password at an account under attack is answered after its backoff (the same for unknown addresses).
-      const hold = limits.failureHold(email);
-      limits.loginFailed(req.ip, email);
-      if (hold) await new Promise((resolve) => setTimeout(resolve, hold * 1000));
-      return res.status(401).json({ code: "invalid_credentials", error: localText(languageOf(req), "邮箱或密码不正确。", "The email or password is incorrect.", "El correo o la contraseña son incorrectos.") });
+    if (!checked) {
+      const hold = limits.loginFailed(ticket);
+      if (hold) await new Promise((resolve) => setTimeout(resolve, hold));
+      return res.status(401).json({ code: "invalid_credentials", error: localText(language, "邮箱或密码不正确。", "The email or password is incorrect.", "El correo o la contraseña son incorrectos.") });
     }
-    limits.loginSucceeded(req.ip, email);
-    const { token, user } = authenticated;
+    if (checked.stepUp === "wrong") return res.status(401).json({ code: "invalid_email_code", error: localText(language, "验证码不正确或已过期。请重试，或重新登录以获取新的验证码。", "That code is wrong or has expired. Try again, or sign in again for a new code.", "El código no es correcto o caducó. Inténtalo de nuevo o vuelve a iniciar sesión para recibir otro.") });
+    if (checked.stepUp === "send") {
+      const code = limits.issueEmailCode(checked.user.id);
+      const mailLanguage = ["zh", "en", "es"].includes(req.body?.language) ? req.body.language : checked.user.language || language;
+      if (code) void Promise.resolve().then(() => mailer.send({ to: checked.user.email, ...signinCodeMessage(mailLanguage, code) })).catch(() => console.error("[email] sign-in code delivery failed"));
+      return res.status(202).json({ code: "verify_email", error: localText(language, "为了确认是你本人，我们向这个邮箱发了一个 6 位验证码，10 分钟内有效。输入验证码即可登录。", "To make sure it's you, we emailed a 6-digit code to this address. It expires in 10 minutes. Enter it to sign in.", "Para comprobar que eres tú, enviamos un código de 6 dígitos a este correo. Caduca en 10 minutos. Escríbelo para iniciar sesión.") });
+    }
+    limits.loginSucceeded(ticket);
+    const { token, user } = checked;
     setSessionCookie(res, token, production);
-    setDeviceCookie(res, limits.deviceToken(email), production);
+    setDeviceCookie(res, trustDevice(readDeviceToken(req), user), production);
     res.json(await appState(store, user));
   });
 
@@ -789,8 +808,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   return app;
 }
 
-// Signed out there is no saved language, so only an explicit one is used; otherwise the App maps this Chinese text itself.
-function requireAuth(req, res, next) { return req.auth ? next() : res.status(401).json({ error: localText(LANGUAGES.has(req.body?.language) ? req.body.language : LANGUAGES.has(req.query?.language) ? req.query.language : "zh", "请先登录。", "Please sign in first.", "Inicia sesión primero.") }); }
+// Signed out there is no saved language: an explicit one, else the browser's Accept-Language (QA round 7).
+function requireAuth(req, res, next) { return req.auth ? next() : res.status(401).json({ error: localText(requestLanguage(req), "请先登录。", "Please sign in first.", "Inicia sesión primero.") }); }
 
 function sameOriginRequest(req) {
   if (req.headers["sec-fetch-site"] === "cross-site") return false;

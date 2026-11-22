@@ -38,7 +38,7 @@ export function CycleCard({ language, view, onChanged, showEmpty = false }: { la
   </form>;
   const undoBar = undo && <p className="cycle-undo" role="status">{t("已删除这条记录。", "Log deleted.", "Registro borrado.")}<button type="button" onClick={restore} data-testid="cycle-undo">{t("撤销", "Undo", "Deshacer")}</button></p>;
   const medicalNote = <p>{t("周期预测仅供记录，不能用于避孕、诊断或医疗决策。", "Cycle estimates are for tracking only. Do not use them for contraception, diagnosis or medical decisions.", "Las estimaciones solo sirven de registro. No las uses para anticoncepción, diagnóstico ni decisiones médicas.")}</p>;
-  const care = view.care && <section className="cycle-care" data-testid="care-note"><Heart size={18} weight="fill" />{t(`这几天多照顾 ${isolate(view.care.name)} 一点`, `Be extra caring with ${isolate(view.care.name)} these days`, `Cuida un poco más a ${isolate(view.care.name)} estos días`)}</section>;
+  const care = view.care && <section className="cycle-care" data-testid="care-note"><Heart size={18} weight="fill" />{t(`这几天多照顾${isolate(view.care.name)}一点`, `Be extra caring with ${isolate(view.care.name)} these days`, `Cuida un poco más a ${isolate(view.care.name)} estos días`)}</section>;
   // Opened from the drawer before anything is logged: say how to start, and start it in one tap (in Just me).
   if (!view.mine) return showEmpty ? <>{care}<section className="cycle-card" data-testid="cycle-card" ref={(node) => node?.scrollIntoView({ block: "start" })}>
     <small className="cycle-private"><LockKey size={13} />{t("只有你能看到", "Only you can see this", "Solo tú lo ves")}</small>
@@ -57,7 +57,7 @@ export function CycleCard({ language, view, onChanged, showEmpty = false }: { la
     {medicalNote}
     {quick(open ? "end" : "start")}{picker}
     {view.partnerName && <label className="cycle-share"><input type="checkbox" checked={sharing} disabled={busy} onChange={(event) => void run(() => relationshipApi("/api/cycle/sharing", jsonBody({ on: event.target.checked })))} data-testid="cycle-share" />
-      <span><b>{t(`让 ${partner} 知道`, `Let ${partner} know`, `Que ${partner} lo sepa`)}</b><small>{t(`那几天 ${partner} 只会看到“这几天多照顾你一点”，看不到日期，也不知道原因。随时可以关掉。`, `On those days ${partner} only sees "be extra caring these days": no dates, no reason. Turn it off anytime.`, `Esos días ${partner} solo verá «cuídale un poco más estos días»: sin fechas ni motivo. Puedes desactivarlo cuando quieras.`)}</small></span></label>}
+      <span><b>{t(`让${partner}知道`, `Let ${partner} know`, `Que ${partner} lo sepa`)}</b><small>{t(`那几天${partner}只会看到“这几天多照顾你一点”，看不到日期，也不知道原因。随时可以关掉。`, `On those days ${partner} only sees "be extra caring these days": no dates, no reason. Turn it off anytime.`, `Esos días ${partner} solo verá «cuídale un poco más estos días»: sin fechas ni motivo. Puedes desactivarlo cuando quieras.`)}</small></span></label>}
     {undoBar}
     <details className="cycle-logs"><summary>{t("记录", "Logs", "Registros")}</summary><ul>{logs.map((entry) => editing?.id === entry.id ? <li key={entry.id}><form className="cycle-edit" onSubmit={(event) => { event.preventDefault(); void save(editing); }}>
         <label>{t("开始", "Start", "Inicio")}<KeyboardInput type="date" required max={today} value={editing.start} onChange={(event) => setEditing({ ...editing, start: event.target.value })} data-testid="cycle-edit-start" /></label>

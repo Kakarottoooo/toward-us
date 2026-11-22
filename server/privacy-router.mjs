@@ -13,11 +13,12 @@ import { COLLECTION as MATCHES, viewMatch } from "./matches/index.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createEmailSender, resetMessage } from "./email.mjs";
 import { createAuthLimits, tooManyTries } from "./auth-limits.mjs";
+import { requestLanguage } from "./request-language.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
-// The request's language, else the signed-in member's saved interface language, else zh.
-const local = (req, zh, en, es) => { const language = req.body?.language || req.query.language || req.auth?.user?.language || "zh"; return language === "zh" ? zh : language === "es" ? es : en; };
+// The request's language, else the signed-in member's saved interface language, else the browser's, else zh.
+const local = (req, zh, en, es) => { const language = requestLanguage(req); return language === "zh" ? zh : language === "es" ? es : en; };
 const hiddenCollections = new Set(["accountSettings", "pushSubscriptions", "deliveryJobs", "deliveryPreferences", "productEvents", "nativePushDevices", "aiUsage", "referrals"]);
 
 // Consent to third-party AI (App Review 5.1.2(i), founder 11-12 App Store prep): before anything this person writes, says
@@ -58,7 +59,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       return;
     }
     if (user?.passwordHash === "federated") throw fail(403, local(req, "请退出并使用原登录方式重新登录，然后在五分钟内重试。", "Sign out and sign in again with your provider, then retry within five minutes.", "Cierra la sesión y vuelve a entrar con tu proveedor. Reinténtalo en los cinco minutos siguientes."));
-    if (!user || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) throw fail(403, local(req, "请使用当前密码确认。", "Confirm with your current password.", "Confirma con tu contraseña actual."));
+    if (!user || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) throw Object.assign(fail(403, local(req, "这个密码不对。", "That password isn't right.", "Esa contraseña no es correcta.")), { code: "wrong_password" });
     attempts.delete(`reauth:${req.ip}:${req.auth.user.id}`);
   };
   const confirm = (req) => { if (req.body?.confirm !== true) throw fail(400, local(req, "请明确确认这项操作。", "Explicit confirmation is required.", "Se requiere una confirmación explícita.")); };
@@ -292,7 +293,13 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   });
   router.post("/privacy/leave", async (req, res) => {
     confirm(req); const context = await store.getRelationshipContext(req.auth.user.id);
-    const ended = await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.leaveRelationship(req.auth.user.id); });
+    const ended = await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => {
+      await reauthenticate(req, tx);
+      // The partner left behind is told once, by the name they knew, next time they open the App (QA round 7).
+      const partner = context?.relationship.status === "active" ? context.members.find((member) => member.userId !== req.auth.user.id) : null;
+      if (partner) await updateSettings(partner.userId, (record) => { record.partnerDeleted = { name: context.members.find((member) => member.userId === req.auth.user.id)?.user?.name || "", relationshipId: context.relationship.id, at: new Date().toISOString(), seenAt: null, reason: "left" }; }, tx);
+      return tx.leaveRelationship(req.auth.user.id);
+    });
     // Both members hear "pairing.updated" (status "ended") before their streams close, and their Just me greetings stop
     // naming each other.
     if (ended) { await onPairingEnded(ended.memberIds, ended.relationshipId); closeConnections(ended.memberIds); }
@@ -329,6 +336,8 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   router.get("/privacy/former-us", async (req, res) => {
     const userId = req.auth.user.id, gone = (await settings(userId))?.partnerDeleted;
     if (!gone) return res.json({ former: null });
+    // A partner who left (rather than deleted their account) leaves a notice only; the shared history isn't offered.
+    if (gone.reason === "left") return res.json({ former: { name: gone.name, endedAt: gone.at, seen: Boolean(gone.seenAt), reason: "left", messages: [] } });
     const snapshot = await store.getPrivacySnapshot(userId);
     if (!snapshot.relationships.some((relationship) => relationship?.id === gone.relationshipId)) return res.json({ former: null });
     const conversation = snapshot.graph.togetherConversations?.find((record) => record.id === `together:${gone.relationshipId}`);
@@ -361,6 +370,8 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       await audit(tx, userId, "summary.ai_access_withdrawn", { objectId: summary.id, sourceVersion: summary.version });
     }); res.json({ withdrawn: true });
   });
+  // A wrong password in a confirm sheet says so, with a code the App can map (QA round 7).
+  router.use((error, _req, res, next) => error?.code === "wrong_password" ? res.status(403).json({ code: error.code, error: error.message }) : next(error));
   return router;
 }
 

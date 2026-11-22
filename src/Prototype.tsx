@@ -46,6 +46,7 @@ import "./features/games/play-card-arrival.css";
 import { AppleLogo, ArrowLeft, ArrowRight, ChatCircleText, EnvelopeSimple, Eye, EyeSlash, SpinnerGap } from "@phosphor-icons/react";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { lazyScreen, ScreenBoundary } from "./lazyScreen";
+import { accountError, api, forgetInvite, hasInvite, inviteCode, inviteNetworkMessage, rememberInvite, retryLabel } from "./accountApi";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import { AiConsentScreen, LegalLinks, OfflineBanner } from "./features/privacy/AiConsent";
 import { clearReferral, referralCode, referralInstallId } from "./features/membership/referrals";
@@ -82,10 +83,12 @@ const ReferralNotices = lazyScreen(() => import("./features/membership/ReferralP
 const SignupReferral = lazyScreen(() => import("./features/membership/ReferralPage").then((module) => module.SignupReferral));
 // Not needed to draw the first screen: the install hint appears 1.5s after the conversation settles, if ever.
 const InstallHint = lazyScreen(() => import("./features/reminders/InstallHint").then((module) => module.InstallHint));
+// Only invitation links open it, so its code is fetched on demand (opening-JS budget, QA round 7).
+const PartnerJoin = lazyScreen(() => import("./features/conversation/PartnerJoin").then((module) => module.PartnerJoin));
 const PlayCardArrival = lazyScreen(() => import("./features/games/PlayCardArrival").then((module) => module.PlayCardArrival));
 const screenCode: Partial<Record<Screen, { preload: () => Promise<void> }>> = {
   "invite-first": FirstRun, conversation: ConversationHome, personal: PersonalHome, privacy: SettingsPage, feedback: FeedbackPage, recovery: AccountRecovery,
-  dashboard: RelationshipHome, space: SpacePage, people: PeoplePage, import: ImportsPage, capabilities: CapabilitiesPage,
+  invite: PartnerJoin, pairing: PartnerJoin, dashboard: RelationshipHome, space: SpacePage, people: PeoplePage, import: ImportsPage, capabilities: CapabilitiesPage,
 };
 /** Fetches the code a screen needs, so it can be shown without a loading step. */
 const preloadScreen = (screen: Screen) => screenCode[screen]?.preload() ?? Promise.resolve();
@@ -97,18 +100,18 @@ syncEntryDesign();
 narrowScreen.addEventListener("change", syncEntryDesign);
 
 type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
-type AuthMode = "login" | "register";
+export type AuthMode = "login" | "register";
 type User = { id: string; email: string; name: string; nameSet?: boolean; createdAt: string; aiConsentAt?: string | null; passwordless?: boolean };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; prepared?: boolean; sentAt?: string | null; cancelledAt?: string | null; declinedAt?: string | null } | null };
-type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" | "declined" };
+export type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" | "declined" };
 
-const copy = {
+export const copy = {
   zh: {
     homeLine: "不知道怎么回 TA，先问问 Ourever。", start: "开始", homeFooter: "看懂 · 回应 · 靠近", back: "返回",
     welcome: "欢迎回来", registerHint: "你可以先和 Ourever 私聊，想一起使用时再邀请伴侣。", email: "邮箱", password: "密码",
     displayName: "你的称呼", login: "登录", register: "创建账号", switchRegister: "还没有账号？创建一个",
-    switchLogin: "已有账号？返回登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
+    switchLogin: "已有账号？登录", passwordHint: "至少 10 个字符", invitePartner: "邀请伴侣", inviteHint: "一起建立你们的共同空间。",
     createInvite: "生成伴侣邀请", copyInvite: "复制邀请链接", copied: "已复制", waitingPartner: "等待对方加入",
     waitingHint: "对方用自己的账号接受后，共同空间才会打开。", acceptInvite: "接受邀请",
     inviteCode: "八位邀请码", logout: "退出登录",
@@ -118,7 +121,7 @@ const copy = {
     homeLine: "Not sure how to reply to them? Ask Ourever first.", start: "Begin", homeFooter: "Understand · Reply · Get closer", back: "Back",
     welcome: "Welcome back", registerHint: "Start with a private chat. You can invite your partner whenever you’re ready.", email: "Email", password: "Password",
     displayName: "Your name", login: "Sign in", register: "Create account", switchRegister: "New here? Create an account",
-    switchLogin: "Already registered? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
+    switchLogin: "Already have an account? Sign in", passwordHint: "At least 10 characters", invitePartner: "Invite your partner", inviteHint: "Build your shared space together.",
     createInvite: "Create partner invite", copyInvite: "Copy invite link", copied: "Copied", waitingPartner: "Waiting for your partner",
     waitingHint: "They must accept with their own account before mediation and reviews are shared.", acceptInvite: "Accept invite",
     inviteCode: "Eight-character code", logout: "Sign out",
@@ -128,7 +131,7 @@ const copy = {
     homeLine: "¿No sabes qué responderle? Pregúntale a Ourever.", start: "Comenzar", homeFooter: "Entender · Responder · Acercarse", back: "Volver",
     welcome: "Bienvenido de nuevo", registerHint: "Empieza con un chat privado. Puedes invitar a tu pareja cuando quieras.", email: "Correo electrónico", password: "Contraseña",
     displayName: "Tu nombre", login: "Iniciar sesión", register: "Crear cuenta", switchRegister: "¿Eres nuevo? Crea una cuenta",
-    switchLogin: "¿Ya tienes cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
+    switchLogin: "¿Ya tienes una cuenta? Inicia sesión", passwordHint: "Al menos 10 caracteres", invitePartner: "Invita a tu pareja", inviteHint: "Construyan juntos su espacio compartido.",
     createInvite: "Crear invitación", copyInvite: "Copiar enlace", copied: "Copiado", waitingPartner: "Esperando a tu pareja",
     waitingHint: "Debe aceptar con su propia cuenta antes de compartir mediaciones y revisiones.", acceptInvite: "Aceptar invitación",
     inviteCode: "Código de ocho caracteres", logout: "Cerrar sesión",
@@ -220,6 +223,10 @@ function AccountPrototype() {
     const providersAsked = welcomeProvidersReady();
     api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me", { signal: AbortSignal.timeout(12000) }).then(async (state) => {
       setUser(state.user); setPairing(state.pairing);
+      // Signed in here last time and nobody signed out here: the session was ended elsewhere (QA round 7).
+      const revoked = !state.user && signedInHere();
+      signedInHere(!!state.user);
+      if (revoked) setNotice(localized(language, "你已退出登录，请重新登录。", "You were signed out. Sign in again to continue.", "Se cerró tu sesión. Vuelve a iniciar sesión para continuar."));
       // Signed in already: an invitation code is for new sign-ups. Say so once and drop it from the address (QA round 3).
       if (state.user && !returning && referralCode()) { clearReferral(); setRefNotice(true); }
       if (returning && state.user && !resetToken) {
@@ -231,7 +238,7 @@ function AccountPrototype() {
       if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
       // A reload keeps the page its history entry names (a page opened from the app has its own entry), not the chat.
       const kept = (history.state as { ourever?: Screen } | null)?.ourever;
-      const first: Screen = state.user ? kept && ["privacy", "feedback", "people", "space", "import", "capabilities", "personal"].includes(kept) && (state.user.aiConsentAt || kept === "privacy") ? kept : accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
+      const first: Screen = state.user ? kept && ["privacy", "feedback", "people", "space", "import", "capabilities", "personal"].includes(kept) && (state.user.aiConsentAt || kept === "privacy") ? kept : accountLanding(state.user, state.pairing) : signInReturn || revoked ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
       if (first === "home") await Promise.race([Promise.all([providersAsked, welcomeArtReady()]), new Promise((done) => setTimeout(done, 3000))]);
       else await Promise.all([preloadScreen(first), resetToken ? PasswordResetForm.preload() : null]);
       // An invitation-code sign-up shows its referral card on the sign-in screen from the first frame.
@@ -314,7 +321,7 @@ function AccountPrototype() {
     if (next && /^\/m\/[a-z0-9]{12}$/.test(next)) { location.assign(next); return; }
     const landingScreen = accountLanding(state.user, state.pairing);
     await preloadScreen(landingScreen);
-    setUser(state.user); setPairing(state.pairing); setNotice("");
+    setUser(state.user); setPairing(state.pairing); setNotice(""); signedInHere(true);
     setScreen(landingScreen);
     // A signed-in phone with existing permission can reconnect without a system prompt.
     void restoreNativePush();
@@ -362,7 +369,7 @@ function AccountPrototype() {
     const timer = window.setTimeout(() => setJoinedElsewhere(false), 7000);
     return () => clearTimeout(timer);
   }, [joinedElsewhere]);
-  const logout = async () => { keyboard.hide(); await disableNativePush(); await disableWebPush(); await disconnectHomeWidget(); await api("/api/auth/logout", { method: "POST" }); closeRelationshipEvents(); forgetInvite(); setUser(null); setPairing(null); setScreen("home"); };
+  const logout = async () => { keyboard.hide(); signedInHere(false); await disableNativePush(); await disableWebPush(); await disconnectHomeWidget(); await api("/api/auth/logout", { method: "POST" }); closeRelationshipEvents(); forgetInvite(); setUser(null); setPairing(null); setScreen("home"); };
 
   const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
@@ -480,14 +487,14 @@ function AccountPrototype() {
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} backLabel={new URLSearchParams(location.search).get("archived") === "1" ? settingsLabel(language) : undefined} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => goBack(() => { setUrl(location.pathname); setScreen("privacy"); }) : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); setUrl(`/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} onInvite={() => { if (pairing?.status === "active") { setUrl("/?channel=us"); setScreen("conversation"); } else setScreen("pairing"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "booting") return <BootSplash language={language} testId="booting" />;
-    if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => goBack(() => setScreen("auth"))} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
+    if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen plum-auth"><header className="editorial-top"><button onClick={() => goBack(() => setScreen("auth"))} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={selectLanguage} compact /></header><main className="recovery-content"><AccountRecovery language={language} onBack={() => goBack(() => setScreen("auth"))} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} aiOff={aiOff} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
-    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { setUrl("/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await (await import("./features/feedback/feedbackQueue")).clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => { rememberAiDeclined(user.id, !at); setUser({ ...user, aiConsentAt: at }); if (at && aiReturn.current !== null) { const say = aiReturn.current; aiReturn.current = null; aiAsk.current = ""; setAiOffReason(""); returnTo.current = say; goBack(() => { returnTo.current = ""; setUrl(say || location.pathname); setScreen("conversation"); }); } }} />;
-    if (screen === "invite") return <PartnerJoin language={language} onLanguage={selectLanguage} onAuth={(mode) => { rememberInvite(); openAuth(mode); }} />;
+    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { setUrl("/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await (await import("./features/feedback/feedbackQueue")).clearFeedbackForDeletedAccount(user.id); } finally { signedInHere(false); await reloadIdentity(); setNotice(localized(language, "你的账号已删除。", "Your account was deleted.", "Tu cuenta se eliminó.")); setScreen("auth"); } }} onAiConsent={(at) => { rememberAiDeclined(user.id, !at); setUser({ ...user, aiConsentAt: at }); if (at && aiReturn.current !== null) { const say = aiReturn.current; aiReturn.current = null; aiAsk.current = ""; setAiOffReason(""); returnTo.current = say; goBack(() => { returnTo.current = ""; setUrl(say || location.pathname); setScreen("conversation"); }); } }} />;
+    if (screen === "invite") return <PartnerJoin Frame={InviteFrame} labels={t} language={language} onLanguage={selectLanguage} onAuth={(mode) => { rememberInvite(); openAuth(mode); }} />;
     if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onProvider={(provider) => user ? setScreen(landing(pairing)) : openAuth("register", provider)} onEmail={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
     if (screen === "auth") return <AuthScreen key={autoProvider || "form"} autoProvider={autoProvider} onAutoCancel={() => { setAutoProvider(null); setScreen(hasInvite() ? "invite" : "home"); }} initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => goBack(() => setScreen(hasInvite() ? "invite" : "home"))} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
-    if (screen === "pairing" && user) return <PartnerJoin language={language} onLanguage={selectLanguage} account={{ pairing, onJoined: (next) => {
+    if (screen === "pairing" && user) return <PartnerJoin Frame={InviteFrame} labels={t} language={language} onLanguage={selectLanguage} account={{ pairing, onJoined: (next) => {
       forgetInvite(); setUrl("/?channel=us"); setPairing(next); setScreen("conversation");
     }, onBack: () => { forgetInvite(); backToConversation(); } }} />;
     if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} aiOff={aiOff} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
@@ -562,6 +569,8 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
   notice: string; setNotice: (value: string) => void; busy: boolean; setBusy: (value: boolean) => void; t: typeof copy.zh;
 }) {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
+  // Set (to the code typed so far) once the server asks this sign-in to prove the mailbox (QA round 7).
+  const [emailCode, setEmailCode] = useState<string | null>(null);
   // Continuing confirms the person is 18+ and accepts the terms; that is stated beside every sign-in button.
   const adultConfirmed = true;
   const [ref, setRef] = useState(referralCode);
@@ -631,7 +640,8 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
   }, []);
   const submit = async () => {
     if (!begin("email")) return;
-    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed, language, ...(inviteCode() ? { partnerInviteCode: inviteCode() } : {}), installId: referralInstallId(), ...(ref ? { referralCode: ref } : {}) }) })); }
+    try { const state = await api<{ user: User; pairing: Pairing | null; code?: string; error?: string }>(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { email, password, language, ...(emailCode === null ? {} : { emailCode }) } : { name, email, password, adultConfirmed, language, ...(inviteCode() ? { partnerInviteCode: inviteCode() } : {}), installId: referralInstallId(), ...(ref ? { referralCode: ref } : {}) }) });
+      if (state.code === "verify_email") { setEmailCode(""); setNotice(state.error || ""); } else await onAuth(state); }
     catch (error) { if (ref && (error as { code?: string }).code === "referral_ineligible") { setIneligible(true); setNotice(localized(language, "这次注册无法获得邀请奖励。你仍可不使用邀请创建账号。", "This registration is ineligible for referral rewards. You can still create an account without the invitation.", "Este registro no cumple los requisitos de la invitación. Aún puedes crear una cuenta sin ella.")); } else setNotice(error instanceof TypeError ? inviteNetworkMessage(language) : accountError((error as Error).message, language)); } finally { finish(); }
   };
   // Instead of the old password, a six-digit code sent to the account's mailbox can confirm the link.
@@ -724,9 +734,10 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
           <button type="button" aria-label={localized(language, "显示密码", "Show password", "Mostrar contraseña")} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}</button>
         </div>{mode === "register" && <small>{t.passwordHint}</small>}
       </div>
+      {mode === "login" && emailCode !== null && <label className="editorial-field"><span>{localized(language, "邮箱验证码", "Code from your email", "Código del correo")}</span><KeyboardInput inputMode="numeric" autoComplete="one-time-code" required maxLength={6} value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))} data-testid="auth-email-code" /></label>}
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       {mode === "register" && ineligible && <button type="button" className="auth-switch" onClick={removeRef}>{localized(language, "不使用邀请注册", "Register without the invitation", "Registrarme sin invitación")}</button>}
-      <button className="signin-method" type="submit" disabled={busy || !email || password.length < 10 || (mode === "register" && !name.trim())} aria-busy={working === "email"} data-testid="auth-submit">
+      <button className="signin-method" type="submit" disabled={busy || !email || password.length < 10 || (mode === "register" && !name.trim()) || (mode === "login" && emailCode !== null && emailCode.length < 6)} aria-busy={working === "email"} data-testid="auth-submit">
         {working === "email" ? <SpinnerGap className="signin-spinner" /> : <EnvelopeSimple weight="bold" />}
         {mode === "login" ? localized(language, "使用邮箱登录", "Sign in with email", "Entrar con correo") : localized(language, "使用邮箱注册", "Create account with email", "Crear cuenta con correo")}
       </button>
@@ -758,12 +769,8 @@ function signInMessage(reason: string, language: Language) {
   }
 }
 function settingsLabel(language: Language) { return localized(language, "设置", "Settings", "Ajustes"); }
-function retryLabel(language: Language) { return localized(language, "重试", "Try again", "Reintentar"); }
-function inviteNetworkMessage(language: Language) {
-  return localized(language, "暂时无法连接 Ourever。请检查网络后重试。", "Can’t reach Ourever. Check your connection and try again.", "No se pudo conectar con Ourever. Revisa tu conexión y vuelve a intentarlo.");
-}
 
-function InviteFrame({ language, onLanguage, title, children, signedOut }: {
+export function InviteFrame({ language, onLanguage, title, children, signedOut }: {
   language: Language; onLanguage: (value: Language) => void; title: string; children: ReactNode; signedOut?: boolean;
 }) {
   return <MobileScroll className="paper-screen pairing-screen invite-landing" data-testid={signedOut ? "invite-landing" : "pairing-screen"}>
@@ -775,101 +782,6 @@ function InviteFrame({ language, onLanguage, title, children, signedOut }: {
   </MobileScroll>;
 }
 
-type JoinAccount = { pairing: Pairing | null; onJoined: (pairing: Pairing) => void; onBack: () => void };
-type InviteLookup = InvitePreview | "missing" | "unavailable";
-function PartnerJoin({ language, onLanguage, account, onAuth }: {
-  language: Language; onLanguage: (value: Language) => void; account?: JoinAccount; onAuth?: (mode: AuthMode) => void;
-}) {
-  const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [code, setCode] = useState(inviteCode);
-  const malformedLink = hasInvite() && !inviteCode() && !code;
-  const [lookup, setLookup] = useState<{ code: string; value: InviteLookup } | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const [joining, setJoining] = useState(false);
-  const [error, setError] = useState("");
-  // Declining asks once more, then closes the invitation for good and lets the inviter know.
-  const [declining, setDeclining] = useState<"ask" | "busy" | "done" | null>(null);
-  const keyboard = useKeyboard();
-  const paired = account?.pairing?.status === "active";
-  const own = !!code && account?.pairing?.invitation?.code === code;
-  const valid = /^[A-Z0-9]{8}$/.test(code);
-  const readPreview = valid && !paired && !own;
-  useEffect(() => {
-    if (!readPreview) return;
-    const request = new AbortController();
-    api<{ invitation: InvitePreview }>("/api/partner/invitations/" + code, { signal: request.signal })
-      .then(result => { if (!request.signal.aborted) setLookup({ code, value: result.invitation }); })
-      .catch(reason => { if (!request.signal.aborted) setLookup({ code, value: reason.status === 404 ? "missing" : "unavailable" }); });
-    return () => request.abort();
-  }, [code, readPreview, attempt]);
-  const preview = lookup?.code === code ? lookup.value : null;
-  const retry = () => { setError(""); setLookup(null); setAttempt(value => value + 1); };
-  const found = typeof preview === "object" ? preview : null;
-  const name = found?.inviterName;
-  const loading = readPreview && !preview;
-  const unusable = own || declining === "done" || (!valid && (!account || malformedLink)) || preview === "missing" || (!!found && found.status !== "open");
-  const title = paired ? t("你已经与伴侣配对", "You’re already paired", "Ya tienes pareja vinculada")
-    : name && !unusable ? t("加入" + name + "的共同空间", "Join " + name, "Únete a " + name)
-    : t("伴侣邀请", "Partner invitation", "Invitación de pareja");
-  const problem = own ? t("这是你自己的邀请。把它发给伴侣，或输入对方发给你的邀请码。", "This is your own invitation. Share it with your partner, or enter their code below.", "Esta es tu invitación. Envíala a tu pareja o escribe aquí su código.")
-    : preview === "missing" || (!valid && (!account || malformedLink)) ? t("没有找到这份邀请。请向伴侣索取新链接。", "We couldn’t find that invite. Ask your partner for a new link.", "No encontramos esa invitación. Pide un enlace nuevo a tu pareja.")
-    : found?.status === "cancelled" ? t("邀请已被取消。请让伴侣重新发送。", "This invite was cancelled. Ask your partner to send a new one.", "Se canceló esta invitación. Pide a tu pareja que envíe otra.")
-    : found?.status === "expired" ? t("邀请已过期。请让伴侣发送新链接。", "This invite has expired. Ask your partner for a new link.", "La invitación caducó. Pide un enlace nuevo a tu pareja.")
-    : found?.status === "declined" || declining === "done" ? t("你已婉拒这份邀请，对方会收到通知。", "You declined this invite. They'll be told.", "Rechazaste esta invitación. Se le avisará.")
-    : found?.status === "used" ? t("邀请已被使用。已加入可登录原账号，否则请向伴侣索取新链接。", "This invite has already been used. Sign in to the account you joined with, or ask your partner for a new link.", "Esta invitación ya se usó. Entra con la cuenta con la que te uniste o pide un enlace nuevo a tu pareja.") : "";
-  const decline = async () => {
-    if (declining === "busy") return;
-    keyboard.hide(); setDeclining("busy"); setError("");
-    try {
-      await api("/api/partner/invitations/" + code + "/decline", { method: "POST" });
-      forgetInvite(); setDeclining("done");
-    } catch (reason) {
-      setDeclining("ask");
-      setError(reason instanceof TypeError ? inviteNetworkMessage(language) : accountError((reason as Error).message, language));
-    }
-  };
-  const accept = async () => {
-    if (!account || joining || found?.status !== "open" || own || paired) return;
-    keyboard.hide(); setJoining(true); setError("");
-    try {
-      const result = await api<{ pairing: Pairing }>("/api/partner/accept", { method: "POST", body: JSON.stringify({ code, language }) });
-      account.onJoined(result.pairing);
-    } catch (reason) {
-      setError(reason instanceof TypeError ? inviteNetworkMessage(language) : accountError((reason as Error).message, language));
-      setAttempt(value => value + 1);
-    } finally { setJoining(false); }
-  };
-  return <InviteFrame language={language} onLanguage={onLanguage} title={title} signedOut={!account}>
-    {paired ? <>
-      <p className="pairing-lead">{t("你已有共同空间。若要与其他人配对，请先在设置中退出当前关系。", "You already share a space with your partner. To pair with someone else, first leave your current relationship in Settings.", "Ya compartes un espacio con tu pareja. Para vincularte con otra persona, sal primero de tu relación actual en Ajustes.")}</p>
-      <button className="primary-action" onClick={account!.onBack}>{t("返回我的空间", "Back to my space", "Volver a mi espacio")}</button>
-    </> : <>
-      {declining !== "done" && found?.status !== "declined" && <p className="pairing-lead">{account ? t("接受后就能一起使用“我们俩”，你们各自的私人对话仍然保密。", "Accept to open your shared chat. Each person’s private conversations stay private.", "Acepta para abrir el chat compartido. Las conversaciones privadas de cada persona seguirán siendo privadas.")
-        : t("创建账号或登录，就能加入你们两个人在 Ourever 的共同空间。", "Create an account or sign in to join your partner in your private Ourever space.", "Crea una cuenta o inicia sesión para unirte a tu pareja en su espacio privado de Ourever.")}</p>}
-      {account && (!hasInvite() || !valid || unusable || code !== inviteCode()) && <label className="editorial-field code-field"><span>{copy[language].inviteCode}</span>
-        <KeyboardInput value={code} onChange={event => { setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)); setError(""); }} maxLength={8} autoComplete="off" data-testid="invite-code" />
-      </label>}
-      {loading && <p role="status" aria-live="polite">{t("正在查看邀请…", "Checking invitation…", "Comprobando la invitación…")}</p>}
-      {(problem || error || preview === "unavailable") && <p className="form-notice" role="alert">{error || problem || inviteNetworkMessage(language)}</p>}
-      {preview === "unavailable" && <button className="primary-action" onClick={retry}>{retryLabel(language)}</button>}
-      {declining === "ask" || declining === "busy" ? <>
-        <p className="pairing-lead">{t(name ? `婉拒后这份邀请就失效了，${name}会收到通知。` : "婉拒后这份邀请就失效了，对方会收到通知。", `Declining closes this invite${name ? ` and tells ${name}` : " and tells them"}.`, `Al rechazarla, la invitación se cierra${name ? ` y ${name} recibe un aviso` : " y se le avisa"}.`)}</p>
-        <button className="primary-action" disabled={declining === "busy"} onClick={() => void decline()} data-testid="invite-decline-confirm">{declining === "busy" ? t("正在婉拒…", "Declining…", "Rechazando…") : t("婉拒邀请", "Decline invite", "Rechazar invitación")}</button>
-        <button className="secondary-action" disabled={declining === "busy"} onClick={() => setDeclining(null)}>{t("再想想", "Keep it", "Pensarlo")}</button>
-      </> : account ? <>
-        {preview !== "unavailable" && !unusable && <button className="primary-action" onClick={() => void accept()} disabled={joining || loading || !valid} data-testid="invite-accept">
-          {joining ? t("正在加入…", "Joining…", "Uniéndote…") : copy[language].acceptInvite}
-        </button>}
-        <button className="secondary-action" disabled={joining} onClick={() => { keyboard.hide(); account.onBack(); }}>{t("返回我的空间", "Back to my space", "Volver a mi espacio")}</button>
-        {found?.status === "open" && !unusable && <button className="auth-switch" disabled={joining} onClick={() => setDeclining("ask")} data-testid="invite-decline">{t("婉拒邀请", "Decline invite", "Rechazar invitación")}</button>}
-      </> : <>
-        <button className="primary-action" onClick={() => onAuth?.("register")} data-testid="invite-join">{copy[language].register}</button>
-        <button className="secondary-action" onClick={() => onAuth?.("login")} data-testid="invite-sign-in">{copy[language].login}</button>
-        {found?.status === "open" && !unusable && <button className="auth-switch" onClick={() => setDeclining("ask")} data-testid="invite-decline">{t("婉拒邀请", "Decline invite", "Rechazar invitación")}</button>}
-      </>}
-    </>}
-  </InviteFrame>;
-}
 
 function DesktopBrandHeader({ language, onLanguage, onLogin }: { language: Language; onLanguage: (language: Language) => void; onLogin: () => void }) { return <header className="desktop-brand-header"><Wordmark language={language} /><nav aria-label={localized(language, "主导航", "Main navigation", "Navegación principal")}><a href="#how-it-works">{localized(language, "如何工作", "How it works", "Cómo funciona")}</a><button onClick={() => location.assign("/demo")}>{localized(language, "两人快速体验", "Try it together", "Probar juntos")}</button></nav><div className="desktop-header-actions"><LanguageSwitch language={language} onLanguage={onLanguage} compact /><button className="desktop-login" onClick={onLogin}>{localized(language, "登录", "Sign in", "Iniciar sesión")}<ArrowRight size={17} /></button></div></header>; }
 function LanguageSwitch({ language, onLanguage, compact = false }: { language: Language; onLanguage: (language: Language) => void; compact?: boolean }) { return <div className={`language-switch ${compact ? "compact" : ""}`} role="group" aria-label={localized(language, "选择界面语言", "Choose display language", "Elegir idioma de la interfaz")}>{languages.map((item, index) => <span key={item}>{index > 0 && <i>/</i>}<button type="button" className={language === item ? "active" : ""} onClick={() => onLanguage(item)} aria-pressed={language === item}>{item.toUpperCase()}</button></span>)}</div>; }
@@ -888,27 +800,4 @@ const aiDeclinedKey = (userId: string) => "ourever:ai-declined:" + userId;
 function aiDeclined(userId: string) { try { return localStorage.getItem(aiDeclinedKey(userId)) === "1"; } catch { return false; } }
 function rememberAiDeclined(userId: string, declined: boolean) { try { if (declined) localStorage.setItem(aiDeclinedKey(userId), "1"); else localStorage.removeItem(aiDeclinedKey(userId)); } catch { /* asked again next time */ } }
 
-// Keep only the current tab's explicit join intent across authentication and password recovery.
-const inviteIntentKey = "ourever.partner-invite";
-function linkedInvite(): string | null {
-  const params = new URLSearchParams(location.search);
-  if (params.has("invite")) return (params.get("invite") || "").toUpperCase();
-  try { return sessionStorage.getItem(inviteIntentKey); } catch { return null; }
-}
-function hasInvite() { return linkedInvite() !== null; }
-function inviteCode() { const code = linkedInvite() || ""; return /^[A-Z0-9]{8}$/.test(code) ? code : ""; }
-function rememberInvite() { try { sessionStorage.setItem(inviteIntentKey, inviteCode()); } catch { /* URL remains available */ } }
-function forgetInvite() { try { sessionStorage.removeItem(inviteIntentKey); } catch { /* storage unavailable */ } }
-// The server words account errors in Chinese; English and Spanish screens show their own words instead.
-const ACCOUNT_ERRORS: Record<string, [en: string, es: string]> = {
-  "请输入有效邮箱。": ["Enter a valid email address.", "Introduce un correo electrónico válido."],
-  "密码需要 10–128 个字符。": ["Passwords need 10 to 128 characters.", "La contraseña necesita entre 10 y 128 caracteres."],
-  "这个邮箱已经注册。": ["This email is already registered. Sign in instead.", "Este correo ya está registrado. Inicia sesión."],
-  "尝试次数过多，请稍后再试。": ["Too many attempts. Try again later.", "Demasiados intentos. Inténtalo más tarde."],
-  "邮箱或密码不正确。": ["The email or password is not correct.", "El correo o la contraseña no son correctos."],
-  "请先登录。": ["Sign in first.", "Inicia sesión primero."],
-  "当前账号已经属于一个共同空间。": ["This account already belongs to a shared space.", "Esta cuenta ya pertenece a un espacio compartido."],
-  "邀请无效、已过期，或当前账号已经绑定伴侣。": ["This invite is not valid or has expired, or this account is already linked to a partner.", "La invitación no es válida o ha caducado, o esta cuenta ya está vinculada a una pareja."],
-};
-function accountError(message: string, language: Language) { const known = ACCOUNT_ERRORS[message]; return known ? localized(language, message, known[0], known[1]) : inInterfaceLanguage(message, language); }
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(path, { ...options, credentials: "same-origin", headers: { ...(options.body && typeof options.body === "string" ? { "content-type": "application/json" } : {}), ...options.headers } }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error(apiErrorText(payload, response.status, currentLanguage())), { code: payload.code, status: response.status }); return payload; }
+function signedInHere(value?: boolean) { try { if (value === undefined) return localStorage.getItem("ourever.signed-in") === "1"; if (value) localStorage.setItem("ourever.signed-in", "1"); else localStorage.removeItem("ourever.signed-in"); } catch { /* not remembered */ } return false; }

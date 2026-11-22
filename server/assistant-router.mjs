@@ -1,3 +1,5 @@
+import { signInText } from "./request-language.mjs";
+import { eitherWord, nameOr } from "./display-name.mjs";
 import { withChatRequest, withChatSignal, chatSignal, regenerateChatReply } from "./chat-response.mjs";
 import { screenshotPending, screenshotTurnMessages, visibleAssistantText } from "./screenshot-turn.mjs";
 import { screenText } from "./ai-screening.mjs";
@@ -50,7 +52,7 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
     const user = await (lock ? db.getUserForUpdate(userId) : db.getUserById(userId));
     if (!user || user.passwordHash === "deleted" || user.disabledAt || user.deletedAt) throw fail(401, "Please sign in.");
   };
-  router.use("/assistant", async (req, _res, next) => { if (!req.auth) throw fail(401, "Please sign in."); await liveUser(store, req.auth.user.id); next(); });
+  router.use("/assistant", async (req, _res, next) => { if (!req.auth) throw fail(401, signInText(req)); await liveUser(store, req.auth.user.id).catch((error) => { if (error?.statusCode === 401) error.message = signInText(req); throw error; }); next(); });
   const screenshotControllers = new Map();
   const owned = async (db, id, userId) => {
     const thread = await db.getRelationshipRecordForUser("privateAgentThreads", id, userId);
@@ -650,7 +652,7 @@ ${draft.openOn}` : draft.text).digest("hex") !== digest) throw fail(409, say(ses
         await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { relationshipId: initial.relationship.id, approvalPolicy: "owner", status: "recorded", objectId: milestone.id, objectType: "milestone", eventType: "milestone.shared", sourceVersion: latest.version }));
         const me = (await tx.getRelationshipContext(userId))?.members.find((member) => member.userId === userId)?.user?.name || "";
         const day = (language) => new Date(`${share.date}T12:00:00Z`).toLocaleDateString(language === "zh" ? "zh-CN" : language, { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" });
-        const i18n = { zh: `${me} 把「${share.title}」放进了你们俩的日历：${day("zh")}。前一天我会提醒你们。`, en: `${me} put "${share.title}" on your calendar: ${day("en")}. I'll remind you both the day before.`, es: `${me} puso «${share.title}» en su calendario: ${day("es")}. Les aviso a los dos un día antes.` };
+        const i18n = { zh: `${nameOr(me, eitherWord("zh"))} 把「${share.title}」放进了你们俩的日历：${day("zh")}。前一天我会提醒你们。`, en: `${nameOr(me, eitherWord("en"))} put "${share.title}" on your calendar: ${day("en")}. I'll remind you both the day before.`, es: `${nameOr(me, eitherWord("es"))} puso «${share.title}» en su calendario: ${day("es")}. Les aviso a los dos un día antes.` };
         const posted = await appendTogetherMessage(tx, { relationshipId: initial.relationship.id, actorUserId: null, userId, source: "app", kind: "text", text: i18n.zh, i18n, handle: `date-share:${share.cardId}` });
         const saved = await tx.updateRelationshipRecordForUser("privateAgentThreads", latest.id, userId, (record) => { record.pendingShares = record.pendingShares.map((item) => item.cardId === cardId ? { ...item, sharedAt: new Date().toISOString() } : item); record.version += 1; });
         return { session: saved, item: null, milestone, conversation: posted.duplicate ? null : posted.conversation };

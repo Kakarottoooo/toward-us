@@ -306,7 +306,7 @@ function RoundCard({ t, card, round, userId, partnerName, paired, frozen, disabl
   const matched = !truth && revealed && own?.choice === theirs?.choice;
   const instruction = card.type === "guess" ? !round?.aboutUserId || round.aboutUserId === userId ?
     t("先选自己的答案，TA 来猜你。", "Pick your own answer. Your partner will guess.", "Elige tu respuesta. Tu pareja intentará adivinarla.") :
-    t(`猜 ${partnerName} 选了什么。`, `Guess what ${partnerName} picked.`, `Adivina qué eligió ${partnerName}.`) :
+    t(`猜${partnerName}选了什么。`, `Guess what ${partnerName} picked.`, `Adivina qué eligió ${partnerName}.`) :
     t("你们各答一次，两个人都答完再翻牌。", "Answer separately. Flip the cards once you're both done.", "Respondan por separado y revelen las cartas cuando ambos terminen.");
   const revealTitle = truth ? t("两个人，都说了一句", "Two answers, one conversation", "Dos respuestas, una conversación") :
     card.type === "guess" ? (matched ? t("猜中了", "Good guess", "¡Acertaron!") : t("原来是这个答案", "A little surprise", "Una pequeña sorpresa")) :

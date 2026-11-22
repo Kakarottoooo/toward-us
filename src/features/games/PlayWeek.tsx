@@ -71,7 +71,7 @@ export function PlayWeek({ language }: { language: Language }) {
   const counts = week?.counts;
   const notes = counts?.notes === 2 ? t("两个人都给对方留了心意", "You both reached out", "Ambos tuvieron un detalle")
     : counts?.notes === 1 ? t("有一人给对方留了心意", "One of you reached out", "Uno tuvo un detalle")
-      : t("还没有小卡或「想你了」", "No little cards or Thinking of You yet", "Aún no hay tarjetas ni «Pensé en ti»");
+      : t("还没有小卡或「想你了」", "No little cards or Thinking of you yet", "Aún no hay tarjetas ni «Pienso en ti»");
   return (
     <section className="play-week" aria-label={title} data-testid="play-week">
       <header className="play-week-header">

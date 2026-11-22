@@ -4,23 +4,24 @@ import { localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
 import { relationshipApi } from "../relationship/api";
 
-const hiddenKey = (userId: string) => `ourever:name-prompt-hidden:${userId}`;
-export const namePromptHidden = (userId: string) => { try { return localStorage.getItem(hiddenKey(userId)) === "1"; } catch { return false; } };
+const hiddenKey = (userId: string) => `ourever:name-prompt-later:${userId}`;
+// "X" means later, not never (QA round 7): the prompt comes back in a later session until a name is set, at most once a day.
+export const namePromptHidden = (userId: string) => { try { return Date.now() - Number(localStorage.getItem(hiddenKey(userId)) || 0) < 86_400_000; } catch { return false; } };
 
-/** Asked once of a member whose account name the server made up ("我", an email's local part) and who never gave one in first
- * run, so the partner sees a real name instead of the placeholder (QA round 6, finding 3). Settings can change it later. */
+/** Asked of a member who signed up without a name (or whose account name the server made up) and never gave one in first
+ * run, so the partner sees a real name instead of "your partner" (QA round 6, finding 3). Settings can change it later. */
 export function NamePrompt({ userId, language, onSaved, onHide }: { userId: string; language: Language; onSaved: () => void; onHide: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const hide = () => { try { localStorage.setItem(hiddenKey(userId), "1"); } catch { /* hidden for this visit */ } onHide(); };
+  const hide = () => { try { localStorage.setItem(hiddenKey(userId), String(Date.now())); } catch { /* hidden for this visit */ } onHide(); };
   const save = async () => {
     if (!name.trim() || saving) return;
     setSaving(true); setError("");
     try {
       await relationshipApi("/api/privacy/account", { method: "PATCH", body: JSON.stringify({ name: name.trim() }), signal: AbortSignal.timeout(12000) });
-      hide(); onSaved();
+      onHide(); onSaved();
     } catch (failure) {
       setError(failure instanceof Error && failure.message ? failure.message : t("没保存上，请重试。", "Couldn’t save. Try again.", "No se pudo guardar. Inténtalo de nuevo."));
     } finally { setSaving(false); }

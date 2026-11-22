@@ -58,7 +58,7 @@ export function PlayCardArrival({ language }: { language: Language }) {
 
   if (!card || !inbox) return null;
   const partner = inbox.partner || t("TA", "Your partner", "Tu pareja");
-  const title = t(`${partner} 给你留了张小卡`, `${partner} left you a little card`, `${partner} te dejó una tarjetita`);
+  const title = t(`${partner}给你留了张小卡`, `${partner} left you a little card`, `${partner} te dejó una tarjetita`);
   const when = new Intl.DateTimeFormat(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(card.at));
   const later = () => {
     if (opening.current) return;

@@ -1,6 +1,16 @@
-// Sign-up, sign-in and recovery limits (QA round 5, findings 8–11). Everything is in memory and per app instance:
-// the service runs one instance (render.yaml numInstances: 1), and a restart only forgets counts, never accounts.
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+// Sign-up, sign-in and recovery limits. Counts are in memory and per app instance (render.yaml numInstances: 1); a restart
+// forgets counts, never accounts or trusted devices.
+//
+// Sign-in (QA round 7, replacing the round-6 ceiling):
+// - Reserve, then check: every attempt is counted per network and per network+address BEFORE the password is compared,
+//   synchronously, so parallel requests can never run more compares than the caps allow. A success gives its slot back.
+// - No account-wide lockout of a correct password. When an account is under attack (>= 20 wrong passwords in the last hour
+//   from all networks), a correct password from a device that isn't trusted for that account must also enter a 6-digit
+//   code we email (202 {code: "verify_email"}); a trusted device signs in directly. Wrong passwords then wait a short,
+//   fixed delay. Per-network caps stay, and stop guessing from any one source.
+// - Without a configured proxy everyone may share one address, so the per-network caps never refuse; past them, a correct
+//   password from an untrusted device takes the same email step instead (no global lockout).
+import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 // Production numbers. Tests that drive many accounts through one app pass their own `authLimits` to createApiApp.
 export const DEFAULT_AUTH_LIMITS = Object.freeze({
@@ -8,23 +18,19 @@ export const DEFAULT_AUTH_LIMITS = Object.freeze({
   // account is capped at the same rate as creating them.
   registerPerIp: { max: 20, windowMs: 60 * 60_000 },
   registerGlobal: { max: 300, windowMs: 10 * 60_000 },
-  // Failed sign-ins: per network and address (a typo-prone person), per network across all addresses (spraying). These
-  // can refuse a correct password, but only to the network that ran them up (QA round 6).
+  // Sign-in attempts per network and address (a typo-prone person) and per network across all addresses (spraying).
   loginPerIpEmail: { max: 10, windowMs: 10 * 60_000 },
   loginPerIp: { max: 50, windowMs: 15 * 60_000 },
-  // Per account, whatever the network: a few free failures, then each further WRONG password is answered after 1 s, 2 s,
-  // 4 s … (held at most maxHoldSeconds). The password is checked first, so this never refuses the owner's right password:
-  // a stranger can slow guesses at an account, not lock its owner out (QA round 6, finding 1).
-  accountBackoff: { free: 5, maxSeconds: 15 * 60, maxHoldSeconds: 5 },
-  // Distributed guessing: past this many failures per account per hour from all networks together, sign-in is refused
-  // except on a device or network that signed in to this account before. A reset by email or recovery code clears it.
-  accountCeiling: { max: 100, windowMs: 60 * 60_000 },
-  // Recovery-code guesses per account across networks (rotating IPs): same backoff shape, cleared by a reset.
+  // An account is under attack past this many wrong passwords in the window, from all networks together.
+  accountAttack: { threshold: 20, windowMs: 60 * 60_000, delayMs: 1000 },
+  // The emailed step-up code: lifetime, wrong tries before it is discarded, and the gap before another email is sent.
+  emailCode: { ttlMs: 10 * 60_000, maxTries: 5, resendMs: 60_000 },
+  // Recovery-code guesses per account across networks (rotating IPs): exponential backoff, cleared by a reset.
   recoveryBackoff: { free: 10, maxSeconds: 15 * 60 },
 });
 
-// When no proxy is configured (neither TRUST_PROXY nor RENDER), every request may arrive from one proxy address, so the
-// per-network caps would act as one global lock. They are raised; per-account limits and known devices still apply.
+// When no proxy is configured (neither TRUST_PROXY nor RENDER), every request may arrive from one proxy address. Sign-up
+// caps are raised; sign-in caps then mark requests as suspicious instead of refusing them (see above).
 export const SHARED_ADDRESS_LIMITS = Object.freeze({
   registerPerIp: { max: 200, windowMs: 60 * 60_000 },
   registerGlobal: { max: 1000, windowMs: 10 * 60_000 },
@@ -34,7 +40,7 @@ export const SHARED_ADDRESS_LIMITS = Object.freeze({
 
 export const emailKey = (email) => createHash("sha256").update(String(email)).digest("hex");
 
-// A fixed window per key. take() counts and returns 0, or returns the seconds until a slot frees (and counts nothing).
+// A sliding window per key. take() counts and returns 0, or returns the seconds until a slot frees (and counts nothing).
 export function windowLimiter({ max, windowMs }, now = () => Date.now()) {
   const hits = new Map();
   const recent = (key) => (hits.get(key) || []).filter((at) => at > now() - windowMs);
@@ -43,7 +49,9 @@ export function windowLimiter({ max, windowMs }, now = () => Date.now()) {
     hits.set(key, [...recent(key), now()]);
     if (hits.size > 10_000) for (const [candidate] of hits) if (!recent(candidate).length) hits.delete(candidate);
   };
-  return { wait, hit, take: (key) => { const seconds = wait(key); if (!seconds) hit(key); return seconds; }, clear: (key) => hits.delete(key) };
+  // Gives back one counted slot (the most recent), for an attempt that turned out to be the owner's.
+  const unhit = (key) => { const times = recent(key); times.pop(); if (times.length) hits.set(key, times); else hits.delete(key); };
+  return { wait, hit, unhit, count: (key) => recent(key).length, take: (key) => { const seconds = wait(key); if (!seconds) hit(key); return seconds; }, clear: (key) => hits.delete(key) };
 }
 
 // Exponential backoff per key: after `free` failures the next try waits 2^(failures - free) seconds after the last
@@ -66,50 +74,80 @@ export function backoff({ free, maxSeconds }, now = () => Date.now()) {
   return { wait, fail, clear: (key) => state.delete(key) };
 }
 
-// A browser that signed in proves it later with a cookie signed by this process (forgotten on restart, like every count here).
-const deviceSecret = randomBytes(32);
-const deviceMac = (nonce, key) => createHmac("sha256", deviceSecret).update(`${nonce}.${key}`).digest("base64url");
+// Trusted devices. The cookie holds, for each account this browser signed in to, HMAC(key, userId) where the key is derived
+// from the account's stored password hash: a server-side secret that survives restarts and deploys and changes whenever
+// the password is changed or reset, which un-trusts every device at once. Accounts without a password (federated,
+// deleted) never have trusted devices here.
+const DEVICE_MARKS = 5;
+const deviceMark = (user) => {
+  const stored = String(user?.passwordHash || "");
+  if (!user?.id || !stored.startsWith("scrypt$")) return "";
+  const key = createHash("sha256").update(`ourever-trusted-device-v1\0${stored}`).digest();
+  return createHmac("sha256", key).update(String(user.id)).digest("base64url").slice(0, 32);
+};
+export function deviceTrusted(cookie, user) {
+  const expected = deviceMark(user);
+  if (!expected) return false;
+  return String(cookie || "").split(".").some((mark) => mark.length === expected.length && timingSafeEqual(Buffer.from(mark), Buffer.from(expected)));
+}
+/** The cookie value after this browser proved it can sign in to `user`: its mark first, up to five accounts kept. */
+export function trustDevice(cookie, user) {
+  const mark = deviceMark(user);
+  const others = String(cookie || "").split(".").filter((value) => /^[\w-]{32}$/.test(value) && value !== mark);
+  return [mark, ...others].filter(Boolean).slice(0, DEVICE_MARKS).join(".");
+}
 
-export function createAuthLimits(limits = DEFAULT_AUTH_LIMITS) {
+export function createAuthLimits(limits = DEFAULT_AUTH_LIMITS, { sharedAddress = false } = {}) {
   const config = { ...DEFAULT_AUTH_LIMITS, ...limits };
   const registerPerIp = windowLimiter(config.registerPerIp);
   const registerGlobal = windowLimiter(config.registerGlobal);
   const loginPerIpEmail = windowLimiter(config.loginPerIpEmail);
   const loginPerIp = windowLimiter(config.loginPerIp);
-  const account = backoff(config.accountBackoff);
-  const ceiling = windowLimiter(config.accountCeiling);
+  const wrongPasswords = windowLimiter({ max: Number.MAX_SAFE_INTEGER, windowMs: config.accountAttack.windowMs });
   const recovery = backoff(config.recoveryBackoff);
-  // Networks that signed in to each account, so a distributed attack can't refuse the owner at home either.
-  const knownNetworks = new Map();
+  // Pending email step-up codes per account: sha256 of the code, expiry, tries left, when it was last sent.
+  const challenges = new Map();
+  const underAttack = (email) => wrongPasswords.count(emailKey(email)) >= config.accountAttack.threshold;
   return {
-    // Checked before the password. Only this network's own failures, or (for an unknown device on an unknown network) the
-    // account's hourly ceiling, can refuse. The answer doesn't depend on whether the account exists or the password is right.
-    loginWait(ip, email, { trustedDevice = false } = {}) {
-      if (trustedDevice) return 0;
-      const network = Math.max(loginPerIpEmail.wait(`${ip}:${email}`), loginPerIp.wait(ip));
-      if (network) return network;
-      const key = emailKey(email);
-      return knownNetworks.get(key)?.has(ip) ? 0 : ceiling.wait(key);
+    // Counts this attempt before the password is compared, synchronously, so parallel requests see each other's counts.
+    // Returns { wait } (seconds to refuse with) or a ticket for loginFailed / loginSucceeded / stepUpNeeded.
+    reserveLogin(ip, email) {
+      const pair = `${ip}:${emailKey(email)}`;
+      const over = Math.max(loginPerIpEmail.wait(pair), loginPerIp.wait(ip));
+      if (over && !sharedAddress) return { wait: over };
+      loginPerIpEmail.hit(pair); loginPerIp.hit(ip);
+      return { wait: 0, ip, email, pair, suspicious: Boolean(over) };
     },
-    // Seconds to hold a wrong-password answer: the account's backoff, capped so a request never hangs long.
-    failureHold: (email) => Math.min(config.accountBackoff.maxHoldSeconds ?? 5, account.wait(emailKey(email))),
-    loginFailed(ip, email) { loginPerIpEmail.hit(`${ip}:${email}`); loginPerIp.hit(ip); account.fail(emailKey(email)); ceiling.hit(emailKey(email)); },
-    loginSucceeded(ip, email) {
-      const key = emailKey(email);
-      loginPerIpEmail.clear(`${ip}:${email}`); account.clear(key);
-      const networks = knownNetworks.get(key) || new Set();
-      networks.add(ip); if (networks.size > 20) networks.delete(networks.values().next().value);
-      knownNetworks.delete(key); knownNetworks.set(key, networks);
-      if (knownNetworks.size > 10_000) knownNetworks.delete(knownNetworks.keys().next().value);
+    // A wrong password (or no such account) counts toward the account's attack window. Returns ms to hold the answer.
+    loginFailed(ticket) {
+      const delay = underAttack(ticket.email) || ticket.suspicious ? config.accountAttack.delayMs : 0;
+      wrongPasswords.hit(emailKey(ticket.email));
+      return delay;
     },
-    // A cookie value proving this browser signed in to this account; deviceTrusted checks one.
-    deviceToken(email) { const nonce = randomBytes(16).toString("base64url"); return `${nonce}.${deviceMac(nonce, emailKey(email))}`; },
-    deviceTrusted(token, email) {
-      const [nonce, mac] = String(token || "").split(".");
-      if (!nonce || !mac) return false;
-      const expected = Buffer.from(deviceMac(nonce, emailKey(email))), actual = Buffer.from(mac);
-      return expected.length === actual.length && timingSafeEqual(expected, actual);
+    // The right password from a device that isn't trusted, while the account is under attack (or the shared address is
+    // past its caps), needs the emailed code too.
+    stepUpNeeded: (ticket, { trusted }) => !trusted && (ticket.suspicious || underAttack(ticket.email)),
+    // The owner got in: their network's slots are given back.
+    loginSucceeded(ticket) { loginPerIpEmail.clear(ticket.pair); loginPerIp.unhit(ticket.ip); },
+    // A fresh code to email for this account, or null when one went out too recently (that one still works).
+    issueEmailCode(userId) {
+      const current = challenges.get(userId);
+      if (current && current.expiresAt > Date.now() && Date.now() - current.sentAt < config.emailCode.resendMs) return null;
+      const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      challenges.set(userId, { hash: emailKey(code), expiresAt: Date.now() + config.emailCode.ttlMs, triesLeft: config.emailCode.maxTries, sentAt: Date.now() });
+      if (challenges.size > 10_000) for (const [id, value] of challenges) if (value.expiresAt <= Date.now()) challenges.delete(id);
+      return code;
     },
+    // true when `code` matches this account's pending code, which is then used up. Each wrong code uses up a try.
+    checkEmailCode(userId, code) {
+      const current = challenges.get(userId);
+      if (!current || current.expiresAt <= Date.now()) { challenges.delete(userId); return false; }
+      const given = Buffer.from(emailKey(String(code || "").replace(/\D/g, ""))), expected = Buffer.from(current.hash);
+      if (timingSafeEqual(given, expected)) { challenges.delete(userId); return true; }
+      current.triesLeft -= 1; if (current.triesLeft <= 0) challenges.delete(userId);
+      return false;
+    },
+    underAttack,
     // Seconds to wait before this sign-up may go ahead; 0 means go, and it has been counted.
     register(ip) {
       const wait = Math.max(registerPerIp.wait(ip), registerGlobal.wait("all"));
@@ -118,8 +156,8 @@ export function createAuthLimits(limits = DEFAULT_AUTH_LIMITS) {
     },
     recoveryWait: (email) => recovery.wait(emailKey(email)),
     recoveryFailed: (email) => recovery.fail(emailKey(email)),
-    // The owner proved control of the mailbox or the recovery code: sign-in and recovery start fresh for this account.
-    passwordReset(email) { account.clear(emailKey(email)); ceiling.clear(emailKey(email)); recovery.clear(emailKey(email)); },
+    // The owner proved control of the mailbox or the recovery code: the attack window and recovery backoff start fresh.
+    passwordReset(email, userId) { wrongPasswords.clear(emailKey(email)); recovery.clear(emailKey(email)); if (userId) challenges.delete(userId); },
   };
 }
 
@@ -132,9 +170,14 @@ export function waitText(language, seconds) {
   return language === "zh" ? `${count} ${zh}` : language === "es" ? `${count} ${es}` : `${count} ${en}`;
 }
 
-export function tooManyTries(language, seconds) {
+export function tooManyTries(language, seconds, { reset = false } = {}) {
   const wait = waitText(language, seconds);
-  return language === "zh" ? `尝试次数过多，请 ${wait}后再试。` : language === "es" ? `Demasiados intentos. Vuelve a intentarlo en ${wait}.` : `Too many tries. Try again in ${wait}.`;
+  const text = language === "zh" ? `尝试次数过多，请 ${wait}后再试。` : language === "es" ? `Demasiados intentos. Vuelve a intentarlo en ${wait}.` : `Too many tries. Try again in ${wait}.`;
+  return reset ? text + resetNow(language) : text;
+}
+// Said with a sign-in or recovery wait: resetting the password by email is never behind the same limit (QA round 7, E).
+export function resetNow(language) {
+  return language === "zh" ? "也可以现在点“忘记密码？”，用邮件重设密码。" : language === "es" ? " También puedes tocar «¿Olvidaste tu contraseña?» y restablecerla por correo ahora mismo." : " You can also tap “Forgot password?” and reset it by email right now.";
 }
 
 // Express "trust proxy" from TRUST_PROXY: unset means nothing is in front, so X-Forwarded-For is ignored and req.ip is

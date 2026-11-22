@@ -28,7 +28,7 @@ export function TogetherCard({ language, since, onSave, streak = null, partnerNa
   // (founder 11-07): it only says what happened. No "your turn", no "come by to keep it", and a day that ended it is not shown.
   const streakToday = !streak ? "" : streak.me && streak.partner ? t("今天你们俩都来了", "You both came by today", "Hoy vinieron los dos")
     : streak.me ? t("你今天来过了", "You came by today", "Ya viniste hoy")
-    : streak.partner ? t(`${name} 今天来过了`, `${name} came by today`, `${name} vino hoy`) : "";
+    : streak.partner ? t(`${name}今天来过了`, `${name} came by today`, `${name} vino hoy`) : "";
   const celebrate = (item: NonNullable<NonNullable<typeof stats>["next"]>) => item.kind === "day" ? t(`第 ${item.day} 天`, `day ${item.day}`, `el día ${item.day}`) : t(`${item.years} 周年`, `${item.years}-year anniversary`, `${item.years}.º aniversario`);
   return <section className="together-card" data-testid="together-card">
     {stats && !editing ? <>

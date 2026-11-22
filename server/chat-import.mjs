@@ -1,3 +1,5 @@
+import { signInText } from "./request-language.mjs";
+import { eitherWord, nameOr } from "./display-name.mjs";
 import { chatSignal } from "./chat-response.mjs";
 import { withoutScreenshotPreamble, screenshotTurnMessages } from "./screenshot-turn.mjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -208,7 +210,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
   const router = express.Router();
   const jobs = new Map(), macTokens = new Map();
   const publicPaths = /^\/imports\/(mac-helper\.sh|mac-sync\.sh|windows-helper\.ps1|w\/|upload\/|sync\/)/;
-  router.use("/imports", (req, res, next) => req.auth || publicPaths.test(`/imports${req.path}`) ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/imports", (req, res, next) => req.auth || publicPaths.test(`/imports${req.path}`) ? next() : res.status(401).json({ error: signInText(req) }));
 
   const owned = async (db, id, userId) => {
     const record = typeof id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(id) ? await db.getRelationshipRecordForUser(COLLECTION, id, userId) : null;
@@ -571,7 +573,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       await tx.createRelationshipRecord(COLLECTION, copy);
       await tx.updateRelationshipRecordForUser(COLLECTION, source.id, owner.userId, (draft) => { draft.sharedCopyId = copy.id; draft.version += 1; });
       for (const memberId of [owner.userId, userId]) await tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: context.relationship.id, userId: memberId, visibility: "private", aiAccessScope: "none", status: "recorded", objectId: copy.id, objectType: "chat_import", eventType: memberId === userId ? "chat_import.share_approved" : "chat_import.share_requested", sourceVersion: source.version }));
-      const i18n = togetherI18n((lang) => say(lang, `${req.auth.user.name} 同意了。聊天记录的分析现在你们俩都能看，也可以直接问我。`, `${req.auth.user.name} agreed. You can both read the chat history analysis now, and ask me about it here.`, `${req.auth.user.name} aceptó. Ahora los dos pueden leer el análisis del historial y preguntarme aquí.`));
+      const i18n = togetherI18n((lang) => { const who = nameOr(req.auth.user.name, eitherWord(lang)); return say(lang, `${who} 同意了。聊天记录的分析现在你们俩都能看，也可以直接问我。`, `${who} agreed. You can both read the chat history analysis now, and ask me about it here.`, `${who} aceptó. Ahora los dos pueden leer el análisis del historial y preguntarme aquí.`); });
       const sent = await appendTogetherMessage(tx, { relationshipId: context.relationship.id, userId, source: "app", text: i18n[language], i18n, refs: [{ type: "chat_import", id: copy.id, requestFor: source.id }] });
       return { copy, conversation: sent.conversation };
     });

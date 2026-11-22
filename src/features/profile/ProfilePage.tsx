@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CaretRight, FilmSlate, LockSimple, PencilSimple, ShareFat, Sparkle, Trash, Users } from "@phosphor-icons/react";
 import { isolate, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
@@ -76,19 +76,33 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
     : [...(has("partner") ? [["partner", partner] as ["partner", string]] : []), ["me", t("我", "Me", "Yo")], ...(has("us") ? [["us", t("我们", "Us", "Nosotros")] as ["us", string]] : [])];
   const shown = tabs.some(([value]) => value === tab) ? tab : tabs[0][0];
   const label: Record<Category, string> = { food: t("吃喝", "Food and drink", "Comida y bebida"), likes: t("喜欢", "Loves", "Le encanta"), dislikes: t("不喜欢 · 雷区", "Dislikes · sore spots", "No le gusta · puntos sensibles"), wishes: t("想要的", "Wishes", "Deseos"), traits: t("性格和习惯", "Traits and habits", "Forma de ser y hábitos"), people: t("重要的人和日子", "People and days that matter", "Personas y fechas importantes"), history: t("我们的经历", "What happened", "Lo que ha pasado"), other: t("其他", "Other", "Otros") };
-  const tag = (fact: Fact) => fact.source === "together" ? t("一起说过", "Said together", "Lo dijeron juntos") : fact.source === "partner_shared" ? t(`${partner} 分享的`, `Shared by ${partner}`, `Compartido por ${partner}`) : fact.source === "i_shared" ? t("你分享的副本", "Copy you shared", "Copia que compartiste") : fact.sharedAt ? t("分享过副本", "A copy was shared", "Se compartió una copia") : "";
+  const tag = (fact: Fact) => fact.source === "together" ? t("一起说过", "Said together", "Lo dijeron juntos") : fact.source === "partner_shared" ? t(`${partner}分享的`, `Shared by ${partner}`, `Compartido por ${partner}`) : fact.source === "i_shared" ? t("你分享的副本", "Copy you shared", "Copia que compartiste") : fact.sharedAt ? t("分享过副本", "A copy was shared", "Se compartió una copia") : "";
   const visibility = (fact: Fact) => <span className={`profile-visibility ${fact.source === "mine" ? "is-private" : "is-shared"}`} data-testid="profile-visibility">{fact.source === "mine" ? <LockSimple size={14} /> : <Users size={14} />}{fact.source === "mine" ? t("只有我", "Just me", "Solo yo") : t("我们俩", "Us", "Nosotros")}</span>;
-  const list = (facts || []).filter((fact) => fact.subject === shown);
+  // Remove with Undo (QA round 7): the line goes at once and the removal is sent after five seconds, or straight away when
+  // the page is left meanwhile; Undo within that time keeps it.
+  const pendingRemoval = useRef<{ fact: Fact; timer: number } | null>(null);
+  const [removed, setRemoved] = useState<Fact | null>(null);
+  const commitRemoval = (leaving = false) => {
+    const pending = pendingRemoval.current; if (!pending) return;
+    window.clearTimeout(pending.timer); pendingRemoval.current = null;
+    const request = { method: "DELETE", body: JSON.stringify({ expectedVersion: pending.fact.version, language }) };
+    if (leaving) { void fetch(`/api/profile/${pending.fact.id}`, { ...request, credentials: "same-origin", keepalive: true, headers: { "content-type": "application/json" } }).catch(() => {}); return; }
+    const shownAgain = () => setRemoved((current) => current?.id === pending.fact.id ? null : current);
+    void relationshipApi(`/api/profile/${pending.fact.id}`, request).then(async () => { await load(); shownAgain(); }).catch((error) => { shownAgain(); setNotice((error as Error).message); });
+  };
+  useEffect(() => { const flush = () => commitRemoval(true); window.addEventListener("pagehide", flush); return () => { window.removeEventListener("pagehide", flush); flush(); }; }, []);
+  const undoRemoval = () => { if (pendingRemoval.current) window.clearTimeout(pendingRemoval.current.timer); pendingRemoval.current = null; setRemoved(null); };
+  const list = (facts || []).filter((fact) => fact.subject === shown && fact.id !== removed?.id);
   const close = () => { keyboard.hide(); setOpen(null); setEditing(null); setSharing(null); };
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true); setNotice(""); keyboard.hide();
     try { await action(); close(); await load(); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
   const save = (fact: Fact) => run(() => relationshipApi(`/api/profile/${fact.id}`, { method: "PATCH", body: JSON.stringify({ text: editing, expectedVersion: fact.version, language }) }));
-  const remove = (fact: Fact) => run(() => relationshipApi(`/api/profile/${fact.id}`, { method: "DELETE", body: JSON.stringify({ expectedVersion: fact.version, language }) }));
+  const remove = (fact: Fact) => { commitRemoval(); close(); setNotice(""); setRemoved(fact); pendingRemoval.current = { fact, timer: window.setTimeout(() => commitRemoval(), 5000) }; };
   const share = (fact: Fact) => run(() => relationshipApi(`/api/profile/${fact.id}/share`, jsonBody({ confirm: true, digest: sharing?.digest, expectedVersion: fact.version, language })));
   const prepareShare = async (fact: Fact) => { setNotice(""); try { setSharing(await relationshipApi<{ text: string; digest: string }>(`/api/profile/${fact.id}/share-preview?language=${language}`)); } catch (error) { setNotice((error as Error).message); } };
-  const intro = shown === "partner" ? t(`Ourever 记下的 ${partner} 的喜好和习惯。`, `What Ourever remembers about ${partner}'s likes and habits.`, `Lo que Ourever recuerda de los gustos y hábitos de ${partner}.`)
+  const intro = shown === "partner" ? t(`Ourever 记下的${partner}的喜好和习惯。`, `What Ourever remembers about ${partner}'s likes and habits.`, `Lo que Ourever recuerda de los gustos y hábitos de ${partner}.`)
     : shown === "me" ? t("Ourever 从聊天里了解到的你。", "What Ourever has learned about you.", "Lo que Ourever sabe de ti.")
     : t("Ourever 记下的你们俩的习惯和默契。", "What Ourever remembers about you as a couple.", "Lo que Ourever recuerda de ustedes como pareja.");
 
@@ -110,7 +124,7 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
       {open && <div className="profile-sheet">
         {visibility(open)}
         {open.quote && <p className="profile-quote">{open.source === "together" ? t("你们在「我们」里说过：", "Said together in Us:", "Lo dijeron en Nosotros:") : t("你说过：", "You said:", "Dijiste:")}「{open.quote}」</p>}
-        {open.source === "partner_shared" && <p className="profile-quote">{t(`${partner} 分享给你的。只有 TA 能收回。`, `${partner} shared this with you. Only they can take it back.`, `${partner} te lo compartió. Solo esa persona puede retirarlo.`)}</p>}
+        {open.source === "partner_shared" && <p className="profile-quote">{t(`${partner}分享给你的。只有 TA 能收回。`, `${partner} shared this with you. Only they can take it back.`, `${partner} te lo compartió. Solo esa persona puede retirarlo.`)}</p>}
         {editing !== null ? <form onSubmit={(event) => { event.preventDefault(); void save(open); }} className="profile-edit">
           <KeyboardInput autoFocus value={editing} maxLength={160} onChange={(event) => setEditing(event.target.value)} onBlur={() => keyboard.hide()} aria-label={t("改成", "Change to", "Cambiar a")} />
           {open.sharedAt && <p className="profile-quote">{t("修改只保存在「只有我」，已分享的副本不会更新。", "Edits stay in Just me. The shared copy won't change.", "Los cambios quedan en Solo yo. La copia compartida no cambia.")}</p>}
@@ -118,8 +132,8 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
           <button type="submit" onMouseDown={(event) => event.preventDefault()} disabled={busy || !editing.trim()}>{t("保存", "Save", "Guardar")}</button>
           <button type="button" className="danger" onMouseDown={(event) => event.preventDefault()} disabled={busy} onClick={() => void remove(open)} data-testid="profile-remove">{open.sharedAt ? t("删掉，并收回分享的副本", "Remove and withdraw the shared copy", "Borrar y retirar la copia compartida") : t("删掉这条私人记录", "Remove this private note", "Borrar esta nota privada")}</button>
         </form> : sharing ? <div className="profile-share">
-          <p>{t(`${partner} 会看到这一句：`, `${partner} will see exactly this:`, `${partner} verá exactamente esto:`)}</p><blockquote>{sharing.text}</blockquote>
-          <button type="button" disabled={busy} onClick={() => void share(open)} data-testid="profile-share-confirm">{t(`分享给 ${partner}`, `Share with ${partner}`, `Compartir con ${partner}`)}</button>
+          <p>{t(`${partner}会看到这一句：`, `${partner} will see exactly this:`, `${partner} verá exactamente esto:`)}</p><blockquote>{sharing.text}</blockquote>
+          <button type="button" disabled={busy} onClick={() => void share(open)} data-testid="profile-share-confirm">{t(`分享给${partner}`, `Share with ${partner}`, `Compartir con ${partner}`)}</button>
         </div> : <div className="profile-actions">
           {open.source === "mine" && <button type="button" onClick={() => setEditing(open.text)}><PencilSimple size={18} />{t("修改或删除", "Edit or remove", "Editar o borrar")}</button>}
           {open.source === "mine" && open.subject === "me" && partnerName && !open.sharedAt && <button type="button" className="profile-primary" disabled={busy} onClick={() => void prepareShare(open)} data-testid="profile-share"><ShareFat size={18} />{t("预览分享", "Preview share", "Vista previa")}</button>}
@@ -128,5 +142,6 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
         {notice && <p className="settings-error" role="alert">{notice}</p>}
       </div>}
     </BottomSheet>
+    {removed && <div className="undo-snackbar" role="status" data-testid="profile-undo-bar"><span>{removed.source === "together" ? t("已删掉，两个人都看不到了", "Removed for both of you", "Quitado para los dos") : removed.source === "i_shared" ? t("已收回分享", "Share withdrawn", "Copia retirada") : t("已删掉这条记录", "Note removed", "Nota borrada")}</span><button type="button" onClick={undoRemoval} data-testid="profile-undo">{t("撤销", "Undo", "Deshacer")}</button></div>}
   </div>;
 }

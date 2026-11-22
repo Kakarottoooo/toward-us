@@ -437,6 +437,7 @@ async function migrate(pool) {
     create table if not exists user_phones (phone text primary key, user_id text not null unique references users(id) on delete cascade, created_at timestamptz not null);
     alter table users add column if not exists language text;
     alter table users add column if not exists name_source text;
+    update users set name='', name_source='fallback' where name='我' and (name_source is null or name_source='fallback');
     alter table relationships add column if not exists imessage_group_id text;
     alter table invitations add column if not exists opened_at timestamptz;
     alter table invitations add column if not exists sent_at timestamptz;

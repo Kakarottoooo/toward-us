@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { canViewRecord } from "./relationship-domain.mjs";
 
@@ -61,7 +62,7 @@ export async function notTriedYet(store, userId, channel) {
 
 export function createDiscoverRouter({ store }) {
   const router = express.Router();
-  router.use("/discover", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/discover", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   router.get("/discover", async (req, res) => {
     const { used, paired } = await featuresUsed(store, req.auth.user.id);
     res.json({ used: [...used], paired });

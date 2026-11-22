@@ -35,11 +35,11 @@ export function Gomoku({ match, language, userId, partnerName, opponent, act, on
     if (x < 0 || y < 0 || x >= size || y >= size || taken.has(`${x},${y}`)) return;
     if (pick && pick[0] === x && pick[1] === y) void place(pick); else setPick([x, y]);
   };
-  const status = thinking ? t(`${partnerName} 在想…`, `${partnerName} is thinking…`, `${partnerName} está pensando…`) : match.status !== "active"
+  const status = thinking ? t(`${partnerName}在想…`, `${partnerName} is thinking…`, `${partnerName} está pensando…`) : match.status !== "active"
     ? state.draw ? t("和棋！棋盘下满了。", "A draw: the board is full.", "Empate: el tablero está lleno.")
-      : state.winner === userId ? (state.resignedBy ? t(`${partnerName} 认输了，你赢了！`, `${partnerName} resigned. You win!`, `${partnerName} se rindió. ¡Ganaste!`) : t("五子连珠，你赢了！", "Five in a row. You win!", "¡Cinco en línea! ¡Ganaste!"))
-      : state.resignedBy ? t("你认输了，下一盘再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!") : t(`${partnerName} 赢了这盘。`, `${partnerName} won this one.`, `${partnerName} ganó esta.`)
-    : mine ? t(`轮到你了（${myColor === "black" ? "黑" : "白"}）`, `Your move (${myColor})`, `Te toca (${myColor === "black" ? "negras" : "blancas"})`) : t(`等 ${partnerName} 下…`, `Waiting for ${partnerName}…`, `Esperando a ${partnerName}…`);
+      : state.winner === userId ? (state.resignedBy ? t(`${partnerName}认输了，你赢了！`, `${partnerName} resigned. You win!`, `${partnerName} se rindió. ¡Ganaste!`) : t("五子连珠，你赢了！", "Five in a row. You win!", "¡Cinco en línea! ¡Ganaste!"))
+      : state.resignedBy ? t("你认输了，下一盘再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!") : t(`${partnerName}赢了这盘。`, `${partnerName} won this one.`, `${partnerName} ganó esta.`)
+    : mine ? t(`轮到你了（${myColor === "black" ? "黑" : "白"}）`, `Your move (${myColor})`, `Te toca (${myColor === "black" ? "negras" : "blancas"})`) : t(`等${partnerName}下…`, `Waiting for ${partnerName}…`, `Esperando a ${partnerName}…`);
   return <div className="gomoku">
     <div className="gomoku-players">
       <span className={(thinking ? state.black !== userId : match.turn === state.black) && match.status === "active" ? "is-turn" : ""}><i className="stone is-black" />{face(state.black)}</span>

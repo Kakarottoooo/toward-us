@@ -68,7 +68,7 @@ export function CallPanel({ language, started, partnerName, onEnded }: { languag
       <button type="button" className="call-hangup" onClick={() => void call.current?.end("user")} aria-label={t("挂断", "Hang up", "Colgar")} data-testid="call-hangup"><PhoneDisconnect size={28} weight="fill" /></button>
       <button type="button" className={speakerMuted ? "on" : ""} aria-pressed={speakerMuted} onClick={() => { setBlocked(false); setSpeakerMuted(call.current?.speaker() ?? false); }}>{speakerMuted ? <SpeakerSlash size={24} /> : <SpeakerHigh size={24} />}<span>{speakerMuted ? t("已关声音", "Sound off", "Sin sonido") : t("扬声器", "Speaker", "Altavoz")}</span></button>
     </div>
-    {partnerName && started.channel === "us" && <small className="call-note">{t(`通话结束后，字幕会存进“我们俩”，你和 ${partnerName} 都能看到。`, `When the call ends, the captions are saved in Us for you and ${partnerName}.`, `Al terminar, los subtítulos se guardan en Nosotros para ti y ${partnerName}.`)}</small>}
+    {partnerName && started.channel === "us" && <small className="call-note">{t(`通话结束后，字幕会存进“我们俩”，你和${partnerName}都能看到。`, `When the call ends, the captions are saved in Us for you and ${partnerName}.`, `Al terminar, los subtítulos se guardan en Nosotros para ti y ${partnerName}.`)}</small>}
   </section>;
 }
 

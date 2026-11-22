@@ -31,7 +31,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   const partner = hall?.members.find((member) => member.id !== userId);
   const partnerName = partner?.name || t("TA", "your partner", "tu pareja");
   // 小家伙, their pet, plays the other side when the partner isn't around (founder 11-06); those games are only for me.
-  const petName = t("小家伙", "Little one", "Pequeñín");
+  const petName = t("小家伙", "Little one", "Pequeño");
   const vsPet = (match: MatchView) => match.players.includes(PET);
   const going = (hall?.matches || []).filter((match) => match.status === "active");
   // A game nobody has touched for a week stops asking: it folds away under "很久没动的" (founder 11-06).
@@ -49,7 +49,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     <button type="button" className="game-going-open" onClick={() => setOpen(match.id)} data-testid="game-going">
       <span>{catalog.find((game) => game.id === match.game)?.icon}</span>
       <b>{nameOf(match.game)}{vsPet(match) && <em> · {t(`和${petName}`, `with ${petName}`, `con ${petName}`)}</em>}</b>
-      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${counted(daysIdle(match), "day", "days")}`, `Parada ${counted(daysIdle(match), "día", "días")}`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等 ${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
+      <small>{idle ? t(`停了 ${daysIdle(match)} 天`, `Idle ${counted(daysIdle(match), "day", "days")}`, `Parada ${counted(daysIdle(match), "día", "días")}`) : match.turn === userId || match.turn === BOTH ? t("轮到你了", "Your turn", "Te toca") : t(`等${vsPet(match) ? petName : partnerName}`, `Waiting for ${vsPet(match) ? petName : partnerName}`, `Esperando a ${vsPet(match) ? petName : partnerName}`)}</small>
     </button>
     <button type="button" className={`game-going-end ${ending === match.id ? "is-confirm" : ""}`} onClick={() => confirmEnd(match.id, [match.id])} onBlur={() => setEnding((value) => value === match.id ? null : value)} aria-label={ending === match.id ? t("确定结束这局", "End this game", "Terminar esta partida") : t(`结束这局${nameOf(match.game)}`, `End this game of ${nameOf(match.game)}`, `Terminar esta partida de ${nameOf(match.game)}`)} data-testid="game-going-end">
       {ending === match.id ? t("结束？", "End?", "¿Fin?") : <X size={16} weight="bold" />}
@@ -71,7 +71,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
     const [zh, en, es] = prefix;
     if (stat.wins) return t(`${zh}你 ${stat.wins[userId] || 0} : ${stat.wins[other] || 0} ${otherName}`, `${en}You ${stat.wins[userId] || 0} : ${stat.wins[other] || 0} ${otherName}`, `${es}Tú ${stat.wins[userId] || 0} : ${stat.wins[other] || 0} ${otherName}`);
     if (stat.guessed !== undefined) return t(`${zh}一起猜中 ${stat.guessed}/${stat.played} 幅`, `${en}Guessed ${stat.guessed} of ${stat.played} together`, `${es}Acertaron ${stat.guessed} de ${stat.played}`);
-    if (stat.caught) return t(`${zh}你识破 ${stat.caught[userId] || 0} 次 · ${otherName} ${stat.caught[other] || 0} 次`, `${en}You caught ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`, `${es}Atrapaste ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`);
+    if (stat.caught) return t(`${zh}你识破 ${stat.caught[userId] || 0} 次 · ${otherName} ${stat.caught[other] || 0}次`, `${en}You caught ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`, `${es}Atrapaste ${stat.caught[userId] || 0} · ${otherName} ${stat.caught[other] || 0}`);
     if (stat.solved !== undefined) return t(`${zh}解开 ${stat.solved}/${stat.played} 碗`, `${en}Solved ${stat.solved} of ${stat.played}`, `${es}Resueltos ${stat.solved} de ${stat.played}`);
     return "";
   };

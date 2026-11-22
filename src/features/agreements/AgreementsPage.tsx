@@ -25,7 +25,7 @@ export function AgreementsPage({ language, userId, payload, onChanged, onReview 
   const reviews = payload.home.pending.filter((item) => item.type === "outcome_review");
   const partnerName = payload.relationship.members.find((member) => member.id !== userId)?.name || t("TA", "Your partner", "Tu pareja");
   const status = (agreement: GraphRecord) => agreement.status === "active" ? t("你们俩都同意了", "You both agreed", "Los dos están de acuerdo") : agreement.status === "renegotiation_requested" ? t("有人想重新商量", "Someone asked to revisit it", "Alguien pidió revisarlo") : t("已结束", "Closed", "Cerrado");
-  const nameOf = (id: unknown) => id === userId ? t("你", "you", "tú") : payload.relationship.members.find((member) => member.id === id)?.name || "";
+  const nameOf = (id: unknown) => id === userId ? t("你", "you", "tú") : payload.relationship.members.find((member) => member.id === id)?.name || (id ? partnerName : "");
   const card = (agreement: GraphRecord, key: string) => {
     // Parts with a day are on the calendar below; only the undated ones (habits, rules) are listed as commitments here, unless one
     // says word for word what a term already says.

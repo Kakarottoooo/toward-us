@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import express from "express";
 import { canViewRecord, nextOccurrence } from "./relationship-domain.mjs";
 import { MOMENTS } from "./space-domain.mjs";
@@ -28,7 +29,7 @@ For each, why is a few words (at most 12) in ${outputLanguage(language)} saying 
 export function createSuggestionsRouter({ store, mediator }) {
   const router = express.Router();
   const cache = new Map(), latest = new Map(), inFlight = new Set();
-  router.use("/suggestions", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/suggestions", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   router.get("/suggestions", async (req, res) => {
     const userId = req.auth.user.id, channel = req.query.channel === "us" ? "us" : "me";
     const language = ["zh", "en", "es"].includes(req.query.language) ? req.query.language : "zh";

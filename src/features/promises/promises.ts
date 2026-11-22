@@ -21,6 +21,6 @@ export function promiseLead(item: PromiseItem, partnerName: string, language: La
   if (item.fromPrivate) return item.description;
   const what = item.when ? `${item.description}${language === "zh" ? `（${item.when}）` : ` (${item.when})`}` : item.description;
   if (item.by === "me") return localized(language, `你答应过：${what}`, `You promised: ${what}`, `Prometiste: ${what}`);
-  if (item.by === "partner") return localized(language, `${partnerName} 答应过：${what}`, `${partnerName} promised: ${what}`, `${partnerName} prometió: ${what}`);
+  if (item.by === "partner") return localized(language, `${partnerName}答应过：${what}`, `${partnerName} promised: ${what}`, `${partnerName} prometió: ${what}`);
   return localized(language, `你们说好了：${what}`, `You both agreed: ${what}`, `Quedaron en: ${what}`);
 }

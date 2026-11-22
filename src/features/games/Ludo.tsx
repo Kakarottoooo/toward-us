@@ -185,7 +185,7 @@ export function Ludo({ match, language, userId, partnerName, opponent, act, onRe
       case "home": return t(`${who}的 ${n} 号到家了`, `${who}: plane ${n} is home`, `${who}: el avión ${n} llegó a casa`);
       case "jump": return t(`停在同色格，再跳 4 格`, `Own colour: hop 4 more`, `Su color: salta 4 más`);
       case "flight": return t(`沿虚线飞了 ${FLIGHT} 格！`, `Flew the dashed line, ${FLIGHT} squares!`, `¡Voló por la línea, ${FLIGHT} casillas!`);
-      case "capture": return entry.by === userId ? t(`撞回了 ${partnerName} 的飞机！`, `You sent ${partnerName}'s plane back!`, `¡Mandaste de vuelta el avión de ${partnerName}!`) : t(`${partnerName}把你的飞机撞回去了`, `${partnerName} sent your plane back`, `${partnerName} mandó de vuelta tu avión`);
+      case "capture": return entry.by === userId ? t(`撞回了${partnerName}的飞机！`, `You sent ${partnerName}'s plane back!`, `¡Mandaste de vuelta el avión de ${partnerName}!`) : t(`${partnerName}把你的飞机撞回去了`, `${partnerName} sent your plane back`, `${partnerName} mandó de vuelta tu avión`);
       case "charmed": return t(`${who}的护身符挡住了一次撞机`, `${who}'s charm stopped a bump`, `El amuleto de ${who} paró un choque`);
       case "coins": return t(`${who}捡到 ${entry.amount} 币`, `${who} picked up ${counted(entry.amount || 0, "coin", "coins")}`, `${who} recogió ${counted(entry.amount || 0, "moneda", "monedas")}`);
       case "buy": return t(`${who}买下了${placeName(entry.square)}`, `${who} bought the ${placeName(entry.square)}`, `${who} compró ${placeName(entry.square)}`);
@@ -220,14 +220,14 @@ export function Ludo({ match, language, userId, partnerName, opponent, act, onRe
   const Face = FACES[(rolling ? face : (state.die?.value || 6) - 1)] || DiceSix;
   const waitingOn = state.phase === "decide" && pending && pending.by !== userId ? t(`${partnerName}在想…`, `${partnerName} is deciding…`, `${partnerName} está decidiendo…`) : "";
   const status = legacy ? t("飞行棋换了新地图，这局是旧棋盘，没法接着下了。", "Ludo has a new map; this game is on the old board and can't go on.", "El parchís tiene un mapa nuevo; esta partida es del tablero antiguo.")
-    : !active ? state.winner === userId ? (state.resignedBy ? t(`${partnerName} 认输了，你赢了！`, `${partnerName} resigned. You win!`, `${partnerName} se rindió. ¡Ganaste!`) : t("两架飞机都到家了，你赢了！", "Both planes home. You win!", "¡Tus dos aviones llegaron! ¡Ganaste!"))
-      : state.resignedBy === userId ? t("你认输了，下一局再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!") : t(`${partnerName} 先到家，赢了这局。`, `${partnerName} got home first and won.`, `${partnerName} llegó primero y ganó.`)
+    : !active ? state.winner === userId ? (state.resignedBy ? t(`${partnerName}认输了，你赢了！`, `${partnerName} resigned. You win!`, `${partnerName} se rindió. ¡Ganaste!`) : t("两架飞机都到家了，你赢了！", "Both planes home. You win!", "¡Tus dos aviones llegaron! ¡Ganaste!"))
+      : state.resignedBy === userId ? t("你认输了，下一局再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!") : t(`${partnerName}先到家，赢了这局。`, `${partnerName} got home first and won.`, `${partnerName} llegó primero y ganó.`)
     : rolling ? t("骰子转呀转…", "Rolling…", "Rodando…")
-    : waitingOn || (state.phase === "task" ? (state.task?.by === userId ? t("来做个小任务", "A little task for you", "Una tarea para ti") : t(`${partnerName} 在做小任务…`, `${partnerName} is doing a little task…`, `${partnerName} hace una tarea…`))
+    : waitingOn || (state.phase === "task" ? (state.task?.by === userId ? t("来做个小任务", "A little task for you", "Una tarea para ti") : t(`${partnerName}在做小任务…`, `${partnerName} is doing a little task…`, `${partnerName} hace una tarea…`))
     : myChoice ? t("做个选择", "Your choice", "Tu decisión")
     : choosing ? t(`掷出 ${value}，选一架飞机`, `You rolled ${value}: pick a plane`, `Sacaste ${value}: elige un avión`)
     : mine ? (state.calm?.[userId] ? t("在冷静角：掷出 6 才能马上出来", "Calm corner: only a 6 gets you out now", "Rincón de calma: solo un 6 te saca ya") : state.die?.by === userId && state.die.value === 6 ? t("掷出 6，再掷一次！", "A 6: roll again!", "¡Un 6: tira otra vez!") : t("轮到你了，点中间的骰子", "Your turn: tap the die", "Te toca: toca el dado"))
-    : t(`等 ${partnerName} 掷骰子…`, `Waiting for ${partnerName}…`, `Esperando a ${partnerName}…`));
+    : t(`等${partnerName}掷骰子…`, `Waiting for ${partnerName}…`, `Esperando a ${partnerName}…`));
 
   // The richer one at the end gets tonight's little privilege (it doesn't change who won).
   const richer = state.players.reduce((best, id) => coins(id) > coins(best) ? id : best, state.players[0]);
@@ -260,7 +260,7 @@ export function Ludo({ match, language, userId, partnerName, opponent, act, onRe
       </section>}
       {state.phase === "task" && state.task && active && !legacy && <section className="ludo-sheet is-task" aria-live="polite" data-testid="ludo-task">
         <Heart size={20} weight="fill" />
-        <b>{state.task.by === userId ? t("你的小任务", "Your little task", "Tu tarea") : t(`${partnerName} 的小任务`, `${partnerName}'s little task`, `La tarea de ${partnerName}`)}{state.task.pay ? t(`（做到 +${state.task.pay} 币）`, ` (+${state.task.pay} if done)`, ` (+${state.task.pay} si la haces)`) : ""}</b>
+        <b>{state.task.by === userId ? t("你的小任务", "Your little task", "Tu tarea") : t(`${partnerName}的小任务`, `${partnerName}'s little task`, `La tarea de ${partnerName}`)}{state.task.pay ? t(`（做到 +${state.task.pay} 币）`, ` (+${state.task.pay} if done)`, ` (+${state.task.pay} si la haces)`) : ""}</b>
         <p>{textOf(state.task.text) || t("做一件让 TA 开心的小事。", "Do one small thing that makes your partner smile.", "Haz algo pequeño que haga sonreír a tu pareja.")}</p>
         {state.task.by === userId ? <div className="ludo-sheet-actions">
           <button type="button" className="game-primary" disabled={busy} onClick={() => void send({ type: "task", done: true })} data-testid="ludo-task-done"><Check size={16} weight="bold" />{t("做到了", "Done", "Hecho")}</button>
@@ -269,7 +269,7 @@ export function Ludo({ match, language, userId, partnerName, opponent, act, onRe
       </section>}
     </div>
 
-    {active && !legacy && state.calm?.[rival] && !opponent.pet && <div className="game-actions"><button type="button" className="game-quiet" disabled={busy} onClick={() => void send({ type: "bail" })} data-testid="ludo-bail"><HandHeart size={16} />{t(`对 ${partnerName} 说句好听的，保释 TA`, `Say something sweet to bail ${partnerName} out`, `Dile algo bonito a ${partnerName} para sacarle`)}</button></div>}
+    {active && !legacy && state.calm?.[rival] && !opponent.pet && <div className="game-actions"><button type="button" className="game-quiet" disabled={busy} onClick={() => void send({ type: "bail" })} data-testid="ludo-bail"><HandHeart size={16} />{t(`对${partnerName}说句好听的，保释 TA`, `Say something sweet to bail ${partnerName} out`, `Dile algo bonito a ${partnerName} para sacarle`)}</button></div>}
     {!active && !legacy && <section className="ludo-end">
       <p>{tie ? t(`爱心币打平（${coins(userId)}）。`, `Coins are level (${coins(userId)}).`, `Empate en monedas (${coins(userId)}).`) : t(`${name(richer)}的爱心币最多（${coins(richer)}），今晚的小特权归${richer === userId ? "你" : "TA"}：选电影或者点外卖。`, `${richer === userId ? "You have" : `${partnerName} has`} the most coins (${coins(richer)}): ${richer === userId ? "you pick" : "they pick"} tonight's film or takeaway.`, `${richer === userId ? "Tienes" : `${partnerName} tiene`} más monedas (${coins(richer)}): ${richer === userId ? "eliges tú" : "elige"} la peli o la cena de esta noche.`)}</p>
       {(state.promises || []).length > 0 && <ul>{state.promises.map((item, index) => <li key={index}>{t(`${name(item.from)}欠${name(item.to)}：${textOf(item.text)}`, `${name(item.from)} owes ${name(item.to)}: ${textOf(item.text)}`, `${name(item.from)} le debe a ${name(item.to)}: ${textOf(item.text)}`)}</li>)}</ul>}

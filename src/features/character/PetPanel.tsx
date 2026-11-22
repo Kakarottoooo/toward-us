@@ -101,7 +101,7 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
       <strong className="pet-name">{t("我们的小家伙", "Our little one", "Nuestro pequeño")}</strong>
       <div className="pet-level-bar" role="progressbar" aria-valuemin={pet.floor} aria-valuemax={pet.next} aria-valuenow={pet.points}><span className="pet-level-badge">Lv.{pet.level}</span><span className="pet-level-fill" style={{ width: `${progress}%` }} /><small>{pet.points} / {pet.next}</small></div>
       <p className="pet-mood">{mood}</p>
-      <small className="pet-partner">{pet.pettedByPartner ? t(`${partnerName} 今天也摸过它了`, `${partnerName} petted it today too`, `${partnerName} también lo acarició hoy`) : t("两个人同一天都摸，会多 +3", "Both of you on the same day: +3 more", "Si los dos lo acarician el mismo día: +3 más")}</small>
+      <small className="pet-partner">{pet.pettedByPartner ? t(`${partnerName}今天也摸过它了`, `${partnerName} petted it today too`, `${partnerName} también lo acarició hoy`) : t("两个人同一天都摸，会多 +3", "Both of you on the same day: +3 more", "Si los dos lo acarician el mismo día: +3 más")}</small>
       {!image && <button type="button" className="pet-make" onClick={onMakeCharacter}>{t("给它做一个样子", "Give it a look", "Dale un aspecto")}</button>}
       {error && <p className="space-error" role="alert">{error}</p>}
       {image && <Wardrobe language={language} userId={userId} onWear={(outfit) => onPetted({ ...pet, outfit })} onMembership={onMembership} />}

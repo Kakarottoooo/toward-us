@@ -28,6 +28,18 @@ export function linkCodeMessage(language, code) {
   return { subject, text: `${subject}\n\n${code}\n\n${instructions}\n\n${footer}`, html: `<h1>${subject}</h1><p style="font-size:28px;letter-spacing:6px"><b>${code}</b></p><p>${instructions}</p><p>${footer}</p>` };
 }
 
+// The sign-in code asked for when someone else has been guessing at this account (QA round 7).
+const signinCopy = {
+  en: ["Your Ourever sign-in code", "Someone has been trying wrong passwords on your account, so we're checking it's you. Enter this code in Ourever to finish signing in. It expires in 10 minutes.", "If this wasn't you, don't share the code. Your password still worked, so consider changing it in Settings."],
+  es: ["Tu código para iniciar sesión en Ourever", "Alguien ha probado contraseñas incorrectas en tu cuenta, así que comprobamos que eres tú. Introduce este código en Ourever para terminar de iniciar sesión. Caduca en 10 minutos.", "Si no fuiste tú, no compartas el código. Tu contraseña era correcta, así que considera cambiarla en Ajustes."],
+  zh: ["你的 Ourever 登录验证码", "有人在用错误的密码尝试登录你的账号，所以我们要确认是你本人。在 Ourever 中输入这个验证码即可完成登录，10 分钟内有效。", "如果不是你在登录，请不要把验证码告诉任何人。你的密码是正确的，建议在设置里修改密码。"],
+};
+
+export function signinCodeMessage(language, code) {
+  const [subject, instructions, footer] = signinCopy[language] || signinCopy.en;
+  return { subject, text: `${subject}\n\n${code}\n\n${instructions}\n\n${footer}`, html: `<h1>${subject}</h1><p style="font-size:28px;letter-spacing:6px"><b>${code}</b></p><p>${instructions}</p><p>${footer}</p>` };
+}
+
 export function createEmailSender({ env = process.env, fetchImpl = globalThis.fetch, log = console } = {}) {
   const apiKey = String(env.RESEND_API_KEY || "").trim();
   const senderAddress = String(env.EMAIL_FROM || "").trim();

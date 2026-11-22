@@ -1,3 +1,4 @@
+import { signInText } from "./request-language.mjs";
 import { requireAiPermission } from "./ai-permission.mjs";
 import { screenText } from "./ai-screening.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -86,7 +87,7 @@ export function openAiLive(apiKey = process.env.OPENAI_API_KEY) {
 export function createVoiceCallRouter({ store, mediator, assistant, provider = openAiLive(), emit = () => {}, clock = () => Date.now(), activity = null }) {
   const router = express.Router();
   const calls = new Map(), usage = new Map();
-  router.use("/voice", (req, res, next) => req.auth ? next() : res.status(401).json({ error: "Please sign in." }));
+  router.use("/voice", (req, res, next) => req.auth ? next() : res.status(401).json({ error: signInText(req) }));
   const usedToday = (key) => (usage.get(key) || []).filter((entry) => entry.at > clock() - 86_400_000).reduce((sum, entry) => sum + entry.seconds, 0);
   const own = (req) => {
     const call = calls.get(clean(req.body?.id, 100));

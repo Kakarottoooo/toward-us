@@ -34,10 +34,10 @@ export function WatchedShelf({ language, items, onAsk }: { language: Language; i
 /** Ourever's next-day question in Us, answered by either of them with one tap. */
 export function WatchCheckCard({ language, text, answer, members, onAnswer }: { language: Language; text: string; answer?: { by: string; finished: boolean } | null; members: Array<{ id: string; name: string }>; onAnswer: (finished: boolean) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const who = answer ? members.find((member) => member.id === answer.by)?.name || "" : "";
+  const who = answer ? members.find((member) => member.id === answer.by)?.name || t("对方", "Your partner", "Tu pareja") : "";
   return <div className="conversation-turn"><div className="watch-check" data-testid="watch-check">
     <p><FilmSlate size={17} weight="fill" />{text}</p>
-    {answer ? <small>{answer.finished ? t(`${who} 说看完了，已经记进“一起看过的”。`, `${who} said you finished it; it's on your shelf.`, `${who} dijo que la terminaron; ya está en su estante.`) : t(`${who} 说还没看完，下次接着看。`, `${who} said not yet; next time.`, `${who} dijo que aún no; la próxima vez.`)}</small>
+    {answer ? <small>{answer.finished ? t(`${who}说看完了，已经记进“一起看过的”。`, `${who} said you finished it; it's on your shelf.`, `${who} dijo que la terminaron; ya está en su estante.`) : t(`${who}说还没看完，下次接着看。`, `${who} said not yet; next time.`, `${who} dijo que aún no; la próxima vez.`)}</small>
       : <div className="watch-check-actions"><button type="button" onClick={() => onAnswer(true)} data-testid="watch-finished">{t("看完了", "Finished", "La terminamos")}</button><button type="button" className="secondary" onClick={() => onAnswer(false)}>{t("还没", "Not yet", "Aún no")}</button></div>}
   </div></div>;
 }

@@ -27,7 +27,7 @@ export function DistanceBar({ language, partnerName: rawName, partnerZone, nextM
   const apart = theirs !== null && ours !== null && theirs !== ours;
   const days = nextMeeting ? daysUntil(nextMeeting.date) : null;
   // 经期 care note: only when the partner chose to share it, and only these words.
-  const caring = care ? <span className="distance-care" data-testid="care-pill"><Heart size={14} weight="fill" />{t(`这几天多照顾 ${partnerName} 一点`, `Be extra caring with ${partnerName} these days`, `Cuida un poco más a ${partnerName} estos días`)}</span> : null;
+  const caring = care ? <span className="distance-care" data-testid="care-pill"><Heart size={14} weight="fill" />{t(`这几天多照顾${partnerName}一点`, `Be extra caring with ${partnerName} these days`, `Cuida un poco más a ${partnerName} estos días`)}</span> : null;
   if (!apart && days === null && !caring && !onInteract) return null;
   let clock = null;
   if (apart && partnerZone) {
@@ -35,12 +35,12 @@ export function DistanceBar({ language, partnerName: rawName, partnerZone, nextM
     const hour = Number(now.toLocaleString("en-US", { timeZone: partnerZone, hour: "numeric", hourCycle: "h23" }));
     const diff = (theirs! - ours!) / 60, hours = Math.abs(diff) % 1 ? Math.abs(diff).toFixed(1) : String(Math.abs(diff));
     const night = hour >= 23 || hour < 7;
-    clock = <span className="distance-clock" data-testid="partner-clock">{night ? <Moon size={14} weight="fill" /> : <Sun size={14} weight="fill" />}{t(`${partnerName} 那边 ${time}`, `${partnerName}'s time ${time}`, `Hora de ${partnerName}: ${time}`)}<small>{diff > 0 ? t(`比你早 ${hours} 小时`, `${hours}h ahead`, `${hours} h más`) : t(`比你晚 ${hours} 小时`, `${hours}h behind`, `${hours} h menos`)}</small></span>;
+    clock = <span className="distance-clock" data-testid="partner-clock">{night ? <Moon size={14} weight="fill" /> : <Sun size={14} weight="fill" />}{t(`${partnerName}那边 ${time}`, `${partnerName}'s time ${time}`, `Hora de ${partnerName}: ${time}`)}<small>{diff > 0 ? t(`比你早 ${hours} 小时`, `${hours}h ahead`, `${hours} h más`) : t(`比你晚 ${hours} 小时`, `${hours}h behind`, `${hours} h menos`)}</small></span>;
   }
   const meet = days !== null ? <span className="distance-meet" data-testid="meet-countdown"><AirplaneTilt size={14} weight="fill" />{days === 0 ? t("今天见面！", "You meet today!", "¡Hoy se ven!") : days === 1 ? t("明天见面", "You meet tomorrow", "Se ven mañana") : t(`还有 ${days} 天见面`, `${counted(days, "day", "days")} until you meet`, `${counted(days, "día", "días")} para verse`)}</span> : null;
   return <div className="distance-bar">{onInteract && <strong className="shared-partner-name"><span aria-hidden="true">{initialOf(raw, "")}</span><bdi>{raw}</bdi></strong>}{caring}{clock}{meet}
     {onInteract && <button className="distance-interact" type="button" onClick={onInteract} data-testid="conversation-interaction">
-      <HandHeart size={16} aria-hidden="true" />{t("互动", "Connect", "Conectar")}
+      <HandHeart size={16} aria-hidden="true" />{t("碰一碰和小卡", "Touch & cards", "Toques y tarjetas")}
     </button>}
   </div>;
 }

@@ -54,12 +54,12 @@ export function Xiangqi({ match, language, userId, partnerName, opponent, act, o
   };
 
   const won = state.winner === userId;
-  const status = thinking ? t(`${partnerName} 在想…`, `${partnerName} is thinking…`, `${partnerName} está pensando…`) : !active
+  const status = thinking ? t(`${partnerName}在想…`, `${partnerName} is thinking…`, `${partnerName} está pensando…`) : !active
     ? state.draw ? t("和棋：各走 150 步还没分出胜负。", "A draw: no result after 150 moves each.", "Empate: sin resultado tras 150 movimientos cada uno.")
-      : state.ending === "resign" ? won ? t(`${partnerName} 认输了，你赢了！`, `${partnerName} resigned. You win!`, `${partnerName} se rindió. ¡Ganaste!`) : t("你认输了，下一盘再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!")
-      : state.ending === "stalemate" ? won ? t(`${partnerName} 无棋可走，你赢了！`, `${partnerName} has no legal move. You win!`, `${partnerName} no tiene movimientos. ¡Ganaste!`) : t(`你无棋可走，${partnerName} 赢了这盘。`, `You have no legal move. ${partnerName} won this one.`, `No tienes movimientos. ${partnerName} ganó esta.`)
-      : won ? t("将死！你赢了！", "Checkmate. You win!", "¡Jaque mate! ¡Ganaste!") : t(`被将死了，${partnerName} 赢了这盘。`, `Checkmate. ${partnerName} won this one.`, `Jaque mate. ${partnerName} ganó esta.`)
-    : mine ? t(`轮到你了（${red ? "红" : "黑"}）`, `Your move (${red ? "red" : "black"})`, `Te toca (${red ? "rojas" : "negras"})`) : t(`等 ${partnerName} 走…`, `Waiting for ${partnerName}…`, `Esperando a ${partnerName}…`);
+      : state.ending === "resign" ? won ? t(`${partnerName}认输了，你赢了！`, `${partnerName} resigned. You win!`, `${partnerName} se rindió. ¡Ganaste!`) : t("你认输了，下一盘再来。", "You resigned. Next game!", "Te rendiste. ¡A la próxima!")
+      : state.ending === "stalemate" ? won ? t(`${partnerName}无棋可走，你赢了！`, `${partnerName} has no legal move. You win!`, `${partnerName} no tiene movimientos. ¡Ganaste!`) : t(`你无棋可走，${partnerName}赢了这盘。`, `You have no legal move. ${partnerName} won this one.`, `No tienes movimientos. ${partnerName} ganó esta.`)
+      : won ? t("将死！你赢了！", "Checkmate. You win!", "¡Jaque mate! ¡Ganaste!") : t(`被将死了，${partnerName}赢了这盘。`, `Checkmate. ${partnerName} won this one.`, `Jaque mate. ${partnerName} ganó esta.`)
+    : mine ? t(`轮到你了（${red ? "红" : "黑"}）`, `Your move (${red ? "red" : "black"})`, `Te toca (${red ? "rojas" : "negras"})`) : t(`等${partnerName}走…`, `Waiting for ${partnerName}…`, `Esperando a ${partnerName}…`);
   const face = (id: string) => id === userId ? t("你", "You", "Tú") : <>{opponent.picture && <img src={opponent.picture} alt="" className="gomoku-face" />}{partnerName}</>;
   const redTurn = thinking ? !red : match.turn === state.red;
   const label = (piece: string) => language === "zh" ? ZH[piece] : piece.toUpperCase();

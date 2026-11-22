@@ -1,3 +1,4 @@
+import { signInText, unauthorizedText } from "./request-language.mjs";
 import express from "express";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { internalBearerStatus } from "./reminder-router.mjs";
@@ -75,14 +76,14 @@ export function createUsageRouter({ store, internalSecret = () => "" }) {
   const router = express.Router();
   // The App opened from a push (its link carries from=push): counted, never with what the push said.
   router.post("/api/usage/push-opened", async (req, res) => {
-    if (!req.auth?.user?.id) return res.status(401).json({ error: "Please sign in." });
+    if (!req.auth?.user?.id) return res.status(401).json({ error: signInText(req) });
     await recordUsage(store, { userId: req.auth.user.id, action: "push_opened" });
     res.status(204).end();
   });
   router.get("/api/internal/usage", async (req, res, next) => {
     const status = internalBearerStatus(req, internalSecret());
     if (status === 503) return res.status(503).json({ error: "Usage reporting is not configured." });
-    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    if (status !== 200) return res.status(401).json({ error: unauthorizedText(req) });
     const requested = req.query.weeks === undefined ? 4 : Number(req.query.weeks);
     if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "weeks must be a positive integer.", code: "invalid_weeks" });
     res.setHeader("Cache-Control", "no-store");
@@ -92,7 +93,7 @@ export function createUsageRouter({ store, internalSecret = () => "" }) {
   router.get("/api/internal/partner-joins", async (req, res, next) => {
     const status = internalBearerStatus(req, internalSecret());
     if (status === 503) return res.status(503).json({ error: "Usage reporting is not configured." });
-    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    if (status !== 200) return res.status(401).json({ error: unauthorizedText(req) });
     const requested = req.query.days === undefined ? 30 : Number(req.query.days);
     if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "days must be a positive integer.", code: "invalid_days" });
     res.setHeader("Cache-Control", "no-store");
@@ -102,7 +103,7 @@ export function createUsageRouter({ store, internalSecret = () => "" }) {
   router.get("/api/internal/ai-usage", async (req, res, next) => {
     const status = internalBearerStatus(req, internalSecret());
     if (status === 503) return res.status(503).json({ error: "Usage reporting is not configured." });
-    if (status !== 200) return res.status(401).json({ error: "Unauthorized." });
+    if (status !== 200) return res.status(401).json({ error: unauthorizedText(req) });
     const requested = req.query.days === undefined ? 3 : Number(req.query.days);
     if (!Number.isInteger(requested) || requested < 1) return res.status(400).json({ error: "days must be a positive integer.", code: "invalid_days" });
     res.setHeader("Cache-Control", "no-store");

@@ -94,7 +94,7 @@ export function DrawGuess({ match, language, userId, partnerName, opponent, act,
     {score && <p className="game-stat is-center">{score}</p>}
     {previous && <article className="draw-last" data-testid="draw-last">
       {previous.strokes?.length ? <Picture strokes={previous.strokes} small label={t("上一幅画", "The last drawing", "El último dibujo")} /> : null}
-      <div><small>{t("上一轮", "Last round", "Ronda anterior")}</small><b>{word(previous)}</b><span className={previous.outcome === "guessed" ? "is-hit" : ""}>{previous.outcome === "guessed" ? t("猜中了！", "Guessed it!", "¡Acertado!") : previous.outcome === "skipped" ? t(`${partnerName} 这次没画出来，换你画`, `${partnerName} couldn't draw this one; your turn`, `${partnerName} no pudo dibujarlo; te toca`) : t("这次没猜中", "Not this time", "Esta vez no")}</span></div>
+      <div><small>{t("上一轮", "Last round", "Ronda anterior")}</small><b>{word(previous)}</b><span className={previous.outcome === "guessed" ? "is-hit" : ""}>{previous.outcome === "guessed" ? t("猜中了！", "Guessed it!", "¡Acertado!") : previous.outcome === "skipped" ? t(`${partnerName}这次没画出来，换你画`, `${partnerName} couldn't draw this one; your turn`, `${partnerName} no pudo dibujarlo; te toca`) : t("这次没猜中", "Not this time", "Esta vez no")}</span></div>
     </article>}
     {over ? <div className="draw-over"><p className="gomoku-status">{t("这局结束了。", "This game is over.", "Esta partida terminó.")}</p><div className="game-actions"><button type="button" className="game-primary" onClick={onRematch} data-testid="game-rematch"><ArrowsClockwise size={16} />{t("再来一局", "Play again", "Otra partida")}</button></div></div>
       : drawing && !round.strokes ? <>
@@ -103,14 +103,14 @@ export function DrawGuess({ match, language, userId, partnerName, opponent, act,
         <p className="game-note">{t("不能写字哦，只能画。", "No writing, just drawing.", "Nada de letras, solo dibujo.")}</p>
       </>
       : drawing ? <>
-        <p className="gomoku-status" role="status">{opponent.pet ? t(`${partnerName} 在猜…`, `${partnerName} is guessing…`, `${partnerName} está adivinando…`) : t(`等 ${partnerName} 猜…`, `Waiting for ${partnerName} to guess…`, `Esperando a que ${partnerName} adivine…`)}</p>
+        <p className="gomoku-status" role="status">{opponent.pet ? t(`${partnerName}在猜…`, `${partnerName} is guessing…`, `${partnerName} está adivinando…`) : t(`等${partnerName}猜…`, `Waiting for ${partnerName} to guess…`, `Esperando a que ${partnerName} adivine…`)}</p>
         <Picture strokes={round.strokes || []} label={t("你的画", "Your drawing", "Tu dibujo")} />
         <p className="draw-word is-quiet">{t("答案：", "Answer: ", "Respuesta: ")}<b>{word(round)}</b></p>
         {round.guesses.length > 0 && <ul className="draw-guesses is-wrong" data-testid="draw-their-guesses">{round.guesses.map((item) => <li key={item.at}>{item.text}？</li>)}</ul>}
       </>
-      : !round.strokes ? <p className="gomoku-status" role="status" data-testid="draw-waiting">{opponent.picture && <img src={opponent.picture} alt="" className="draw-face" />}{opponent.pet ? t(`${partnerName} 正在画…`, `${partnerName} is drawing…`, `${partnerName} está dibujando…`) : t(`${partnerName} 正在画，画好了会提醒你。`, `${partnerName} is drawing. You'll be told when it's ready.`, `${partnerName} está dibujando. Te avisamos cuando esté listo.`)}</p>
+      : !round.strokes ? <p className="gomoku-status" role="status" data-testid="draw-waiting">{opponent.picture && <img src={opponent.picture} alt="" className="draw-face" />}{opponent.pet ? t(`${partnerName}正在画…`, `${partnerName} is drawing…`, `${partnerName} está dibujando…`) : t(`${partnerName}正在画，画好了会提醒你。`, `${partnerName} is drawing. You'll be told when it's ready.`, `${partnerName} está dibujando. Te avisamos cuando esté listo.`)}</p>
       : <>
-        <Picture strokes={round.strokes} replay={`${match.id}:${rounds.length}`} label={t(`${partnerName} 的画`, `${partnerName}'s drawing`, `El dibujo de ${partnerName}`)} />
+        <Picture strokes={round.strokes} replay={`${match.id}:${rounds.length}`} label={t(`${partnerName}的画`, `${partnerName}'s drawing`, `El dibujo de ${partnerName}`)} />
         <p className="draw-hint">{hint}</p>
         {round.guesses.length > 0 && <ul className="draw-guesses is-wrong">{round.guesses.map((item) => <li key={item.at}>{item.text}</li>)}</ul>}
         <form className="draw-guess-form" onSubmit={(event) => { event.preventDefault(); void send(); }}>

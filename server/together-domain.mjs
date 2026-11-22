@@ -182,6 +182,21 @@ async function archiveOldestMessages(tx, conversation, userId) {
   });
 }
 
+/** A message of the couple's Us by id: in the working set, else in an archive chunk (newest first). Returns the message and
+ * an `update(apply)` that edits the message list wherever it lives, in the caller's transaction (QA round 7: unsend and read
+ * receipts used to 404 once a message had moved to the archive). */
+export async function findTogetherMessage(tx, conversation, userId, messageId) {
+  const bump = (draft) => { draft.version += 1; };
+  const live = (conversation.messages || []).find((item) => item.id === messageId);
+  if (live) return { line: live, update: (apply) => tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, (draft) => { apply(draft.messages); bump(draft); }) };
+  for (let seq = conversation.archived?.chunks || 0; seq >= 1; seq -= 1) {
+    const id = archiveId(conversation.relationshipId, seq);
+    const line = (await tx.getRelationshipRecordForUser("togetherArchives", id, userId))?.messages?.find((item) => item.id === messageId);
+    if (line) return { line, update: async (apply) => { await tx.updateRelationshipRecordForUser("togetherArchives", id, userId, (draft) => { apply(draft.messages); }); return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, bump); } };
+  }
+  return { line: null };
+}
+
 /** Up to `limit` messages older than the message `before` (an id the reader already has), oldest first, with `more` when
  * older ones remain. The working set is searched first, then each archive chunk from the newest down; a page may span
  * several. Answers to a daily question are hidden exactly as in the live conversation. */

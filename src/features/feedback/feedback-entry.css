@@ -17,6 +17,8 @@
 body.layer-open .feedback-launch { display: none; }
 /* On a page with a header the button sits in the header's empty right corner, beside the title, instead of over the page. */
 .mobile-app-viewport:has(> .relationship-shell > .page-header) > .feedback-launch { top: calc(max(12px, env(safe-area-inset-top)) + 2px); right: 10px; box-shadow: none; }
+/* Inside a page header it is header-sized, so it stays within the bar and never hangs over the first card (QA round 7). */
+.mobile-app-viewport:has(> .relationship-shell > .page-header) > .feedback-launch { width: 36px; height: 36px; top: calc(max(12px, env(safe-area-inset-top)) + 4px); }
 .mobile-app-viewport:has(> .offline-banner):has(> .relationship-shell > .page-header) > .feedback-launch { top: calc(env(safe-area-inset-top) + 34px + max(12px, env(safe-area-inset-top)) + 2px); }
 /* The AI consent screen is all text: the button waits in its empty top right corner, clear of the bullets (QA round 3). */
 .mobile-app-viewport:has(> .ai-consent-screen) > .feedback-launch { top: calc(max(12px, env(safe-area-inset-top)) + 2px); right: 10px; }

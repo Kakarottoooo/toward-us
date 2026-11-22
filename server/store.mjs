@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { placeholderName } from "./display-name.mjs";
 import { fileAppMetrics } from "./app-metrics-store.mjs";
 import { createPostgresStore } from "./postgres-store.mjs";
 import { currentInvitation, invitationStatus } from "./partner-invites.mjs";
@@ -90,6 +91,9 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
+  // Sign-ups without a name used to get the placeholder "我", which the partner then saw in any language (QA round 7,
+  // finding 3). It reads as empty now, so every view falls back to words in the reader's language.
+  for (const user of Object.values(committedState.users || {})) if (placeholderName(user)) { user.name = ""; user.nameSource = "fallback"; }
   freeze(committedState);
 
   const fold = async (whole) => {
