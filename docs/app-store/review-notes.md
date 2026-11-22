@@ -34,7 +34,7 @@ NATIVE FEATURES (beyond the web content)
 - A Home Screen widget and an offline screen bundled with the app.
 
 USER-GENERATED CONTENT (1.2)
-Content is only shared between two people who invited each other with a code; there is no public feed or stranger matching. Reports go to the team for review. Contact: ziwei@witnora.com.
+Content is only shared between two people who invited each other with a code; there is no public feed or stranger matching. Reports go to the team for review. Contact: patric@witnora.com.
 
 PURCHASES
 This iPhone release is free and offers no purchases.
