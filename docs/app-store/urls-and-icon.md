@@ -11,7 +11,7 @@
 | Marketing URL | https://ourever.onrender.com/ |
 | Terms of Use | https://ourever.onrender.com/terms |
 
-简体中文在路径前加 `/zh`，西语加 `/es`。公开支持邮箱为 ziwei@witnora.com，运营主体为 Witnora, Inc.。现有客户分享链接继续可用，另行决定公司子域名。
+简体中文在路径前加 `/zh`，西语加 `/es`。公开支持邮箱为 patric@witnora.com，运营主体为 Witnora, Inc.。现有客户分享链接继续可用，另行决定公司子域名。
 
 ## Ourever 图标
 

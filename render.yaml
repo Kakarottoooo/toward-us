@@ -60,7 +60,7 @@ services:
       # Pinky membership and the beta board (docs/payments.zh-CN.md); the founder fills these in on Render.
       # Public privacy / terms / support pages (server/legal.mjs): the address people write to and who runs Pinky.
       - key: PINKY_SUPPORT_EMAIL
-        value: ziwei@witnora.com
+        value: patric@witnora.com
       - key: PINKY_OPERATOR
         value: Witnora, Inc.
       - key: TOWARD_US_MEDIA_DIR

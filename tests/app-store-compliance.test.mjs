@@ -98,7 +98,7 @@ test("the contact line uses the configured support address, and nothing else is 
   assert.ok(withEmail.includes('href="mailto:help@pinky.example"'));
   assert.ok(renderLegalPage("privacy", "en", { PINKY_OPERATOR: "Example Labs LLC" }).includes("Ourever is operated by Example Labs LLC."));
   const without = renderLegalPage("support", "zh", {});
-  assert.ok(without.includes('href="mailto:ziwei@witnora.com"'));
+  assert.ok(without.includes('href="mailto:patric@witnora.com"'));
   assert.ok(without.includes("设置 → 举报或求助"));
   assert.doesNotMatch(without + renderLegalPage("privacy", "es", {}), /\bTODO\b|\bTBD\b|lorem ipsum|\{\{|example\.com/);
   assert.ok(renderLegalPage("privacy", "zh", {}).includes("Ourever 由 Witnora, Inc. 运营"));

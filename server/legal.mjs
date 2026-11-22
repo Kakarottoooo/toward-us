@@ -148,7 +148,7 @@ const NAV = { zh: { back: "返回 Ourever", updated: "更新于", privacy: "隐�
 
 export function renderLegalPage(page, language, env = process.env, standalone = false) {
   const operator = String(env.PINKY_OPERATOR || "").trim() || "Witnora, Inc.";
-  const { title, sections } = content(page, language, { email: String(env.PINKY_SUPPORT_EMAIL || "").trim() || "ziwei@witnora.com", operator });
+  const { title, sections } = content(page, language, { email: String(env.PINKY_SUPPORT_EMAIL || "").trim() || "patric@witnora.com", operator });
   const nav = NAV[language];
   const pageUrl = (name, code) => standalone
     ? `/${code === "en" ? "" : code + "/"}${name}`
