@@ -108,7 +108,7 @@ test("X-Forwarded-For is ignored unless TRUST_PROXY is set", () => fixture(async
   await login("x1", "wrong-password-1", { ip: "203.0.113.21", status: 401 });
   await login("x2", "wrong-password-1", { ip: "203.0.113.22", status: 401 });
   assertLimited(await login("x3", "wrong-password-1", { ip: "203.0.113.23" }));
-}, { authLimits: { loginPerIp: { max: 2, windowMs: 15 * 60_000 } } }));
+}, { trustProxy: "", authLimits: { loginPerIp: { max: 2, windowMs: 15 * 60_000 } } })); // "" = not configured, even on Render (RENDER is set there)
 
 test("with TRUST_PROXY=1 the client is the right-most X-Forwarded-For entry (what the one proxy appended)", () => fixture(async ({ login, assertLimited }) => {
   // A client-supplied left part changes nothing; the address the proxy appended is what counts.
@@ -147,3 +147,4 @@ test("recovery guesses from rotating networks back off with a visible wait, and 
   await login("sprayed", "owner-new-password-26", { ip: "203.0.113.44", status: 200 });
   await call("/api/auth/recover", guess, { ip: "203.0.113.45", status: 401 });
 }, { trustProxy: 1, authLimits: { recoveryBackoff: { free: 2, maxSeconds: 900 } } }));
+
