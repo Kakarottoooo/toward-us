@@ -104,3 +104,33 @@ test("a photo can be fetched small for bubbles and walls, made once and kept", a
   assert.ok((await readdir(media)).some((name) => name.endsWith(".w240.jpg")), "kept for the next time");
   assert.equal((await sharp(Buffer.from(await (await fetch(url(`/photos/${id}?w=999`))).arrayBuffer())).metadata()).width, 1280, "other sizes get the photo itself");
 });
+
+// QA round 3 N2: "We did it" on one of the 100 little things ticks its card for both of them directly, with no Ourever turn,
+// and the moment's own archive undoes it.
+test("100 little things: We did it by hand ticks the card for both, once, and archive undoes it", async (t) => {
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "ideas-"));
+  const store = await createFileStore(join(directory, "store.json"));
+  const ids = [randomUUID(), randomUUID()];
+  for (const id of ids) await store.createUser({ id, email: `${id}@example.invalid`, name: "Synthetic person", passwordHash: "test", createdAt: new Date().toISOString() });
+  const relationshipId = randomUUID();
+  await store.createInvitation({ relationship: { id: relationshipId, status: "pending" }, membership: { relationshipId, userId: ids[0], role: "A" }, invitation: { code: relationshipId, relationshipId, createdByUserId: ids[0], expiresAt: "2099-01-01T00:00:00.000Z" } });
+  await store.acceptInvitation(relationshipId, ids[1], new Date().toISOString());
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { if (req.headers["x-user"]) req.auth = { user: { id: req.headers["x-user"] } }; next(); });
+  app.use("/api", createSpaceRouter({ store }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  const call = async (path, method = "GET", body, userId = ids[0]) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "x-user": userId, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: response.status, body: await response.json() };
+  };
+  const ticked = async (userId) => (await call("/spaces", "GET", null, userId)).body.spaces.filter((space) => space.system === "moments" && space.visibility === "shared").flatMap((space) => space.items).filter((item) => item.idea).map((item) => item.idea);
+  const did = await call("/spaces/moments/ideas/7", "POST", { title: "Watch a sunset", date: "2026-11-20" });
+  assert.equal(did.status, 201, JSON.stringify(did.body));
+  assert.equal(did.body.record.idea, 7); assert.equal(did.body.record.date, "2026-11-20");
+  assert.deepEqual(await ticked(ids[1]), [7], "the partner sees it ticked");
+  assert.equal((await call("/spaces/moments/ideas/7", "POST", { title: "Watch a sunset" }, ids[1])).status, 200, "once");
+  assert.equal((await call("/spaces/moments/ideas/101", "POST", {})).status, 400);
+  assert.equal((await call(`/space-items/${did.body.record.id}/moment/archive`, "POST", { version: did.body.record.version })).status, 200, "undo");
+  assert.deepEqual(await ticked(ids[0]), []);
+});

@@ -32,9 +32,12 @@ const LANGUAGES = new Set(["zh", "en", "es"]);
 // the front is not lost: it moves, KEEP_AFTER_ARCHIVE at a time, into archive chunks of up to ARCHIVE_CHUNK messages each,
 // which /together/history and the daily question read on demand.
 const MESSAGE_LIMIT = 200, KEEP_AFTER_ARCHIVE = 150, ARCHIVE_CHUNK = 200;
-// Messages delivered while screening was unavailable wait on the conversation for screening (screenDeferredMessages). Past
-// this many waiting, a new message is refused as before, so an outage never builds an unbounded backlog.
-const SCREENING_QUEUE_LIMIT = 50;
+// Messages delivered while screening was unavailable wait on the conversation for screening (screenDeferredMessages). A couple's
+// chat is never blocked by our outage (QA round 3: it used to 503 after 50): past this many waiting, the message is still
+// delivered and the oldest waiting entries leave the queue unscreened (logged), so the backlog stays bounded.
+let SCREENING_QUEUE_LIMIT = 5000;
+/** Tests only: a small cap so the overflow path runs without thousands of messages. */
+export function setScreeningQueueLimitForTests(limit) { const previous = SCREENING_QUEUE_LIMIT; SCREENING_QUEUE_LIMIT = limit; return previous; }
 const OPEN_COMMITMENTS = new Set(["active", "awaiting_confirmations", "renegotiation_requested"]);
 const togetherId = (relationshipId) => `together:${relationshipId}`;
 const archiveId = (relationshipId, seq) => `${togetherId(relationshipId)}:archive:${seq}`;
@@ -244,12 +247,16 @@ export async function continueTogetherTurn({ store, mediator, relationshipId, ac
   // and queued to be screened later; anywhere else an unavailable screen still refuses the message.
   const unscreened = noAi ? null : deferScreening ? await screenTextOrDefer(text) : await screenText(text);
   const saved = await transaction(async (tx) => {
-    const queue = unscreened ? (await tx.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), actorUserId))?.screeningQueue || [] : [];
-    if (queue.length >= SCREENING_QUEUE_LIMIT) throw unscreened;
     const result = await appendTogetherMessage(tx, { relationshipId, actorUserId, source, kind: "text", text, handle, replyTo, photoIds, recordedByUserId, recipient, answersCheckIn: recipient !== "partner", noAi });
     if (!unscreened || result.duplicate) return result;
     const entry = { messageId: result.message.id, userId: recordedByUserId || actorUserId, language, queuedAt: new Date().toISOString() };
-    return { ...result, conversation: await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => { draft.screeningQueue = [...(draft.screeningQueue || []), entry]; draft.version += 1; }) };
+    return { ...result, conversation: await tx.updateRelationshipRecordForUser("togetherConversations", result.conversation.id, actorUserId, (draft) => {
+      const queue = [...(draft.screeningQueue || []), entry];
+      const dropped = queue.length - SCREENING_QUEUE_LIMIT;
+      if (dropped > 0) console.error(`Us screening queue over ${SCREENING_QUEUE_LIMIT} for relationship ${relationshipId}: ${dropped} oldest delivered message(s) left unscreened`);
+      draft.screeningQueue = dropped > 0 ? queue.slice(dropped) : queue;
+      draft.version += 1;
+    }) };
   });
   const { message } = saved, messages = saved.conversation.messages;
   // The Agent that was last to speak before this turn, so a retried turn is judged exactly as it was the first time.

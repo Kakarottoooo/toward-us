@@ -9,6 +9,7 @@ import { importFile } from "./chat-import.mjs";
 import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
 import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { deleteReferralAccount } from "./referrals.mjs";
+import { COLLECTION as MATCHES, viewMatch } from "./matches/index.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createEmailSender, resetMessage } from "./email.mjs";
 
@@ -61,6 +62,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   };
   const confirm = (req) => { if (req.body?.confirm !== true) throw fail(400, local(req, "请明确确认这项操作。", "Explicit confirmation is required.", "Se requiere una confirmación explícita.")); };
   const audit = async (tx, userId, eventType, extras = {}) => tx.createRelationshipRecord("consentEvents", createRelationshipRecord({ relationshipId: null, userId, visibility: "private", aiAccessScope: "none", eventType, status: "recorded", ...extras }));
+  // A recovery code is hex, shown in dashed groups of 8; typed back with any case, spaces or dashes it still matches (QA round 3).
   router.post("/auth/recover", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     if (limited(`recovery:${req.ip}`) || limited(`recovery-account:${email}`)) throw fail(429, local(req, "尝试过多，请稍后再试。", "Too many attempts. Try later.", "Demasiados intentos. Inténtalo más tarde."));
@@ -69,7 +71,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     const result = user && await store.transaction(`user:${user.id}`, async (tx) => {
       const liveUser = await tx.getUserForUpdate(user.id); if (!liveUser || liveUser.email !== email || liveUser.passwordHash === "deleted") return false;
       const current = await settings(user.id, tx);
-      const provided = hash(String(req.body?.recoveryCode || "").replace(/[\s-]/g, ""));
+      const provided = hash(String(req.body?.recoveryCode || "").toLowerCase().replace(/[\s\-\u2010-\u2015\u2212_.]/g, ""));
       const expected = current?.recoveryCodeHash || "0".repeat(64);
       if (!timingSafeEqual(Buffer.from(provided, "hex"), Buffer.from(expected, "hex")) || !current?.recoveryCodeHash) return false;
       await tx.updateUserPassword(user.id, await hashPassword(req.body.password));
@@ -282,6 +284,10 @@ export function createPrivacyRouter({ store, production = false, closeConnection
           catch { throw fail(503, local(req, "暂时无法撤销 Apple 授权，请重试。", "Apple authorization could not be revoked. Please retry.", "No se pudo revocar la autorización de Apple. Inténtalo de nuevo.")); }
         }
       }
+      // What they wrote in Us stays for the partner, as the deletion copy promises: the partner is told once, by the name they
+      // knew, and keeps their shared history to read (GET /privacy/former-us), read-only.
+      const partner = context?.relationship.status === "active" ? context.members.find((member) => member.userId !== req.auth.user.id) : null;
+      if (partner) await updateSettings(partner.userId, (record) => { record.partnerDeleted = { name: context.members.find((member) => member.userId === req.auth.user.id)?.user?.name || "", relationshipId: context.relationship.id, at: new Date().toISOString(), seenAt: null }; }, tx);
       await tx.deleteAccount(req.auth.user.id); return paths;
     });
     await removeFiles(files);
@@ -290,6 +296,27 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     closeConnections(context?.members.map((member) => member.userId) || [req.auth.user.id]);
     await onAiWithdrawal(req.auth.user.id).catch(() => {});
     clearSessionCookie(res, production); res.status(204).end();
+  });
+  // The Us history of a pairing that ended because the partner deleted their account: read-only, for the member left behind.
+  router.get("/privacy/former-us", async (req, res) => {
+    const userId = req.auth.user.id, gone = (await settings(userId))?.partnerDeleted;
+    if (!gone) return res.json({ former: null });
+    const snapshot = await store.getPrivacySnapshot(userId);
+    if (!snapshot.relationships.some((relationship) => relationship?.id === gone.relationshipId)) return res.json({ former: null });
+    const conversation = snapshot.graph.togetherConversations?.find((record) => record.id === `together:${gone.relationshipId}`);
+    const seq = (record) => Number(String(record.id).split(":").at(-1)) || 0;
+    const archives = (snapshot.graph.togetherArchives || []).filter((record) => record.relationshipId === gone.relationshipId).sort((a, b) => seq(a) - seq(b));
+    const language = ["zh", "en", "es"].includes(req.query?.language) ? req.query.language : req.auth.user.language || "zh";
+    const lines = hideUnrevealedAnswers({ messages: [...archives.flatMap((record) => record.messages || []), ...(conversation?.messages || [])] }, userId).messages
+      .filter((line) => !line.removedAt && (line.text || line.i18n || line.photoIds?.length))
+      .slice(-1000)
+      .map((line) => ({ id: line.id, role: line.role, mine: line.actorUserId === userId, kind: line.kind, text: line.i18n?.[language] ?? line.translations?.[language]?.text ?? line.text ?? "", createdAt: line.createdAt }));
+    res.json({ former: { name: gone.name, endedAt: gone.at, seen: Boolean(gone.seenAt), messages: lines } });
+  });
+  router.post("/privacy/former-us/seen", async (req, res) => {
+    const userId = req.auth.user.id;
+    await store.transaction(`user:${userId}`, (tx) => updateSettings(userId, (record) => { if (record.partnerDeleted) record.partnerDeleted.seenAt ||= new Date().toISOString(); }, tx));
+    res.json({ seen: true });
   });
   router.post("/privacy/summaries/:id/withdraw", async (req, res) => {
     confirm(req); const userId = req.auth.user.id;
@@ -310,7 +337,16 @@ export function createPrivacyRouter({ store, production = false, closeConnection
 }
 
 export function privacyExport(snapshot, user) {
-  const graph = Object.fromEntries(Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection)).map(([collection, records]) => [collection, records.filter((record) => record.ownerUserId === user.id || ["shared", "jointly_confirmed", "revealed"].includes(record.visibility) || (record.visibility === "shareable_summary" && record.status === "confirmed")).map((record) => { if (record.ownerUserId === user.id) return hideUnrevealedAnswers(structuredClone(record), user.id); const projected = projectRecord({ ...record, archivedAt: null, status: record.status === "archived" ? "active" : record.status }, user.id); return projected ? { ...projected, status: record.status, archivedAt: record.archivedAt } : null; }).filter(Boolean)]));
+  // The export shows each record as the app shows it to this member (QA round 3): a game's state through the same per-player
+  // view as /api/matches (the partner's hidden pick, lie or word stays hidden, even in a game this member started), and no
+  // server bookkeeping such as the Us screening queue, whoever owns the record.
+  const asShown = (collection, record) => {
+    if (!record) return null;
+    delete record.screeningQueue;
+    if (collection === MATCHES) record.state = viewMatch(record, user.id).state;
+    return record;
+  };
+  const graph = Object.fromEntries(Object.entries(snapshot.graph).filter(([collection]) => !hiddenCollections.has(collection)).map(([collection, records]) => [collection, records.filter((record) => record.ownerUserId === user.id || ["shared", "jointly_confirmed", "revealed"].includes(record.visibility) || (record.visibility === "shareable_summary" && record.status === "confirmed")).map((record) => { if (record.ownerUserId === user.id) return asShown(collection, hideUnrevealedAnswers(structuredClone(record), user.id)); const projected = projectRecord({ ...record, archivedAt: null, status: record.status === "archived" ? "active" : record.status }, user.id); return asShown(collection, projected ? { ...projected, status: record.status, archivedAt: record.archivedAt } : null); }).filter(Boolean)]));
   const rooms = snapshot.rooms.map((room) => {
     const ownIds = new Set(room.participants.filter((person) => person.userId === user.id).map((person) => person.id));
     return { code: room.code, relationshipId: room.relationshipId, status: room.status, messages: room.messages.filter((message) => ownIds.has(message.participantId)), sharedAnalysis: room.status === "archived" ? room.analysis?.shared || null : null, createdAt: room.createdAt, archivedAt: room.archivedAt || null };

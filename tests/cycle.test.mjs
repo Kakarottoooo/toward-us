@@ -90,3 +90,41 @@ test("经期: kept privately from the conversation; the partner gets only 这几
   assert.equal((await request("/cycle?timezone=UTC")).body.mine, null);
   assert.equal((await request("/cycle?timezone=UTC", "GET", null, ids[1])).body.care, null);
 });
+
+// QA round 3 N2: a period is logged, ended, corrected, deleted and restored by hand, without Ourever (AI declined or down).
+test("经期: manual log, end, edit, delete and undo through /api/cycle, no assistant involved", async (t) => {
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "cycle-manual-"));
+  const store = await createFileStore(join(directory, "store.json"));
+  const id = randomUUID();
+  await store.createUser({ id, email: `${id}@example.invalid`, name: "Mia", passwordHash: "test", createdAt: new Date().toISOString() });
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id, language: "en" } }; next(); });
+  app.use("/api", createCycleRouter({ store }));
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  const call = async (path, method = "GET", body) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: response.status, body: response.status === 204 ? null : await response.json() };
+  };
+  const view = async () => (await call("/cycle?timezone=UTC")).body.mine;
+  assert.equal(await view(), null);
+  const started = await call("/cycle/log", "POST", { event: "start", date: day(-30), timezone: "UTC" });
+  assert.equal(started.status, 201);
+  assert.equal((await call("/cycle/log", "POST", { event: "end", date: day(-26), timezone: "UTC" })).status, 201);
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(3), timezone: "UTC" })).status, 400, "not in the future");
+  assert.equal((await call("/cycle/log", "POST", { event: "end", date: day(-1), timezone: "UTC" })).status, 409, "nothing open to end");
+  assert.equal((await call("/cycle/log", "POST", { event: "start", date: day(0), timezone: "UTC" })).status, 201, "today");
+  let mine = await view();
+  assert.deepEqual(mine.logs.map((log) => [log.start, log.end]), [[day(0), null], [day(-30), day(-26)]]);
+  assert.equal(mine.prediction.inPeriod, 1);
+  const older = mine.logs[1];
+  assert.equal((await call(`/cycle/${older.id}`, "PATCH", { start: day(-31), end: day(-27), timezone: "UTC" })).status, 200);
+  assert.equal((await call(`/cycle/${older.id}`, "PATCH", { start: day(-31), end: day(-40), timezone: "UTC" })).status, 400, "end before start");
+  assert.equal((await call(`/cycle/${older.id}`, "DELETE")).status, 204);
+  assert.deepEqual((await view()).logs.map((log) => log.start), [day(0)]);
+  assert.equal((await call("/cycle/restore", "POST", { start: day(-31), end: day(-27) })).status, 201, "undo");
+  mine = await view();
+  assert.deepEqual(mine.logs.map((log) => [log.start, log.end]), [[day(0), null], [day(-31), day(-27)]]);
+  assert.equal(mine.prediction.cycle, 31, "the corrected days count");
+});
