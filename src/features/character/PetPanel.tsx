@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { DotsThree, HandHeart, PawPrint, Sparkle, X } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { initialOf, localized, type Language } from "../../i18n";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { defaultMascot, type Character } from "./character";
@@ -74,7 +74,7 @@ export function PetRoom({ language, pet, character, members, userId, hidden, onH
   };
   const me = members.find((member) => member.id === userId), partner = members.find((member) => member.id !== userId);
   const partnerName = partner?.name || t("TA", "your partner", "tu pareja");
-  const initial = (name?: string) => (name || "?").slice(0, 1).toUpperCase();
+  const initial = (name?: string) => initialOf(name);
   // Save time, not kill time (founder 11-07): it never asks to be visited or says it misses them.
   const mood = pet.mood === "happy" ? t("它今天很开心", "It's happy today", "Hoy está feliz") : t("它在窝里待着", "It's relaxing in its room", "Está descansando en su cuarto");
   const span = Math.max(1, pet.next - pet.floor), progress = Math.min(100, Math.round(((pet.points - pet.floor) / span) * 100));

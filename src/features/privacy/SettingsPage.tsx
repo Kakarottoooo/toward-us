@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Brain, CaretRight, Crown, Check, ClockCounterClockwise, DownloadSimple, Eye, FileText, Flag, Heart, Key, Lifebuoy, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
-import { counted, isolate, languageTag, localized, type Language } from "../../i18n";
+import { counted, initialOf, isolate, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
 import { PageHeader, readUsHidden, usHiddenKey } from "../conversation/ConversationHome";
@@ -176,7 +176,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
 
   const main = <>
     <section className="settings-profile">
-      <span className="settings-avatar" aria-hidden="true">{(user.name || "?").trim().slice(0, 1).toUpperCase()}</span>
+      <span className="settings-avatar" aria-hidden="true">{initialOf(user.name)}</span>
       <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${isolate(partnerName)} 连接`, `Connected with ${isolate(partnerName)}`, `Conectado con ${isolate(partnerName)}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
     <Group>

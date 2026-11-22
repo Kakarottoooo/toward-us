@@ -40,8 +40,25 @@ test("either partner sets the day they got together; setting it again moves the 
   assert.equal((await request("/api/relationship/together-since", { method: "PUT", body: { date: "2025-05-20", language: "zh" }, cookie: a })).status, 200);
   assert.equal((await request("/api/relationship/together-since", { method: "PUT", body: { date: "2025-05-21", language: "zh" }, cookie: b })).status, 200);
   assert.equal((await request("/api/relationship/together-since", { method: "PUT", body: { date: "2999-01-01" }, cookie: a })).status, 400);
-  const started = (await request("/api/relationship/home", { cookie: a })).body.graph.milestones.filter((item) => item.type === "relationship_started");
+  const started = (await request("/api/relationship/home?language=zh", { cookie: a })).body.graph.milestones.filter((item) => item.type === "relationship_started");
   assert.deepEqual(started.map((item) => [item.date, item.recurringRule, item.title]), [["2025-05-21", "yearly", "在一起纪念日"]]);
+}));
+
+test("QA round 6: the default anniversary title is shown in each reader's language; a typed title is kept as typed", () => couple(async ({ request, a, b, store }) => {
+  // Set by a Chinese-speaking partner; the English and Spanish readers see their own words.
+  assert.equal((await request("/api/relationship/together-since", { method: "PUT", body: { date: "2025-05-20", language: "zh" }, cookie: a })).status, 200);
+  const title = async (cookie, language) => (await request(`/api/relationship/home${language ? `?language=${language}` : ""}`, { cookie })).body.graph.milestones.find((item) => item.type === "relationship_started").title;
+  assert.equal(await title(b, "en"), "Our anniversary");
+  assert.equal(await title(b, "es"), "Nuestro aniversario");
+  assert.equal(await title(a, "zh"), "在一起纪念日");
+  // The member's saved interface language is used when the request names none.
+  assert.equal((await request("/api/me/language", { method: "POST", body: { language: "es" }, cookie: b })).status, 200);
+  assert.equal(await title(b), "Nuestro aniversario");
+  // A title someone typed is theirs, in every language.
+  const { user } = (await request("/api/auth/me", { cookie: a })).body;
+  const record = (await store.listRelationshipRecordsForUser("milestones", user.id)).find((item) => item.type === "relationship_started");
+  await store.updateRelationshipRecordForUser("milestones", record.id, user.id, (draft) => { draft.title = "初遇"; draft.version += 1; });
+  assert.equal(await title(b, "en"), "初遇");
 }));
 
 test("Coming up learns each partner's interface language, so a couple with different languages sees both sets of holidays", () => couple(async ({ request, a, b }) => {

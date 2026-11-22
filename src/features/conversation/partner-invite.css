@@ -85,3 +85,11 @@
 .partner-invite-bar:has(.partner-invite-dismiss) > * { flex: 1 1 100%; order: 2; }
 .partner-invite-bar:has(.partner-invite-dismiss) > .invite-primary, .partner-invite-bar:has(.partner-invite-dismiss) > .partner-invite-summary { flex: 1 1 0; order: 0; min-width: 0; }
 .partner-invite-bar > .partner-invite-dismiss { flex: 0 0 44px; order: 1; padding: 0; border-color: transparent; background: transparent; color: var(--jian-muted, #5c5358); }
+
+/* One-time name prompt for members whose account name is a placeholder (QA round 6). */
+.name-prompt { display: grid; grid-template-columns: 1fr auto auto; align-items: end; gap: 8px; margin: 6px 0; }
+.name-prompt label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; color: var(--jian-ink); }
+.name-prompt input { min-height: 44px; width: 100%; box-sizing: border-box; }
+.name-prompt .secondary-action { min-height: 44px; margin: 0; }
+.name-prompt-hide { min-width: 44px; min-height: 44px; display: grid; place-items: center; background: none; border: 0; color: var(--jian-muted, inherit); }
+.name-prompt p { grid-column: 1 / -1; margin: 0; font-size: 14px; }

@@ -160,3 +160,25 @@ test("deleting your private data keeps the couple's membership and clears your s
   assert.equal((await store.listRecordsForJob("purchases")).some((record) => record.ownerUserId === ids[0]), false);
   assert.equal((await membershipFor(store, ids[1])).plan, "free");
 });
+
+test("QA round 6: two sign-ups from one install under the same invite code count once", async (t) => {
+  const { attachReferral, rememberReferralInstall, referralPage } = await import("../server/referrals.mjs");
+  const { createFileStore: openStore } = await import("../server/store.mjs");
+  const { mkdtemp: tempDir, rm: remove } = await import("node:fs/promises");
+  const { tmpdir: osTemp } = await import("node:os");
+  const { join: joinPath } = await import("node:path");
+  const directory = await tempDir(joinPath(osTemp(), "toward-referral-install-"));
+  t.after(() => remove(directory, { recursive: true, force: true }));
+  const store = await openStore(joinPath(directory, "store.json"));
+  const user = async (email) => { const id = crypto.randomUUID(); await store.createUser({ id, email, name: email.split("@")[0], passwordHash: "test", createdAt: new Date().toISOString() }); return id; };
+  const inviter = await user("inviter@example.com");
+  await rememberReferralInstall(store, inviter, { installId: "install-inviter-0001" });
+  const { code } = await referralPage(store, inviter, { installId: "install-inviter-0001" });
+  const first = await user("friend.one@example.com"), second = await user("friend.two@example.com"), other = await user("friend.three@example.com");
+  assert.deepEqual(await attachReferral(store, first, { code, installId: "install-shared-0002" }), { accepted: true });
+  assert.deepEqual(await attachReferral(store, second, { code, installId: "install-shared-0002" }), { accepted: false, reason: "device_invited" });
+  assert.deepEqual(await attachReferral(store, other, { code, installId: "install-other-0003" }), { accepted: true });
+  assert.equal((await referralPage(store, inviter, { installId: "install-inviter-0001" })).invited.length, 2);
+  // The same account can't be invited twice either.
+  assert.equal((await attachReferral(store, first, { code, installId: "install-new-0004" })).reason, "already_invited");
+});

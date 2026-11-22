@@ -363,3 +363,5 @@
 .reply-coach-entry p { font-size: 15px; line-height: 1.5; }
 .reply-coach-entry .card-actions { margin-top: 6px; flex-wrap: wrap; }
 .ai-off-card .ai-off-why { display: block; margin-bottom: 6px; color: #8f4458; font-weight: 600; }
+/* Reading earlier Us messages while new ones arrive below (QA round 6): one tap back to the newest. */
+.conversation-new-below { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 3; min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #252525; color: #fffdf8; font-size: 15px; font-weight: 650; box-shadow: 0 4px 14px rgba(0,0,0,.18); cursor: pointer; }

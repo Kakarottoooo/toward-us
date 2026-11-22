@@ -75,7 +75,9 @@ test("API errors read in the member's language: demo rooms, pairing, shared deci
   const signedOut = await call("/api/partner/accept", { method: "POST", body: { code: "ABCDEFGH", language: "es" } });
   assert.equal(signedOut.status, 401); noChinese(signedOut.body.error, "signed out es");
   assert.equal((await call("/api/partner/accept", { method: "POST", body: { code: "ABCDEFGH" } })).body.error, "请先登录。");
-  assert.equal((await call("/api/auth/login", { method: "POST", body: { email: "nobody@example.com", password: "wrong-password-1" } })).body.error, "邮箱或密码不正确。");
+  // A wrong password is localized like every other error (QA round 6), with a code the App maps itself.
+  const wrongPassword = await call("/api/auth/login", { method: "POST", body: { email: "nobody@example.com", password: "wrong-password-1", language: "es" } });
+  assert.equal(wrongPassword.body.code, "invalid_credentials"); noChinese(wrongPassword.body.error, "wrong password es");
 });
 
 test("voice errors from the model service are in the requested language", async () => {
@@ -199,4 +201,39 @@ test("QA round 5: a shared photo that can't be screened says so in photo words, 
   }
   const spanish = await call("/api/photos?scope=shared&language=es", { method: "POST", cookie: a, body: jpeg, type: "image/jpeg" });
   assert.match(spanish.body.error, /foto/);
+});
+
+test("QA round 6: the name an unnamed member gives first run becomes the name their partner sees; a chosen name stays", async (t) => {
+  const store = await createFileStore(join(await workDir(t, "first-run-name-"), "store.json"));
+  const server = createApiApp({ store, mediator: {}, production: false }).listen(0, "127.0.0.1"); await new Promise((done) => server.once("listening", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, { method = "GET", cookie, body } = {}) => {
+    const response = await fetch(`${base}${path}`, { method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: response.status, body: response.status === 204 ? null : await response.json(), headers: response.headers };
+  };
+  const register = async (name) => {
+    const response = await call("/api/auth/register", { method: "POST", body: { name, adultConfirmed: true, email: `n-${randomUUID()}@example.com`, password: "correct-horse-battery", language: "en" } });
+    return { cookie: (response.headers.get("set-cookie") || "").split(";")[0], user: response.body.user };
+  };
+  const nia = await register(""), mia = await register("Mia");
+  const invitation = await call("/api/partner/invitations", { method: "POST", cookie: mia.cookie });
+  assert.equal((await call("/api/partner/accept", { method: "POST", cookie: nia.cookie, body: { code: invitation.body.pairing.invitation.code } })).status, 200);
+  assert.equal((await call("/api/privacy/first-run", { method: "PUT", cookie: nia.cookie, body: { preferredName: " Nia " } })).status, 204);
+  const me = (await call("/api/auth/me", { cookie: nia.cookie })).body.user;
+  assert.equal(me.name, "Nia"); assert.equal(me.nameSet, true);
+  const seen = (await call("/api/relationship/home", { cookie: mia.cookie })).body.relationship.members.map((member) => member.name).sort();
+  assert.deepEqual(seen, ["Mia", "Nia"]);
+  // A member who chose a name keeps it: the first-run salutation stays private.
+  assert.equal((await call("/api/privacy/first-run", { method: "PUT", cookie: mia.cookie, body: { preferredName: "Mimi" } })).status, 204);
+  assert.equal((await call("/api/auth/me", { cookie: mia.cookie })).body.user.name, "Mia");
+  // Answered before this fix (account name still the placeholder): opening the app catches the account name up.
+  const old = await register("");
+  const settings = createRelationshipRecord({ relationshipId: null, userId: old.user.id, visibility: "private", aiAccessScope: "none", privateRetentionDays: null });
+  settings.id = `account:${old.user.id}`; settings.firstRunName = "Olu"; settings.firstRunCompletedAt = new Date().toISOString();
+  await store.createRelationshipRecord("accountSettings", settings);
+  assert.equal((await call("/api/auth/me", { cookie: old.cookie })).body.user.nameSet, false);
+  assert.equal((await call("/api/privacy/first-run", { cookie: old.cookie })).body.preferredName, "Olu");
+  const caughtUp = (await call("/api/auth/me", { cookie: old.cookie })).body.user;
+  assert.equal(caughtUp.name, "Olu"); assert.equal(caughtUp.nameSet, true);
 });

@@ -3,6 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createRelationshipRecord } from "./relationship-domain.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
 import { coupleStreak, dayIn, validZone } from "./streak.mjs";
+import { anniversaryTitle } from "./together-domain.mjs";
 
 // The iPhone home-screen widget's data (monetize batch 11-06). Inside the App, after sign-in, the web side asks for a widget
 // token and hands it to the native PinkyWidget plugin; the widget then reads GET /api/widget with it, without a cookie.
@@ -39,7 +40,7 @@ export async function widgetData(store, user, now = new Date()) {
   const dates = (await store.listRelationshipRecordsForUser("milestones", user.id)).filter((item) => item.relationshipId === relationshipId && item.visibility === "shared" && !item.archivedAt && DAY_RE.test(String(item.date || "")));
   const since = dates.find((item) => item.type === "relationship_started")?.date;
   if (since && since <= today) data.daysTogether = between(since, today) + 1;
-  const ahead = dates.map((item) => ({ title: String(item.title || "").slice(0, 60), date: item.recurringRule === "yearly" ? nextYearly(item.date, today) : item.type === "meetup" && item.date >= today ? item.date : null })).filter((item) => item.date && item.title).sort((a, b) => a.date.localeCompare(b.date));
+  const ahead = dates.map((item) => ({ title: String(anniversaryTitle(item, language) || "").slice(0, 60), date: item.recurringRule === "yearly" ? nextYearly(item.date, today) : item.type === "meetup" && item.date >= today ? item.date : null })).filter((item) => item.date && item.title).sort((a, b) => a.date.localeCompare(b.date));
   if (ahead[0]) data.next = { title: ahead[0].title, date: ahead[0].date, inDays: between(today, ahead[0].date) };
   const { days, me, partner } = await coupleStreak(store, relationshipId, { userId: user.id, timezone: zone, now });
   data.streak = { days, me, partner };

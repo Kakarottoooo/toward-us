@@ -4,11 +4,12 @@ import { dayIn, shiftDay, validZone } from "./streak.mjs";
 const GOALS = { cards: 3, games: 1, notes: 2 };
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
-function weekOf(conversation, members, now) {
-  // Both people use the same week, including when their own devices are on different dates.
-  const primary = members.find((member) => member.role === "A") || members[0];
-  const partner = members.find((member) => member.userId !== primary.userId);
-  const timezone = validZone(conversation?.zones?.[primary.userId]) || validZone(conversation?.zones?.[partner?.userId]) || "UTC";
+export function weekOf(conversation, members, now, readerId = null) {
+  // Each reader's card runs Monday to Sunday in their own time zone (QA round 6): a partner abroad no longer sees a week that
+  // starts on their Sunday evening. Without a saved zone for the reader, the partner's, then UTC.
+  const reader = members.find((member) => member.userId === readerId) || members.find((member) => member.role === "A") || members[0];
+  const partner = members.find((member) => member.userId !== reader.userId);
+  const timezone = validZone(conversation?.zones?.[reader.userId]) || validZone(conversation?.zones?.[partner?.userId]) || "UTC";
   const today = dayIn(now, timezone);
   const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
   const start = shiftDay(today, -((weekday + 6) % 7));
@@ -91,7 +92,7 @@ export function createPlayWeekRouter({ store }) {
       store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId),
       store.listRelationshipRecordsForUser("matches", userId),
     ]);
-    const week = weekOf(conversation, context.members, new Date());
+    const week = weekOf(conversation, context.members, new Date(), userId);
     const result = await weeklyActivity(store, { conversation, matches, relationshipId, userId, members: context.members, week });
     return res.json({ ...week, targets: GOALS, ...result });
   });
