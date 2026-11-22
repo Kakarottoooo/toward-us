@@ -44,7 +44,10 @@ export async function membershipFor(store, userId, { now = new Date(), purchases
   }).sort((a, b) => Date.parse(b.until) - Date.parse(a.until));
   const best = active[0] || null;
   const owned = [...new Set(records.filter((record) => record.kind === "outfit" && OUTFITS.includes(record.outfit)).map((record) => record.outfit))];
-  return { plan: best ? "member" : "free", until: best?.until || null, source: best?.source || null, paidBy: best?.ownerUserId || null, members, outfits: best ? [...OUTFITS] : owned };
+  // Every outfit is free for every couple (founder 2026-11-22: outfits are a basic feature; membership only raises the AI
+  // allowance). `owned` is kept for the record of past purchases.
+  void owned;
+  return { plan: best ? "member" : "free", until: best?.until || null, source: best?.source || null, paidBy: best?.ownerUserId || null, members, outfits: [...OUTFITS] };
 }
 
 // ── Apple: StoreKit 2 signed transactions ───────────────────────────────────────────────────────────────────────────────

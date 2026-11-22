@@ -93,7 +93,6 @@ export function MembershipPage({ language, userId, partnerName, onInvite }: { la
   const perks = [
     t("每天和 Ourever 聊得更多、打电话更久", "More with Ourever every day, and longer calls", "Más con Ourever cada día y llamadas más largas"),
     t("导入更多聊天记录，让 Ourever 看懂你们", "Import more chat history for Ourever to understand you", "Importa más historial para que Ourever los entienda"),
-    t("小家伙的全部装扮", "Every outfit for your little one", "Todos los atuendos para su pequeño"),
     t(partnerName ? `一个人开通，你和 ${partnerName} 都能用` : "一个人开通，两个人都能用", partnerName ? `One of you pays; you and ${partnerName} both get it` : "One of you pays; you both get it", partnerName ? `Uno paga; tú y ${partnerName} lo tienen` : "Uno paga; los dos lo tienen"),
   ];
   return <div className="membership" data-testid="membership-page">
