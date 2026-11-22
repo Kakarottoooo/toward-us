@@ -18,7 +18,7 @@ export function Wardrobe({ language, userId, onWear, onMembership }: { language:
   useEffect(() => { if (!store) return; void store.products({ ids: OUTFIT_IDS.map((id) => `us.toward.pinky.outfit.${id}`) }).then(({ products }) => setPrices(Object.fromEntries(products.map((item) => [item.id, item.displayPrice])))).catch(() => {}); }, []);
   if (!data) return null;
   const owned = new Set(data.outfits.owned), worn = data.outfits.equipped;
-  const available = ios ? OUTFIT_IDS.filter((id) => owned.has(id)) : OUTFIT_IDS;
+  const available = OUTFIT_IDS; // every outfit is free (founder 2026-11-22)
   if (!available.length) return null;
   const wear = async (id: OutfitId | null) => {
     setBusy(id || "off"); setNotice("");
@@ -49,7 +49,6 @@ export function Wardrobe({ language, userId, onWear, onMembership }: { language:
         <small>{on ? <><Check size={12} weight="bold" />{t("穿着", "Wearing", "Puesto")}</> : mine ? t("穿上", "Wear", "Poner") : price(id)}</small>
       </button>;
     })}</div>
-    {!ios && data.plan !== "member" && <button type="button" className="wardrobe-member" onClick={onMembership} data-testid="wardrobe-membership"><Crown size={16} weight="fill" />{t("开通会员，全部装扮都能穿", "Members get every outfit", "Los miembros tienen todos los atuendos")}</button>}
     {notice && <p className="wardrobe-note" role="status">{notice}</p>}
   </section>;
 }
