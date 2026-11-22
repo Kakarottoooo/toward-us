@@ -12,3 +12,8 @@
 .feedback-launch small { position: absolute; right: -1px; top: -5px; background: #792c50; color: white; padding: 2px 5px; border-radius: 10px; font: 600 11px system-ui; }
 .feedback-screenshot { top: auto; bottom: 17%; display: flex; border-radius: 12px; padding: 3px 6px; }
 .feedback-screenshot button { border: 0; background: transparent; color: inherit; padding: 8px; min-height: 44px; cursor: pointer; }
+/* Never over the menu, a sheet or a game: those cover the screen, and the button would sit on their counters and boards. */
+body:has(.conversation-drawer-layer, .sheet-overlay, [data-layer-open]) .feedback-launch { display: none; }
+/* On a page with a header the button sits in the header's empty right corner, beside the title, instead of over the page. */
+.mobile-app-viewport:has(> .relationship-shell > .page-header) > .feedback-launch { top: calc(max(12px, env(safe-area-inset-top)) + 2px); right: 10px; box-shadow: none; }
+.mobile-app-viewport:has(> .offline-banner):has(> .relationship-shell > .page-header) > .feedback-launch { top: calc(env(safe-area-inset-top) + 34px + max(12px, env(safe-area-inset-top)) + 2px); }

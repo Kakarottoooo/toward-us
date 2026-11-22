@@ -82,7 +82,7 @@ const freshLines = (messages, cursor, eligible) => {
   const more = Boolean(cursor) && pending.length > SCAN_LIMIT;
   const fresh = cursor ? pending.slice(0, SCAN_LIMIT) : pending.slice(-SCAN_LIMIT);
   const start = fresh.length ? messages.indexOf(fresh[0]) : -1;
-  return { fresh, more, last: more ? fresh.at(-1) : messages.at(-1), before: start > 0 ? messages.slice(Math.max(0, start - SCAN_CONTEXT), start).filter((item) => item.text) : [] };
+  return { fresh, more, last: more ? fresh.at(-1) : messages.at(-1), before: start > 0 ? messages.slice(Math.max(0, start - SCAN_CONTEXT), start).filter((item) => item.text && !item.noAi) : [] };
 };
 
 /** Writes verified facts in one scope (a member's private notes, or the couple's shared ones). Returns what changed. */
@@ -268,7 +268,7 @@ export async function scanTogetherProfile({ store, mediator, relationshipId, use
   if (!activePair(context, relationshipId)) return [];
   const conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, userId);
   const messages = conversation?.messages || [];
-  const { fresh, more, last, before } = freshLines(messages, conversation?.profileScan, (item) => item.role === "member" && item.kind === "text" && Boolean(squash(item.text)));
+  const { fresh, more, last, before } = freshLines(messages, conversation?.profileScan, (item) => item.role === "member" && item.kind === "text" && !item.noAi && Boolean(squash(item.text)));
   if (!last || (!fresh.length && conversation.profileScan?.messageId === last.id)) return [];
   const byRole = (role) => context.members.find((member) => member.role === role);
   let findings = [];

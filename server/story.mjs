@@ -59,7 +59,7 @@ export function storyMaterial(snapshot, relationshipId, members, week = null) {
       keptCommitments: (snapshot.commitments || []).filter((item) => shared(item) && ["completed", "kept"].includes(item.status) && inWeek(item.updatedAt)).map(({ description }) => description).slice(0, 20),
       chatHistory: [],
       // Daily questions only once both answered, with both answers; an unanswered one is not part of their week.
-      week: { from: week.from, to: week.to, conversation: messages.filter((message) => ["member", "agent"].includes(message.role) && inWeek(message.createdAt) && (message.kind !== "daily_question" || Object.keys(message.answers || {}).length >= 2)).map((message) => message.kind === "daily_question"
+      week: { from: week.from, to: week.to, conversation: messages.filter((message) => ["member", "agent"].includes(message.role) && !message.noAi && inWeek(message.createdAt) && (message.kind !== "daily_question" || Object.keys(message.answers || {}).length >= 2)).map((message) => message.kind === "daily_question"
         ? { from: "daily question", text: String(message.text || "").slice(0, 200), answers: Object.entries(message.answers).map(([userId, answer]) => ({ from: name(userId), text: String(answer.text || "").slice(0, 300) })), date: message.createdAt.slice(0, 10) }
         : { from: message.role === "agent" ? "Ourever" : name(message.actorUserId), text: String(message.text || "").slice(0, 200), date: message.createdAt.slice(0, 10) }).slice(-60) },
     };

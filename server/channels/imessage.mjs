@@ -183,7 +183,7 @@ export function createIMessageChannel({ store, assistant, mediator, sendblue = d
     try {
       // A partner looking at Us in the App sees Pinky working on the group's message too (the founder, 11-03).
       const progress = activity ? activity.forCouple(relationshipId) : () => {};
-      const turn = await asAiUser({ userId, language }, () => continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated"), progress })).finally(() => progress(null));
+      const turn = await asAiUser({ userId, language }, () => continueTogetherTurn({ store, mediator, relationshipId, actorUserId: userId, text, source: "imessage", handle: `imessage:${handle}`, language, emit: (conversation) => emit(conversation, "together.updated"), progress, deferScreening: true })).finally(() => progress(null));
       if (!turn.duplicate) void recordUsage(store, { userId, relationshipId, action: "together_message", channel: "imessage" });
       // The group has no "send for approval" button: a draft the member just asked for is posted as the card both approve.
       if (turn.reply && turn.conversation.draftAgreement?.messageId === turn.reply.id) {

@@ -40,6 +40,14 @@ export async function screenText(value, direction = "input") {
   for (let i = 0; i < chunks.length; i += 8) await screen(chunks.slice(i, i + 8), direction);
 }
 
+/** Founder 11-22: a partner's own words to the other partner are delivered even while screening is unavailable, and
+ * screened afterwards (together-domain screenDeferredMessages). Opt-in for that path only; every other caller stays
+ * fail-closed through screenText. Resolves null when screened, or the unavailable error when screening was deferred. */
+export async function screenTextOrDefer(value) {
+  try { await screenText(value); return null; }
+  catch (error) { if (error?.code === "ai_screening_unavailable") return error; throw error; }
+}
+
 export async function screenImage(bytes, mime) {
   if (!servingAiAccounts()) return;
   await screen([{ type: "image_url", image_url: { url: `data:${mime};base64,${bytes.toString("base64")}` } }], "input");

@@ -46,7 +46,7 @@ export function AiConsentScreen({ language, onAgreed, onDecline, header }: { lan
       <LegalLinks language={language} />
       {notice && <p className="form-notice" role="alert">{notice}</p>}
       <button type="button" className="primary-action" disabled={busy} onClick={() => void agree()} data-testid="ai-consent-agree">{busy ? t("正在保存…", "Saving…", "Guardando…") : t("同意并继续", "Agree and continue", "Aceptar y continuar")}</button>
-      <button type="button" className="secondary-action" disabled={busy} onClick={onDecline} data-testid="ai-consent-decline">{t("暂不同意，进入账号设置", "Not now, open account settings", "Ahora no, abrir ajustes de cuenta")}</button>
+      <button type="button" className="secondary-action" disabled={busy} onClick={onDecline} data-testid="ai-consent-decline">{t("暂不同意，先不用 AI", "Not now, continue without AI", "Ahora no, seguir sin IA")}</button>
     </main>
   </MobileScroll>;
 }

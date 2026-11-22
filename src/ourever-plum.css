@@ -138,3 +138,23 @@ html:not(:has(#root *)), html:not(:has(#root *)) body { background: #300e29; }
 /* Signed-in pages: the iOS shell paints the status-bar and home-indicator areas in the body colour and ignores a
    transparent body, so without this they stayed plum after the welcome screen (founder 11-21). Entry rules above win. */
 body { background: var(--jian-paper, #f4efe6); }
+
+/* Keyboard focus stays visible everywhere, including the chat (the phone runtime removes outlines on every element).
+   :focus-visible only matches keyboard focus on controls; text fields show their caret instead. */
+.device-screen :is(button, a, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"]), summary, select, input[type="checkbox"], input[type="radio"]):focus-visible {
+  outline: 2px solid #3f6fd8 !important;
+  outline-offset: 2px;
+}
+
+/* The photo tray's remove buttons are small marks in each photo's corner; the tap area around them stays generous. */
+.composer-photos figure > button { top: 3px; right: 3px; width: 22px; height: 22px; min-width: 0; min-height: 0; border-width: 1.5px; }
+.composer-photos figure > button::before { content: ""; position: absolute; inset: -8px; }
+
+/* Narrow phones (320px) and large text: the two channel tabs share the room, dropping their icons and wrapping a long
+   name onto a second line rather than running into each other. 390px and wider look the same as before. */
+@media (max-width: 359px) {
+  .conversation-header { padding-right: 10px; padding-left: 10px; }
+  .conversation-topline { gap: 2px; }
+  .conversation-segments button { gap: 2px; padding: 0 2px; font-size: 13px; line-height: 1.1; white-space: normal; hyphens: auto; overflow-wrap: anywhere; text-align: center; }
+  .conversation-segments button > svg { display: none; }
+}

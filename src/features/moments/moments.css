@@ -230,6 +230,8 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .ideas-poster-cats button { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 11px; border: 0; border-radius: 17px; background: var(--t, #f1ebe2); color: var(--i, #5d574f); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
 .ideas-poster-cats button.is-on { box-shadow: inset 0 0 0 2px var(--i, #3f3326); }
 .device-screen .ideas-poster-cats button { min-height: 34px; }
+.ideas-poster-cats button { position: relative; }
+.ideas-poster-cats button::before { content: ""; position: absolute; inset: -5px 0; border-radius: inherit; }
 .ideas-surprise { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 26px; background: #e0405a; color: #fff; font: inherit; font-size: 17px; font-weight: 750; cursor: pointer; }
 .ideas-surprise:disabled { opacity: .5; cursor: default; }
 .ideas-surprise:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }

@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { BottomSheet } from "../../mobile";
 import { localized, type Language } from "../../i18n";
 import { canPromptInstall, inAppBrowser, isIOS, isStandalone, onInstallPromptChange, promptInstall } from "./webPush";
-import { nativePushPlugin } from "./nativePush";
+import { inNativeApp, nativePushPlugin } from "./nativePush";
+import { inIosApp } from "../membership/platform";
 
 const SEEN_KEY = "toward-us-install-hint-seen";
 const seen = () => { try { return localStorage.getItem(SEEN_KEY) === "1"; } catch { return true; } };
 const markSeen = () => { try { localStorage.setItem(SEEN_KEY, "1"); } catch { /* storage may be unavailable */ } };
+// The menu, a sheet or another full-screen layer is open: the hint waits until it is closed instead of covering it.
+const somethingOpen = () => Boolean(document.querySelector(".conversation-drawer-layer, [role=dialog], [data-layer-open]"));
 
 /** Once, gently: how to put Ourever on the Home Screen (iPhone: Share → Add to Home Screen; Chrome: its own install prompt).
  * Shown at most once per browser, never inside the App or an already installed web app, never on a desktop, and only after
@@ -15,7 +18,7 @@ export function InstallHint({ language, userId }: { language: Language; userId: 
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [kind, setKind] = useState<"ios" | "inapp" | "prompt" | null>(null);
   useEffect(() => {
-    if (seen() || isStandalone() || nativePushPlugin()) return;
+    if (seen() || isStandalone() || inNativeApp() || inIosApp() || nativePushPlugin()) return;
     // Leave the first signed-in visit free for the private conversation.
     try {
       const visit = "ourever:first-home:" + userId;
@@ -24,6 +27,7 @@ export function InstallHint({ language, userId }: { language: Language; userId: 
     } catch { return; }
     let timer = 0;
     const decide = () => {
+      if (somethingOpen()) { timer = window.setTimeout(decide, 1500); return; }
       setKind((current) => current || (isIOS() ? (inAppBrowser() ? "inapp" : "ios") : canPromptInstall() ? "prompt" : null));
     };
     // A moment after the screen settles, so it never covers the first look at the conversation.

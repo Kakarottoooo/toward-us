@@ -16,6 +16,8 @@
 .upcoming-yearbar { display: flex; align-items: center; gap: 6px; }
 .upcoming-yearbar strong { min-width: 52px; color: var(--jian-ink); font-size: 20px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
 .upcoming-yearbar > button:not(.upcoming-holidays) { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 10px; background: rgba(37,37,37,.06); color: var(--jian-ink); cursor: pointer; }
+.upcoming-yearbar > button:not(.upcoming-holidays) { position: relative; }
+.upcoming-yearbar > button:not(.upcoming-holidays)::before { content: ""; position: absolute; inset: -4px; }
 .upcoming-holidays { margin-left: auto; min-height: 32px; padding: 0 12px; border: 1px solid rgba(37,37,37,.16); border-radius: 16px; background: transparent; color: #6f6860; font-size: 13px; font-weight: 600; cursor: pointer; }
 .upcoming-holidays.on { border-color: transparent; background: #e9e6fb; color: #3f3486; }
 

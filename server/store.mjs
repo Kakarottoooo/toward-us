@@ -355,7 +355,7 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
     async markInvitationAction(code, action, at) {
       const invite = own(state().invitations, code);
       if (action === "sent") invite.sentAt ??= at;
-      else invite.cancelledAt ??= at;
+      else { invite.cancelledAt ??= at; if (action === "decline") invite.declinedAt ??= at; }
       await persist();
     },
     async listInvitationsForJob() { return Object.values(state().invitations).map((invitation) => ({ ...invitation })); },

@@ -354,17 +354,27 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
       const jobs = await owned(store, "deliveryJobs", userId);
       return reminders.map((reminder) => ({ ...reminder, deliveries: jobs.filter((job) => job.reminderId === reminder.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10).map(({ id, status, attempts, acceptedAt, lastErrorCode, dueAt }) => ({ id, status, attempts, acceptedAt, lastErrorCode, dueAt })) }));
     },
-    async createReminder(userId, input) {
+    /** Creates one reminder. A double-submit makes one: a repeat of the same client `itemId` (as in Us messages), or with no
+     * id an identical reminder (same title, time, time zone, frequency and destination) made by the same member within the
+     * last 10 seconds, returns the existing reminder instead. `{ withDuplicate: true }` returns { reminder, duplicate }. */
+    async createReminder(userId, input, { withDuplicate = false } = {}) {
       const values = reminderInput(input, now());
-      return store.transaction(LOCK, async (db) => {
+      const itemId = typeof input.itemId === "string" && /^[A-Za-z0-9_:-]{1,120}$/.test(input.itemId) ? input.itemId : null;
+      const result = await store.transaction(LOCK, async (db) => {
         const reminders = await owned(db, "reminders", userId);
-        if (reminders.filter((item) => active(item) && (item.frequency === "weekly" || !item.lastEnqueuedDueAt)).length >= 100) throw fail("You already have 100 active reminders.", 409, "too_many_reminders");
         const target = input.target || { kind: "reminders" };
+        const same = (item) => itemId ? item.itemId === itemId
+          : !item.itemId && item.title === values.title && item.dueAt === values.dueAt && item.timezone === values.timezone && item.frequency === values.frequency
+            && JSON.stringify(item.target || { kind: "reminders" }) === JSON.stringify(target) && Math.abs(Date.now() - Date.parse(item.createdAt)) < 10_000;
+        const existing = reminders.find(same);
+        if (existing) return { reminder: existing, duplicate: true };
+        if (reminders.filter((item) => active(item) && (item.frequency === "weekly" || !item.lastEnqueuedDueAt)).length >= 100) throw fail("You already have 100 active reminders.", 409, "too_many_reminders");
         const sourceRelationshipId = await validateTarget(db, userId, target);
-        const record = privateRecord(userId, { ...values, target, sourceRelationshipId, scheduleVersion: 1, channel: "web_push" });
+        const record = privateRecord(userId, { ...values, target, sourceRelationshipId, scheduleVersion: 1, channel: "web_push", ...(itemId ? { itemId } : {}) });
         await db.createRelationshipRecord("reminders", record);
-        return record;
+        return { reminder: record, duplicate: false };
       });
+      return withDuplicate ? result : result.reminder;
     },
     async updateReminder(userId, id, input) {
       return store.transaction(LOCK, async (db) => {

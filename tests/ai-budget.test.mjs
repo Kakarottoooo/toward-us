@@ -257,3 +257,95 @@ test("a capped Us turn keeps the member's words and answers with the localized l
     if (previous === undefined) delete process.env.REMINDER_RUN_SECRET; else process.env.REMINDER_RUN_SECRET = previous;
   }
 });
+
+// Founder 11-22: while safety screening is unavailable, a partner's own words to the other partner are still delivered, and
+// screened once it is back. Pinky never answers unscreened words, and every other caller stays fail-closed.
+async function deferredScreeningCouple(t) {
+  let moderation = "down";
+  const realFetch = globalThis.fetch, previousKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "local-moderation-fixture";
+  t.mock.method(globalThis, "fetch", async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.hostname === "127.0.0.1") return realFetch(input, init);
+    assert.equal(url.href, "https://api.openai.com/v1/moderations");
+    if (moderation === "down") return new Response("unavailable", { status: 503 });
+    const count = JSON.parse(init.body).input.length;
+    return Response.json({ results: Array.from({ length: count }, () => moderation === "flag" ? { flagged: true, categories: { harassment: true } } : { flagged: false }) });
+  });
+  const turns = [];
+  const server = createApiApp({ store, mediator: { aiReady: true, model: "fake", continueTogether: async () => { turns.push(1); return { reply: "Sure.", draftAgreement: null, actions: [] }; } } }).listen(0, "127.0.0.1");
+  t.after(async () => {
+    server.closeAllConnections(); await new Promise((resolve) => server.close(resolve));
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
+  });
+  await new Promise((resolve) => server.once("listening", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, who, body) => {
+    const response = await realFetch(`${base}/api${path}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", cookie: who.cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  const register = async (name) => {
+    const response = await realFetch(`${base}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, adultConfirmed: true, email: `deferred-${++counter}@example.com`, password: "correct horse battery" }) });
+    return { ...(await response.json()), cookie: response.headers.get("set-cookie").split(";")[0] };
+  };
+  const a = await register("Alex"), b = await register("Blair");
+  for (const person of [a, b]) assert.equal((await call("/privacy/ai-consent", person, { agree: true, noticeVersion: AI_NOTICE_VERSION })).status, 200);
+  const invitation = await call("/partner/invitations", a, {});
+  await call("/partner/accept", b, { code: invitation.body.pairing.invitation.code });
+  const relationshipId = (await store.getRelationshipContext(a.user.id)).relationship.id;
+  const conversation = () => store.getRelationshipRecordForUser("togetherConversations", `together:${relationshipId}`, a.user.id);
+  const say = (text) => call("/together/messages", a, { text, itemId: randomUUID(), language: "en" });
+  return { a, b, call, say, conversation, turns, set: (value) => { moderation = value; } };
+}
+
+test("screening down: a partner's message is delivered and queued, Pinky stays quiet, and the queue clears once screening is back", async (t) => {
+  const { screenDeferredMessages } = await import("../server/together-domain.mjs");
+  const { screenText } = await import("../server/ai-screening.mjs");
+  const f = await deferredScreeningCouple(t);
+  const sent = await f.say("see you at 7");
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  assert.equal(sent.body.screeningDeferred, true);
+  const asked = await f.say("@Ourever plan our weekend?");
+  assert.equal(asked.status, 201);
+  assert.equal(asked.body.reply, null, "unscreened words never reach the model");
+  assert.equal(f.turns.length, 0);
+  const seen = (await f.call("/together?language=en", f.b)).body.conversation.messages.map((item) => item.text);
+  assert.ok(seen.includes("see you at 7") && seen.includes("@Ourever plan our weekend?"), "the partner sees both");
+  assert.deepEqual((await f.conversation()).screeningQueue.map((entry) => entry.messageId), [sent.body.message.id, asked.body.message.id]);
+  // Every other caller keeps the fail-closed default.
+  await assert.rejects(asAiUser({ userId: f.a.user.id }, () => screenText("hello")), { code: "ai_screening_unavailable" });
+  // Still down: nothing settles, nothing is lost.
+  await screenDeferredMessages({ store });
+  assert.equal((await f.conversation()).screeningQueue.length, 2);
+  // Back: each queued message is screened once and leaves the queue; passing messages stay as they were.
+  f.set("ok");
+  const notes = [];
+  assert.deepEqual(await screenDeferredMessages({ store, postNote: async (...args) => notes.push(args) }), { screened: 2, removed: 0 });
+  const after = await f.conversation();
+  assert.deepEqual(after.screeningQueue, []);
+  assert.ok(after.messages.some((item) => item.id === sent.body.message.id && item.text === "see you at 7" && !item.removedAt));
+  assert.deepEqual(notes, []);
+  assert.deepEqual(await screenDeferredMessages({ store }), { screened: 0, removed: 0 }, "idempotent");
+});
+
+test("a deferred message that fails screening afterwards is removed for both partners and its author is told", async (t) => {
+  const { screenDeferredMessages } = await import("../server/together-domain.mjs");
+  const f = await deferredScreeningCouple(t);
+  const sent = await f.say("deferred words that will not pass");
+  assert.equal(sent.status, 201);
+  f.set("flag");
+  // The synchronous path refuses the same content outright.
+  assert.equal((await f.say("words that will not pass")).status, 422);
+  const notes = [], pushes = [], emitted = [];
+  assert.deepEqual(await screenDeferredMessages({ store, emit: (record) => emitted.push(record), postNote: async (...args) => notes.push(args), notify: async (...args) => pushes.push(args) }), { screened: 1, removed: 1 });
+  const line = (await f.conversation()).messages.find((item) => item.id === sent.body.message.id);
+  assert.equal(line.text, "");
+  assert.equal(line.removedReason, "screening");
+  assert.ok(line.removedAt);
+  assert.deepEqual((await f.conversation()).screeningQueue, []);
+  assert.ok(!JSON.stringify((await f.call("/together?language=en", f.b)).body).includes("will not pass"), "the partner no longer sees it");
+  assert.equal(emitted.length, 1);
+  assert.deepEqual(notes.map(([userId, note]) => [userId, note.language]), [[f.a.user.id, "en"]]);
+  assert.match(notes[0][1].text, /did not pass safety screening/);
+  assert.deepEqual(pushes.map(([userId]) => userId), [f.a.user.id]);
+});

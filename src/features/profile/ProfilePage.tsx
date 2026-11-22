@@ -5,6 +5,7 @@ import { BottomSheet, KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { PlayWeek } from "../games/PlayWeek";
 import "./profile.css";
+import { relationshipEvents } from "../relationship/events";
 
 type Category = "food" | "likes" | "dislikes" | "wishes" | "traits" | "people" | "history" | "other";
 type Fact = { id: string; version: number; text: string; category: Category; subject: "me" | "partner" | "us"; source: "mine" | "together" | "i_shared" | "partner_shared"; quote: string | null; sharedAt: string | null; updatedAt: string };
@@ -62,7 +63,7 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
   }, [language]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const events = new EventSource("/api/relationship/events");
+    const events = relationshipEvents();
     events.addEventListener("relationship", (event) => { try { if (JSON.parse((event as MessageEvent).data).eventType === "profile.updated") void load(); } catch { /* Ignore malformed events. */ } });
     return () => events.close();
   }, [load]);

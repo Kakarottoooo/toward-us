@@ -37,7 +37,9 @@ async function setup(t) {
 
 test("only the founder makes codes and sees the board", async (t) => {
   const { ids, request } = await setup(t);
-  assert.equal((await request("/founder/beta", "GET", null, ids.a)).status, 404);
+  const notFounder = await request("/founder/beta", "GET", null, ids.a);
+  assert.equal(notFounder.status, 200, "settings asks for every member; anyone else gets a plain no, not a 404");
+  assert.deepEqual(notFounder.body, { founder: false }, "nothing from the board leaks to anyone else");
   assert.equal((await request("/founder/beta/codes", "POST", { count: 1 }, ids.a)).status, 404);
   const made = await request("/founder/beta/codes", "POST", { count: 2, note: "小王和女朋友" });
   assert.equal(made.status, 201); assert.equal(made.body.codes.length, 2); assert.match(made.body.codes[0].code, /^OUREVER-[A-Z2-9]{6}$/);

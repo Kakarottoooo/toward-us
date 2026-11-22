@@ -224,6 +224,15 @@ after(async () => {
   await rm(temporaryDirectory, { recursive: true, force: true });
 });
 
+test("/healthz answers with the same JSON as /api/health, not the web app", async () => {
+  const health = await rawRequest("/api/health"), healthz = await rawRequest("/healthz");
+  assert.equal(healthz.status, 200);
+  assert.match(healthz.headers.get("content-type"), /application\/json/);
+  assert.equal(healthz.headers.get("cache-control"), "no-store");
+  assert.deepEqual(healthz.payload, health.payload);
+  assert.equal(healthz.payload.ok, true);
+});
+
 test("a connected photo album can send the times and places of thousands of photos in one plan", async () => {
   const assets = Array.from({ length: 6000 }, (_, index) => ({ id: `${String(index).padStart(5, "0")}-ABCDEF01-2345-6789-ABCD-EF0123456789/L0/001`, takenAt: "2024-05-01T10:00:00Z", day: "2024-05-01", lat: 34.0123, lon: -118.4912 }));
   const response = await fetch(`${baseUrl}/api/photo-memories/plan`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assets }) });

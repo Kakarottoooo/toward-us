@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { offlineServerEnv } from "./tests/helpers/offline-server-env.mjs";
 
 const port = Number(process.env.PINKY_TEST_PORT || 5181);
 
@@ -19,8 +20,7 @@ export default defineConfig({
     timeout: 120_000,
     reuseExistingServer: false,
     env: {
-      OPENAI_API_KEY: "",
-      DATABASE_URL: "",
+      ...offlineServerEnv(`work/relationship-e2e/${port}`),
       PORT: String(port),
       TOWARD_US_DATA_FILE: process.env.PINKY_TEST_DATA_FILE || "data/relationship-agent.e2e.json",
     },

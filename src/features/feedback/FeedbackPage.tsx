@@ -13,7 +13,7 @@ import {
 } from "./feedbackQueue";
 import "./feedback.css";
 
-type Props = { language: Language; from: string; onBack: () => void; userId: string; activity?: string; initialFile?: File };
+type Props = { language: Language; from: string; onBack: () => void; backLabel?: string; userId: string; activity?: string; initialFile?: File };
 const types = ["image/png", "image/jpeg", "image/webp", "image/heic"];
 const accepted = (file: File) => file.size > 0 && file.size <= 5 * 1024 * 1024 &&
   (types.includes(file.type.toLowerCase()) || (!file.type && /\.(png|jpe?g|webp|heic)$/i.test(file.name)));
@@ -38,7 +38,7 @@ function Shot({ file, label, remove, removeLabel }: { file: File; label: string;
 // Remount the entire private form if the selected account changes.
 export function FeedbackPage(props: Props) { return <OwnedFeedbackPage key={props.userId} {...props} />; }
 
-function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFile }: Props) {
+function OwnedFeedbackPage({ language, from, onBack, backLabel, userId, activity, initialFile }: Props) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
   const [initial] = useState(() => ({ from, language, file: initialFile, context: getFeedbackContext(from, language) }));
@@ -178,7 +178,7 @@ function OwnedFeedbackPage({ language, from, onBack, userId, activity, initialFi
   const retry = t("重试", "Retry", "Reintentar");
   const localAction = (task: Promise<void>) => void task.catch(() => setStorageError(true));
   return <div className="paper-screen relationship-shell feedback-screen">
-    <PageHeader language={language} title={t("反馈", "Feedback", "Comentarios")} onBack={() => beforeBack.current ? beforeBack.current(onBack) : onBack()} />
+    <PageHeader language={language} title={t("反馈", "Feedback", "Comentarios")} backLabel={backLabel} onBack={() => beforeBack.current ? beforeBack.current(onBack) : onBack()} />
     <main className="relationship-main"><div className="feedback-body" data-testid="feedback-screen">
       <fieldset className="feedback-fields" disabled={!ready || busy}>
         <legend>{t("反馈类型", "Feedback type", "Tipo de comentario")}</legend>

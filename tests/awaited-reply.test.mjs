@@ -38,12 +38,15 @@ async function setup(t, mediator) {
   app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
   const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
   t.after(() => new Promise((r) => server.close(r)));
+  const post = async (userId, text, itemId = randomUUID()) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/together/messages`, { method: "POST", headers: { "content-type": "application/json", "x-user": userId }, body: JSON.stringify({ text, itemId, language: "zh", timezone: "UTC" }) });
+    return { status: response.status, body: await response.json() };
+  };
   const say = async (userId, text) => {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/together/messages`, { method: "POST", headers: { "content-type": "application/json", "x-user": userId }, body: JSON.stringify({ text, itemId: randomUUID(), language: "zh", timezone: "UTC" }) });
-    const body = await response.json(); assert.ok(response.status < 300, JSON.stringify(body));
+    const { status, body } = await post(userId, text); assert.ok(status < 300, JSON.stringify(body));
     return body.conversation.messages;
   };
-  return { ids, say };
+  return { ids, say, post };
 }
 const action = (kind) => ({ kind, operation: "create", targetId: null, spaceId: null, title: null, text: null, date: null, layout: null, done: null, recurringRule: "once", remindDaysBefore: null, photoId: null, localDateTime: null, idea: null });
 
@@ -69,4 +72,21 @@ test("a normal reply that asks Mia something by name waits for her", async (t) =
   await say(ziwei, "@Pinky 帮我们定个周末吃饭的时间");
   const messages = await say(mia, "可以呀");
   assert.equal(messages.at(-1).text, "好，那就周六。");
+});
+
+test("a message resent with the same itemId (the App coming back online) is stored once and answered once", async (t) => {
+  let turns = 0;
+  const mediator = { continueTogether: async () => { turns += 1; return { reply: "周六见。", actions: [], draftAgreement: null, waitingFor: [] }; } };
+  const { ids: [ziwei, mia], post } = await setup(t, mediator);
+  const first = await post(ziwei, "@Pinky 我们周末去哪儿", "offline-1");
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+  const again = await post(ziwei, "@Pinky 我们周末去哪儿", "offline-1");
+  assert.equal(again.status, 200, "the resend is recognised, not stored again");
+  assert.equal(again.body.message.id, first.body.message.id, "it returns the message already kept");
+  const messages = again.body.conversation.messages;
+  assert.equal(messages.filter((item) => item.role === "member").length, 1);
+  assert.equal(messages.filter((item) => item.role === "agent").length, 1, "Pinky answered once");
+  assert.equal(turns, 1, "the model was not asked twice");
+  const hers = await post(mia, "我想去海边", "offline-1");
+  assert.equal(hers.status, 201, "the same id from the other member is her own message");
 });

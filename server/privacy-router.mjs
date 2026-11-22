@@ -31,7 +31,7 @@ export async function setAiConsent(tx, userId, agree, at = new Date().toISOStrin
   return agree ? at : null;
 }
 
-export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onAiWithdrawal = async () => {}, email = createEmailSender(), oauthProviders }) {
+export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onPairingEnded = async () => {}, onAiWithdrawal = async () => {}, email = createEmailSender(), oauthProviders }) {
   const router = express.Router(); const attempts = new Map();
   const limited = (key) => {
     const now = Date.now(); const recent = (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000);
@@ -167,7 +167,9 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       return res.status(400).json({ code: "invalid_password_length" });
     if (name === undefined && newPassword === undefined) return res.status(400).json({ code: "invalid_input" });
     await store.transaction(`user:${userId}`, async tx => {
-      await reauthenticate(req, tx);
+      // A new display name is everyday profile editing, like the private salutation above; only a password change
+      // re-checks the current password (or a fresh provider sign-in).
+      if (newPassword !== undefined) await reauthenticate(req, tx);
       if (name !== undefined) await tx.updateUserName(userId, name.trim());
       if (newPassword !== undefined) {
         await tx.updateUserPassword(userId, await hashPassword(newPassword));
@@ -261,7 +263,9 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   router.post("/privacy/leave", async (req, res) => {
     confirm(req); const context = await store.getRelationshipContext(req.auth.user.id);
     const ended = await store.transaction(context ? `relationship:${context.relationship.id}` : `user:${req.auth.user.id}`, async (tx) => { await reauthenticate(req, tx); return tx.leaveRelationship(req.auth.user.id); });
-    if (ended) closeConnections(ended.memberIds);
+    // Both members hear "pairing.updated" (status "ended") before their streams close, and their Just me greetings stop
+    // naming each other.
+    if (ended) { await onPairingEnded(ended.memberIds, ended.relationshipId); closeConnections(ended.memberIds); }
     await audit(store, req.auth.user.id, "relationship.left"); res.json({ ended: Boolean(ended) });
   });
   router.delete("/privacy/account", async (req, res) => {
@@ -281,6 +285,8 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       await tx.deleteAccount(req.auth.user.id); return paths;
     });
     await removeFiles(files);
+    // The partner left behind hears the pairing ended, and their Just me greeting no longer names the deleted account.
+    if (context && context.members.length > 1) await onPairingEnded(context.members.map((member) => member.userId), context.relationship.id).catch(() => {});
     closeConnections(context?.members.map((member) => member.userId) || [req.auth.user.id]);
     await onAiWithdrawal(req.auth.user.id).catch(() => {});
     clearSessionCookie(res, production); res.status(204).end();

@@ -4,6 +4,7 @@ import { languageTag, localized, type Language } from "../../i18n";
 import { PageHeader } from "../conversation/ConversationHome";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./spaces.css";
+import { relationshipEvents } from "../relationship/events";
 
 export type SpaceItem = { id: string; title: string; text: string; date: string | null; done: boolean; photoId?: string | null; createdAt: string; version: number };
 export type Space = { id: string; title: string; system?: string; layout: "list" | "checklist" | "timeline" | "gallery" | "notes"; description: string; visibility: string; version: number; updatedAt: string; items: SpaceItem[] };
@@ -20,7 +21,7 @@ export function SpacePage({ id, language, onBack, onAsk }: { id: string; languag
   }, [id, language]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const events = new EventSource("/api/relationship/events");
+    const events = relationshipEvents();
     events.addEventListener("relationship", (event) => { try { if (/^space/.test(JSON.parse((event as MessageEvent).data).eventType)) void load(); } catch { /* Ignore malformed events. */ } });
     return () => events.close();
   }, [load]);

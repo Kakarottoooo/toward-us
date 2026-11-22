@@ -7,7 +7,7 @@ import { jsonBody, relationshipApi } from "../relationship/api";
 import { Avatar, plainName, type PeopleState, type Person } from "./People";
 import "./people-page.css";
 
-export function PeoplePage({ language, initialPerson, archived = false, onBack, onAsk, onChat }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void; onChat: (personId: string) => void }) {
+export function PeoplePage({ language, initialPerson, archived = false, onBack, backLabel, onAsk, onChat }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; backLabel?: string; onAsk: (text: string, channel: "me" | "us") => void; onChat: (personId: string) => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [personId, setPersonId] = useState(initialPerson);
   const [directory, setDirectory] = useState<PeopleState | null>(null);
@@ -54,7 +54,7 @@ export function PeoplePage({ language, initialPerson, archived = false, onBack, 
   const people = directory?.people.filter((person) => !archived || person.archived) || [];
   const title = archived ? t("以前的档案", "Earlier people", "Personas anteriores") : t("在了解的人", "People I'm seeing", "Personas que conozco");
   return <div className="paper-screen relationship-shell people-screen" data-testid={personId ? "person-page" : archived ? "people-earlier" : "people-page"}>
-    <PageHeader language={language} title={personId && detail ? detail.name : title} onBack={personId ? closeDetail : onBack} />
+    <PageHeader language={language} title={personId && detail ? detail.name : title} onBack={personId ? closeDetail : onBack} backLabel={personId ? title : backLabel} />
     <main className="relationship-main people-main">
       {error && <div role="alert" className="people-error">{error} <button type="button" className="people-secondary" onClick={() => setRefresh((value) => value + 1)}>{t("重试", "Retry", "Reintentar")}</button></div>}
       {(personId ? !detail : !directory) && !error && <p className="people-muted">{t("正在打开…", "Opening…", "Abriendo…")}</p>}

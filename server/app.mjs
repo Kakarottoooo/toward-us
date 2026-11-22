@@ -49,6 +49,7 @@ import { createHandoffRouter } from "./handoff.mjs";
 import { createChatImportRouter } from "./chat-import.mjs";
 import { createVoiceCallRouter } from "./voice-call.mjs";
 import { sendHeadsUps } from "./heads-up.mjs";
+import { screenDeferredMessages } from "./together-domain.mjs";
 import { createSuggestionsRouter } from "./suggestions-router.mjs";
 import { createPromiseKeeper, createPromisesRouter } from "./promises.mjs";
 import { createProfileKeeper, createProfileRouter } from "./profile.mjs";
@@ -59,6 +60,7 @@ import { createFeedbackRouter } from "./feedback-router.mjs";
 import { createLegalRouter } from "./legal-router.mjs";
 import { attachReferral, recordPartnerSignup, referralPage, referralPreview, referralReport, rememberReferralInstall } from "./referrals.mjs";
 import { currentInvitation, invitationStatus, inviteProblem, partnerCode } from "./partner-invites.mjs";
+import { refreshKnowYou } from "./know-you.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createAppMetricsRouter } from "./app-metrics.mjs";
 import { createWidgetRouter } from "./widget-router.mjs";
@@ -92,6 +94,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   const eventClients = new Map();
   // The scheduler tick announces in the shared conversation; the realtime emitter only exists once the routers are built below.
   let emitTogether = () => {};
+  let pairingChanged = async () => {};
   // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
   let imessage = null;
   const nativePush = reminderService ? null : createNativePush();
@@ -101,7 +104,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   // test service: those tests drive delivery themselves).
   const rituals = reminderService ? null : createCoupleRituals({ store, mediator, reachable: (userId) => reminders.reachable(userId), emit: (conversation) => emitTogether(conversation, "together.updated") });
   const runDue = reminders.runDue.bind(reminders);
-  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await runAiLedgerMaintenance(store).catch((error) => console.error("AI ledger maintenance will retry on the next tick:", error?.code || error?.name || "error")); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); await deliverLetters({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Letters will retry on the next tick.")); await sendHeadsUps({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Heads-ups will retry on the next tick.")); return result; };
+  reminders.runDue = async () => { const result = await runDue(); await runPrivateRetention(store); await runAiLedgerMaintenance(store).catch((error) => console.error("AI ledger maintenance will retry on the next tick:", error?.code || error?.name || "error")); await rituals?.().catch(() => console.error("Couple rituals will retry on the next tick.")); await deliverLetters({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Letters will retry on the next tick.")); await sendHeadsUps({ store, postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Heads-ups will retry on the next tick.")); await screenDeferredMessages({ store, emit: (conversation) => emitTogether(conversation, "together.updated"), postNote: (...args) => assistantRouter.assistant.postNote(...args), notify: (userId, message) => reminders.notifyMember?.(userId, message) }).catch(() => console.error("Deferred Us screening will retry on the next tick.")); return result; };
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
@@ -119,7 +122,9 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     applinks: { details: [{ appIDs: ["693NJRHRV5.us.toward.app"], components: [{ "/": "/", "?": { invite: "????????" } }] }] },
   }));
 
-  app.get("/api/health", async (_req, res) => {
+  // /healthz is the conventional probe path; it answers exactly like /api/health instead of falling through to the web app.
+  app.get(["/api/health", "/healthz"], async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
     try {
       await store.ping();
       res.json({ ok: true, aiReady: mediator.aiReady, model: mediator.model, audioPersistence: "none", storage: store.kind, media: mediaPersistence(), commit: process.env.RENDER_GIT_COMMIT || process.env.BUILD_COMMIT || null });
@@ -613,7 +618,42 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
       return res.status(409).json(inviteProblem(reason, languageOf(req)));
     }
     void imessage?.ensureCoupleGroup(req.auth.user.id);
+    await pairingChanged(context.members.map((member) => member.userId), context.relationship.id, "active");
     res.json({ pairing: publicPairing(context, req.auth.user.id) });
+  });
+
+  // The invitee says no from the invite page, signed in or not (the preview above is public too). The code stops working
+  // (the preview then reports status "declined"), and the inviter hears it at once: "pairing.updated" on their open App
+  // and a push. Limited per address like the referral preview, so codes cannot be swept.
+  const declineRequests = new Map();
+  let declineWindowEnd = 0;
+  app.post("/api/partner/invitations/:code/decline", async (req, res) => {
+    const now = Date.now();
+    if (now >= declineWindowEnd) { declineRequests.clear(); declineWindowEnd = now + 60_000; }
+    const hits = declineRequests.get(req.ip) || 0;
+    if (hits >= 20 || (!hits && declineRequests.size >= 10_000)) return res.set("Retry-After", "60").sendStatus(429);
+    declineRequests.set(req.ip, hits + 1);
+    const code = partnerCode(req.params.code), found = code ? await store.getInvitation(code) : null;
+    if (!found) return res.status(404).json(inviteProblem("invite_invalid", languageOf(req)));
+    if (req.auth?.user?.id === found.createdByUserId) return res.status(409).json(inviteProblem("invite_self", languageOf(req)));
+    const result = await store.transaction(`relationship:${found.relationshipId}`, async (tx) => {
+      const invite = await tx.getInvitation(code);
+      let status = invitationStatus(invite);
+      if (status === "declined") return { status, fresh: false };
+      if (status === "open" && !currentInvitation(await tx.getRelationshipContext(invite.createdByUserId), code)) status = "cancelled";
+      if (status !== "open") return { problem: `invite_${status}` };
+      await tx.markInvitationAction(code, "decline", new Date().toISOString());
+      return { status: "declined", fresh: true };
+    });
+    if (result.problem) return res.status(409).json(inviteProblem(result.problem, languageOf(req)));
+    if (result.fresh) {
+      await pairingChanged([found.createdByUserId], found.relationshipId, "declined", { refresh: false });
+      void Promise.resolve().then(() => reminders.notifyMember?.(found.createdByUserId, {
+        body: { zh: "对方婉拒了这次伴侣邀请。想再试的话，可以随时发一个新链接。", en: "Your partner invitation was declined. You can send a new link anytime.", es: "Tu invitación de pareja fue rechazada. Puedes enviar un enlace nuevo cuando quieras." },
+        url: "/", tag: `pinky-invite-${code}`,
+      })).catch(() => console.error("invite decline push failed"));
+    }
+    res.json({ invitation: { status: "declined" } });
   });
 
   app.use(createPhoneRouter({ store, onBound: (userId) => void imessage?.ensureCoupleGroup(userId) }));
@@ -637,6 +677,13 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   const closeConnections = (userIds) => {
     relationshipRouter.closeUserConnections?.(userIds);
   };
+  // Pairing accepted, declined or ended: the members' open Apps hear it at once ("pairing.updated", see
+  // relationship-router emitToUsers), and the Just me greeting is rewritten so it never names someone who is no longer
+  // their partner (know-you.mjs refreshKnowYou).
+  pairingChanged = async (userIds, relationshipId, status, { refresh = true } = {}) => {
+    relationshipRouter.emitToUsers?.(userIds, { eventType: "pairing.updated", objectId: relationshipId, version: Date.now(), status });
+    if (refresh) for (const userId of userIds) await refreshKnowYou(store, userId).catch(() => console.error("Just me greeting refresh failed"));
+  };
   // Chat-history import reports back into the member's private conversation when its background analysis finishes.
   // Mounted first: its Mac helper script and upload are reached without a session (a one-time token stands in).
   const chatImportRouter = createChatImportRouter({ store, mediator, appendAssistantMessage: (...args) => assistantRouter.assistant.postNote(...args) });
@@ -655,7 +702,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", voiceCalls);
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit, activity });
   app.use(imessage.router);
-  app.use("/api", createPrivacyRouter({ store, production, closeConnections, onAiWithdrawal: voiceCalls.withdrawPermission, oauthProviders, ...(email ? { email } : {}) }));
+  app.use("/api", createPrivacyRouter({ store, production, closeConnections, onPairingEnded: (userIds, relationshipId) => pairingChanged(userIds, relationshipId, "ended"), onAiWithdrawal: voiceCalls.withdrawPermission, oauthProviders, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
@@ -731,7 +778,7 @@ function publicPairing(context, viewerId) {
     status: context.relationship.status,
     role: context.membership.role,
     members: context.members.map((member) => ({ id: member.user.id, name: member.user.name, role: member.role, joinedAt: member.joinedAt })),
-    invitation: context.relationship.status === "pending" && context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null, prepared: context.invitation.prepared === true, sentAt: context.invitation.sentAt || null, cancelledAt: context.invitation.cancelledAt || null } : null,
+    invitation: context.relationship.status === "pending" && context.invitation?.createdByUserId === viewerId ? { code: context.invitation.code, createdAt: context.invitation.createdAt, expiresAt: context.invitation.expiresAt, openedAt: context.invitation.openedAt || null, prepared: context.invitation.prepared === true, sentAt: context.invitation.sentAt || null, cancelledAt: context.invitation.cancelledAt || null, declinedAt: context.invitation.declinedAt || null } : null,
   };
 }
 

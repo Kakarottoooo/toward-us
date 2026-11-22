@@ -130,9 +130,10 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     if (req.body?.speaker === "partner" && !partner) throw decisionError(409, "pairing_required");
     // Both of them see Pinky's current step while it answers in Us; it ends with the reply, or with the failure.
     const progress = activity ? activity.forCouple(relationshipId) : () => {};
-    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, recipient, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress }).finally(() => progress(null));
-    if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId); }
-    res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply });
+    const result = await continueTogetherTurn({ store, mediator, relationshipId, actorUserId: partner?.userId || userId, recordedByUserId: partner ? userId : null, recipient, text, photoIds, timezone, source: partner ? "voice" : "app", handle: itemId ? `app:${userId}:${itemId}` : null, replyTo: clean(req.body?.replyTo, 80) || null, language: language(req), emit: (conversation) => emit(conversation, "together.updated"), notifyPrivate: (session) => emit(session, "assistant.updated", session.ownerUserId), progress, deferScreening: true }).finally(() => progress(null));
+    // A line sent without AI consent (result.noAi) starts no background model scan either.
+    if (!result.duplicate) { void recordUsage(store, { userId, relationshipId, action: "together_message" }); if (!result.noAi) { promises?.noteTogether(relationshipId, userId); profile?.noteTogether(relationshipId, userId); } }
+    res.status(result.duplicate ? 200 : 201).json({ conversation: projectRecord(result.conversation, userId), message: result.message, reply: result.reply, ...(result.screeningDeferred ? { screeningDeferred: true } : {}), ...(result.noAi ? { aiSkipped: true } : {}) });
   }));
 
   // The partner acknowledges an observed message. Server acceptance alone means "sent".
