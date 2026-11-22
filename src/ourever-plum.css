@@ -129,3 +129,8 @@ html:has(.boot-splash), html:has(.boot-splash) body, html:has(.boot-splash) #roo
 /* Before React draws anything the page is also plum (it is what the launch screen hands over to). */
 html:not(:has(#root *)), html:not(:has(#root *)) body { background: #300e29; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Opening: one calm change from plain plum to the welcome screen, with nothing sliding or growing (founder 11-21). */
+.plum-welcome { animation: welcome-in .28s ease-out both; }
+@keyframes welcome-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .plum-welcome { animation: none; } }

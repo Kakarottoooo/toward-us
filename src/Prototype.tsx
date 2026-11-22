@@ -83,6 +83,23 @@ export default function Prototype() {
   return <><OfflineBanner />{location.pathname.startsWith("/demo") || location.pathname.startsWith("/j/") ? <><DemoFlow /><FeedbackLink language={initialLanguage()} /></> : <AccountPrototype />}</>;
 }
 
+// Asked once, while the app is still opening, so the welcome screen appears with its final buttons instead of
+// growing Apple and Google a moment later (founder 11-21: opening Ourever "moved").
+let welcomeProviders: Promise<boolean> | null = null;
+let welcomeProvidersKnown = false;
+function welcomeProvidersReady() {
+  if (!welcomeProviders) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    welcomeProviders = providerSignInAvailable(controller.signal).catch(() => false).then((ready) => {
+      welcomeProvidersKnown = ready;
+      if (!ready) welcomeProviders = null;
+      return ready;
+    }).finally(() => clearTimeout(timeout));
+  }
+  return welcomeProviders;
+}
+
 function FeedbackLink({ language }: { language: Language }) {
   return <a className="feedback-launch" href="/?view=feedback" aria-label={localized(language, "反馈", "Feedback", "Comentarios")}><ChatCircleText size={19} /></a>;
 }
@@ -125,7 +142,8 @@ function AccountPrototype() {
       if (new URLSearchParams(url.hash.slice(1)).has("reset")) url.hash = "";
       history.replaceState(history.state, "", url);
     }
-    api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me", { signal: AbortSignal.timeout(12000) }).then((state) => {
+    const providersAsked = welcomeProvidersReady();
+    api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me", { signal: AbortSignal.timeout(12000) }).then(async (state) => {
       setUser(state.user); setPairing(state.pairing);
       if (returning && state.user && !resetToken) {
         if (referralCode()) clearReferral();
@@ -134,7 +152,9 @@ function AccountPrototype() {
       }
       // Signed out with a partner's invite link: the page that says who invited them comes first, not the generic home.
       if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
-      setScreen(state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home");
+      const first: Screen = state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
+      if (first === "home") await Promise.race([providersAsked, new Promise((done) => setTimeout(done, 3000))]);
+      setScreen(first);
       if (state.user) { void restoreNativePush(); void restoreWebPush(); void connectHomeWidget(); if (state.pairing?.status === "active" && state.user.aiConsentAt) autoSyncAlbum(language); }
     }).catch(() => setScreen(signInReturn ? "auth" : "identity-error"));
     listenNativePushTaps();
@@ -271,7 +291,7 @@ function AccountPrototype() {
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
-    if (screen === "booting") return <div className="loading-screen boot-splash" aria-busy="true" data-testid="booting" role="status"><img src="/assets/brand/ourever-mascot.webp" alt="" draggable={false} /><span className="visually-hidden">{localized(language, "正在打开 Ourever…", "Opening Ourever…", "Abriendo Ourever…")}</span></div>;
+    if (screen === "booting") return <div className="loading-screen boot-splash" aria-busy="true" data-testid="booting" role="status"><span className="visually-hidden">{localized(language, "正在打开 Ourever…", "Opening Ourever…", "Abriendo Ourever…")}</span></div>;
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
@@ -291,13 +311,13 @@ function AccountPrototype() {
 }
 
 function HomeScreen({ language, onLanguage, onProvider, onEmail, onSignIn, t }: { language: Language; onLanguage: (language: Language) => void; onProvider: (provider: SignInProvider) => void; onEmail: () => void; onSignIn: () => void; t: typeof copy.zh }) {
-  // Like Mengmoon: the welcome screen is the sign-in screen. Apple and Google appear once the server confirms they work.
-  const [providersReady, setProvidersReady] = useState(false);
+  // Like Mengmoon: the welcome screen is the sign-in screen. Apple and Google show once the server confirms they work;
+  // that answer is normally already in before this screen opens.
+  const [providersReady, setProvidersReady] = useState(welcomeProvidersKnown);
   useEffect(() => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 8000);
-    providerSignInAvailable(controller.signal).then(setProvidersReady).catch(() => setProvidersReady(false)).finally(() => clearTimeout(timeout));
-    return () => { clearTimeout(timeout); controller.abort(); };
+    let open = true;
+    if (!welcomeProvidersKnown) void welcomeProvidersReady().then((ready) => { if (open) setProvidersReady(ready); });
+    return () => { open = false; };
   }, []);
   return <div className="home-screen" data-testid="home-screen">
     <div className="mobile-home-composition plum-welcome">
