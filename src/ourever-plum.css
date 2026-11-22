@@ -134,3 +134,7 @@ html:not(:has(#root *)), html:not(:has(#root *)) body { background: #300e29; }
 .plum-welcome { animation: welcome-in .28s ease-out both; }
 @keyframes welcome-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .plum-welcome { animation: none; } }
+
+/* Signed-in pages: the iOS shell paints the status-bar and home-indicator areas in the body colour and ignores a
+   transparent body, so without this they stayed plum after the welcome screen (founder 11-21). Entry rules above win. */
+body { background: var(--jian-paper, #f4efe6); }
