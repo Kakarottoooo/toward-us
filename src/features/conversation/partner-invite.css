@@ -78,3 +78,4 @@
   flex-shrink: 0; min-width: 44px; min-height: 44px; margin-inline-start: auto; padding: 4px 12px;
   color: inherit; background: transparent; border: 1px solid var(--jian-line); border-radius: 999px; font: inherit;
 }
+.partner-invite-declined { flex-basis: 100%; margin: 0; color: #903e38; font-size: 15px; font-weight: 600; line-height: 1.45; }

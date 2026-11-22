@@ -244,6 +244,8 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .ideas-primary, .ideas-quiet { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 0 16px; border-radius: 16px; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
 .ideas-primary { border: 0; background: #e0405a; color: #fff; }
 .ideas-quiet { border: 1px solid rgba(37,37,37,.16); background: #fffdf8; color: #3f3326; }
+.ideas-undo { align-self: center; min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: rgba(37,37,37,.07); color: #3f3326; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.ideas-primary:disabled, .ideas-quiet:disabled, .ideas-undo:disabled { opacity: .55; cursor: default; }
 .ideas-primary:focus-visible, .ideas-quiet:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
 
 /* The ideas as readable cards, three to a row by kind (founder 11-06); a done one shows its photo under the words. */

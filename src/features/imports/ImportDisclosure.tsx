@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { localized, type Language } from "../../i18n";
-import { BottomSheet, useKeyboard } from "../../mobile";
+import { useKeyboard } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 
 type Mode = "private" | "shared" | "sync" | "photos";
 

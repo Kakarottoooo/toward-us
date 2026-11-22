@@ -55,8 +55,8 @@ export function lazyScreen<P extends object>(load: () => Promise<ComponentType<P
 }
 
 /** Shown in place of a screen whose code could not be loaded, with a way to try again. Coming back online tries again
- * by itself. */
-export class ScreenBoundary extends Component<{ fallback: ReactNode | ((retry: () => void) => ReactNode); children: ReactNode }, { failed: boolean }> {
+ * by itself, and so does a change of `resetKey` (the screen shown). */
+export class ScreenBoundary extends Component<{ fallback: ReactNode | ((retry: () => void) => ReactNode); children: ReactNode; resetKey?: string }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   retry = () => {
@@ -66,6 +66,8 @@ export class ScreenBoundary extends Component<{ fallback: ReactNode | ((retry: (
     this.setState({ failed: false });
   };
   componentDidMount() { window.addEventListener("online", this.retry); }
+  // Moving to another screen (Back, offline) leaves the failed one behind instead of staying on its error (QA round 3).
+  componentDidUpdate(previous: { resetKey?: string }) { if (previous.resetKey !== this.props.resetKey) this.retry(); }
   componentWillUnmount() { window.removeEventListener("online", this.retry); }
   render() {
     const { fallback } = this.props;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BottomSheet } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { localized, type Language } from "../../i18n";
 import { canPromptInstall, inAppBrowser, isIOS, isStandalone, onInstallPromptChange, promptInstall } from "./webPush";
 import { inNativeApp, nativePushPlugin } from "./nativePush";

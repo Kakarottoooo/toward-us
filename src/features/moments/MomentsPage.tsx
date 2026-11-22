@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, GlobeHemisphereWest, LockKey, PencilSimple, Plus, Trash, UsersThree } from "@phosphor-icons/react";
-import { BottomSheet, KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
+import { KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
+import { BottomSheet } from "../navigation/Sheet";
 import { PhotoViewer } from "./PhotoViewer";
 import { counted, languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -190,7 +191,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   if (ideasOpen) return <div className="moments-page" data-testid="moments-ideas">
     {back}
     {loadStatus}
-    {moments && !error && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} onPlan={(text) => onAsk(text, "us")} />}
+    {moments && !error && <IdeasSection language={language} done={done} onDid={(text) => onAsk(text, "us")} onPlan={(text) => onAsk(text, "us")} onChanged={load} />}
   </div>;
 
   // The map is its own page, opened from the globe at the top right (founder 11-05).

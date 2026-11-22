@@ -21,6 +21,8 @@
       <button id="retry" type="button" onclick="location.reload()">Try again</button>
     </main>
     <script>
+      // Back online: try again by itself (QA round 3), as the button would.
+      window.addEventListener("online", function () { location.reload(); });
       (function () {
         // Honor a language chosen in Ourever. Otherwise use the first supported device language.
         var copy = {
