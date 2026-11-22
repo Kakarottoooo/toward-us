@@ -4,6 +4,7 @@ import type { Pairing } from "../../Prototype";
 import { languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
+import { closeRelationshipEvents, relationshipEvents } from "../relationship/events";
 import "./partner-invite.css";
 
 type InviteProps = {
@@ -76,7 +77,19 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
     const timer = window.setInterval(refresh, sent ? 4000 : 30000);
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
+    // The partner joining or declining arrives on the event stream at once; the poll is the fallback.
+    const events = relationshipEvents();
+    events.addEventListener("relationship", (event) => {
+      try {
+        const { eventType, status } = JSON.parse((event as MessageEvent).data);
+        if (eventType !== "pairing.updated") return;
+        // The open stream belongs to the space this account had before; a new one opens for the shared space.
+        if (status === "active") closeRelationshipEvents();
+        void refresh();
+      } catch { /* the poll still catches it */ }
+    });
     return () => {
+      events.close();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("online", refresh);
@@ -158,7 +171,8 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
     if (online && usable && receipt && receipt === invitation?.code && !working && !failure) void act("receipt");
   }, [receipt, invitation?.code, usable, online, working, failure]);
 
-  const title = cancelled ? t("邀请已取消", "Invite cancelled", "Invitación cancelada")
+  const title = invitation?.declinedAt ? t("对方没有接受这次邀请", "They declined this invite", "No aceptó esta invitación")
+    : cancelled ? t("邀请已取消", "Invite cancelled", "Invitación cancelada")
     : expired ? t("邀请已过期", "Invite expired", "Invitación caducada")
     : sent ? t("等待伴侣加入", "Waiting for your partner", "Esperando a tu pareja")
     : t("邀请你的伴侣", "Invite your partner", "Invita a tu pareja");

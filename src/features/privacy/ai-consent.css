@@ -9,7 +9,11 @@
 .legal-links { font-size: 15px; line-height: 1.5; color: #6f655d; }
 .legal-links a { color: #b03a33; text-decoration: underline; text-underline-offset: 2px; }
 .auth-consent { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #5b524b; }
-.offline-banner { position: absolute; z-index: 60; top: calc(max(54px, env(safe-area-inset-top)) + 4px); left: 16px; right: 16px; width: fit-content; margin: 0 auto; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 20px; background: #2b2622; color: #fff; font-size: 14px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); pointer-events: none; }
+/* A strip across the top that moves the screen down while it shows, so it never covers a header or a first field. */
+.offline-banner { position: absolute; z-index: 60; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top) + 34px); padding: env(safe-area-inset-top) 12px 0; box-sizing: border-box; overflow: hidden; background: #2b2622; color: #fff; font-size: 12.5px; line-height: 34px; text-align: center; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
+.offline-banner svg { margin-right: 6px; vertical-align: -3px; }
+.mobile-app-viewport:has(> .offline-banner) { padding-top: calc(env(safe-area-inset-top) + 34px); box-sizing: border-box; }
+.mobile-app-viewport:has(> .offline-banner) > .paper-screen { position: relative; }
 .report-form { display: flex; flex-direction: column; gap: 12px; }
 .report-form fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
 .report-form fieldset legend { margin-bottom: 8px; font-size: 15px; color: #5b524b; }

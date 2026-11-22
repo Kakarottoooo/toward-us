@@ -338,3 +338,11 @@
 
 .conversation-home button, .conversation-home .invite-wait-close { min-inline-size: 44px; min-block-size: 44px; }
 .message-receipt { grid-column: 1; justify-self: end; color: #615b54; font-size: 13px; }
+.conversation-retry-actions { display: flex; gap: 8px; margin-left: auto; }
+.ai-off-card { display: grid; gap: 12px; padding: 16px 18px calc(16px + env(safe-area-inset-bottom)); }
+.ai-off-card p { margin: 0; color: #4c443e; font-size: 15px; line-height: 1.5; }
+.ai-off-card strong { display: block; margin-bottom: 4px; color: #2b2622; font-size: 16px; }
+.conversation-input:has(> .composer-count) { position: relative; }
+.composer-count { position: absolute; right: 14px; bottom: 100%; margin-bottom: 4px; padding: 1px 8px; border-radius: 10px; background: var(--jian-paper-bright, #fffaf3); color: #6f655d; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none; }
+/* Right-to-left text (Arabic, Hebrew…) reads and aligns its own way in every bubble, like dir="auto". */
+.conversation-message :is(p, li) { unicode-bidi: plaintext; }

@@ -6,6 +6,7 @@ import { shrinkForCharacter } from "../character/character";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { Drawing, Sketch, type Stroke } from "./PlayDrawing";
 import "./play-distance.css";
+import { relationshipEvents } from "../relationship/events";
 
 const PATH = "/api/play-distance";
 type Kind = "note" | "doodle" | "photo";
@@ -78,7 +79,7 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
 
   useEffect(() => {
     live.current = true;
-    const events = typeof EventSource === "function" ? new EventSource("/api/relationship/events") : null;
+    const events = typeof EventSource === "function" ? relationshipEvents() : null;
     const onEvent = (event: Event) => {
       try { if (JSON.parse((event as MessageEvent).data).eventType === "play-distance.updated") void load(); }
       catch { /* The next update still refreshes the cards. */ }

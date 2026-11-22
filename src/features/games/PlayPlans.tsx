@@ -4,6 +4,7 @@ import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import "./play-plans.css";
+import { relationshipEvents } from "../relationship/events";
 
 type Idea = { id: string; title: string; detail: string; fromBoth: boolean };
 type Offer = {
@@ -74,7 +75,7 @@ export function PlayPlans({ language, userId, questionId, revision, readOnly = f
     return () => controller.abort();
   }, [load, revision, userId]);
   useEffect(() => {
-    const events = new EventSource("/api/relationship/events");
+    const events = relationshipEvents();
     const changed = (event: Event) => {
       try {
         const { eventType, objectId } = JSON.parse((event as MessageEvent).data);

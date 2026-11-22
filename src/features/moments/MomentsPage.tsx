@@ -11,6 +11,7 @@ import { PhotoAlbumCard } from "./PhotoAlbumCard";
 import { photoPlugin } from "./photoAlbum";
 import { StoryViewer, type Slide } from "./StoryViewer";
 import "./moments.css";
+import { relationshipEvents } from "../relationship/events";
 
 // The map library is only loaded when someone opens the map.
 const MemoriesMap = lazy(() => import("./MemoriesMap").then((module) => ({ default: module.MemoriesMap })));
@@ -89,7 +90,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
   }, [userId]);
   useEffect(() => { void load(); return () => { requestId.current += 1; }; }, [load]);
   useEffect(() => {
-    const events = new EventSource("/api/relationship/events");
+    const events = relationshipEvents();
     events.addEventListener("relationship", (event) => { try { if (/^space/.test(JSON.parse((event as MessageEvent).data).eventType)) void load(); } catch { /* Ignore malformed events. */ } });
     return () => events.close();
   }, [load]);

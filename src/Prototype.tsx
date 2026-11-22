@@ -56,6 +56,7 @@ import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, 
 import { firstRunInProgress } from "./features/conversation/firstRunDraft";
 import { disableNativePush, inNativeApp, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
+import { closeRelationshipEvents, relationshipEvents } from "./features/relationship/events";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
 import { apiErrorText, brandLabel, currentLanguage, inInterfaceLanguage, initialLanguage, languageTag, languages, localized, pageTitle, type Language } from "./i18n";
 import "./relationship.css";
@@ -99,8 +100,8 @@ type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" 
 type AuthMode = "login" | "register";
 type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null; passwordless?: boolean };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
-export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; prepared?: boolean; sentAt?: string | null; cancelledAt?: string | null } | null };
-type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" };
+export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; prepared?: boolean; sentAt?: string | null; cancelledAt?: string | null; declinedAt?: string | null } | null };
+type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" | "declined" };
 
 const copy = {
   zh: {
@@ -178,7 +179,7 @@ function AccountPrototype() {
   const [feedbackFile, setFeedbackFile] = useState<File>();
   const [feedbackReturn, setFeedbackReturn] = useState<Screen>("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
-  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "referrals" ? "referrals" : params.get("view") === "membership" ? "membership" : undefined; });
+  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | "processors" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "referrals" ? "referrals" : params.get("view") === "membership" ? "membership" : undefined; });
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get("reset") || new URLSearchParams(location.search).get("reset") || "");
   const [signInReturn, setSignInReturn] = useState(() => new URLSearchParams(location.search).get("signin") || "");
   const [user, setUser] = useState<User | null>(null);
@@ -188,6 +189,8 @@ function AccountPrototype() {
   const [joinedElsewhere, setJoinedElsewhere] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>(() => referralCode() ? "register" : "login");
   const [autoProvider, setAutoProvider] = useState<SignInProvider | null>(null);
+  // Bumped when Back or Forward moves through history, so pages keyed by the address show the one it now names.
+  const [, setVisit] = useState(0);
   const keyboard = useKeyboard();
   const t = copy[language];
 
@@ -215,7 +218,9 @@ function AccountPrototype() {
       }
       // Signed out with a partner's invite link: the page that says who invited them comes first, not the generic home.
       if (!state.user && (signInReturn === "adult_required" || signInReturn === "referral_ineligible")) setAuthMode("register");
-      const first: Screen = state.user ? accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
+      // A reload keeps the page its history entry names (a page opened from the app has its own entry), not the chat.
+      const kept = (history.state as { ourever?: Screen } | null)?.ourever;
+      const first: Screen = state.user ? kept && ["privacy", "feedback", "people", "space", "import", "capabilities", "personal"].includes(kept) && (state.user.aiConsentAt || kept === "privacy") ? kept : accountLanding(state.user, state.pairing) : signInReturn ? "auth" : hasInvite() ? "invite" : referralCode() || ["referrals", "feedback"].includes(new URLSearchParams(location.search).get("view") || "") ? "auth" : "home";
       if (first === "home") await Promise.race([Promise.all([providersAsked, welcomeArtReady()]), new Promise((done) => setTimeout(done, 3000))]);
       else await Promise.all([preloadScreen(first), resetToken ? PasswordResetForm.preload() : null]);
       // An invitation-code sign-up shows its referral card on the sign-in screen from the first frame.
@@ -262,12 +267,15 @@ function AccountPrototype() {
   const booted = screen !== "booting";
   useEffect(() => {
     if (!booted || (!user && screen !== "auth")) return;
-    const timer = window.setTimeout(() => {
+    const preloadAll = () => {
       if (!user) { void ConversationHome.preload(); return; }
       void Object.values(screenCode).reduce<Promise<void>>((previous, code) => previous.then(() => code.preload()), Promise.resolve());
       void PlayCardArrival.preload();
-    }, 2500);
-    return () => clearTimeout(timer);
+    };
+    const timer = window.setTimeout(preloadAll, 2500);
+    // Screens that failed to arrive while offline are fetched again once the connection is back.
+    window.addEventListener("online", preloadAll);
+    return () => { clearTimeout(timer); window.removeEventListener("online", preloadAll); };
   }, [booted, user?.id, screen === "auth"]);
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
   // Opened from a push (its link carries from=push): count the open, content-free, then drop the marker from the address.
@@ -326,22 +334,64 @@ function AccountPrototype() {
     const interval = window.setInterval(refresh, 4000);
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
-    return () => { active = false; clearInterval(interval); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("online", refresh); };
+    // The server says the moment the partner joins or declines, so the invite screen changes at once rather than at the next poll.
+    const events = relationshipEvents();
+    events.addEventListener("relationship", (event) => {
+      try {
+        const { eventType, status } = JSON.parse((event as MessageEvent).data);
+        if (eventType !== "pairing.updated") return;
+        // The open stream belongs to the space this account had before; a new one opens for the shared space.
+        if (status === "active") { closeRelationshipEvents(); void refresh(); } else void refreshPairing().catch(() => {});
+      } catch { /* the poll still catches it */ }
+    });
+    return () => { active = false; clearInterval(interval); events.close(); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("online", refresh); };
   }, [user?.id, user?.aiConsentAt, pairing?.status, screen]);
   useEffect(() => {
     if (!joinedElsewhere) return;
     const timer = window.setTimeout(() => setJoinedElsewhere(false), 7000);
     return () => clearTimeout(timer);
   }, [joinedElsewhere]);
-  const logout = async () => { keyboard.hide(); await disableNativePush(); await disableWebPush(); await disconnectHomeWidget(); await api("/api/auth/logout", { method: "POST" }); forgetInvite(); setUser(null); setPairing(null); setScreen("home"); };
+  const logout = async () => { keyboard.hide(); await disableNativePush(); await disableWebPush(); await disconnectHomeWidget(); await api("/api/auth/logout", { method: "POST" }); closeRelationshipEvents(); forgetInvite(); setUser(null); setPairing(null); setScreen("home"); };
 
   const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
   // The screen a page link opens on.
-  const screenFor = (url: string): Screen => url.includes("game=") ? "conversation" : url.includes("view=space") ? "space" : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen;
-  const backToConversation = () => { keyboard.hide(); window.history.replaceState(null, "", location.pathname); setScreen("conversation"); };
+  const screenFor = (url: string): Screen => url.includes("game=") ? "conversation" : url.includes("view=space") ? spaceOrList(new URLSearchParams(url.slice(url.indexOf("?")))) : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen;
+  // Pages with a Back get their own history entry, so the phone's or browser's Back returns inside Ourever (popstate below)
+  // instead of leaving it. The address a page set for itself stays; the page it came from keeps its own entry beneath.
+  const fromHistory = useRef(false);
+  const shownScreen = useRef(screen);
+  // The address before this step's setUrl calls: the page being left keeps it in its own entry.
+  const urlBefore = useRef<string | null>(null);
+  const setUrl = (url: string) => { urlBefore.current ??= location.href; history.replaceState(history.state, "", url); };
+  useEffect(() => {
+    const previous = shownScreen.current;
+    const before = urlBefore.current ?? location.href;
+    shownScreen.current = screen; urlBefore.current = null;
+    if (fromHistory.current) { fromHistory.current = false; return; }
+    if (previous === screen) return;
+    if (stackedScreens.includes(screen) && !["booting", "identity-error"].includes(previous)) {
+      const url = location.href;
+      history.replaceState(history.state, "", before);
+      history.pushState({ ourever: screen, depth: historyDepth(history.state) + 1 }, "", url);
+    } else if (!stackedScreens.includes(screen) && historyDepth(history.state)) history.replaceState(null, "", location.href);
+  });
+  useEffect(() => {
+    const pop = (event: PopStateEvent) => {
+      keyboard.hide();
+      fromHistory.current = true;
+      const stacked = (event.state as { ourever?: Screen } | null)?.ourever;
+      setScreen(stacked && stackedScreens.includes(stacked) && (user || !signedInScreens.includes(stacked)) ? stacked : user ? accountLanding(user, pairing) : hasInvite() ? "invite" : "home");
+      setVisit((value) => value + 1);
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [user, pairing]);
+  /** Back from a page: step back through history when the page below is ours, otherwise go where the page's Back leads. */
+  const goBack = (fallback: () => void) => { keyboard.hide(); if (historyDepth(history.state)) history.back(); else fallback(); };
+  const backToConversation = () => goBack(() => { setUrl(location.pathname); setScreen("conversation"); });
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
-  const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=${channel}${channel === "us" ? "&recipient=assistant" : ""}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
+  const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); setUrl(`/?channel=${channel}${channel === "us" ? "&recipient=assistant" : ""}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
   // No AI work for anyone who hasn't agreed to third-party AI yet: they see the consent screen first (accounts made before
   // sign-up asked for it). Declining signs them out; Settings can withdraw it later, which brings this screen back.
   const openFeedback = (from: string, image?: File) => {
@@ -349,52 +399,65 @@ function AccountPrototype() {
     setScreen("feedback");
   };
   const closeFeedback = () => {
-    keyboard.hide(); setFeedbackFile(undefined);
-    if (new URLSearchParams(location.search).get("view") === "feedback") window.history.replaceState(null, "", location.pathname);
-    setScreen(feedbackReturn);
+    setFeedbackFile(undefined);
+    goBack(() => {
+      if (new URLSearchParams(location.search).get("view") === "feedback") setUrl(location.pathname);
+      setScreen(feedbackReturn);
+    });
   };
+  // Declining third-party AI opens the app with AI off (Just me explains it; Us works); Settings can turn it on later.
+  const [, setAiChoice] = useState(0);
+  const aiOff = !!user && !user.aiConsentAt && aiDeclined(user.id);
+  const declineAi = () => { if (!user) return; keyboard.hide(); rememberAiDeclined(user.id, true); setAiChoice((value) => value + 1); setScreen("conversation"); };
   const feedbackEntry = user && <FeedbackEntry key={user.id} userId={user.id} language={language} hidden={screen === "feedback" || !!resetToken} open={image => openFeedback(screen, image)} />;
   const renderScreen = () => {
     if (resetToken) return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><PasswordResetForm language={language} token={resetToken} onRequestLink={() => { setResetToken(""); setScreen("recovery"); }} onDone={() => { setUser(null); setPairing(null); setResetToken(""); setSignInReturn(""); setNotice(localized(language, "密码已更新，请用新密码登录。", "Password updated. Sign in with your new password.", "Contraseña actualizada. Inicia sesión con la nueva.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "feedback" && user) return <FeedbackPage key={user.id} userId={user.id} language={language} from={feedbackFrom}
-      activity={recentFeedbackActivity(language) || localized(language, `正在使用的页面 · ${feedbackFrom}`, `Using screen · ${feedbackFrom}`, `Pantalla en uso · ${feedbackFrom}`)} initialFile={feedbackFile} onBack={closeFeedback} />;
+      activity={recentFeedbackActivity(language) || localized(language, `正在使用的页面 · ${feedbackFrom}`, `Using screen · ${feedbackFrom}`, `Pantalla en uso · ${feedbackFrom}`)} initialFile={feedbackFile} onBack={closeFeedback} backLabel={feedbackReturn === "privacy" ? settingsLabel(language) : ["conversation", "invite-first"].includes(feedbackReturn) ? undefined : t.back} />;
     if (screen === "identity-error") return <InviteFrame language={language} onLanguage={selectLanguage} title={hasInvite() ? localized(language, "暂时无法打开邀请", "Your invitation couldn’t load", "No se pudo cargar tu invitación") : localized(language, "暂时连不上 Ourever", "Ourever couldn’t connect", "No se pudo conectar con Ourever")}>
       <p className="pairing-lead" role="alert">{inviteNetworkMessage(language)}</p>
-      <button className="primary-action" onClick={() => location.reload()}>{retryLabel(language)}</button>
+      <button className="primary-action" onClick={() => { if (navigator.onLine !== false) location.reload(); }}>{retryLabel(language)}</button>
     </InviteFrame>;
     if (screen === "invite-first" && user) return <FirstRun key={user.id} feedback={feedbackEntry} user={user} language={language} pairing={pairing}
       onPairingChange={setPairing} onRefreshPairing={refreshPairing}
       onAgreed={at => { setUser({ ...user, aiConsentAt: at }); setScreen("conversation"); }}
-      onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
-    if (user && !user.aiConsentAt && !["booting", "home", "auth", "recovery", "privacy", "pairing"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} />;
-    if (screen === "conversation" && user) return <><ScreenBoundary fallback={null}><Suspense fallback={null}><InstallHint language={language} userId={user.id} /></Suspense></ScreenBoundary><ConversationHome user={user} pairing={pairing} language={language} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
-    if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen("import"); }} onAsk={askPinky} />;
-    if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => { window.history.replaceState(null, "", location.pathname); setScreen("privacy"); } : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); window.history.replaceState(null, "", `/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
+      onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} onDeclineAi={declineAi} />;
+    if (user && !user.aiConsentAt && !aiOff && !["booting", "home", "auth", "recovery", "privacy", "pairing"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={declineAi} />;
+    if (screen === "conversation" && user) return <><ScreenBoundary fallback={null}><Suspense fallback={null}><InstallHint language={language} userId={user.id} /></Suspense></ScreenBoundary><ConversationHome user={user} pairing={pairing} language={language} aiOff={aiOff} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
+    if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { setUrl(url); setScreen("import"); }} onAsk={askPinky} />;
+    if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} backLabel={new URLSearchParams(location.search).get("archived") === "1" ? settingsLabel(language) : undefined} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => goBack(() => { setUrl(location.pathname); setScreen("privacy"); }) : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); setUrl(`/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "booting") return <BootSplash language={language} testId="booting" />;
-    if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => setScreen("auth")} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
+    if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => goBack(() => setScreen("auth"))} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
     if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
-    if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { window.history.replaceState(null, "", url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
-    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { window.history.replaceState(null, "", "/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await (await import("./features/feedback/feedbackQueue")).clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => setUser({ ...user, aiConsentAt: at })} />;
+    if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
+    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { setUrl("/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await (await import("./features/feedback/feedbackQueue")).clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => { rememberAiDeclined(user.id, !at); setUser({ ...user, aiConsentAt: at }); }} />;
     if (screen === "invite") return <PartnerJoin language={language} onLanguage={selectLanguage} onAuth={(mode) => { rememberInvite(); openAuth(mode); }} />;
     if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onProvider={(provider) => user ? setScreen(landing(pairing)) : openAuth("register", provider)} onEmail={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
-    if (screen === "auth") return <AuthScreen key={autoProvider || "form"} autoProvider={autoProvider} onAutoCancel={() => { setAutoProvider(null); setScreen(hasInvite() ? "invite" : "home"); }} initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => setScreen(hasInvite() ? "invite" : "home")} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
+    if (screen === "auth") return <AuthScreen key={autoProvider || "form"} autoProvider={autoProvider} onAutoCancel={() => { setAutoProvider(null); setScreen(hasInvite() ? "invite" : "home"); }} initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => goBack(() => setScreen(hasInvite() ? "invite" : "home"))} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
     if (screen === "pairing" && user) return <PartnerJoin language={language} onLanguage={selectLanguage} account={{ pairing, onJoined: (next) => {
-      forgetInvite(); history.replaceState(null, "", "/?channel=us"); setPairing(next); setScreen("conversation");
+      forgetInvite(); setUrl("/?channel=us"); setPairing(next); setScreen("conversation");
     }, onBack: () => { forgetInvite(); backToConversation(); } }} />;
     if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
     return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
   };
   const showArrivals = user?.aiConsentAt && pairing?.status === "active" && !resetToken &&
     !["booting", "home", "auth", "recovery", "invite", "pairing"].includes(screen);
-  const unavailable = <InviteFrame language={language} onLanguage={selectLanguage} title={localized(language, "暂时连不上 Ourever", "Ourever couldn’t connect", "No se pudo conectar con Ourever")}>
+  // A screen whose code hasn't arrived yet: try loading it again in place, never by reloading the page (offline, that shows
+  // the browser's error page). Coming back online retries by itself.
+  const unavailable = (retry: () => void) => <InviteFrame language={language} onLanguage={selectLanguage} title={localized(language, "暂时连不上 Ourever", "Ourever couldn’t connect", "No se pudo conectar con Ourever")}>
     <p className="pairing-lead" role="alert">{inviteNetworkMessage(language)}</p>
-    <button className="primary-action" onClick={() => location.reload()}>{retryLabel(language)}</button>
+    <button className="primary-action" onClick={retry}>{retryLabel(language)}</button>
   </InviteFrame>;
-  return <><ScreenBoundary fallback={unavailable}><Suspense fallback={<BootSplash language={language} />}>{renderScreen()}</Suspense></ScreenBoundary>{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ScreenBoundary fallback={null}><Suspense fallback={null}><ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); window.history.replaceState(null, "", "/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} /></Suspense></ScreenBoundary>}{screen !== "invite-first" && feedbackEntry}{showArrivals && <ScreenBoundary fallback={null}><Suspense fallback={null}><PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} /></Suspense></ScreenBoundary>}</>;
+  return <><ScreenBoundary fallback={unavailable}><Suspense fallback={<BootSplash language={language} />}>{renderScreen()}</Suspense></ScreenBoundary>{joinedElsewhere && user && <div className="partner-arrival-notice" role="status">{localized(language, "你的伴侣已加入，打开“我们俩”即可聊天。", "Your partner joined. Open Us to chat together.", "Tu pareja se ha unido. Abre Nosotros para conversar.")}</div>}{!user && screen === "home" && !resetToken && <FeedbackLink language={language} />}{user && !resetToken && <ScreenBoundary fallback={null}><Suspense fallback={null}><ReferralNotices key={user.id} userId={user.id} language={language} openPage={page => { keyboard.hide(); setSettingsPage(page); setUrl("/?view=" + page); setScreen("privacy"); }} openFeedback={() => openFeedback("settings")} /></Suspense></ScreenBoundary>}{screen !== "invite-first" && feedbackEntry}{showArrivals && <ScreenBoundary fallback={null}><Suspense fallback={null}><PlayCardArrival key={`${user.id}:${pairing.id}`} language={language} /></Suspense></ScreenBoundary>}</>;
 }
 
 /** The plain paper shown while Ourever opens, and while a screen's code is still arriving. */
+// Screens reached with a Back of their own; each gets a history entry (see AccountPrototype).
+const stackedScreens: Screen[] = ["privacy", "feedback", "people", "space", "import", "capabilities", "personal", "dashboard", "pairing", "auth", "recovery"];
+const signedInScreens: Screen[] = ["privacy", "feedback", "people", "space", "import", "capabilities", "personal", "dashboard", "pairing"];
+const historyDepth = (state: unknown) => Number((state as { depth?: number } | null)?.depth) || 0;
+
 function BootSplash({ language = initialLanguage(), testId }: { language?: Language; testId?: string }) {
   return <div className="loading-screen boot-splash" aria-busy="true" data-testid={testId} role="status"><span className="visually-hidden">{localized(language, "正在打开 Ourever…", "Opening Ourever…", "Abriendo Ourever…")}</span></div>;
 }
@@ -569,7 +632,7 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
     <header className="editorial-top"><button disabled={busy} onClick={onBack} aria-label={t.back}><ArrowLeft size={22} /></button><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <div className="auth-art red-column" aria-hidden="true" />
     <main className="auth-content">{mode === "login" && <div className="auth-brand"><img src="/assets/brand/ourever-mascot.webp" alt="" />Ourever</div>}<div className="vertical-title"><h1>{mode === "login" ? t.welcome : t.register}</h1><PauseMark /></div><Wordmark language={language} />
-      {mode === "register" && (ref ? <SignupReferral code={ref} language={language} remove={removeRef} /> : <p className="auth-hint">{t.registerHint}</p>)}
+      {mode === "register" && (ref ? <SignupReferral code={ref} language={language} remove={removeRef} /> : <p className="auth-hint">{hasInvite() ? localized(language, "创建账号后就能加入伴侣的共同空间，你的私人对话只有你自己能看到。", "Create your account to join your partner. Your private chats stay yours alone.", "Crea tu cuenta para unirte a tu pareja. Tus chats privados siguen siendo solo tuyos.") : t.registerHint}</p>)}
       {mode === "register" && <p className="auth-consent" data-testid="register-consent">{localized(language, "继续即表示你已满 18 岁，并同意", "By continuing, you confirm you are 18 or older and agree to the", "Al continuar, confirmas que tienes 18 años o más y aceptas la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>}
       {providerError === "link_required" ? <div className="signin-link">
         <p role="status">{signInMessage("link_required", language)}</p>
@@ -642,6 +705,7 @@ function signInMessage(reason: string, language: Language) {
     default: return t("登录未完成，请重试。", "Sign-in didn’t finish. Please try again.", "No se completó el inicio de sesión. Inténtalo de nuevo.");
   }
 }
+function settingsLabel(language: Language) { return localized(language, "设置", "Settings", "Ajustes"); }
 function retryLabel(language: Language) { return localized(language, "重试", "Try again", "Reintentar"); }
 function inviteNetworkMessage(language: Language) {
   return localized(language, "暂时无法连接 Ourever。请检查网络后重试。", "Can’t reach Ourever. Check your connection and try again.", "No se pudo conectar con Ourever. Revisa tu conexión y vuelve a intentarlo.");
@@ -671,6 +735,8 @@ function PartnerJoin({ language, onLanguage, account, onAuth }: {
   const [attempt, setAttempt] = useState(0);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
+  // Declining asks once more, then closes the invitation for good and lets the inviter know.
+  const [declining, setDeclining] = useState<"ask" | "busy" | "done" | null>(null);
   const keyboard = useKeyboard();
   const paired = account?.pairing?.status === "active";
   const own = !!code && account?.pairing?.invitation?.code === code;
@@ -689,7 +755,7 @@ function PartnerJoin({ language, onLanguage, account, onAuth }: {
   const found = typeof preview === "object" ? preview : null;
   const name = found?.inviterName;
   const loading = readPreview && !preview;
-  const unusable = own || (!valid && (!account || malformedLink)) || preview === "missing" || (!!found && found.status !== "open");
+  const unusable = own || declining === "done" || (!valid && (!account || malformedLink)) || preview === "missing" || (!!found && found.status !== "open");
   const title = paired ? t("你已经与伴侣配对", "You’re already paired", "Ya tienes pareja vinculada")
     : name && !unusable ? t("加入" + name + "的共同空间", "Join " + name, "Únete a " + name)
     : t("伴侣邀请", "Partner invitation", "Invitación de pareja");
@@ -697,7 +763,19 @@ function PartnerJoin({ language, onLanguage, account, onAuth }: {
     : preview === "missing" || (!valid && (!account || malformedLink)) ? t("没有找到这份邀请。请向伴侣索取新链接。", "We couldn’t find that invite. Ask your partner for a new link.", "No encontramos esa invitación. Pide un enlace nuevo a tu pareja.")
     : found?.status === "cancelled" ? t("邀请已被取消。请让伴侣重新发送。", "This invite was cancelled. Ask your partner to send a new one.", "Se canceló esta invitación. Pide a tu pareja que envíe otra.")
     : found?.status === "expired" ? t("邀请已过期。请让伴侣发送新链接。", "This invite has expired. Ask your partner for a new link.", "La invitación caducó. Pide un enlace nuevo a tu pareja.")
+    : found?.status === "declined" || declining === "done" ? t("你已婉拒这份邀请，对方会收到通知。", "You declined this invite. They'll be told.", "Rechazaste esta invitación. Se le avisará.")
     : found?.status === "used" ? t("邀请已被使用。已加入可登录原账号，否则请向伴侣索取新链接。", "This invite has already been used. Sign in to the account you joined with, or ask your partner for a new link.", "Esta invitación ya se usó. Entra con la cuenta con la que te uniste o pide un enlace nuevo a tu pareja.") : "";
+  const decline = async () => {
+    if (declining === "busy") return;
+    keyboard.hide(); setDeclining("busy"); setError("");
+    try {
+      await api("/api/partner/invitations/" + code + "/decline", { method: "POST" });
+      forgetInvite(); setDeclining("done");
+    } catch (reason) {
+      setDeclining("ask");
+      setError(reason instanceof TypeError ? inviteNetworkMessage(language) : accountError((reason as Error).message, language));
+    }
+  };
   const accept = async () => {
     if (!account || joining || found?.status !== "open" || own || paired) return;
     keyboard.hide(); setJoining(true); setError("");
@@ -714,22 +792,28 @@ function PartnerJoin({ language, onLanguage, account, onAuth }: {
       <p className="pairing-lead">{t("你已有共同空间。若要与其他人配对，请先在设置中退出当前关系。", "You already share a space with your partner. To pair with someone else, first leave your current relationship in Settings.", "Ya compartes un espacio con tu pareja. Para vincularte con otra persona, sal primero de tu relación actual en Ajustes.")}</p>
       <button className="primary-action" onClick={account!.onBack}>{t("返回我的空间", "Back to my space", "Volver a mi espacio")}</button>
     </> : <>
-      <p className="pairing-lead">{account ? t("接受后就能一起使用“我们俩”，你们各自的私人对话仍然保密。", "Accept to open your shared chat. Each person’s private conversations stay private.", "Acepta para abrir el chat compartido. Las conversaciones privadas de cada persona seguirán siendo privadas.")
-        : t("创建账号或登录，就能加入你们两个人在 Ourever 的共同空间。", "Create an account or sign in to join your partner in your private Ourever space.", "Crea una cuenta o inicia sesión para unirte a tu pareja en su espacio privado de Ourever.")}</p>
+      {declining !== "done" && found?.status !== "declined" && <p className="pairing-lead">{account ? t("接受后就能一起使用“我们俩”，你们各自的私人对话仍然保密。", "Accept to open your shared chat. Each person’s private conversations stay private.", "Acepta para abrir el chat compartido. Las conversaciones privadas de cada persona seguirán siendo privadas.")
+        : t("创建账号或登录，就能加入你们两个人在 Ourever 的共同空间。", "Create an account or sign in to join your partner in your private Ourever space.", "Crea una cuenta o inicia sesión para unirte a tu pareja en su espacio privado de Ourever.")}</p>}
       {account && (!hasInvite() || !valid || unusable || code !== inviteCode()) && <label className="editorial-field code-field"><span>{copy[language].inviteCode}</span>
         <KeyboardInput value={code} onChange={event => { setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)); setError(""); }} maxLength={8} autoComplete="off" data-testid="invite-code" />
       </label>}
       {loading && <p role="status" aria-live="polite">{t("正在查看邀请…", "Checking invitation…", "Comprobando la invitación…")}</p>}
       {(problem || error || preview === "unavailable") && <p className="form-notice" role="alert">{error || problem || inviteNetworkMessage(language)}</p>}
       {preview === "unavailable" && <button className="primary-action" onClick={retry}>{retryLabel(language)}</button>}
-      {account ? <>
+      {declining === "ask" || declining === "busy" ? <>
+        <p className="pairing-lead">{t(name ? `婉拒后这份邀请就失效了，${name}会收到通知。` : "婉拒后这份邀请就失效了，对方会收到通知。", `Declining closes this invite${name ? ` and tells ${name}` : " and tells them"}.`, `Al rechazarla, la invitación se cierra${name ? ` y ${name} recibe un aviso` : " y se le avisa"}.`)}</p>
+        <button className="primary-action" disabled={declining === "busy"} onClick={() => void decline()} data-testid="invite-decline-confirm">{declining === "busy" ? t("正在婉拒…", "Declining…", "Rechazando…") : t("婉拒邀请", "Decline invite", "Rechazar invitación")}</button>
+        <button className="secondary-action" disabled={declining === "busy"} onClick={() => setDeclining(null)}>{t("再想想", "Keep it", "Pensarlo")}</button>
+      </> : account ? <>
         {preview !== "unavailable" && !unusable && <button className="primary-action" onClick={() => void accept()} disabled={joining || loading || !valid} data-testid="invite-accept">
           {joining ? t("正在加入…", "Joining…", "Uniéndote…") : copy[language].acceptInvite}
         </button>}
         <button className="secondary-action" disabled={joining} onClick={() => { keyboard.hide(); account.onBack(); }}>{t("返回我的空间", "Back to my space", "Volver a mi espacio")}</button>
+        {found?.status === "open" && !unusable && <button className="auth-switch" disabled={joining} onClick={() => setDeclining("ask")} data-testid="invite-decline">{t("婉拒邀请", "Decline invite", "Rechazar invitación")}</button>}
       </> : <>
         <button className="primary-action" onClick={() => onAuth?.("register")} data-testid="invite-join">{copy[language].register}</button>
         <button className="secondary-action" onClick={() => onAuth?.("login")} data-testid="invite-sign-in">{copy[language].login}</button>
+        {found?.status === "open" && !unusable && <button className="auth-switch" onClick={() => setDeclining("ask")} data-testid="invite-decline">{t("婉拒邀请", "Decline invite", "Rechazar invitación")}</button>}
       </>}
     </>}
   </InviteFrame>;
@@ -740,11 +824,17 @@ function LanguageSwitch({ language, onLanguage, compact = false }: { language: L
 function Wordmark({ language }: { language: Language }) { return <div className="home-wordmark" aria-label={brandLabel(language)}><strong>Ourever</strong>{language === "zh" && <span>两个人的关系助手</span>}</div>; }
 function PauseMark() { return <div className="pause-mark" aria-hidden="true"><i /><i /><i /></div>; }
 // After sign-in the App opens on the conversation; invite links and deep links into a feature page keep their target.
-function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return hasInvite() ? "pairing" : params.get("view") === "feedback" ? "feedback" : params.get("view") === "space" ? "space" : params.get("view") === "import" ? "import" : params.get("view") === "people" ? "people" : params.get("view") === "capabilities" ? "capabilities" : ["membership", "referrals"].includes(params.get("view") || "") ? "privacy" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+function landing(pairing: Pairing | null): Screen { const params = new URLSearchParams(location.search); return hasInvite() ? "pairing" : params.get("view") === "feedback" ? "feedback" : params.get("view") === "space" ? spaceOrList(params) : params.get("view") === "import" ? "import" : params.get("view") === "people" ? "people" : params.get("view") === "capabilities" ? "capabilities" : ["membership", "referrals"].includes(params.get("view") || "") ? "privacy" : params.has("view") ? pairing?.status === "active" ? "dashboard" : "personal" : "conversation"; }
+// A space link without a space opens the list of spaces, the conversation's menu, rather than a "no longer here" page.
+function spaceOrList(params: URLSearchParams): Screen { return params.get("space") ? "space" : "conversation"; }
 function accountLanding(user: User, pairing: Pairing | null): Screen {
   const screen = landing(pairing);
-  return screen === "conversation" && !user.aiConsentAt && (pairing?.status !== "active" || firstRunInProgress(user.id)) ? "invite-first" : screen;
+  return screen === "conversation" && !user.aiConsentAt && !aiDeclined(user.id) && (pairing?.status !== "active" || firstRunInProgress(user.id)) ? "invite-first" : screen;
 }
+
+const aiDeclinedKey = (userId: string) => "ourever:ai-declined:" + userId;
+function aiDeclined(userId: string) { try { return localStorage.getItem(aiDeclinedKey(userId)) === "1"; } catch { return false; } }
+function rememberAiDeclined(userId: string, declined: boolean) { try { if (declined) localStorage.setItem(aiDeclinedKey(userId), "1"); else localStorage.removeItem(aiDeclinedKey(userId)); } catch { /* asked again next time */ } }
 
 // Keep only the current tab's explicit join intent across authentication and password recovery.
 const inviteIntentKey = "ourever.partner-invite";

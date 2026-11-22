@@ -1,5 +1,5 @@
 import { Bell, BellSlash, Plus } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput } from "../../mobile";
 import { enableNativePush, inNativeApp, nativePushAvailable, nativePushRegistered, type NativeSettings } from "./nativePush";
@@ -83,9 +83,12 @@ export function RemindersPanel({ language, initialTarget, initialTitle = "", onC
     setBusy(false);
     setNotice(result === "registered" ? text("此手机的通知已开启。", "Notifications are on for this phone.", "Las notificaciones están activadas en este teléfono.") : result === "denied" ? text("未获得通知权限。提醒仍会保存；你可以在手机设置中允许通知。", "Notification permission was not granted. Reminders remain saved; you can allow notifications in the phone's settings.", "No se concedió permiso. Tus recordatorios siguen guardados; puedes permitir notificaciones en los ajustes del teléfono.") : errorText(new ReminderError(result === "off" ? "push_not_configured" : "reminder_unavailable")));
   };
+  // One key per new reminder, so a double tap or a retry after a dropped answer can't create it twice.
+  const newItemId = useRef(crypto.randomUUID());
   const save = () => perform(async () => {
-    const body = { title, localDateTime, timezone, frequency, target: initialTarget || { kind: targetKind } };
+    const body = { title, localDateTime, timezone, frequency, target: initialTarget || { kind: targetKind }, ...(editing ? {} : { itemId: newItemId.current }) };
     await api(editing ? `/reminders/${editing.id}` : "/reminders", editing ? "PATCH" : "POST", body);
+    if (!editing) newItemId.current = crypto.randomUUID();
     setTitle(""); setLocalDateTime(""); setEditing(null);
   });
   const statusText = (status: string) => ({

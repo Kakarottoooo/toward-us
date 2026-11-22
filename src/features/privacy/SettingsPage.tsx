@@ -13,14 +13,14 @@ import { inIosApp, MembershipPage, type Membership } from "../membership/Members
 import { inviteTitle, ReferralPage } from "../membership/ReferralPage";
 import { FounderBeta } from "../membership/FounderBeta";
 import { AiAccess } from "./AiAccess";
-import { aiDisclosure } from "./AiConsent";
+import { AI_NOTICE_VERSION, aiDisclosure } from "./AiConsent";
 import "./settings.css";
 
 type Summary = { id: string; relationshipId?: string; issueId: string; text: string; version: number; status: string; aiAccessScope: string; withdrawnAt: string | null };
 type PrivacyData = { privateRetentionDays: number | null; recoveryEnabled: boolean; privateCount: number; aiConsentAt?: string | null; relationships: Array<{ id: string; status: string }>; sharedSummaries: Summary[]; consentHistory: Array<{ eventType: string; createdAt: string; sourceVersion?: number }> };
 type PendingAction = { kind: "retention" | "recovery" | "export" | "delete-private" | "leave" | "account" | "ai"; days?: number | null } | { kind: "withdraw"; summary: Summary };
 type Page = "account" | "main" | "access" | "referrals" | "membership" | "founder" | "profile" | "notifications" | "processors" | "memory" | "retention" | "summaries" | "history" | "recovery" | "character" | "report";
-type SettingsProps = { onName: (name: string, addedPassword?: boolean) => void; onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string; passwordless?: boolean }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
+type SettingsProps = { onName: (name: string, addedPassword?: boolean) => void; onFeedback?: () => void; initialPage?: "character" | "profile" | "membership" | "referrals" | "processors"; onAsk?: (text: string) => void; onEarlierPeople?: () => void; user: { id: string; name: string; email: string; passwordless?: boolean }; relationshipId: string | null; partnerName: string | null; language: Language; onLanguage: (language: Language) => void; onBack: () => void; onLogout: () => void; onLeft: () => void | Promise<void>; onAiConsent?: (at: string | null) => void; onDeleted: () => void | Promise<void> };
 const LANGUAGES: Language[] = ["zh", "en", "es"];
 
 type AccountBridge = { info(): Promise<{ app_version: string; build: string }>; shareExport?(options: { contents: string }): Promise<{ completed: boolean }> };
@@ -65,7 +65,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
   const [data, setData] = useState<PrivacyData | null>(null);
   const [plan, setPlan] = useState<Membership["plan"] | null>(null);
   const [founder, setFounder] = useState(false);
-  useEffect(() => { if (inIosApp()) return; void fetch("/api/founder/beta", { credentials: "same-origin" }).then((response) => setFounder(response.ok)).catch(() => {}); }, []);
+  useEffect(() => { if (inIosApp()) return; void fetch("/api/founder/beta", { credentials: "same-origin" }).then(async (response) => setFounder(response.ok && (await response.json().catch(() => null))?.founder !== false)).catch(() => {}); }, []);
   useEffect(() => { void relationshipApi<Membership>("/api/membership").then((value) => setPlan(value.plan)).catch(() => {}); }, [page]);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [password, setPassword] = useState(""); const [confirmed, setConfirmed] = useState(false);
@@ -79,9 +79,29 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
     try { await relationshipApi("/api/feedback", jsonBody({ text: reportText.trim(), report: reportAbout, context: { view: "settings-report" }, language })); setReportText(""); setReportSent(true); }
     catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
+  const allowAi = async () => {
+    setBusy(true); setNotice("");
+    try {
+      const { aiConsentAt } = await relationshipApi<{ aiConsentAt: string }>("/api/privacy/ai-consent", jsonBody({ agree: true, noticeVersion: AI_NOTICE_VERSION, language }));
+      setData((current) => current ? { ...current, aiConsentAt } : current); onAiConsent?.(aiConsentAt);
+      setNotice(t("AI 功能已打开。", "AI is on.", "La IA está activada."));
+    } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
+  };
   const load = async () => { try { setData(await relationshipApi<PrivacyData>(`/api/privacy?language=${language}`)); } catch (error) { setNotice((error as Error).message); } };
   useEffect(() => { void load(); }, [language]);
-  const open = (next: Page) => { keyboard.hide(); setCurrent(""); setNextPassword(""); setRepeat(""); setName(user.name); setNotice(""); setPage(next); };
+  const show = (next: Page) => { keyboard.hide(); setCurrent(""); setNextPassword(""); setRepeat(""); setName(user.name); setNotice(""); setPage(next); };
+  // Each page below the list gets a history entry, so the phone's or browser's Back returns to the list.
+  const open = (next: Page) => {
+    if (next !== "main" && next !== page) history.pushState({ ...history.state, depth: (Number(history.state?.depth) || 0) + 1, settings: next }, "", location.href);
+    show(next);
+  };
+  const backToList = () => { if (history.state?.settings) history.back(); else show("main"); };
+  useEffect(() => {
+    const pop = (event: PopStateEvent) => { if (event.state?.ourever === "privacy") show(event.state.settings || initialPage || "main"); };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [initialPage, user.name]);
+  const [signingOut, setSigningOut] = useState(false);
   const prepare = (action: PendingAction) => { keyboard.hide(); setPending(action); setPassword(""); setConfirmed(false); setNotice(""); };
   const close = () => { keyboard.hide(); setPending(null); setPassword(""); setConfirmed(false); };
   const period = (value: number | null) => value === null ? t("由我手动删除", "Until I delete them", "Hasta que los borre") : t(`${value} 天没更新就删除`, `After ${counted(value, "day", "days")} without changes`, `Tras ${counted(value, "día", "días")} sin cambios`);
@@ -145,7 +165,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
     setBusy(true); setNotice(""); keyboard.hide();
     try {
       await relationshipApi("/api/privacy/account", { method: "PATCH", body: JSON.stringify({
-        password: current, language, ...(name.trim() !== user.name ? { name: name.trim() } : {}), ...(nextPassword ? { newPassword: nextPassword } : {})
+        ...(nextPassword ? { password: current } : {}), language, ...(name.trim() !== user.name ? { name: name.trim() } : {}), ...(nextPassword ? { newPassword: nextPassword } : {})
       }) });
       onName(name.trim(), !!nextPassword); setName(name.trim()); setNextPassword(""); setRepeat(""); setCurrent("");
       setNotice(t("账号已更新。", "Account updated.", "Cuenta actualizada."));
@@ -200,7 +220,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
       <Row icon={<FileText size={18} weight="bold" />} tone="gray" label={t("使用条款", "Terms of Use", "Condiciones de uso")} onClick={() => location.assign(`/terms?lang=${language}`)} testId="settings-terms" />
     </Group>
     <Group>
-      <Row icon={<SignOut size={18} weight="bold" />} tone="gray" label={t("退出登录", "Sign out", "Cerrar sesión")} onClick={onLogout} testId="settings-logout" />
+      <Row icon={<SignOut size={18} weight="bold" />} tone="gray" label={t("退出登录", "Sign out", "Cerrar sesión")} onClick={() => { keyboard.hide(); setSigningOut(true); }} testId="settings-logout" />
     </Group>
     <p className="settings-footer">Ourever{version && ` · ${t("版本", "Version", "Versión")} ${version}`}</p>
   </>;
@@ -221,11 +241,12 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
     access: <AiAccess language={language} onOpen={open} />,
     account: <form className="settings-sheet" onSubmit={event => { event.preventDefault(); void saveAccount(); }}>
       <label>{t("显示名字", "Display name", "Nombre visible")}<KeyboardInput required maxLength={24} value={name} onChange={e => setName(e.target.value)} /></label>
-      {user.passwordless ? <p>{recentSignInHint}</p> : <label>{t("当前密码", "Current password", "Contraseña actual")}<KeyboardInput autoComplete="current-password" type="password" required maxLength={128} value={current} onChange={e => setCurrent(e.target.value)} /></label>}
       <label>{t("新密码（可选，10–128 个字符）", "New password (optional, 10–128 characters)", "Nueva contraseña (opcional, de 10 a 128 caracteres)")}<KeyboardInput autoComplete="new-password" type="password" minLength={10} maxLength={128} value={nextPassword} onChange={e => setNextPassword(e.target.value)} /></label>
       {nextPassword && <label>{t("再次输入新密码", "Repeat new password", "Repite la nueva contraseña")}<KeyboardInput autoComplete="new-password" type="password" required maxLength={128} value={repeat} onChange={e => setRepeat(e.target.value)} /></label>}
       {nextPassword && repeat && repeat !== nextPassword && <p role="alert">{t("两次密码不同。", "The passwords do not match.", "Las contraseñas no coinciden.")}</p>}
-      <button type="submit" disabled={busy || (!user.passwordless && !current) || !name.trim() || (name.trim() === user.name && !nextPassword) || (!!nextPassword && (nextPassword.length < 10 || nextPassword !== repeat))}>{t("保存更改", "Save changes", "Guardar cambios")}</button>
+      {/* Only a password change asks for the current password; a new display name doesn't. */}
+      {nextPassword && (user.passwordless ? <p>{recentSignInHint}</p> : <label>{t("当前密码", "Current password", "Contraseña actual")}<KeyboardInput autoComplete="current-password" type="password" required maxLength={128} value={current} onChange={e => setCurrent(e.target.value)} /></label>)}
+      <button type="submit" disabled={busy || (!!nextPassword && !user.passwordless && !current) || !name.trim() || (name.trim() === user.name && !nextPassword) || (!!nextPassword && (nextPassword.length < 10 || nextPassword !== repeat))}>{t("保存更改", "Save changes", "Guardar cambios")}</button>
     </form>,
     membership: <MembershipPage language={language} userId={user.id} partnerName={partnerName} onInvite={() => open("referrals")} />,
     profile: <ProfilePage language={language} relationshipId={relationshipId} />,
@@ -241,6 +262,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
     processors: <>
       <Group title={t("第三方 AI", "Third-party AI", "IA de terceros")} note={data?.aiConsentAt ? t(`你在 ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))} 同意了。`, `You agreed on ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))}.`, `Aceptaste el ${new Date(data.aiConsentAt).toLocaleDateString(languageTag(language))}.`) : undefined}>
         <div className="settings-row settings-text-row"><strong>OpenAI · Anthropic · Replicate</strong><p>{aiDisclosure(language)}</p></div>
+        {data && !data.aiConsentAt && <button type="button" className="settings-row settings-action" disabled={busy} onClick={() => void allowAi()} data-testid="allow-ai-consent">{t("同意第三方 AI 处理，打开 AI 功能", "Allow third-party AI and turn AI on", "Permitir la IA de terceros y activarla")}</button>}
         {data?.aiConsentAt && <button type="button" className="settings-row settings-action" onClick={() => prepare({ kind: "ai" })} data-testid="withdraw-ai-consent">{t("撤回第三方 AI 同意", "Withdraw third-party AI consent", "Retirar el consentimiento de IA")}</button>}
       </Group>
       <Group>{processors.map(([title, text]) => <div key={title} className="settings-row settings-text-row"><strong>{title}</strong><p>{text}</p></div>)}</Group>
@@ -272,7 +294,7 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
 
   return <div className="paper-screen relationship-shell settings-screen" data-feedback-view={page === "main" ? "settings" : "settings-" + page}>
     {/* A page opened straight from the conversation (the character, from the tour) goes back there; others go back to Settings. */}
-    <PageHeader language={language} title={titles[page]} {...(page === "main" || page === initialPage ? { onBack } : { onBack: () => open("main"), backLabel: titles.main })} />
+    <PageHeader language={language} title={titles[page]} {...(page === "main" || page === initialPage ? { onBack } : { onBack: backToList, backLabel: titles.main })} />
     <main className="relationship-main settings-main"><div className="settings-body" data-testid="settings-screen">
       {page === "main" ? main : sub[page]}
       {notice && !pending && <p className="settings-notice" role="status">{notice}</p>}
@@ -288,6 +310,13 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
         <button type="submit" className={destructive ? "danger" : ""} disabled={busy || !confirmed || (verifyAction && !user.passwordless && !password)}>{busy ? t("正在处理…", "Working…", "Procesando…") : actionTitle(pending)}</button>
         <button type="button" className="quiet" disabled={busy} onClick={close}>{t("取消", "Cancel", "Cancelar")}</button>
       </form>}
+    </BottomSheet>
+    <BottomSheet open={signingOut} onOpenChange={setSigningOut} title={t("退出登录？", "Sign out?", "¿Cerrar sesión?")}>
+      <div className="settings-sheet">
+        <p>{t("退出后，这台设备不再收到通知，要重新登录才能看到你的对话。", "This device stops getting notifications, and you'll need to sign in again to see your conversations.", "Este dispositivo dejará de recibir avisos y tendrás que volver a iniciar sesión para ver tus conversaciones.")}</p>
+        <button type="button" className="danger" disabled={busy} onClick={() => { setBusy(true); void Promise.resolve(onLogout()).finally(() => setBusy(false)); }} data-testid="settings-logout-confirm">{t("退出登录", "Sign out", "Cerrar sesión")}</button>
+        <button type="button" className="quiet" disabled={busy} onClick={() => setSigningOut(false)}>{t("取消", "Cancel", "Cancelar")}</button>
+      </div>
     </BottomSheet>
   </div>;
 }

@@ -7,6 +7,7 @@ import { categories, gameCatalog, type CategoryId, type GameEntry } from "./cata
 import { MatchScreen } from "./MatchScreen";
 import { BOTH, PET, type Hall, type MatchView } from "./types";
 import "./games.css";
+import { relationshipEvents } from "../relationship/events";
 
 /** 游戏大厅: every game by category with how to play it, games still going at the top, and each game's own screen. */
 export function GameHall({ language, userId, initialMatch = null, petPicture = null, onClose, onPlayCard, onQuestions }: { language: Language; userId: string; initialMatch?: string | null; petPicture?: string | null; onClose: () => void; onPlayCard: (type: "choice" | "guess" | "truth") => void; onQuestions: () => void }) {
@@ -19,7 +20,7 @@ export function GameHall({ language, userId, initialMatch = null, petPicture = n
   useEffect(() => { void load(); }, [load]);
   // A move by the other one shows up right away while either screen is open.
   useEffect(() => {
-    const events = new EventSource("/api/relationship/events");
+    const events = relationshipEvents();
     events.addEventListener("relationship", (event) => { try { const data = JSON.parse((event as MessageEvent).data); if (data.eventType === "match.updated") { setChanged({ id: data.objectId, at: Date.now() }); void load(); } } catch { /* ignore */ } });
     return () => events.close();
   }, [load]);

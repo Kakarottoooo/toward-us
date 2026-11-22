@@ -14,10 +14,10 @@ export { firstRunInProgress } from "./firstRunDraft";
 type Preferences = { preferredName: string; completed: boolean };
 const endpoint = "/api/privacy/first-run";
 
-export function FirstRun({ user, feedback, language, pairing, onPairingChange, onRefreshPairing, onAgreed, onDecline }: {
+export function FirstRun({ user, feedback, language, pairing, onPairingChange, onRefreshPairing, onAgreed, onDecline, onDeclineAi = onDecline }: {
   user: { id: string; name: string }; feedback: ReactNode; language: Language; pairing: Pairing | null;
   onPairingChange: (next: Pairing | null) => void; onRefreshPairing: () => Promise<void>;
-  onAgreed: (at: string) => void; onDecline: () => void;
+  onAgreed: (at: string) => void; onDecline: () => void; onDeclineAi?: () => void;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const key = draftKey(user.id);
@@ -61,7 +61,7 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
   const header = <div className="first-run-top">{!returning && progress}{feedback}</div>;
   const problem = t("暂时连不上 Ourever。检查网络后重试。", "Ourever couldn’t connect. Check your connection and try again.", "No se pudo conectar con Ourever. Comprueba tu conexión y vuelve a intentarlo.");
   if (draft?.step === 3) return <AiConsentScreen language={language} header={header}
-    onAgreed={at => { clear(); onAgreed(at); }} onDecline={() => { clear(); onDecline(); }} />;
+    onAgreed={at => { clear(); onAgreed(at); }} onDecline={() => { clear(); onDeclineAi(); }} />;
   return <MobileScroll key={draft?.step} className="paper-screen first-run-screen"><main className="first-run">
     {header}
     {!draft ? <><p role="status">{error ? problem : t("正在打开…", "Opening…", "Abriendo…")}</p>

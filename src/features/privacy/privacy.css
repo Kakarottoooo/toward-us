@@ -44,3 +44,7 @@
 .account-recovery .reset-link { display: grid; gap: 14px; padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid #dedbd0; }
 .account-recovery .privacy-success h3 { display: block; }
 .account-recovery .reset-link form > button { justify-self: start; }
+
+/* Inline terms / privacy links in the welcome and sign-up consent line: an invisible pseudo-element gives each a 44px-tall hit area without moving text (nowrap: a link split across lines would collapse it). */
+:where(.entry-consent, .auth-consent) .legal-links a { position: relative; white-space: nowrap; }
+:where(.entry-consent, .auth-consent) .legal-links a::after { content: ""; position: absolute; inset: -14px -2px; }
