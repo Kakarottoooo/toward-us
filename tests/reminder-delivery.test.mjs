@@ -180,3 +180,34 @@ test("reminders preserve chosen local weekly time and define DST gaps and overla
   assert.throws(() => localDateTimeToInstant("2026-02-30T09:00", "UTC"), /date/);
   assert.throws(() => localDateTimeToInstant("2026-09-11T09:00", "Not/AZone"), /zone/);
 });
+
+test("QA round 6: a reminder whose owner has no device still comes due: it shows in the app and a weekly one moves on", async (t) => {
+  for (const configured of [true, false]) {
+    const base = resolve("work"); await mkdir(base, { recursive: true });
+    const directory = await mkdtemp(join(base, "reminders-nodevice-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const store = await createFileStore(join(directory, "store.json"));
+    const userId = randomUUID(); await store.createUser({ id: userId, email: `${userId}@example.invalid`, name: "No device", createdAt: new Date().toISOString() });
+    let time = new Date("2026-09-07T12:00:00Z");
+    const shown = [];
+    // configured: push works on the server but this owner never connected a device; otherwise no channel exists at all.
+    const service = createReminderService({ store, enabled: configured, publicKey: configured ? "test-public" : "", now: () => new Date(time), sendPush: configured ? async () => ({ statusCode: 201 }) : undefined, onUndelivered: async (reminder) => { shown.push(reminder.title); } });
+    if (configured) await service.updateSettings(userId, { enabled: true, timezone: "UTC", language: "en" });
+    const weekly = await service.createReminder(userId, { title: "Water the plants", localDateTime: "2026-09-07T12:01", timezone: "UTC", frequency: "weekly" });
+    const once = await service.createReminder(userId, { title: "Call mum", localDateTime: "2026-09-07T12:01", timezone: "UTC", frequency: "once" });
+    time = new Date("2026-09-07T12:02Z");
+    await service.runDue();
+    assert.deepEqual(shown.sort(), ["Call mum", "Water the plants"], `configured=${configured}`);
+    const list = await service.listReminders(userId);
+    const weeklyNow = list.find((item) => item.id === weekly.id), onceNow = list.find((item) => item.id === once.id);
+    assert.equal(weeklyNow.dueAt, "2026-09-14T12:01:00.000Z", "the weekly reminder advanced to next week");
+    assert.equal(weeklyNow.lastUndeliveredDueAt, "2026-09-07T12:01:00.000Z");
+    assert.equal(onceNow.lastUndeliveredDueAt, "2026-09-07T12:01:00.000Z");
+    // A second run does not show it again.
+    await service.runDue();
+    assert.equal(shown.length, 2);
+    time = new Date("2026-09-14T12:02Z");
+    await service.runDue();
+    assert.deepEqual(shown.filter((title) => title === "Water the plants").length, 2, "next week it comes due again");
+  }
+});

@@ -114,3 +114,16 @@ test("连续一起来: saying something in Us, answering the daily question and 
   const mark = await store.getRelationshipRecordForUser("accountSettings", `showedup:${relationshipId}:${a}`, a);
   assert.deepEqual([mark.visibility, mark.ownerUserId, Object.keys(mark).includes("text")], ["private", a, false]);
 });
+
+test("QA round 6: each reader's weekly card runs Monday to Sunday in their own time zone", async () => {
+  const { weekOf } = await import("../server/play-week-router.mjs");
+  const members = [{ userId: "a", role: "A" }, { userId: "b", role: "B" }];
+  const conversation = { zones: { a: "Asia/Shanghai", b: "America/Los_Angeles" } };
+  // Monday 2026-12-07 02:00 in Shanghai is still Sunday 2026-12-06 10:00 in Los Angeles.
+  const now = new Date("2026-12-06T18:00:00Z");
+  const a = weekOf(conversation, members, now, "a"), b = weekOf(conversation, members, now, "b");
+  assert.deepEqual([a.timezone, a.today, a.start, a.end], ["Asia/Shanghai", "2026-12-07", "2026-12-07", "2026-12-13"]);
+  assert.deepEqual([b.timezone, b.today, b.start, b.end], ["America/Los_Angeles", "2026-12-06", "2026-11-30", "2026-12-06"]);
+  // A reader with no saved zone falls back to the partner's.
+  assert.equal(weekOf({ zones: { a: "Asia/Shanghai" } }, members, now, "b").timezone, "Asia/Shanghai");
+});

@@ -119,6 +119,9 @@ export async function attachReferral(store, userId, { code, installId, now = new
     if (reason) return denied(reason);
     if (await load(tx, claimId(userId))) return denied("already_invited");
     if (await load(tx, `referral-device:${device}`)) return denied("device_rewarded");
+    // One install counts once per inviter (QA round 6): a second sign-up from the same install under the same code is not
+    // another invited friend, whether or not the first has earned its reward yet.
+    if ((await tx.listReferralClaims(inviter.ownerUserId)).some((claim) => claim.device === device && claim.status !== "ineligible" && !claim.deletedAt)) return denied("device_invited");
     const rules = referralRules();
     await add(tx, userId, {
       id: claimId(userId), kind: "claim", status: "registered", inviterId: inviter.ownerUserId, device,

@@ -11,7 +11,11 @@ import {
   normalizeEmail,
   publicUser,
   signupLanguage,
+  acceptedLanguage,
   readDemoToken,
+  readDeviceToken,
+  renewedSessionExpiry,
+  setDeviceCookie,
   readSessionToken,
   sessionId,
   setSessionCookie,
@@ -74,7 +78,7 @@ import { sendblue } from "./sendblue.mjs";
 import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
 import { installAiLedger, meterMediator, runAiLedgerMaintenance } from "./ai-ledger.mjs";
 import { createAiCostRouter } from "./ai-cost-router.mjs";
-import { createAuthLimits, DEFAULT_AUTH_LIMITS, tooManyTries, trustProxySetting } from "./auth-limits.mjs";
+import { createAuthLimits, SHARED_ADDRESS_LIMITS, tooManyTries, trustProxySetting } from "./auth-limits.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const LANGUAGES = new Set(["zh", "en", "es"]);
@@ -83,9 +87,11 @@ const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming, authLimits = DEFAULT_AUTH_LIMITS, trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER ? "1" : undefined) }) {
+export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming, authLimits = {}, trustProxy = process.env.TRUST_PROXY ?? (process.env.RENDER ? "1" : undefined) }) {
   const app = express();
-  const limits = createAuthLimits(authLimits);
+  // Without a configured proxy every client may share one address, so per-network caps are raised (QA round 6, finding 11).
+  const sharedAddress = trustProxySetting(trustProxy) === false;
+  const limits = createAuthLimits({ ...(sharedAddress ? SHARED_ADDRESS_LIMITS : {}), ...authLimits });
   const rateLimited = (req, res, seconds) => res.status(429).set("Retry-After", String(seconds)).json({ code: "rate_limited", retryAfterSeconds: seconds, error: tooManyTries(languageOf(req), seconds) });
   // First, so the time measured covers every middleware and route a request passes through (server/timing.mjs).
   if (requestTiming) app.use(requestTiming);
@@ -100,7 +106,12 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   // The iMessage channel (couple group creation and mirroring) is also built below; pairing and phone linking call into it.
   let imessage = null;
   const nativePush = reminderService ? null : createNativePush();
-  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null, sendNative: nativePush?.configured ? nativePush.send : null, nativeProviders: nativePush?.providers, groupsEnabled: () => sendblue.groupsEnabled() });
+  const reminders = reminderService || createReminderService({ store, ...createPushDelivery(), internalSecret: process.env.REMINDER_RUN_SECRET, onAnnounce: (...args) => emitTogether(...args), sendIMessage: sendblue.live() || process.env.SENDBLUE_DRYRUN_FILE ? (phone, text) => sendblue.send(phone, text) : null, sendNative: nativePush?.configured ? nativePush.send : null, nativeProviders: nativePush?.providers, groupsEnabled: () => sendblue.groupsEnabled(), onUndelivered: async (reminder) => {
+    // No phone, browser or iMessage to reach: the due reminder is said in Just me instead, so it still shows (QA round 6).
+    const language = normalizeLanguage((await store.getUserById(reminder.ownerUserId))?.language);
+    const title = String(reminder.title || "").slice(0, 120);
+    await assistantRouter.assistant.postNote(reminder.ownerUserId, { language, text: localText(language, `到点提醒：「${title}」`, `Reminder: "${title}"`, `Recordatorio: «${title}»`) });
+  } });
 
   // Daily question and celebration cards at a sensible local hour, so they reach both partners by push (not with an injected
   // test service: those tests drive delivery themselves).
@@ -197,8 +208,17 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     if (req.method === "POST" && req.path === "/api/auth/oauth/apple/callback" && req.is("application/x-www-form-urlencoded")) return next();
     return sameOriginRequest(req) ? next() : res.status(403).json({ error: localText(languageOf(req), "请求来源未通过安全检查。", "This request did not pass the security check.", "Esta solicitud no superó la comprobación de seguridad.") });
   });
-  app.use(async (req, _res, next) => {
-    try { req.auth = await authenticateRequest(store, req); next(); }
+  app.use(async (req, res, next) => {
+    try {
+      req.auth = await authenticateRequest(store, req);
+      // Sliding sessions: a member who keeps using the app stays signed in (QA round 6, finding 2).
+      const renewed = req.auth && renewedSessionExpiry(req.auth.session);
+      if (renewed && await store.extendSession(req.auth.session.id, renewed)) {
+        req.auth.session = { ...req.auth.session, expiresAt: renewed };
+        setSessionCookie(res, readSessionToken(req), production, (Date.parse(renewed) - Date.now()) / 1000);
+      }
+      next();
+    }
     catch (error) { next(error); }
   });
   app.use(aiUserMiddleware);
@@ -279,12 +299,17 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
+    setDeviceCookie(res, limits.deviceToken(email), production);
     res.status(201).json(await appState(store, created));
   });
 
   app.post("/api/auth/login", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
-    const wait = limits.loginWait(req.ip, email);
+    // The password is checked before any per-account limit, so nobody can lock a known person out of their account
+    // (QA round 6, finding 1). Only this network's own failures, or a flood across networks against an account this
+    // device and network never signed in to, can refuse first; that answer never depends on the password.
+    const trustedDevice = limits.deviceTrusted(readDeviceToken(req), email);
+    const wait = limits.loginWait(req.ip, email, { trustedDevice });
     if (wait) return rateLimited(req, res, wait);
     const candidate = await store.getUserByEmail(email);
     const authenticated = candidate && await store.transaction(`user:${candidate.id}`, async (tx) => {
@@ -292,10 +317,17 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
       if (!user || user.email !== email || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) return null;
       return { user, ...(await issueSession(tx, user.id)) };
     });
-    if (!authenticated) { limits.loginFailed(req.ip, email); return res.status(401).json({ code: "invalid_credentials", error: "邮箱或密码不正确。" }); }
+    if (!authenticated) {
+      // A wrong password at an account under attack is answered after its backoff (the same for unknown addresses).
+      const hold = limits.failureHold(email);
+      limits.loginFailed(req.ip, email);
+      if (hold) await new Promise((resolve) => setTimeout(resolve, hold * 1000));
+      return res.status(401).json({ code: "invalid_credentials", error: localText(languageOf(req), "邮箱或密码不正确。", "The email or password is incorrect.", "El correo o la contraseña son incorrectos.") });
+    }
     limits.loginSucceeded(req.ip, email);
     const { token, user } = authenticated;
     setSessionCookie(res, token, production);
+    setDeviceCookie(res, limits.deviceToken(email), production);
     res.json(await appState(store, user));
   });
 
@@ -897,7 +929,7 @@ function normalizeLanguage(value) { return LANGUAGES.has(value) ? value : "zh"; 
 // The reader's language for an error: what the request says, else the member's saved interface language, else the browser's.
 function languageOf(req) {
   const hint = [req.body?.language, req.query?.language, req.auth?.user?.language].find((value) => LANGUAGES.has(value));
-  return hint || String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1] || "en";
+  return hint || acceptedLanguage(req.headers?.["accept-language"]) || "en";
 }
 function localText(language, zh, en, es) { return language === "zh" ? zh : language === "es" ? es : en; }
 function safetyBoundaryMessage(language) { return localText(language, "对话仍在可调解边界内。", "Conversation is within the mediation boundary.", "La conversación se mantiene dentro de los límites de la mediación."); }

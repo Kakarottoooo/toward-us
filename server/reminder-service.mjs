@@ -21,7 +21,7 @@ const TOGETHER_NOTIFY_MS = 10 * 60_000;
 const OWN_CHANNELS = new Set(["imessage", "native"]);
 const APNS_TOKEN = /^(?:[0-9a-f]{2}){8,256}$/i;
 
-export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null, nativeProviders = { fcm: Boolean(sendNative), apns: false }, groupsEnabled = () => false }) {
+export function createReminderService({ store, sendPush, publicKey = "", enabled = false, now = () => new Date(), internalSecret = "", onAnnounce = () => {}, sendIMessage = null, sendNative = null, nativeProviders = { fcm: Boolean(sendNative), apns: false }, groupsEnabled = () => false, onUndelivered = null }) {
   const pushOn = enabled && typeof sendPush === "function";
   const nativeOn = typeof sendNative === "function";
   const reachablePhone = (item) => active(item) && item.token && nativeProviders[item.provider || "fcm"];
@@ -430,7 +430,10 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
     },
     async runDue({ limit = 25 } = {}) {
       await announceDue();
-      if (!pushOn && typeof sendIMessage !== "function" && !nativeOn) return { configured: false, imessageConfigured: false, nativeConfigured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0 };
+      // With no delivery channel at all (or none for this owner) a due reminder still comes due: it is marked, shown in the
+      // app, and a repeating one moves to its next time (QA round 6, finding 10).
+      const unconfigured = !pushOn && typeof sendIMessage !== "function" && !nativeOn;
+      const undelivered = [];
       const batchSize = Math.max(1, Math.min(50, Number.isInteger(limit) ? limit : 25));
       const claims = await store.transaction(LOCK, async (db) => {
         const current = now(); const at = iso(current);
@@ -444,7 +447,11 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           const devices = pushOn && preference?.enabled ? (await owned(db, "pushSubscriptions", reminder.ownerUserId)).filter(active) : [];
           const phone = typeof sendIMessage === "function" && preference?.enabled !== false ? await db.getPhoneForUser(reminder.ownerUserId) : null;
           const phones = nativeOn && preference?.enabled !== false ? (await owned(db, "nativePushDevices", reminder.ownerUserId)).filter(reachablePhone) : [];
-          if (!devices.length && !phone && !phones.length) continue;
+          if (!devices.length && !phone && !phones.length) {
+            undelivered.push(reminder);
+            await update(db, "reminders", reminder, { lastEnqueuedDueAt: reminder.dueAt, lastUndeliveredDueAt: reminder.dueAt, ...(reminder.frequency === "weekly" ? { dueAt: nextWeeklyOccurrence(reminder.occurrenceOriginalDueAt || reminder.dueAt, reminder.timezone, current, reminder.localTime), occurrenceOriginalDueAt: null } : {}) });
+            continue;
+          }
           // One job per channel and occurrence; the channel suffix keeps a failure or retry on one from touching the other.
           const occurrence = `${reminder.id}:${reminder.scheduleVersion || 0}:${reminder.dueAt}`;
           if (phone && !keys.has(`${occurrence}:imessage`)) {
@@ -467,6 +474,7 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
           }
           await update(db, "reminders", reminder, { lastEnqueuedDueAt: reminder.dueAt, ...(reminder.frequency === "weekly" ? { dueAt: nextWeeklyOccurrence(reminder.occurrenceOriginalDueAt || reminder.dueAt, reminder.timezone, current, reminder.localTime), occurrenceOriginalDueAt: null } : {}) });
         }
+        if (unconfigured) return [];
         const candidates = jobs.filter((job) => (["pending", "retry"].includes(job.status) && new Date(job.nextAttemptAt) <= current) || (job.status === "processing" && new Date(job.leaseUntil) <= current)).sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt));
         const selected = [];
         for (const job of candidates.slice(0, batchSize)) {
@@ -477,6 +485,8 @@ export function createReminderService({ store, sendPush, publicKey = "", enabled
         }
         return selected;
       });
+      for (const reminder of undelivered) await Promise.resolve(onUndelivered?.(reminder)).catch(() => console.error("An in-app reminder note will not be retried."));
+      if (unconfigured) return { configured: false, imessageConfigured: false, nativeConfigured: false, claimed: 0, accepted: 0, failed: 0, cancelled: 0, undelivered: undelivered.length };
       // `configured` keeps meaning browser push (scripts/run-reminders.mjs relies on it); the iMessage sender is reported separately.
       const result = { configured: pushOn, imessageConfigured: typeof sendIMessage === "function", nativeConfigured: nativeOn, claimed: claims.length, accepted: 0, failed: 0, cancelled: 0 };
       // Small parallel groups keep every provider timeout inside its persisted lease.

@@ -4,7 +4,7 @@ import { ReportReply } from "../feedback/ReportReply";
 import { Fragment, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Copy, PawPrint, GameController, Sparkle, UserCircle, Drop, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, ShareNetwork, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
-import { apiErrorText, counted, isolate, languageTag, localized, bareName, type Language } from "../../i18n";
+import { apiErrorText, counted, isolate, initialOf, languageTag, localized, bareName, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { BottomSheet, useLayerOpen, useModalFocus, useSheetHistory } from "../navigation/Sheet";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -38,6 +38,7 @@ import { MatchInviteCard } from "../games/MatchInviteCard";
 import { PeopleRow, TogetherSheet, plainName, usePeople, type Person } from "../people/People";
 import { RecallLinks, useConversationRecall, type ConversationSource } from "./RecallHistory";
 import { OlderWindow } from "./OlderWindow";
+import { NamePrompt, namePromptHidden } from "./NamePrompt";
 import "./conversation.css";
 import { lazyScreen } from "../../lazyScreen";
 import { outbox } from "./outbox";
@@ -75,7 +76,7 @@ const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
 // Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
 const REOPEN_AFTER = 30 * 60_000;
 
-export function ConversationHome({ user, pairing, language, aiOff = false, aiOffReason = "", onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onPairingChange, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing | null; language: Language; aiOff?: boolean; aiOffReason?: string; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals" | "processors") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onPairingChange: (next: Pairing | null) => void; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, aiOff = false, aiOffReason = "", onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onPairingChange, onAccessChanged }: { user: { id: string; name: string; nameSet?: boolean }; pairing: Pairing | null; language: Language; aiOff?: boolean; aiOffReason?: string; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals" | "processors") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onPairingChange: (next: Pairing | null) => void; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -96,10 +97,17 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
   const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [salutation, setSalutation] = useState(isolate(user.name));
+  // A placeholder account name ("我", an email's local part) is what the partner would see: the name given in first run
+  // replaces it on the server when this loads; with none given, a one-time prompt asks (QA round 6, finding 3).
+  const [askName, setAskName] = useState(false);
   useEffect(() => {
     let active = true;
     relationshipApi<{ preferredName: string }>("/api/privacy/first-run", { signal: AbortSignal.timeout(12000) })
-      .then(prefs => { if (active && prefs.preferredName) setSalutation(isolate(prefs.preferredName)); }).catch(() => {});
+      .then(prefs => {
+        if (!active) return;
+        if (prefs.preferredName) setSalutation(isolate(prefs.preferredName));
+        if (user.nameSet === false) { if (prefs.preferredName) accessChanged.current(); else setAskName(!namePromptHidden(user.id)); }
+      }).catch(() => {});
     return () => { active = false; };
   }, [user.id]);
   const [together, setTogether] = useState<Together | null>(null);
@@ -113,8 +121,8 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
   const heartsSeen = useRef<string | null>(null);
   const [approved, setApproved] = useState<string[]>([]);
   // Pages of earlier Us messages the member asked for, kept apart from the live working set. `anchor` is the working set's
-  // first message when the first page was fetched: if the working set moves on (older lines archived), the pages are dropped
-  // rather than shown with a gap.
+  // first message the pages run up to: when the working set moves on (its oldest lines archived), the lines that left it join
+  // the pages, so nothing the member was reading disappears (QA round 6, finding 4).
   const [older, setOlder] = useState<{ anchor: string; messages: SharedMessage[]; more: boolean } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const olderRef = useRef<HTMLDivElement>(null);
@@ -307,7 +315,59 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
     } catch (error) { setNotice(errorText(error as ApiError)); }
   }, [paired, language, user.id]);
   const firstUsId = together?.conversation.messages[0]?.id;
-  useEffect(() => { if (older && older.anchor !== firstUsId) setOlder(null); }, [firstUsId]);
+  const lastUs = together?.conversation.messages.at(-1);
+  // The live messages as last rendered, so lines that leave the working set can move into the loaded pages.
+  const previousLive = useRef<SharedMessage[]>([]);
+  // The first bubble on screen, to hold still while pages change above or at the seam.
+  const visibleAnchor = () => {
+    const viewport = conversationContent.current?.closest<HTMLElement>(".mobile-scroll");
+    const top = viewport?.getBoundingClientRect().top ?? 0;
+    const rows = conversationContent.current?.querySelectorAll<HTMLElement>("[data-shared-id]") || [];
+    for (const row of rows) { const rect = row.getBoundingClientRect(); if (rect.height && rect.bottom > top) return { id: row.dataset.sharedId || "", top: rect.top }; }
+    return null;
+  };
+  useEffect(() => {
+    const before = previousLive.current;
+    if (!older || !firstUsId || older.anchor === firstUsId) return;
+    const left = before.findIndex((message) => message.id === firstUsId);
+    if (left > 0) {
+      olderAnchor.current = visibleAnchor();
+      setOlder((current) => current && { ...current, anchor: firstUsId, messages: [...current.messages, ...before.slice(0, left).filter((message) => !current.messages.some((item) => item.id === message.id))] });
+      return;
+    }
+    // More left than this screen ever held: fetch the gap from history, back to the pages already loaded.
+    let active = true;
+    void (async () => {
+      const gap: SharedMessage[] = []; let cursor = firstUsId;
+      for (let page = 0; page < 20; page += 1) {
+        const result = await relationshipApi<{ messages: SharedMessage[]; more: boolean }>(`/api/together/history?before=${encodeURIComponent(cursor)}&limit=50`);
+        const reached = result.messages.findIndex((message) => message.id === older.anchor || older.messages.some((item) => item.id === message.id));
+        gap.unshift(...(reached >= 0 ? result.messages.slice(reached) : result.messages));
+        if (reached >= 0 || !result.more || !result.messages.length) return gap;
+        cursor = result.messages[0].id;
+      }
+      throw new Error("gap too long");
+    })().then((gap) => {
+      if (!active) return;
+      olderAnchor.current = visibleAnchor();
+      setOlder((current) => current && { ...current, anchor: firstUsId, messages: [...current.messages, ...gap.filter((message) => !current.messages.some((item) => item.id === message.id))] });
+    }).catch(() => { if (active) setOlder(null); });
+    return () => { active = false; };
+  }, [firstUsId]);
+  useEffect(() => { previousLive.current = together?.conversation.messages || []; });
+  // "New messages ↓" while reading history: the newest line arrived below and the screen stayed where the member was reading.
+  const [newBelow, setNewBelow] = useState(false);
+  const lastSeenUs = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const before = lastSeenUs.current; lastSeenUs.current = lastUs?.id;
+    if (before && lastUs && before !== lastUs.id && channel === "us" && !followingLatest.current && lastUs.actorUserId !== user.id) setNewBelow(true);
+  }, [lastUs?.id]);
+  useEffect(() => { if (channel !== "us") setNewBelow(false); }, [channel]);
+  const toLatest = () => {
+    const viewport = conversationContent.current?.closest<HTMLElement>(".mobile-scroll");
+    followingLatest.current = true; setNewBelow(false);
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  };
   // After a page lands above, keep the line the member was looking at where it was instead of jumping to the top (QA round
   // 5: it used to jump to the seam, far below, after every page). The first bubble on screen before the tap is the anchor.
   const olderAnchor = useRef<{ id: string; top: number } | null>(null);
@@ -1032,7 +1092,7 @@ ${text}` : text, target);
     </article>;
     if (mine) return <div key={message.id} className="us-row from-me">{article}</div>;
     // Partner and Ourever sit on the left, each with their own avatar so the two are told apart at a glance.
-    return <div key={message.id} className={`us-row ${from}${continued ? " is-continued" : ""}`}><i className={`us-avatar${message.role === "agent" ? " is-pinky" : ""}`} aria-hidden="true">{continued || message.role === "agent" ? "" : (Array.from(partnerRaw)[0] || "?").toUpperCase()}</i>{article}</div>;
+    return <div key={message.id} className={`us-row ${from}${continued ? " is-continued" : ""}`}><i className={`us-avatar${message.role === "agent" ? " is-pinky" : ""}`} aria-hidden="true">{continued || message.role === "agent" ? "" : initialOf(partnerRaw)}</i>{article}</div>;
   };
 
   // B: the partner approves looking at the other's chat-history analysis together; only then does a shared copy exist.
@@ -1123,6 +1183,7 @@ ${text}` : text, target);
     };
     const trackScroll = () => {
       followingLatest.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+      if (followingLatest.current) setNewBelow(false);
     };
     follow();
     viewport.addEventListener("scroll", trackScroll, { passive: true });
@@ -1152,6 +1213,7 @@ ${text}` : text, target);
       </div>
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
       {channel === "me" && !paired && !inviteBarHidden && <InviteBar state={invitation} onEnterCode={enterPartnerCode} onDismiss={hideInviteBar} />}
+      {channel === "me" && askName && user.nameSet === false && <NamePrompt userId={user.id} language={language} onHide={() => setAskName(false)} onSaved={() => accessChanged.current()} />}
       {former && !former.seen && !paired && <p className="partner-joined" role="status" data-testid="former-notice">{t(`${former.name || "TA"} 删除了账号。你们以前在“我们俩”的聊天记录会在这里保留，只能查看。`, `${former.name || "Your partner"} deleted their account. Your shared history in Us is kept here, read-only.`, `${former.name || "Tu pareja"} borró su cuenta. Su historial compartido en Nosotros se conserva aquí, solo para leer.`)}<button type="button" onClick={() => { seeFormer(); if (!usHidden) { switchChannel("us"); setFormerOpen(true); } }}>{t("查看", "View", "Ver")}</button><button type="button" onClick={seeFormer}>{t("知道了", "OK", "Entendido")}</button></p>}
       {welcomePartner && <p className="partner-joined" role="status" data-testid="partner-joined"><Heart size={18} weight="fill" aria-hidden="true" />{t("你的伴侣加入了，你们的共同空间已开启。", "Your partner joined. Welcome to your shared space.", "Tu pareja se ha unido. Este es su espacio compartido.")}{channel === "me" && !usHidden && <button type="button" disabled={!!attachments.length || voiceActive || !!call} onClick={() => switchChannel("us")}>{t("打开我们俩", "Open Us", "Abrir Nosotros")}</button>}</p>}
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
@@ -1186,7 +1248,7 @@ ${text}` : text, target);
           <button type="button" key={text} onClick={() => { setDraft(text, "me"); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}</button>)}
       </div>}
       <div aria-hidden="true" />
-    </>}</main></MobileScroll></div>
+    </>}</main></MobileScroll>{newBelow && channel === "us" && !recall.active && <button type="button" className="conversation-new-below" onClick={toLatest} data-testid="new-messages">{t("新消息 ↓", "New messages ↓", "Mensajes nuevos ↓")}</button>}</div>
     <TogetherSheet language={language} person={settledOn} others={putAway} onClose={() => setTogetherPerson(null)} onInvite={() => { setTogetherPerson(null); switchChannel("us"); }} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {aiOff && channel === "me" && <footer className="conversation-composer ai-off-card" data-testid="ai-off">
@@ -1230,7 +1292,7 @@ ${text}` : text, target);
             // The box holds 2,000 characters; a longer paste is cut, and says so instead of losing the rest silently.
             const field = event.currentTarget;
             if (draft.length - (field.selectionEnd - field.selectionStart) + pasted.length > DRAFT_LIMIT) setNotice(t("只放得下前 2000 个字，后面的部分没有贴进来。", "Only the first 2,000 characters fit; the rest wasn't pasted.", "Solo caben los primeros 2000 caracteres; el resto no se pegó."));
-          }} data-testid="conversation-input" aria-label={placeholder} aria-describedby={audienceId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={DRAFT_LIMIT} placeholder={bareName(placeholder)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
+          }} data-testid="conversation-input" aria-label={bareName(placeholder)} aria-describedby={audienceId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={DRAFT_LIMIT} placeholder={bareName(placeholder)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
           <button type="button" className={`conversation-mic ${voice.listening ? "listening" : ""}`} onClick={() => void toggleVoice()} aria-pressed={voice.listening} aria-label={voice.listening || voice.connecting ? t("结束语音", "End voice", "Terminar voz") : t("开始语音", "Start voice", "Iniciar voz")}>{voice.listening || voice.connecting ? <StopCircle size={22} weight="fill" /> : <Microphone size={22} />}</button>
           {generating[channel] || channel === "me" && pendingScreenshot ? <button type="button" className="conversation-send" onClick={() => generating[channel] ? stopReply(channel) : void stopScreenshot()} aria-label={t("停止生成", "Stop generating", "Detener respuesta")}><span aria-hidden="true">■</span></button> :
           <button type="button" className="conversation-send" onClick={send} disabled={(!draft.trim() && !ready.length) || uploading} aria-label={bareName(sendLabel)} title={bareName(sendLabel)} data-testid="conversation-send"><PaperPlaneRight size={20} weight="fill" /></button>}

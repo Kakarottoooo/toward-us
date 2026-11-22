@@ -4,7 +4,12 @@ import { promisify } from "node:util";
 const scrypt = promisify(scryptCallback);
 export const SESSION_COOKIE = "toward_us_session";
 export const DEMO_COOKIE = "toward_us_demo";
+export const DEVICE_COOKIE = "toward_us_device";
 const SESSION_AGE_SECONDS = 60 * 60 * 24 * 30;
+// Sliding sessions (QA round 6): a session used after half its life is extended to a fresh 30 days, but never past a
+// year from sign-in. Signing out, a password change or account deletion still end it at once.
+const SESSION_MAX_LIFETIME_SECONDS = 60 * 60 * 24 * 365;
+const DEVICE_AGE_SECONDS = 60 * 60 * 24 * 365;
 const DEMO_AGE_SECONDS = 60 * 60;
 
 export async function hashPassword(password) {
@@ -41,6 +46,22 @@ export function readSessionToken(req) {
   return readCookie(req, SESSION_COOKIE);
 }
 
+/** The later expiry a session in use should get now, or null when it needs none yet. */
+export function renewedSessionExpiry(session, now = new Date()) {
+  const expires = Date.parse(session.expiresAt), created = Date.parse(session.createdAt);
+  if (!Number.isFinite(expires) || expires - now.getTime() > (SESSION_AGE_SECONDS * 1000) / 2) return null;
+  const cap = Number.isFinite(created) ? created + SESSION_MAX_LIFETIME_SECONDS * 1000 : now.getTime() + SESSION_AGE_SECONDS * 1000;
+  const next = Math.min(now.getTime() + SESSION_AGE_SECONDS * 1000, cap);
+  return next > expires + 60_000 ? new Date(next).toISOString() : null;
+}
+
+export function readDeviceToken(req) { return readCookie(req, DEVICE_COOKIE); }
+
+export function setDeviceCookie(res, token, production) {
+  const secure = production ? "; Secure" : "";
+  res.append("Set-Cookie", `${DEVICE_COOKIE}=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Lax; Path=/api/auth; Max-Age=${DEVICE_AGE_SECONDS}`);
+}
+
 export function readDemoToken(req) {
   return readCookie(req, DEMO_COOKIE);
 }
@@ -56,9 +77,9 @@ function readCookie(req, cookieName) {
 
 export function sessionId(token) { return createHash("sha256").update(String(token)).digest("base64url"); }
 
-export function setSessionCookie(res, token, production) {
+export function setSessionCookie(res, token, production, maxAge = SESSION_AGE_SECONDS) {
   const secure = production ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${SESSION_AGE_SECONDS}`);
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${Math.max(1, Math.floor(maxAge))}`);
 }
 
 export function clearSessionCookie(res, production) {
@@ -94,8 +115,17 @@ const SIGNUP_LANGUAGES = new Set(["zh", "en", "es"]);
 /** The interface language a sign-up came from: the body's, else the browser's Accept-Language, else null. */
 export function signupLanguage(req) {
   if (SIGNUP_LANGUAGES.has(req.body?.language)) return req.body.language;
-  const hint = String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1];
-  return hint || null;
+  return acceptedLanguage(req.headers?.["accept-language"]);
+}
+
+/** The supported language (zh, en, es) an Accept-Language header prefers most, honouring q-values; null when none. */
+export function acceptedLanguage(header) {
+  const ranked = String(header || "").split(",").map((part, index) => {
+    const [tag, ...params] = part.trim().toLowerCase().split(";");
+    const q = params.map((param) => param.trim().match(/^q=([0-9.]+)$/)?.[1]).find(Boolean);
+    return { base: tag.trim().split("-")[0], q: q === undefined ? 1 : Number(q), index };
+  }).filter((entry) => SIGNUP_LANGUAGES.has(entry.base) && entry.q > 0).sort((a, b) => b.q - a.q || a.index - b.index);
+  return ranked[0]?.base || null;
 }
 
 export function normalizeEmail(value) { return String(value || "").trim().toLowerCase().slice(0, 254); }

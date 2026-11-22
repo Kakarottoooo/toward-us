@@ -5,7 +5,7 @@ import { createDecisionAgent } from "./decision-agent.mjs";
 import {
   agreementValues, approveAgreement, assertVersion, audit, clean, cleanArray, decisionError, markCommitmentsForRenegotiation, rejectAgreement, requestAgreementChange,
 } from "./agreement-actions.mjs";
-import { announceAgreement, setTogetherSince } from "./together-domain.mjs";
+import { announceAgreement, localizeMilestones, setTogetherSince } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { recordUsage } from "./usage.mjs";
 import { coupleStreak } from "./streak.mjs";
@@ -33,7 +33,8 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     // Each member's last-chosen interface language, so Coming up can show both people's holidays when they differ.
     const languages = await Promise.all(context.members.map(async (member) => (await store.getUserById(member.userId))?.language || null));
     // Projected once for both: the home cards read the full visible graph; the response carries a trimmed one (see trimHomeGraph).
-    const projected = projectGraph(snapshot, req.auth.user.id); const { graph, totals: graphTotals } = trimHomeGraph(projected);
+    const projected = projectGraph(snapshot, req.auth.user.id); projected.milestones = localizeMilestones(projected.milestones, languageOf(req));
+    const { graph, totals: graphTotals } = trimHomeGraph(projected);
     res.json({ home: buildRelationshipHome(snapshot, req.auth.user.id, new Date(), projected), graph, graphTotals, streak, relationship: { id: context.relationship.id, members: context.members.map((member, index) => ({ id: member.userId, name: member.user.name, role: member.role, language: languages[index] })) }, capabilities: capabilities() });
   });
 
@@ -55,7 +56,7 @@ export function createRelationshipRouter({ store, mediator, decisionAgent = crea
     const language = ["en", "es"].includes(req.body?.language) ? req.body.language : "zh";
     const record = await store.transaction(`relationship:${context.relationship.id}`, (tx) => setTogetherSince(tx, { relationshipId: context.relationship.id, userId: req.auth.user.id, date: cleanDate(req.body?.date), title: language === "en" ? "Our anniversary" : language === "es" ? "Nuestro aniversario" : "在一起纪念日" }));
     await audit(store, record, req.auth.user.id, "milestone.together_since"); emit(record, "milestone.updated");
-    res.json({ milestone: projectRecord(record, req.auth.user.id) });
+    res.json({ milestone: localizeMilestones([projectRecord(record, req.auth.user.id)], language)[0] });
   });
   router.delete("/milestones/:id", archiveOwned("milestones"));
 

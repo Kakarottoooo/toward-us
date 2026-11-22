@@ -92,6 +92,7 @@ export async function createPostgresStore(databaseUrl) {
       return mapUser(result.rows[0]);
     },
     async createSession(session) { await pool.query("insert into sessions (id,user_id,created_at,expires_at,provider) values ($1,$2,$3,$4,$5)", [session.id, session.userId, session.createdAt, session.expiresAt, session.provider || null]); return session; },
+    async extendSession(id, expiresAt) { return (await pool.query("update sessions set expires_at=$2 where id=$1 and expires_at > now()", [id, expiresAt])).rowCount > 0; },
     async getSession(id) { return mapSession((await pool.query("select * from sessions where id = $1 and expires_at > now()", [id])).rows[0]); },
     async deleteUserSessions(userId, except = null) { await pool.query("delete from sessions where user_id=$1 and id is distinct from $2", [userId, except]); },
     async updateUserName(userId, name) { return (await pool.query("update users set name=$2, name_source='user' where id=$1", [userId, name])).rowCount > 0; },

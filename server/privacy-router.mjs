@@ -6,7 +6,7 @@ export { aiConsentAt } from "./ai-permission.mjs";
 import { photoFile } from "./photo-store.mjs";
 import { feedbackFile } from "./feedback-images.mjs";
 import { importFile } from "./chat-import.mjs";
-import { clearSessionCookie, hashPassword, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
+import { clearSessionCookie, hashPassword, nameWasChosen, normalizeEmail, validEmail, validPassword, verifyPassword } from "./auth.mjs";
 import { canViewRecord, createRelationshipRecord, hideUnrevealedAnswers, projectRecord } from "./relationship-domain.mjs";
 import { deleteReferralAccount } from "./referrals.mjs";
 import { COLLECTION as MATCHES, viewMatch } from "./matches/index.mjs";
@@ -163,8 +163,14 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     return req.auth ? next() : res.status(401).json({ error: local(req, "请先登录。", "Please sign in.", "Inicia sesión.") });
   });
   // This salutation is private to the member. Account names and invitations keep their verified profile name.
+  // A member whose account name the server made up ("我", an email's local part) gets the name they gave first run as their
+  // account name too, so the partner sees it (QA round 6, finding 3). Members who answered before this fix are caught up here.
   router.get("/privacy/first-run", async (req, res) => {
     const record = await settings(req.auth.user.id);
+    if (record?.firstRunName && !nameWasChosen(req.auth.user)) {
+      const userId = req.auth.user.id;
+      await store.transaction(`user:${userId}`, async tx => { const user = await tx.getUserForUpdate(userId); if (user && !nameWasChosen(user)) await tx.updateUserName(userId, record.firstRunName); });
+    }
     res.json({ preferredName: record?.firstRunName || "", completed: Boolean(record?.firstRunCompletedAt) });
   });
   router.put("/privacy/first-run", async (req, res) => {
@@ -172,10 +178,14 @@ export function createPrivacyRouter({ store, production = false, closeConnection
     if (typeof preferredName !== "string" || !preferredName.trim() || preferredName.trim().length > 24)
       return res.status(400).json({ code: "invalid_display_name" });
     const userId = req.auth.user.id;
-    await store.transaction(`user:${userId}`, tx => updateSettings(userId, record => {
-      record.firstRunName = preferredName.trim();
-      record.firstRunCompletedAt ||= new Date().toISOString();
-    }, tx));
+    await store.transaction(`user:${userId}`, async tx => {
+      await updateSettings(userId, record => {
+        record.firstRunName = preferredName.trim();
+        record.firstRunCompletedAt ||= new Date().toISOString();
+      }, tx);
+      const user = await tx.getUserForUpdate(userId);
+      if (user && !nameWasChosen(user)) await tx.updateUserName(userId, preferredName.trim());
+    });
     res.status(204).end();
   });
   router.patch("/privacy/account", async (req, res) => {

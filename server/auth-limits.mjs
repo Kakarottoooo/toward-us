@@ -1,6 +1,6 @@
 // Sign-up, sign-in and recovery limits (QA round 5, findings 8–11). Everything is in memory and per app instance:
 // the service runs one instance (render.yaml numInstances: 1), and a restart only forgets counts, never accounts.
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 // Production numbers. Tests that drive many accounts through one app pass their own `authLimits` to createApiApp.
 export const DEFAULT_AUTH_LIMITS = Object.freeze({
@@ -8,14 +8,28 @@ export const DEFAULT_AUTH_LIMITS = Object.freeze({
   // account is capped at the same rate as creating them.
   registerPerIp: { max: 20, windowMs: 60 * 60_000 },
   registerGlobal: { max: 300, windowMs: 10 * 60_000 },
-  // Failed sign-ins: per network and address (a typo-prone person), per network across all addresses (spraying).
+  // Failed sign-ins: per network and address (a typo-prone person), per network across all addresses (spraying). These
+  // can refuse a correct password, but only to the network that ran them up (QA round 6).
   loginPerIpEmail: { max: 10, windowMs: 10 * 60_000 },
   loginPerIp: { max: 50, windowMs: 15 * 60_000 },
-  // Per account, whatever the network: a few free failures, then 1 s, 2 s, 4 s … up to 15 minutes between tries.
-  // It slows guessing without locking the owner out: a password reset by email or recovery code clears it.
-  accountBackoff: { free: 5, maxSeconds: 15 * 60 },
+  // Per account, whatever the network: a few free failures, then each further WRONG password is answered after 1 s, 2 s,
+  // 4 s … (held at most maxHoldSeconds). The password is checked first, so this never refuses the owner's right password:
+  // a stranger can slow guesses at an account, not lock its owner out (QA round 6, finding 1).
+  accountBackoff: { free: 5, maxSeconds: 15 * 60, maxHoldSeconds: 5 },
+  // Distributed guessing: past this many failures per account per hour from all networks together, sign-in is refused
+  // except on a device or network that signed in to this account before. A reset by email or recovery code clears it.
+  accountCeiling: { max: 100, windowMs: 60 * 60_000 },
   // Recovery-code guesses per account across networks (rotating IPs): same backoff shape, cleared by a reset.
   recoveryBackoff: { free: 10, maxSeconds: 15 * 60 },
+});
+
+// When no proxy is configured (neither TRUST_PROXY nor RENDER), every request may arrive from one proxy address, so the
+// per-network caps would act as one global lock. They are raised; per-account limits and known devices still apply.
+export const SHARED_ADDRESS_LIMITS = Object.freeze({
+  registerPerIp: { max: 200, windowMs: 60 * 60_000 },
+  registerGlobal: { max: 1000, windowMs: 10 * 60_000 },
+  loginPerIpEmail: { max: 50, windowMs: 10 * 60_000 },
+  loginPerIp: { max: 1000, windowMs: 15 * 60_000 },
 });
 
 export const emailKey = (email) => createHash("sha256").update(String(email)).digest("hex");
@@ -52,6 +66,10 @@ export function backoff({ free, maxSeconds }, now = () => Date.now()) {
   return { wait, fail, clear: (key) => state.delete(key) };
 }
 
+// A browser that signed in proves it later with a cookie signed by this process (forgotten on restart, like every count here).
+const deviceSecret = randomBytes(32);
+const deviceMac = (nonce, key) => createHmac("sha256", deviceSecret).update(`${nonce}.${key}`).digest("base64url");
+
 export function createAuthLimits(limits = DEFAULT_AUTH_LIMITS) {
   const config = { ...DEFAULT_AUTH_LIMITS, ...limits };
   const registerPerIp = windowLimiter(config.registerPerIp);
@@ -59,21 +77,49 @@ export function createAuthLimits(limits = DEFAULT_AUTH_LIMITS) {
   const loginPerIpEmail = windowLimiter(config.loginPerIpEmail);
   const loginPerIp = windowLimiter(config.loginPerIp);
   const account = backoff(config.accountBackoff);
+  const ceiling = windowLimiter(config.accountCeiling);
   const recovery = backoff(config.recoveryBackoff);
+  // Networks that signed in to each account, so a distributed attack can't refuse the owner at home either.
+  const knownNetworks = new Map();
   return {
+    // Checked before the password. Only this network's own failures, or (for an unknown device on an unknown network) the
+    // account's hourly ceiling, can refuse. The answer doesn't depend on whether the account exists or the password is right.
+    loginWait(ip, email, { trustedDevice = false } = {}) {
+      if (trustedDevice) return 0;
+      const network = Math.max(loginPerIpEmail.wait(`${ip}:${email}`), loginPerIp.wait(ip));
+      if (network) return network;
+      const key = emailKey(email);
+      return knownNetworks.get(key)?.has(ip) ? 0 : ceiling.wait(key);
+    },
+    // Seconds to hold a wrong-password answer: the account's backoff, capped so a request never hangs long.
+    failureHold: (email) => Math.min(config.accountBackoff.maxHoldSeconds ?? 5, account.wait(emailKey(email))),
+    loginFailed(ip, email) { loginPerIpEmail.hit(`${ip}:${email}`); loginPerIp.hit(ip); account.fail(emailKey(email)); ceiling.hit(emailKey(email)); },
+    loginSucceeded(ip, email) {
+      const key = emailKey(email);
+      loginPerIpEmail.clear(`${ip}:${email}`); account.clear(key);
+      const networks = knownNetworks.get(key) || new Set();
+      networks.add(ip); if (networks.size > 20) networks.delete(networks.values().next().value);
+      knownNetworks.delete(key); knownNetworks.set(key, networks);
+      if (knownNetworks.size > 10_000) knownNetworks.delete(knownNetworks.keys().next().value);
+    },
+    // A cookie value proving this browser signed in to this account; deviceTrusted checks one.
+    deviceToken(email) { const nonce = randomBytes(16).toString("base64url"); return `${nonce}.${deviceMac(nonce, emailKey(email))}`; },
+    deviceTrusted(token, email) {
+      const [nonce, mac] = String(token || "").split(".");
+      if (!nonce || !mac) return false;
+      const expected = Buffer.from(deviceMac(nonce, emailKey(email))), actual = Buffer.from(mac);
+      return expected.length === actual.length && timingSafeEqual(expected, actual);
+    },
     // Seconds to wait before this sign-up may go ahead; 0 means go, and it has been counted.
     register(ip) {
       const wait = Math.max(registerPerIp.wait(ip), registerGlobal.wait("all"));
       if (!wait) { registerPerIp.hit(ip); registerGlobal.hit("all"); }
       return wait;
     },
-    loginWait: (ip, email) => Math.max(loginPerIpEmail.wait(`${ip}:${email}`), loginPerIp.wait(ip), account.wait(emailKey(email))),
-    loginFailed(ip, email) { loginPerIpEmail.hit(`${ip}:${email}`); loginPerIp.hit(ip); account.fail(emailKey(email)); },
-    loginSucceeded(ip, email) { loginPerIpEmail.clear(`${ip}:${email}`); account.clear(emailKey(email)); },
     recoveryWait: (email) => recovery.wait(emailKey(email)),
     recoveryFailed: (email) => recovery.fail(emailKey(email)),
     // The owner proved control of the mailbox or the recovery code: sign-in and recovery start fresh for this account.
-    passwordReset(email) { account.clear(emailKey(email)); recovery.clear(emailKey(email)); },
+    passwordReset(email) { account.clear(emailKey(email)); ceiling.clear(emailKey(email)); recovery.clear(emailKey(email)); },
   };
 }
 

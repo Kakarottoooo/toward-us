@@ -42,6 +42,16 @@ export function bareName(name: string) {
   return String(name || "").replace(/[⁦-⁩]/g, "");
 }
 
+/** A name's first character as a person sees it (QA round 6): a whole grapheme, so an emoji, a flag or a family (ZWJ
+ * sequence) stays intact instead of becoming half a surrogate pair. Isolate marks and spaces are skipped. */
+export function initialOf(name: string | null | undefined, fallback = "?") {
+  const text = bareName(String(name || "")).trim();
+  if (!text) return fallback;
+  const Segmenter = (Intl as { Segmenter?: new () => { segment(input: string): Iterable<{ segment: string }> } }).Segmenter;
+  const first = Segmenter ? new Segmenter().segment(text)[Symbol.iterator]().next().value?.segment : Array.from(text)[0];
+  return (first || fallback).toUpperCase();
+}
+
 export function brandLabel(language: Language) {
   return "Ourever";
 }

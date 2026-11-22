@@ -616,6 +616,17 @@ export async function recallOnThisDay(store, { relationshipId, userId, today }) 
   return result.duplicate ? null : result.conversation;
 }
 
+// The default name of the day they got together, in each language. It was saved in the language of whoever set it, so it is
+// shown in each reader's own language instead (QA round 6, finding 8); a title someone typed is kept as typed.
+const ANNIVERSARY_TITLES = { zh: "在一起纪念日", en: "Our anniversary", es: "Nuestro aniversario" };
+const DEFAULT_ANNIVERSARY = new Set(Object.values(ANNIVERSARY_TITLES));
+export function anniversaryTitle(record, language) {
+  if (record?.type !== "relationship_started") return record?.title;
+  const title = String(record.title || "");
+  return !title || DEFAULT_ANNIVERSARY.has(title) ? ANNIVERSARY_TITLES[language] || ANNIVERSARY_TITLES.en : title;
+}
+export const localizeMilestones = (milestones, language) => (milestones || []).map((item) => item?.type === "relationship_started" ? { ...item, title: anniversaryTitle(item, language) } : item);
+
 /** The day the couple got together, which the together counter counts from and the calendar repeats yearly. Either partner
  * may set or correct it; there is only ever one, so a new date moves it. */
 export async function setTogetherSince(tx, { relationshipId, userId, date, title }) {

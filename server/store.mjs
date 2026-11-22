@@ -231,6 +231,8 @@ export async function createFileStore(filePath, { foldBytes = 4 * 1024 * 1024 } 
       return { ...user };
     },
     async createSession(session) { state().sessions[session.id] = { ...session }; await persist(); return session; },
+    // Sliding renewal: only a live session moves, so a signed-out or revoked one stays gone.
+    async extendSession(id, expiresAt) { const session = state().sessions[id]; if (!session || session.expiresAt <= new Date().toISOString()) return false; state().sessions[id] = { ...session, expiresAt }; await persist(); return true; },
     getSession(id) {
       const session = state().sessions[id];
       if (!session || session.expiresAt <= new Date().toISOString()) return null;
