@@ -8,6 +8,7 @@ import { serveClient } from "./client-static.mjs";
 import { createMediator } from "./mediator.mjs";
 import { createPushDelivery } from "./push-delivery.mjs";
 import { createStore } from "./store.mjs";
+import { createRequestTiming } from "./timing.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 // Local secrets (for example OPENAI_API_KEY for voice calls) live outside the repository, in a file only the owner edits.
@@ -19,7 +20,7 @@ const port = Number(process.env.PORT || 5173);
 const dataFile = resolve(process.env.TOWARD_US_DATA_FILE || resolve(root, "data", "toward-us.local.json"));
 const store = await createStore(dataFile, process.env.DATABASE_URL);
 const mediator = createMediator();
-const app = createApiApp({ store, mediator, production });
+const app = createApiApp({ store, mediator, production, requestTiming: createRequestTiming() });
 // Catch up persisted jobs after a restart; external ticks wake sleeping hosts.
 const maintain = () => void app.locals.runMaintenance().catch(() => console.error("Reminder maintenance will retry on the next tick."));
 maintain();
