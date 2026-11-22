@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, ShareNetwork, UserPlus } from "@phosphor-icons/react";
+import { Copy, ShareNetwork, UserPlus, X } from "@phosphor-icons/react";
 import type { Pairing } from "../../Prototype";
 import { languageTag, localized, type Language } from "../../i18n";
 import { useKeyboard } from "../../mobile";
@@ -240,7 +240,7 @@ export function InvitePanel({ state, onEnterCode }: { state: InviteState; onEnte
   </section>;
 }
 
-export function InviteBar({ state, onEnterCode }: { state: InviteState; onEnterCode: () => void }) {
+export function InviteBar({ state, onEnterCode, onDismiss }: { state: InviteState; onEnterCode: () => void; onDismiss?: () => void }) {
   const { sent, usable, title, primary, primaryAction, details, setDetails, working, loadingText, disabled, t } = state;
   const waiting = sent && usable;
   return <div className="partner-invite-bar">
@@ -252,6 +252,7 @@ export function InviteBar({ state, onEnterCode }: { state: InviteState; onEnterC
       <UserPlus size={18} aria-hidden="true" />{working ? loadingText : primary}
     </button>}
     {!waiting && state.canManage && <button type="button" onClick={() => setDetails(true)}>{t("管理邀请", "Manage invite", "Gestionar invitación")}</button>}
+    {onDismiss && !working && <button type="button" className="partner-invite-dismiss" onClick={onDismiss} aria-label={t("收起邀请（菜单里还能邀请）", "Hide invite (still in the menu)", "Ocultar invitación (sigue en el menú)")} data-testid="invite-bar-dismiss"><X size={16} aria-hidden="true" /></button>}
     {!details && <Feedback state={state} />}
     {details && <BottomSheet open onOpenChange={setDetails} title={t("伴侣邀请", "Partner invite", "Invitación de pareja")}><InvitePanel state={state} onEnterCode={() => { setDetails(false); onEnterCode(); }} /></BottomSheet>}
   </div>;

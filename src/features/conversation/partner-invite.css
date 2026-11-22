@@ -79,3 +79,9 @@
   color: inherit; background: transparent; border: 1px solid var(--jian-line); border-radius: 999px; font: inherit;
 }
 .partner-invite-declined { flex-basis: 100%; margin: 0; color: #903e38; font-size: 15px; font-weight: 600; line-height: 1.45; }
+
+/* The bar can be put away (QA round 4): the close button sits beside the invite button; everything else stays full width. */
+.partner-invite-bar:has(.partner-invite-dismiss) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.partner-invite-bar:has(.partner-invite-dismiss) > * { flex: 1 1 100%; order: 2; }
+.partner-invite-bar:has(.partner-invite-dismiss) > .invite-primary, .partner-invite-bar:has(.partner-invite-dismiss) > .partner-invite-summary { flex: 1 1 0; order: 0; min-width: 0; }
+.partner-invite-bar > .partner-invite-dismiss { flex: 0 0 44px; order: 1; padding: 0; border-color: transparent; background: transparent; color: var(--jian-muted, #5c5358); }

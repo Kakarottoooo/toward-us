@@ -30,6 +30,12 @@ export function localized(language: Language, zh: string, en: string, es: string
   return language === "zh" ? zh : language === "es" ? es : en;
 }
 
+/** A person's name set inside running text, kept in its own direction like <bdi> (QA round 4): an Arabic or Hebrew name
+ * in an English sentence no longer pulls the words around it out of order. */
+export function isolate(name: string) {
+  return name ? `⁨${name}⁩` : name;
+}
+
 export function brandLabel(language: Language) {
   return "Ourever";
 }

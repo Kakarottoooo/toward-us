@@ -4,7 +4,7 @@ import { ReportReply } from "../feedback/ReportReply";
 import { Fragment, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Copy, PawPrint, GameController, Sparkle, UserCircle, Drop, ChatCircleText, Lightbulb, WhatsappLogo, ForkKnife, ShoppingCart, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarPlus, EnvelopeSimple, MapPin, Phone, CalendarBlank, ChatCircleDots, ChatsCircle, CheckCircle, Heart, ClockCounterClockwise, GearSix, HandHeart, ImageSquare, Images, List, ListBullets, ListChecks, LockKey, Microphone, NotePencil, PaperPlaneRight, StopCircle, ShareNetwork, UserPlus, UsersThree, X } from "@phosphor-icons/react";
 import { PendingAgreementTools, PlanTerms } from "../agreements/PendingAgreement";
-import { apiErrorText, counted, languageTag, localized, type Language } from "../../i18n";
+import { apiErrorText, counted, isolate, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, MobileScroll, useKeyboard } from "../../mobile";
 import { BottomSheet, useSheetHistory } from "../navigation/Sheet";
 import { useRealtimeTranscription } from "../../useRealtimeTranscription";
@@ -74,7 +74,7 @@ const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
 // Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
 const REOPEN_AFTER = 30 * 60_000;
 
-export function ConversationHome({ user, pairing, language, aiOff = false, onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onPairingChange, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing | null; language: Language; aiOff?: boolean; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals" | "processors") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onPairingChange: (next: Pairing | null) => void; onAccessChanged: () => void }) {
+export function ConversationHome({ user, pairing, language, aiOff = false, aiOffReason = "", onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onPairingChange, onAccessChanged }: { user: { id: string; name: string }; pairing: Pairing | null; language: Language; aiOff?: boolean; aiOffReason?: string; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals" | "processors") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onPairingChange: (next: Pairing | null) => void; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
   const channelKey = `toward-us:conversation-channel:${user.id}`, sessionKey = `toward-us:conversation-session:${user.id}`;
@@ -82,16 +82,23 @@ export function ConversationHome({ user, pairing, language, aiOff = false, onOpe
   // Just me is the main entry (founder 11-06): the App opens there unless a link asks for Us; Ourever brings what concerns both of
   // them over to Us with a card to confirm.
   const [usHidden] = useState(() => readUsHidden(user.id));
+  // Why the AI-off card is showing, when a tap on something that needs AI brought the member here (QA round 4).
+  const [aiOffWhy, setAiOffWhy] = useState(aiOffReason);
+  useEffect(() => { if (aiOffReason) setAiOffWhy(aiOffReason); }, [aiOffReason]);
+  // The invite bar in Just me can be put away; the menu still invites (QA round 4).
+  const inviteBarKey = `ourever:invite-bar-hidden:${user.id}`;
+  const [inviteBarHidden, setInviteBarHidden] = useState(() => { try { return localStorage.getItem(inviteBarKey) === "1"; } catch { return false; } });
+  const hideInviteBar = () => { setInviteBarHidden(true); try { localStorage.setItem(inviteBarKey, "1"); } catch { /* hidden for this visit */ } };
   const [channel, setChannel] = useState<Channel>(() => { if (usHidden) return "me"; try { const asked = new URLSearchParams(location.search).get("channel"); return asked === "us" || (!asked && (history.state as { channel?: string } | null)?.channel === "us") ? "us" : "me"; } catch { return "me"; } });
   const [session, setSession] = useState<Session | null>(null);
   const [noSavedSession, setNoSavedSession] = useState(false);
   const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [salutation, setSalutation] = useState(user.name);
+  const [salutation, setSalutation] = useState(isolate(user.name));
   useEffect(() => {
     let active = true;
     relationshipApi<{ preferredName: string }>("/api/privacy/first-run", { signal: AbortSignal.timeout(12000) })
-      .then(prefs => { if (active && prefs.preferredName) setSalutation(prefs.preferredName); }).catch(() => {});
+      .then(prefs => { if (active && prefs.preferredName) setSalutation(isolate(prefs.preferredName)); }).catch(() => {});
     return () => { active = false; };
   }, [user.id]);
   const [together, setTogether] = useState<Together | null>(null);
@@ -315,10 +322,11 @@ export function ConversationHome({ user, pairing, language, aiOff = false, onOpe
   };
 
   // Connected members always get a conversation on open, so Ourever can speak first to someone it barely knows (founder 11-08).
+  // With AI off nothing is created: an earlier conversation is only restored to read (QA round 4).
   useEffect(() => {
     let active = true;
     setSessionLoadFailed(false);
-    void ensureSession(paired, true).catch(() => { if (active) setSessionLoadFailed(true); })
+    void ensureSession(paired && !aiOff, true).catch(() => { if (active) setSessionLoadFailed(true); })
       .finally(() => { if (active) setFirstLook(current => ({ ...current, session: true })); });
     return () => { active = false; };
   }, [user.id, paired, loadAttempt]);
@@ -557,6 +565,8 @@ ${text}` : text, target);
   }, [together, channel, user.id]);
   const startCall = async () => {
     keyboard.hide(); voice.stop(); setNotice("");
+    // AI off: no call and no assistant session; Just me's card says why and how to turn AI on (QA round 4).
+    if (aiOff) { setAiOffWhy(t("和 Ourever 通话需要用到 AI。", "Calling Ourever needs AI.", "Llamar a Ourever necesita la IA.")); switchChannel("me"); return; }
     if (channel === "us") { setCall({ channel: "us", sessionId: null }); return; }
     try { const active = await ensureSession(); setCall({ channel: "me", sessionId: active?.id || null }); } catch (error) { setNotice((error as Error).message); }
   };
@@ -780,7 +790,8 @@ ${text}` : text, target);
 
   // A letter's opening day, written out ("2027年3月5日", "March 5, 2027").
   const longDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(languageTag(language), { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
-  const partnerName = together?.members.find((member) => member.id !== user.id)?.name || t("TA", "Your partner", "Tu pareja");
+  const partnerRaw = together?.members.find((member) => member.id !== user.id)?.name || "";
+  const partnerName = partnerRaw ? isolate(partnerRaw) : t("TA", "Your partner", "Tu pareja");
   const pendingAgreement = together?.pendingAgreement;
   // 小游戏: answer a round, or start another ("再来一局").
   const answerWatch = async (id: string, finished: boolean) => {
@@ -910,17 +921,32 @@ ${text}` : text, target);
       onAnswer={(answer) => answerGame(message.id, answer)} onAgain={() => { closeQuestion(); void playAgain(); }}
       onOpenDeck={deckId ? () => { closeQuestion(); setPlayTogether({ cardId: deckId }); } : undefined} />;
   };
+  // Times like iMessage (QA round 4): a line with the time where more than half an hour passed, and a tap on a message
+  // shows when it was sent.
+  const [timeOf, setTimeOf] = useState<string | null>(null);
+  const stampLabel = (iso: string) => {
+    const at = new Date(iso), now = new Date(), tag = languageTag(language);
+    const clock = at.toLocaleTimeString(tag, { hour: "numeric", minute: "2-digit" });
+    if (at.toDateString() === now.toDateString()) return clock;
+    if (now.getTime() - at.getTime() < 6 * 86_400_000) return `${at.toLocaleDateString(tag, { weekday: "short" })} ${clock}`;
+    return `${at.toLocaleDateString(tag, { month: "short", day: "numeric", ...(at.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) })} ${clock}`;
+  };
+  const timeGap = (previous: string | undefined, current: string | undefined) => current && !Number.isNaN(Date.parse(current)) && (!previous || Date.parse(current) - Date.parse(previous) > 30 * 60_000)
+    ? <p className="conversation-time" role="separator" data-testid="message-time-gap"><time dateTime={current}>{stampLabel(current)}</time></p> : null;
+  const showTime = (id: string) => (event: { target: EventTarget }) => { if ((event.target as HTMLElement).closest("button, a, input, textarea, select, [role=menu], [role=dialog]")) return; setTimeOf((shown) => shown === id ? null : id); };
   const sharedMessage = (message: SharedMessage, index: number) => {
     const body = sharedBody(message, index);
-    if (!body || !together || message.removedAt) return body;
+    const gap = timeGap(sharedMessages[index - 1]?.createdAt, message.createdAt);
+    if (!body || !together || message.removedAt) return gap && body ? <Fragment key={message.id}>{gap}{body}</Fragment> : body;
     const own = message.role === "member" && message.actorUserId === user.id;
     const removable = own && !readOnly && !message.recordedByUserId && message.kind === "text" && Date.now() - Date.parse(message.createdAt) <= 120_000;
     const latest = together.conversation.messages.at(-1);
     const canRegenerate = !readOnly && !generating.us && latest?.id === message.id && message.kind === "text" && message.role === "agent" && sharedMessages.some(line => line.id === message.replyTo && line.actorUserId === user.id && !line.removedAt);
-    return <div key={message.id} className="shared-reportable" data-shared-id={message.id}>
+    return <Fragment key={message.id}>{gap}<div className="shared-reportable" data-shared-id={message.id} onClick={showTime(message.id)}>
       {body}<ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "agent"} onUnsend={removable ? () => void unsend(message.id) : undefined} onRegenerate={canRegenerate ? () => void regenerate("us", message.id) : undefined} replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? (message.text || message.call?.rows.map(row => row.text).join("\n"))} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
+      {timeOf === message.id && <time className="message-time" dateTime={message.createdAt}>{stampLabel(message.createdAt)}</time>}
       {own && latestOwn?.id === message.id && <small className="message-receipt">{message.readAt ? t("已读", "Read", "Leído") : message.deliveredAt ? t("已送达", "Delivered", "Entregado") : t("已发送", "Sent", "Enviado")}</small>}
-    </div>;
+    </div></Fragment>;
   };
   const sharedBody = (message: SharedMessage, index: number) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
@@ -977,7 +1003,7 @@ ${text}` : text, target);
     </article>;
     if (mine) return <div key={message.id} className="us-row from-me">{article}</div>;
     // Partner and Ourever sit on the left, each with their own avatar so the two are told apart at a glance.
-    return <div key={message.id} className={`us-row ${from}${continued ? " is-continued" : ""}`}><i className={`us-avatar${message.role === "agent" ? " is-pinky" : ""}`} aria-hidden="true">{continued || message.role === "agent" ? "" : (partnerName || "?").slice(0, 1).toUpperCase()}</i>{article}</div>;
+    return <div key={message.id} className={`us-row ${from}${continued ? " is-continued" : ""}`}><i className={`us-avatar${message.role === "agent" ? " is-pinky" : ""}`} aria-hidden="true">{continued || message.role === "agent" ? "" : (Array.from(partnerRaw)[0] || "?").toUpperCase()}</i>{article}</div>;
   };
 
   // B: the partner approves looking at the other's chat-history analysis together; only then does a shared copy exist.
@@ -986,7 +1012,8 @@ ${text}` : text, target);
     try { await importAction(id, "share-approve", { language }); } catch (error) { setNotice((error as Error).message); } finally { setBusy(false); }
   };
   // Ourever's core (founder 11-08): "I don't know how to reply to her" — a reply coach that works alone, before any pairing.
-  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty"><h1>{t(`${salutation}，最近哪件小事让你觉得被在乎？`, `${salutation}, when did you last feel cared for?`, `${salutation}, ¿cuándo sentiste por última vez que te cuidaban?`)}</h1><p>{t("把那一刻写在这里；即使伴侣加入，这段对话也只有你能看到。", "Write about that moment here. This conversation stays private when your partner joins.", "Escribe aquí sobre ese momento. Esta conversación seguirá siendo privada cuando se una tu pareja.")}</p><div className="card-actions"><button type="button" className={paired ? "card-primary" : undefined} onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button></div></section>;
+  const replyCoach = <div className="reply-coach-entry" data-testid="reply-coach-entry"><strong>{t("帮我回 TA 的消息", "Help me reply to a message", "Ayúdame a responder un mensaje")}</strong><p>{t("粘贴 TA 发来的话，或者发一张聊天截图，Ourever 帮你看懂并写好回复。", "Paste what they sent or add a chat screenshot; Ourever helps you read it and write a reply.", "Pega lo que te escribió o añade una captura del chat; Ourever te ayuda a entenderlo y a responder.")}</p><div className="card-actions"><button type="button" className="card-primary" onClick={() => { setDraft(t("TA 刚发来：", "They just sent me: ", "Me acaba de escribir: "), "me"); composerRef.current?.querySelector("textarea")?.focus(); }} data-testid="reply-coach-paste"><ChatCircleDots size={18} />{t("粘贴 TA 的话", "Paste their message", "Pegar su mensaje")}</button><button type="button" onClick={() => { keyboard.hide(); fileRef.current?.click(); }} data-testid="empty-screenshot"><ImageSquare size={18} />{t("发截图", "Send a screenshot", "Enviar captura")}</button></div></div>;
+  const meEmpty = <section className="conversation-empty" data-testid="reply-coach-empty">{replyCoach}<h1>{t(`${salutation}，最近哪件小事让你觉得被在乎？`, `${salutation}, when did you last feel cared for?`, `${salutation}, ¿cuándo sentiste por última vez que te cuidaban?`)}</h1><p>{t("把那一刻写在这里；即使伴侣加入，这段对话也只有你能看到。", "Write about that moment here. This conversation stays private when your partner joins.", "Escribe aquí sobre ese momento. Esta conversación seguirá siendo privada cuando se una tu pareja.")}</p></section>;
   const usEmpty = <section className="conversation-empty"><h1>{t(`和 ${partnerName} 聊天`, `Chat with ${partnerName}`, `Habla con ${partnerName}`)}</h1><p>{t("你们俩都能看到这里的消息。", "You can both see messages here.", "Ambos pueden ver los mensajes aquí.")}</p><button type="button" className="conversation-empty-link" onClick={() => composerRef.current?.querySelector("textarea")?.focus()}>{t("写第一条消息", "Write the first message", "Escribir el primer mensaje")}</button></section>;
   const formerUs = former && !paired && <section className="former-us" data-testid="former-us">
     <button type="button" className="conversation-earlier" onClick={() => setFormerOpen(!formerOpen)} aria-expanded={formerOpen}><ClockCounterClockwise size={16} />{formerOpen ? t("收起以前的聊天", "Hide earlier chat", "Ocultar el chat anterior") : t(`你和 ${former.name || "TA"} 以前的聊天（只读）`, `Your chat with ${former.name || "your partner"} (read-only)`, `Tu chat con ${former.name || "tu pareja"} (solo lectura)`)}</button>
@@ -1095,11 +1122,11 @@ ${text}` : text, target);
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Ourever 通话", "Call Ourever", "Llamar a Ourever")} data-testid="start-call"><Phone size={22} /></button>
       </div>
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
-      {channel === "me" && !paired && <InviteBar state={invitation} onEnterCode={enterPartnerCode} />}
+      {channel === "me" && !paired && !inviteBarHidden && <InviteBar state={invitation} onEnterCode={enterPartnerCode} onDismiss={hideInviteBar} />}
       {former && !former.seen && !paired && <p className="partner-joined" role="status" data-testid="former-notice">{t(`${former.name || "TA"} 删除了账号。你们以前在“我们俩”的聊天记录会在这里保留，只能查看。`, `${former.name || "Your partner"} deleted their account. Your shared history in Us is kept here, read-only.`, `${former.name || "Tu pareja"} borró su cuenta. Su historial compartido en Nosotros se conserva aquí, solo para leer.`)}<button type="button" onClick={() => { seeFormer(); if (!usHidden) { switchChannel("us"); setFormerOpen(true); } }}>{t("查看", "View", "Ver")}</button><button type="button" onClick={seeFormer}>{t("知道了", "OK", "Entendido")}</button></p>}
       {welcomePartner && <p className="partner-joined" role="status" data-testid="partner-joined"><Heart size={18} weight="fill" aria-hidden="true" />{t("你的伴侣加入了，你们的共同空间已开启。", "Your partner joined. Welcome to your shared space.", "Tu pareja se ha unido. Este es su espacio compartido.")}{channel === "me" && !usHidden && <button type="button" disabled={!!attachments.length || voiceActive || !!call} onClick={() => switchChannel("us")}>{t("打开我们俩", "Open Us", "Abrir Nosotros")}</button>}</p>}
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
-      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
+      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name ? isolate(partner.name) : t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
       {recall.controls}
       {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
@@ -1111,11 +1138,11 @@ ${text}` : text, target);
         }
         const canRegenerate = !generating.me && session?.messages.at(-1)?.id === message.id && message.role === "assistant" && (!session.messages.at(-2) || session.messages.at(-2)?.role === "user") && Boolean(message.text) && !message.screenshotPending && !message.stopped && !message.call && !message.kind;
         const actions = session ? <ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "assistant"} onRegenerate={canRegenerate ? () => void regenerate("me", message.id) : undefined} replyText={message.text || message.call?.rows.map(row => row.text).join("\n")} language={language} channel="me" conversationId={session.id} messageId={message.id} /> : null;
-        return <Fragment key={message.id}>{message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask">{actions}<p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <div className="private-note-actions">{actions}<button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about && thread !== about.id) openThread(about.id); else if (about) open(`/?view=people&person=${encodeURIComponent(about.id)}`); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{thread !== about.id ? t("去对话", "Open chat", "Ir al chat") : t("档案", "Page", "Ficha")}</span>}</button></div>; })() : <div key={message.id} className="conversation-turn"><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{actions}{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span className="assistant-byline">Ourever</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}
+        return <Fragment key={message.id}>{timeGap(privateMessages[index - 1]?.createdAt, message.createdAt)}{message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask">{actions}<p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <div className="private-note-actions">{actions}<button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about && thread !== about.id) openThread(about.id); else if (about) open(`/?view=people&person=${encodeURIComponent(about.id)}`); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{thread !== about.id ? t("去对话", "Open chat", "Ir al chat") : t("档案", "Page", "Ficha")}</span>}</button></div>; })() : <div key={message.id} className="conversation-turn" onClick={showTime(message.id)}><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{actions}{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span className="assistant-byline">Ourever</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}
           {message.copyableReply && <button type="button" className="card-secondary" onClick={async () => {
             try { await navigator.clipboard.writeText(message.copyableReply!); setNotice(t("已复制建议回复", "Suggested reply copied", "Respuesta sugerida copiada")); }
             catch { setNotice(t("请长按回复文字并选择复制。", "Touch and hold the reply text, then choose Copy.", "Mantén pulsada la respuesta y elige Copiar.")); }
-          }}><Copy size={16} />{t("复制建议回复", "Copy suggested reply", "Copiar respuesta sugerida")}</button>}</article><RecallLinks sources={message.sources} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />{cards}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>}</Fragment>; })}</> :
+          }}><Copy size={16} />{t("复制建议回复", "Copy suggested reply", "Copiar respuesta sugerida")}</button>}</article>{timeOf === message.id && <time className="message-time" dateTime={message.createdAt}>{stampLabel(message.createdAt)}</time>}<RecallLinks sources={message.sources} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />{cards}{message.dateCheck && !message.dateAnswer && <QuickReply language={language} busy={busy} testId="date-check-answers" options={([["great", "很开心", "Loved it", "Me encantó"], ["ok", "还行", "It was okay", "Estuvo bien"], ["meh", "不太行", "Not great", "No tanto"]] as const).map(([value, zh, en, es]) => ({ value, label: t(zh, en, es) }))} onAnswer={(rating) => void answerDate(message.id, rating)} />}{message.dateCheck && message.dateAnswer?.rating === "great" && !message.dateAnswer.told && paired && <div className="card-actions date-check-answers"><button disabled={busy} onClick={() => void tellPartner(message)} data-testid="date-check-tell"><Heart size={16} weight="fill" />{t(`也告诉 ${partnerName || "TA"}`, `Tell ${partnerName || "them"} too`, `Díselo a ${partnerName || "tu pareja"}`)}</button></div>}</div>}</Fragment>; })}</> :
         !paired ? invite : <>{together && !sharedMessages.length && usEmpty}
           {hasOlder && <button type="button" className="conversation-earlier" disabled={loadingOlder} onClick={() => void loadOlder()} data-testid="earlier-messages">{loadingOlder ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}
           {sharedMessages.slice(0, olderMessages.length).map(sharedMessage)}<div ref={olderRef} className="conversation-seam" aria-hidden="true" />{sharedMessages.slice(olderMessages.length).map((message, index) => sharedMessage(message, index + olderMessages.length))}
@@ -1134,7 +1161,7 @@ ${text}` : text, target);
     <TogetherSheet language={language} person={settledOn} others={putAway} onClose={() => setTogetherPerson(null)} onInvite={() => { setTogetherPerson(null); switchChannel("us"); }} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {aiOff && channel === "me" && <footer className="conversation-composer ai-off-card" data-testid="ai-off">
-      <p><strong>{t("Ourever 的 AI 已关闭", "Ourever's AI is off", "La IA de Ourever está desactivada")}</strong>{paired
+      <p>{aiOffWhy && <span className="ai-off-why" data-testid="ai-off-why">{aiOffWhy}</span>}<strong>{t("Ourever 的 AI 已关闭", "Ourever's AI is off", "La IA de Ourever está desactivada")}</strong>{paired
         ? t("你没有同意第三方 AI 处理，所以这里不会回复。“我们俩”照常可以和 TA 聊天。", "You haven't allowed third-party AI, so nothing replies here. You can still chat with your partner in Us.", "No has permitido la IA de terceros, así que aquí nadie responde. Puedes seguir hablando con tu pareja en Nosotros.")
         : t("你没有同意第三方 AI 处理，所以这里不会回复。邀请伴侣后，你们可以在“我们俩”里聊天。", "You haven't allowed third-party AI, so nothing replies here. Invite your partner to chat together in Us.", "No has permitido la IA de terceros, así que aquí nadie responde. Invita a tu pareja para hablar en Nosotros.")}</p>
       <button type="button" className="primary-action" onClick={() => { keyboard.hide(); onPrivacy("processors"); }} data-testid="ai-off-settings">{t("在设置里打开 AI", "Turn on AI in Settings", "Activar la IA en Ajustes")}</button>
@@ -1221,7 +1248,7 @@ ${text}` : text, target);
         keyboard.hide(); closePlayTogether(); switchChannel("us"); setAskAgent(true);
         setDraft((current) => current.trim() ? `${current}\n\n${prompt}` : prompt, "us");
       }} /></Suspense>}
-    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); keyboard.hide(); onPrivacy("referrals"); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
+    {drawer && <ConversationDrawer user={user} paired={paired} language={language} data={drawerData} onData={setDrawerData} onPet={together?.pet ? () => { setDrawer(false); openPetRoom(); } : undefined} onClose={() => setDrawer(false)} onOpen={(url) => { setDrawer(false); open(url); }} onInvite={() => { setDrawer(false); if (usHidden) invitation.primaryAction(); else switchChannel("us"); }} onPrivacy={() => { setDrawer(false); onPrivacy(); }} onProfile={() => { setDrawer(false); keyboard.hide(); onPrivacy("profile"); }} onGame={() => { setDrawer(false); openGames(); }} onShare={() => { setDrawer(false); keyboard.hide(); onPrivacy("referrals"); }} onFeedback={() => { setDrawer(false); onFeedback(channel === "us" ? "conversation-us" : "conversation-me"); }} />}
   </div>;
 }
 

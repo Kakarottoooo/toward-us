@@ -26,7 +26,7 @@ type Focus = { title: string; detail?: string; moments: Moment[] };
 /** Moments: the couple's memory album and each member's own, photos first (founder 11-05, like Google Photos): stories Ourever
  * found as bubbles that play full screen, the map and search as icons, a photo wall by month, and years / months / every
  * photo at the bottom. Things are added by telling Ourever. */
-export function MomentsPage({ language, userId, paired, milestones = [], onAsk }: { language: Language; userId: string; paired: boolean; milestones?: Milestone[]; onAsk: (text: string, channel: "me" | "us") => void }) {
+export function MomentsPage({ language, userId, paired, milestones = [], onAsk, aiOff = false }: { language: Language; userId: string; paired: boolean; milestones?: Milestone[]; aiOff?: boolean; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [moments, setMoments] = useState<Moment[] | null>(null);
   // Photos first, like Google Photos (founder 11-05): a wall by month; the switch at the bottom zooms out to years or in to every photo.
@@ -271,7 +271,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk }
     </>}
     {scale === "months" && wallOf(all)}
     {scale === "all" && everyPhoto(all)}
-    {!error && moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{t("约会、旅行、第一次、让你感动的小事……在对话里跟 Ourever 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Ourever in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Ourever en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
+    {!error && moments && !all.length && <div className="moments-empty"><strong>{t("还没有回忆", "No moments yet", "Aún no hay recuerdos")}</strong><p>{aiOff ? t("约会、旅行、第一次、让你感动的小事……点上面的“记一个回忆”就能存进来。", "Dates, trips, firsts, small things that moved you: tap Add above to keep one here.", "Citas, viajes, primeras veces, pequeños detalles: toca Añadir arriba para guardar uno aquí.") : t("约会、旅行、第一次、让你感动的小事……在对话里跟 Ourever 说，或者发几张照片说“存进回忆”，就会出现在这里。", "Dates, trips, firsts, small things that moved you: tell Ourever in the chat, or send photos and say “keep this”, and they appear here.", "Citas, viajes, primeras veces, pequeños detalles: díselo a Ourever en el chat, o envía fotos y di «guárdalo», y aparecerán aquí.")}</p></div>}
 
     {paired && photoPlugin() && <PhotoAlbumCard language={language} />}
     {!!all.length && <div className="moments-scale" role="tablist" aria-label={t("按时间看", "By time", "Por fecha")}>{scales.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={scale === value} className={scale === value ? "active" : ""} onClick={() => { setScale(value); setOpenYear(""); }}>{label}</button>)}</div>}

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AirplaneTilt, Alarm, BookOpenText, ChatTeardropText, Drop, EnvelopeSimpleOpen, GameController, Handshake, Heart, Images, PawPrint, Sparkle, UserCircle } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { isolate, localized, type Language } from "../../i18n";
 import { relationshipApi } from "../relationship/api";
 
 type Channel = "me" | "us";
@@ -34,7 +34,7 @@ export function DiscoveryCard({ userId, channel, paired, language, partnerName, 
   }, [key, channel]);
   if (!key) return null;
   const done = (chosen: DiscoverKey) => { const next = { ...memory, dismissed: [...memory.dismissed, chosen], current: { ...memory.current, [channel]: undefined } }; setMemory(next); save(userId, next); };
-  const partner = partnerName || t("TA", "your partner", "tu pareja");
+  const partner = partnerName ? isolate(partnerName) : t("TA", "your partner", "tu pareja");
   const cards: Record<DiscoverKey, { icon: ReactNode; title: string; text: string; button?: string }> = {
     ideas: { icon: <Sparkle size={20} weight="fill" />, title: t("不知道一起做点什么？", "Not sure what to do together?", "¿No saben qué hacer juntos?"), text: t("一张 100 件小事的海报：看日落、做大餐、去没去过的地方……做过的格子会变成你们那天的照片。", "A poster of 100 little things: a sunset, a big dinner, somewhere new… Each one you do becomes your photo from that day.", "Un póster de 100 cosas: un atardecer, una gran cena, un sitio nuevo… Cada una que hagan se vuelve su foto de ese día."), button: t("打开海报", "Open the poster", "Abrir el póster") },
     games: { icon: <GameController size={20} weight="fill" />, title: t("来玩个小游戏", "Play a little game", "Jueguen un juego"), text: t("象棋、五子棋、情侣飞行棋、海龟汤、你画我猜……十几个双人小游戏，挑一个一起玩。TA 不在时也能和小家伙玩。", "Chinese chess, gomoku, couples' ludo, lateral puzzles, draw & guess and more: pick one to play together, or play your little one.", "Ajedrez chino, gomoku, parchís, acertijos, dibuja y adivina y más: elijan uno para jugar juntos, o juega con tu pequeñín."), button: t("去看看", "Take a look", "Ver juegos") },
