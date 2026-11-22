@@ -5,9 +5,9 @@
   --jian-paper: #f4efe6;
   --jian-paper-bright: #fbf7ef;
   --jian-ink: #252525;
-  --jian-muted: #7a756e;
+  --jian-muted: #6b665f;
   --jian-line: rgba(37, 37, 37, 0.16);
-  --jian-red: #ff3b24;
+  --jian-red: #cf2a16; /* QA round 5: was #ff3b24; white on it and it as text on paper both reach 4.5:1 */
   --jian-red-soft: #ffe4dc;
   --jian-blue: #073db9;
   --jian-blue-soft: #dfe8ff;
@@ -125,6 +125,11 @@ button { -webkit-tap-highlight-color: transparent; }
 .invite-ai:disabled { background: #c5c0b9; }
 
 .device-screen :is(button, a, input, textarea, select, [tabindex]):focus-visible { outline: 2px solid var(--jian-blue); outline-offset: 2px; }
+/* QA round 5: the protected runtime sets "outline: 0 !important" on every focused control, so keyboard users saw no focus
+   at all (sign-in fields included). The doubled class outranks it; pointer taps on buttons still show nothing. */
+.device-screen.device-screen :is(button, a, input, textarea, select, summary, [tabindex]:not([tabindex="-1"])):focus-visible { outline: 2px solid var(--jian-blue) !important; outline-offset: 2px; }
+.device-screen.device-screen :is(input, textarea):focus-visible { outline-offset: 1px; }
+.device-screen.device-screen [tabindex="-1"]:focus { outline: 0 !important; }
 .device-screen ::selection { background: var(--jian-blue-soft); color: var(--jian-ink); }
 
 .analysis-screen { background: var(--jian-paper); }

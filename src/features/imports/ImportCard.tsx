@@ -13,7 +13,18 @@ export function ImportCard({ id, language, onOpen, onFinished }: { id: string; l
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const seen = useRef("");
+  // Loaded once the card is near the screen (QA round 5): a private chat with 100 import cards in its history sent 100
+  // requests on open and made a 350 ms long task; now only the cards around what is shown ask.
+  const placeholder = useRef<HTMLElement>(null);
+  const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
   useEffect(() => {
+    if (near || !placeholder.current) return;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) setNear(true); }, { rootMargin: "600px 0px" });
+    observer.observe(placeholder.current);
+    return () => observer.disconnect();
+  }, [near]);
+  useEffect(() => {
+    if (!near) return;
     let alive = true, timer = 0;
     const load = async () => {
       try {
@@ -25,13 +36,13 @@ export function ImportCard({ id, language, onOpen, onFinished }: { id: string; l
     };
     void load();
     return () => { alive = false; clearTimeout(timer); };
-  }, [id, item?.status]);
+  }, [id, item?.status, near]);
   const act = async (action: string, body: unknown) => {
     setBusy(true); setError("");
     try { const result = await importAction(id, action, body); if (result.import) setItem(result.import); } catch (caught) { setError((caught as Error).message); } finally { setBusy(false); }
   };
   if (gone) return <article className="conversation-card import-card is-gone"><header><ChatsCircle size={16} />{t("这份聊天记录已删除", "This chat history was deleted", "Este historial fue eliminado")}</header></article>;
-  if (!item) return <article className="conversation-card import-card"><header><ChatsCircle size={16} />{t("聊天记录", "Chat history", "Historial de chat")}</header></article>;
+  if (!item) return <article ref={placeholder} className="conversation-card import-card"><header><ChatsCircle size={16} />{t("聊天记录", "Chat history", "Historial de chat")}</header></article>;
   const period = item.firstAt && item.lastAt ? `${item.firstAt.slice(0, 10)} – ${item.lastAt.slice(0, 10)}` : "";
   return <article className={`conversation-card import-card is-${item.status}`} data-testid="import-card">
     <header><ChatsCircle size={16} />{item.title || t("聊天记录", "Chat history", "Historial de chat")}</header>

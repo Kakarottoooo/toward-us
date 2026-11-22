@@ -36,7 +36,7 @@
 .floating-pet-figure > svg { width: 44px; height: 44px; padding: 8px; border-radius: 50%; background: rgba(226,168,77,.2); color: #c9913a; box-sizing: content-box; }
 .floating-pet small { margin-top: 1px; padding: 0 7px; border-radius: 999px; background: rgba(255,250,242,.86); font-size: 11px; font-weight: 800; line-height: 17px; }
 .floating-pet-dot { position: absolute; top: 4px; right: 10px; width: 10px; height: 10px; border: 2px solid var(--jian-paper); border-radius: 50%; background: #e0566f; }
-.floating-pet-z { position: absolute; top: -6px; left: 8px; color: #8a837a; font-size: 14px; font-style: italic; animation: pet-doze 2.4s ease-in-out infinite; }
+.floating-pet-z { position: absolute; top: -6px; left: 8px; color: #6e675f; font-size: 14px; font-style: italic; animation: pet-doze 2.4s ease-in-out infinite; }
 .floating-pet.is-happy .floating-pet-figure { animation: pet-sway 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
 .floating-pet.is-sleepy .floating-pet-figure { filter: saturate(.55); opacity: .85; }
 @keyframes pet-sway { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
@@ -101,7 +101,7 @@
 .pet-outfit.is-flower { top: -2%; left: 14%; width: 26%; }
 .pet-outfit.is-glasses { top: 28%; left: 24%; width: 52%; }
 .pet-outfit.is-scarf { top: 58%; left: 14%; width: 72%; }
-.wardrobe-note { margin: 0 0 10px; color: #7a736b; font-size: 14px; }
+.wardrobe-note { margin: 0 0 10px; color: #6b645c; font-size: 14px; }
 .wardrobe-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .wardrobe-item { display: grid; justify-items: center; gap: 4px; min-height: 104px; padding: 10px 6px; border: 2px solid transparent; border-radius: 16px; background: #fbf7ef; color: var(--jian-ink); cursor: pointer; }
 .wardrobe-item.is-on { border-color: #d5576b; background: #fff4f2; }

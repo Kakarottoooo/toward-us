@@ -1,7 +1,7 @@
 import { jsonBody, relationshipApi } from "../relationship/api";
 
 export type SignInProvider = "google" | "apple";
-type SignInOptions = { adultConfirmed: boolean; partnerInviteCode?: string; referralCode?: string; installId: string };
+type SignInOptions = { adultConfirmed: boolean; partnerInviteCode?: string; referralCode?: string; installId: string; language?: string };
 type AuthBridge = { open(options: { url: string }): Promise<{ code?: string; error?: string }> };
 type NativeShell = { isNativePlatform(): boolean; getPlatform(): string; Plugins?: { OureverSignIn?: AuthBridge } };
 

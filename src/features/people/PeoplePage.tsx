@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChatCircleDots, Trash } from "@phosphor-icons/react";
-import { languageTag, localized, type Language } from "../../i18n";
+import { isolate, languageTag, localized, type Language } from "../../i18n";
 import { useKeyboard } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
 import { PageHeader } from "../conversation/ConversationHome";
@@ -8,7 +8,7 @@ import { jsonBody, relationshipApi } from "../relationship/api";
 import { Avatar, plainName, type PeopleState, type Person } from "./People";
 import "./people-page.css";
 
-export function PeoplePage({ language, initialPerson, archived = false, onBack, backLabel, onAsk, onChat }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; backLabel?: string; onAsk: (text: string, channel: "me" | "us") => void; onChat: (personId: string) => void }) {
+export function PeoplePage({ language, initialPerson, archived = false, onBack, backLabel, onAsk, onChat, onInvite }: { language: Language; initialPerson: string; archived?: boolean; onBack: () => void; backLabel?: string; onAsk: (text: string, channel: "me" | "us") => void; onChat: (personId: string) => void; onInvite: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [personId, setPersonId] = useState(initialPerson);
   const [directory, setDirectory] = useState<PeopleState | null>(null);
@@ -66,14 +66,14 @@ export function PeoplePage({ language, initialPerson, archived = false, onBack, 
         <button type="button" className="people-secondary" onClick={() => { keyboard.hide(); setDeleting(true); }} data-testid="person-delete"><Trash size={18} />{t("删除这份档案", "Delete this file", "Eliminar esta ficha")}</button>
       </>}
       {!personId && directory && <>
-        {directory.stage === "chosen" && directory.chosen && !archived && <section className="people-card people-read" data-testid="people-chosen"><h2>{t(`你已经确定了${plainName(directory.chosen.name)}`, `You're together with ${directory.chosen.name}`, `Estás con ${directory.chosen.name}`)}</h2>
-          <div className="people-actions"><button type="button" className="people-primary" onClick={() => onAsk("", "us")} data-testid="people-invite">{t("邀请 TA 一起用 Ourever", "Invite them to Ourever", "Invitar a Ourever")}</button><button type="button" className="people-secondary" disabled={busy} onClick={() => void settle(null)} data-testid="people-unchoose">{t("其实还没确定", "Not settled after all", "Aún no")}</button></div></section>}
+        {directory.stage === "chosen" && directory.chosen && !archived && <section className="people-card people-read" data-testid="people-chosen"><h2>{t(`你已经确定了${isolate(plainName(directory.chosen.name))}`, `You're together with ${isolate(directory.chosen.name)}`, `Estás con ${isolate(directory.chosen.name)}`)}</h2>
+          <div className="people-actions"><button type="button" className="people-primary" onClick={() => { keyboard.hide(); onInvite(); }} data-testid="people-invite">{t("邀请 TA 一起用 Ourever", "Invite them to Ourever", "Invitar a Ourever")}</button><button type="button" className="people-secondary" disabled={busy} onClick={() => void settle(null)} data-testid="people-unchoose">{t("其实还没确定", "Not settled after all", "Aún no")}</button></div></section>}
         {people.length ? people.map((person) => <button key={person.id} type="button" className="people-person-card" data-testid={archived ? "people-earlier-row" : "people-person"} onClick={() => setPersonId(person.id)}><span className="person-card-head"><Avatar name={person.name} /><span><strong>{person.name}</strong><small>{new Date(person.lastSeenAt).toLocaleDateString(languageTag(language))}</small></span></span></button>)
           : <><p className="people-muted">{archived ? t("没有收起来的档案。", "No archived contacts.", "No hay contactos archivados.") : t("你在私人对话里提到正在了解的人后，可以在这里找到对方的档案。", "Talk about someone you’re getting to know in your private chat to start their page here.", "Habla en tu chat privado de alguien a quien estás conociendo para crear aquí su ficha.")}</p>
             {!archived && <button type="button" className="people-primary" onClick={() => onAsk(t("我最近在了解一个人，名字是", "I’m getting to know someone named ", "Estoy conociendo a alguien que se llama "), "me")}>{t("聊聊这个人", "Talk about someone", "Hablar de alguien")}</button>}</>}
       </>}
     </main>
-    <BottomSheet open={deleting} onOpenChange={(open) => { if (!busy) setDeleting(open); }} title={t(`删除${detail?.name || ""}的档案？`, `Delete the file for ${detail?.name || ""}?`, `¿Eliminar la ficha de ${detail?.name || ""}?`)}
+    <BottomSheet open={deleting} onOpenChange={(open) => { if (!busy) setDeleting(open); }} title={t(`删除${isolate(detail?.name || "")}的档案？`, `Delete the file for ${isolate(detail?.name || "")}?`, `¿Eliminar la ficha de ${isolate(detail?.name || "")}?`)}
       description={t("联系人、对应档案笔记和与 Ourever 单独聊这个人的对话将永久删除。原始导入和已分享的副本单独保留，可在「聊天记录」中管理。其他对话中提到此人的文字也会保留。", "This permanently deletes this contact, their file notes and the dedicated private conversation about them. Original imports and shared copies are managed separately in Chat history. Mentions in other conversations are kept.", "Se eliminarán el contacto, sus notas y la conversación privada dedicada a esa persona. Las importaciones y copias compartidas se gestionan por separado en Historial de chat. Se conservan las menciones en otras conversaciones.")}>
       <div className="person-sheet person-actions"><button type="button" className="person-secondary" disabled={busy} onClick={() => setDeleting(false)}>{t("取消", "Cancel", "Cancelar")}</button><button type="button" className="person-primary" disabled={busy} onClick={() => void remove()} data-testid="person-delete-confirm">{t("永久删除", "Delete permanently", "Eliminar definitivamente")}</button></div>
     </BottomSheet>

@@ -20,7 +20,7 @@
 .membership-link:disabled { opacity: .55; }
 .membership-note, .membership-notice, .membership-fine { margin: 0 8px; color: #6f6860; font-size: 14px; line-height: 1.5; text-align: center; }
 .membership-notice { color: #7a3b2e; }
-.membership-fine { font-size: 13px; color: #8a837b; }
+.membership-fine { font-size: 13px; color: #6e675f; }
 .membership-code { display: flex; gap: 8px; }
 .membership-code input { flex: 1; min-width: 0; min-height: 46px; padding: 0 14px; border: 1px solid var(--jian-line); border-radius: 14px; background: var(--jian-paper-bright); color: var(--jian-ink); font-size: 16px; letter-spacing: .04em; }
 .membership-code button { min-width: 72px; min-height: 46px; border: 0; border-radius: 14px; background: #252525; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
@@ -40,7 +40,7 @@
 .founder-codes li { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .founder-codes li > span { display: grid; flex: 1; min-width: 0; }
 .founder-codes b { font-family: ui-monospace, Menlo, monospace; font-size: 15px; letter-spacing: .03em; }
-.founder-codes small { color: #7a736b; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.founder-codes small { color: #6b645c; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .founder-codes em { font-style: normal; font-size: 13px; color: #246a4b; }
 .founder-codes em.used { color: #8a837b; }
 .founder-codes button { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 10px; background: #f1ebe1; color: var(--jian-ink); cursor: pointer; }
@@ -49,4 +49,4 @@
 .founder-couples header em { font-style: normal; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #fbeae9; color: #b8475a; }
 .founder-couples header span { margin-left: auto; font-size: 13px; color: #6f6860; }
 .founder-couples p { margin: 0; font-size: 14px; color: var(--jian-ink); line-height: 1.5; }
-.founder-couples small { color: #7a736b; font-size: 12px; }
+.founder-couples small { color: #6b645c; font-size: 12px; }

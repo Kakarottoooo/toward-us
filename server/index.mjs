@@ -20,7 +20,10 @@ const port = Number(process.env.PORT || 5173);
 const dataFile = resolve(process.env.TOWARD_US_DATA_FILE || resolve(root, "data", "toward-us.local.json"));
 const store = await createStore(dataFile, process.env.DATABASE_URL);
 const mediator = createMediator();
-const app = createApiApp({ store, mediator, production, requestTiming: createRequestTiming() });
+// Browser suites sign up many people from one machine; only a test server (TOWARD_US_TEST=1) may raise the sign-up caps.
+const testRegisterLimit = process.env.TOWARD_US_TEST === "1" ? Number(process.env.TOWARD_US_TEST_REGISTER_LIMIT) || 0 : 0;
+const authLimits = testRegisterLimit > 0 ? { registerPerIp: { max: testRegisterLimit, windowMs: 60 * 60_000 }, registerGlobal: { max: testRegisterLimit, windowMs: 10 * 60_000 } } : undefined;
+const app = createApiApp({ store, mediator, production, requestTiming: createRequestTiming(), authLimits });
 // Catch up persisted jobs after a restart; external ticks wake sleeping hosts.
 const maintain = () => void app.locals.runMaintenance().catch(() => console.error("Reminder maintenance will retry on the next tick."));
 maintain();

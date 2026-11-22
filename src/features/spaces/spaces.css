@@ -11,9 +11,9 @@
 .space-list li > div, .space-checklist li > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .space-main strong { color: var(--jian-ink); font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .space-main li p, .space-notes p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
-.space-main small { color: #7a736b; font-size: 13px; }
+.space-main small { color: #6b645c; font-size: 13px; }
 .space-check { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 40px; margin: -8px 0 -8px -8px; border: 0; border-radius: 12px; background: transparent; color: var(--jian-blue); cursor: pointer; }
-.space-checklist li.done strong { color: #8a837a; text-decoration: line-through; text-decoration-color: rgba(37,37,37,.3); }
+.space-checklist li.done strong { color: #6e675f; text-decoration: line-through; text-decoration-color: rgba(37,37,37,.3); }
 
 .space-remove { flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 40px; height: 40px; margin: -8px -8px -8px 0; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: #9a9389; font-size: 14px; font-weight: 600; cursor: pointer; }
 .space-remove.confirming { background: #f6e2de; color: #903e38; }

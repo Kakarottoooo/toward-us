@@ -126,8 +126,9 @@ html.plum-entry .plum-auth form > .signin-method[type=submit]:not(:disabled) { b
 @keyframes boot-breathe { 50% { transform: scale(1.04); } }
 @media (prefers-reduced-motion: reduce) { .boot-splash img { animation: none; } }
 html:has(.boot-splash), html:has(.boot-splash) body, html:has(.boot-splash) #root { background: #300e29; }
-/* Before React draws anything the page is also plum (it is what the launch screen hands over to). */
-html:not(:has(#root *)), html:not(:has(#root *)) body { background: #300e29; }
+/* Before React draws anything the page is also plum (it is what the launch screen hands over to): index.html's #boot-plum
+   style, removed once the app has drawn. It replaced html:not(:has(#root *)), which restyled the page on every DOM
+   insertion (QA round 5). */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Opening: one calm change from plain plum to the welcome screen, with nothing sliding or growing (founder 11-21). */

@@ -40,7 +40,7 @@
 .upcoming-month-detail h2, .upcoming-ahead h2 { margin: 0; color: var(--jian-ink); font-size: 17px; font-weight: 700; }
 .upcoming-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; }
 .upcoming-calendar span { position: relative; display: grid; place-items: center; min-height: 40px; border-radius: 10px; color: var(--jian-ink); font-size: 15px; font-variant-numeric: tabular-nums; }
-.upcoming-calendar span.weekday { min-height: 24px; color: #8a837a; font-size: 12px; font-weight: 600; }
+.upcoming-calendar span.weekday { min-height: 24px; color: #6e675f; font-size: 12px; font-weight: 600; }
 .upcoming-calendar span.today { background: var(--jian-ink); color: #fff; font-weight: 700; }
 .upcoming-calendar span.has { font-weight: 700; }
 .upcoming-calendar span i { position: absolute; bottom: 4px; display: flex; gap: 2px; font-style: normal; }
@@ -53,17 +53,17 @@
 .upcoming-list button:disabled { cursor: default; opacity: 1; }
 .upcoming-row-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .upcoming-row-text strong { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
-.upcoming-row-text small { color: #7a736b; font-size: 13px; }
+.upcoming-row-text small { color: #6b645c; font-size: 13px; }
 .upcoming-list em { flex: 0 0 auto; color: #5f5952; font-size: 14px; font-style: normal; font-weight: 600; font-variant-numeric: tabular-nums; }
-.upcoming-lock { flex: 0 0 auto; color: #8a837a; }
-.upcoming-empty { margin: 0; color: #7a736b; font-size: 15px; }
+.upcoming-lock { flex: 0 0 auto; color: #6e675f; }
+.upcoming-empty { margin: 0; color: #6b645c; font-size: 15px; }
 .upcoming-manage { border-radius: 18px; background: var(--jian-paper-bright); box-shadow: 0 1px 0 rgba(37,37,37,.06); }
 .upcoming-manage > summary { display: flex; align-items: center; min-height: 52px; padding: 0 16px; color: var(--jian-blue); font-size: 15px; font-weight: 600; cursor: pointer; }
 .upcoming-manage[open] > summary { border-bottom: 1px solid rgba(37,37,37,.08); }
 .upcoming-manage > .relationship-feature { box-shadow: none !important; }
 .upcoming-sheet { display: grid; gap: 12px; padding-bottom: 8px; }
 .upcoming-sheet dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; font-size: 15px; }
-.upcoming-sheet dt { color: #7a736b; }
+.upcoming-sheet dt { color: #6b645c; }
 .upcoming-sheet dd { margin: 0; color: var(--jian-ink); font-weight: 600; }
 .upcoming-sheet p { margin: 0; color: #5f5952; font-size: 14px; line-height: 1.5; }
 .upcoming-sheet button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border: 0; border-radius: 14px; font-size: 15px; font-weight: 650; cursor: pointer; }

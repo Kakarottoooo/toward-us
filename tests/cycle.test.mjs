@@ -186,3 +186,29 @@ test("经期: no overlaps or future days on edit and undo; undo is idempotent; a
   assert.deepEqual(await logs(), [[day(-31), day(-27)], [day(-60), null]]);
   assert.equal((await call("/cycle/restore", "POST", { start: day(0), end: day(3) })).status, 400, "Undo can't bring back future days");
 });
+
+test("经期 (QA round 5): with a known time zone a log can't name tomorrow; errors with no language fall back to the browser's, else English", async (t) => {
+  const base = resolve("work"); await mkdir(base, { recursive: true });
+  const directory = await mkdtemp(join(base, "cycle-zone-"));
+  const store = await createFileStore(join(directory, "store.json"));
+  const id = randomUUID();
+  await store.createUser({ id, email: `${id}@example.invalid`, name: "Mia", passwordHash: "test", createdAt: new Date().toISOString() });
+  // No saved interface language, as for an account made before sign-up stored one.
+  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { user: { id, language: null } }; next(); });
+  app.use("/api", createCycleRouter({ store }));
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ error: error.message }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise((r) => server.once("listening", r));
+  t.after(async () => { await new Promise((r) => server.close(r)); await rm(directory, { recursive: true, force: true }); });
+  const call = async (body, headers = {}) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/cycle/log`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  const tomorrowUtc = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const zoned = await call({ event: "start", date: tomorrowUtc, timezone: "UTC" }, { "accept-language": "*" });
+  assert.equal(zoned.status, 400, "a known zone: tomorrow there is in the future");
+  assert.equal(zoned.body.error, "Pick today or an earlier date.", "no language anywhere: English, not Chinese");
+  const spanish = await call({ event: "start", date: tomorrowUtc, timezone: "UTC" }, { "accept-language": "es-ES,es;q=0.9" });
+  assert.equal(spanish.body.error, "Elige hoy o una fecha anterior.", "the browser's language when nothing else says");
+  const unzoned = await call({ event: "start", date: tomorrowUtc });
+  assert.equal(unzoned.status, 201, "no zone: a day of grace for zones ahead of UTC");
+});

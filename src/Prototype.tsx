@@ -98,7 +98,7 @@ narrowScreen.addEventListener("change", syncEntryDesign);
 
 type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 type AuthMode = "login" | "register";
-type User = { id: string; email: string; name: string; createdAt: string; aiConsentAt?: string | null; passwordless?: boolean };
+type User = { id: string; email: string; name: string; nameSet?: boolean; createdAt: string; aiConsentAt?: string | null; passwordless?: boolean };
 type PairMember = { id: string; name: string; role: "A" | "B"; joinedAt: string };
 export type Pairing = { id: string; status: "pending" | "active"; role: "A" | "B"; members: PairMember[]; invitation: { code: string; createdAt: string; expiresAt: string; openedAt: string | null; prepared?: boolean; sentAt?: string | null; cancelledAt?: string | null; declinedAt?: string | null } | null };
 type InvitePreview = { inviterName: string; status: "open" | "expired" | "used" | "cancelled" | "declined" };
@@ -367,7 +367,7 @@ function AccountPrototype() {
   const reloadIdentity = async () => { const state = await api<{ user: User | null; pairing: Pairing | null }>("/api/auth/me"); setUser(state.user); setPairing(state.pairing); setScreen(state.user ? landing(state.pairing) : "home"); };
   const fullScreen: Screen = pairing?.status === "active" ? "dashboard" : "personal";
   // The screen a page link opens on.
-  const screenFor = (url: string): Screen => url.includes("game=") ? "conversation" : url.includes("view=space") ? spaceOrList(new URLSearchParams(url.slice(url.indexOf("?")))) : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen;
+  const screenFor = (url: string): Screen => url.includes("game=") || url.startsWith("/?channel=") ? "conversation" : url.includes("view=space") ? spaceOrList(new URLSearchParams(url.slice(url.indexOf("?")))) : url.includes("view=import") ? "import" : url.includes("view=people") ? "people" : url.includes("view=capabilities") ? "capabilities" : fullScreen;
   // Pages with a Back get their own history entry, so the phone's or browser's Back returns inside Ourever (popstate below)
   // instead of leaving it. The address a page set for itself stays; the page it came from keeps its own entry beneath.
   const fromHistory = useRef(false);
@@ -396,6 +396,27 @@ function AccountPrototype() {
       history.pushState({ ourever: screen, depth: historyDepth(history.state) + 1 }, "", url);
     } else if (!stackedScreens.includes(screen) && historyDepth(history.state)) history.replaceState(null, "", location.href);
   });
+  // A new screen (QA round 5): unless a field already took focus, its page heading does, so a keyboard or screen-reader
+  // user starts at the top of what just opened instead of on the body. Lazy screens get a moment to arrive.
+  // The page is plum until the app first draws (index.html #boot-plum); after that the screens paint their own background.
+  useEffect(() => { document.getElementById("boot-plum")?.remove(); }, []);
+  const screenShown = useRef(false);
+  useEffect(() => {
+    if (screen === "booting") return;
+    const first = !screenShown.current; screenShown.current = true;
+    if (first || screen === "conversation") return;
+    let tries = 0, timer = 0;
+    const look = () => {
+      const at = document.activeElement;
+      if (at && at !== document.body && at.isConnected) return;
+      const heading = document.querySelector<HTMLElement>(".device-screen h1");
+      if (!heading) { if (++tries < 15) timer = window.setTimeout(look, 100); return; }
+      if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: true });
+    };
+    timer = window.setTimeout(look, 0);
+    return () => window.clearTimeout(timer);
+  }, [screen]);
   useEffect(() => {
     const pop = (event: PopStateEvent) => {
       keyboard.hide();
@@ -456,7 +477,7 @@ function AccountPrototype() {
     if (user && !user.aiConsentAt && !aiOff && !["booting", "home", "auth", "recovery", "privacy", "pairing"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={declineAi} />;
     if (screen === "conversation" && user) return <><ScreenBoundary fallback={null}><Suspense fallback={null}><InstallHint language={language} userId={user.id} /></Suspense></ScreenBoundary><ConversationHome user={user} pairing={pairing} language={language} aiOff={aiOff} aiOffReason={aiOffReason} onPrivacy={(page) => { aiReturn.current = page === "processors" && aiOff ? aiAsk.current : null; setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { setUrl(url); setScreen("import"); }} onAsk={askPinky} />;
-    if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} backLabel={new URLSearchParams(location.search).get("archived") === "1" ? settingsLabel(language) : undefined} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => goBack(() => { setUrl(location.pathname); setScreen("privacy"); }) : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); setUrl(`/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
+    if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} backLabel={new URLSearchParams(location.search).get("archived") === "1" ? settingsLabel(language) : undefined} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => goBack(() => { setUrl(location.pathname); setScreen("privacy"); }) : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); setUrl(`/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} onInvite={() => { if (pairing?.status === "active") { setUrl("/?channel=us"); setScreen("conversation"); } else setScreen("pairing"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "booting") return <BootSplash language={language} testId="booting" />;
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => goBack(() => setScreen("auth"))} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
@@ -581,7 +602,7 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
     let redirecting = false;
     try {
       const result = await startProviderSignIn(provider, {
-        adultConfirmed, installId: referralInstallId(), referralCode: ref || undefined, partnerInviteCode: inviteCode() || undefined,
+        adultConfirmed, installId: referralInstallId(), referralCode: ref || undefined, partnerInviteCode: inviteCode() || undefined, language,
       });
       if (result === "redirect") { redirecting = true; return; }
       if (result === "success") { await onAuth(await api("/api/auth/me")); return; }
@@ -610,7 +631,7 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
   }, []);
   const submit = async () => {
     if (!begin("email")) return;
-    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed, ...(inviteCode() ? { partnerInviteCode: inviteCode() } : {}), installId: referralInstallId(), ...(ref ? { referralCode: ref } : {}) }) })); }
+    try { await onAuth(await api(mode === "login" ? "/api/auth/login" : "/api/auth/register", { method: "POST", body: JSON.stringify(mode === "login" ? { name, email, password } : { name, email, password, adultConfirmed, language, ...(inviteCode() ? { partnerInviteCode: inviteCode() } : {}), installId: referralInstallId(), ...(ref ? { referralCode: ref } : {}) }) })); }
     catch (error) { if (ref && (error as { code?: string }).code === "referral_ineligible") { setIneligible(true); setNotice(localized(language, "这次注册无法获得邀请奖励。你仍可不使用邀请创建账号。", "This registration is ineligible for referral rewards. You can still create an account without the invitation.", "Este registro no cumple los requisitos de la invitación. Aún puedes crear una cuenta sin ella.")); } else setNotice(error instanceof TypeError ? inviteNetworkMessage(language) : accountError((error as Error).message, language)); } finally { finish(); }
   };
   // Instead of the old password, a six-digit code sent to the account's mailbox can confirm the link.

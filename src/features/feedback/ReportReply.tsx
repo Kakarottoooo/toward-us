@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Check, DotsThree, Flag, ThumbsDown } from "@phosphor-icons/react";
 import { localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -58,6 +58,11 @@ function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = tr
   const claimed = useRef(new Set<Intent>());
   const initialItem = useRef<Intent>("unhelpful");
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
+  // The bubble holding this menu contains its float (conversation.css .has-report-menu), marked here rather than with a
+  // :has() that restyled the whole thread on every new bubble (QA round 5).
+  // After every render: a re-render of the bubble that changes its className would drop the mark.
+  useLayoutEffect(() => { root.current?.parentElement?.classList.add("has-report-menu"); });
+  useLayoutEffect(() => { const parent = root.current?.parentElement; return () => parent?.classList.remove("has-report-menu"); }, []);
   const unhelpful = useRef<HTMLButtonElement>(null), report = useRef<HTMLButtonElement>(null), confirm = useRef<HTMLButtonElement>(null);
   const panelId = useId();
   const [copyStatus, setCopyStatus] = useState("");

@@ -38,8 +38,8 @@
 .moment { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 8px 0; }
 .moment-dot { position: relative; z-index: 1; flex: 0 0 auto; width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: #e46a9a; box-shadow: 0 0 0 4px var(--jian-paper); }
 .moment-body { flex: 1; min-width: 0; display: grid; gap: 4px; }
-.moment-body > small { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #7a736b; font-size: 13px; }
-.moment-scope { display: inline-flex; align-items: center; gap: 3px; color: #8a837a; }
+.moment-body > small { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #6b645c; font-size: 13px; }
+.moment-scope { display: inline-flex; align-items: center; gap: 3px; color: #6e675f; }
 .moment-body strong { color: var(--jian-ink); font-size: 17px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
 .moment-body p { margin: 0; color: #4a4540; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 .moment-body em { color: #993556; font-size: 14px; font-style: normal; }
@@ -232,7 +232,7 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 .device-screen .ideas-poster-cats button { min-height: 34px; }
 .ideas-poster-cats button { position: relative; }
 .ideas-poster-cats button::before { content: ""; position: absolute; inset: -5px 0; border-radius: inherit; }
-.ideas-surprise { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 26px; background: #e0405a; color: #fff; font: inherit; font-size: 17px; font-weight: 750; cursor: pointer; }
+.ideas-surprise { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 26px; background: #cc3149; color: #fff; font: inherit; font-size: 17px; font-weight: 750; cursor: pointer; }
 .ideas-surprise:disabled { opacity: .5; cursor: default; }
 .ideas-surprise:focus-visible { outline: 2px solid #3f3326; outline-offset: 2px; }
 .ideas-sheet { display: grid; justify-items: center; gap: 12px; padding: 4px 4px 12px; text-align: center; }
@@ -251,12 +251,12 @@ button.moments-onthisday { width: 100%; border: 0; text-align: left; font: inher
 /* The ideas as readable cards, three to a row by kind (founder 11-06); a done one shows its photo under the words. */
 .ideas-group { display: grid; gap: 8px; }
 .ideas-group h3 { display: flex; align-items: center; gap: 6px; margin: 4px 2px 0; color: var(--i); font-size: 16px; font-weight: 750; }
-.ideas-group h3 small { margin-left: auto; color: var(--i); font-size: 13px; font-weight: 700; opacity: .8; }
+.ideas-group h3 small { margin-left: auto; color: color-mix(in srgb, var(--i) 60%, #1f1a14); font-size: 13px; font-weight: 700; }
 .ideas-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .ideas-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; width: 100%; min-height: 92px; padding: 8px 8px 9px; border: 0; border-radius: 14px; background: var(--t); color: var(--i); font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
 .device-screen .ideas-card { min-height: 92px; }
 .ideas-card-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; }
-.ideas-card-top b { font-size: 11px; font-weight: 800; opacity: .65; }
+.ideas-card-top b { font-size: 11px; font-weight: 800; color: color-mix(in srgb, var(--i, currentColor) 55%, #1f1a14); }
 .ideas-card-text { position: relative; z-index: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: #2f2a25; font-size: 13.5px; font-weight: 650; line-height: 1.35; }
 .ideas-card.is-done { background: var(--i); color: #fff; }
 .ideas-card.is-done .ideas-card-text { color: #fff; }

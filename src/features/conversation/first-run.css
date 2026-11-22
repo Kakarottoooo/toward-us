@@ -49,7 +49,7 @@
 .first-run-top .feedback-launch { position: relative; inset: auto; flex: 0 0 44px; height: 44px; min-width: 44px; padding: 0; }
 .first-run-top .first-run-progress { min-width: 0; }
 .first-run-top .first-run-progress button { flex: 0 0 44px; padding: 0; }
-.conversation-thread:has([data-testid="reply-coach-empty"]) { padding-inline-end: 54px; }
+.conversation-thread.has-reply-coach { padding-inline-end: 54px; }
 @supports (font: -apple-system-body) {
   .conversation-empty h1 { font-size: clamp(1.5rem, 1.15em, 3rem); }
 }

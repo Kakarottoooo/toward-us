@@ -211,7 +211,8 @@ test("relationship-domain contracts keep events minimal and yearly dates stable"
 before(async () => {
   temporaryDirectory = await mkdtemp(join(tmpdir(), "toward-us-test-"));
   store = await createFileStore(join(temporaryDirectory, "store.json"));
-  const app = createApiApp({ store, mediator: fakeMediator, production: false });
+  // One proxy hop, as on Render: a test can stand for a second device with X-Forwarded-For.
+  const app = createApiApp({ store, mediator: fakeMediator, production: false, trustProxy: 1, authLimits: { registerPerIp: { max: 1000, windowMs: 60 * 60_000 } } });
   server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -249,7 +250,8 @@ test("registration uses an HttpOnly cookie and partner invitations bind exactly 
   assert.equal(invitation.pairing.invitation.code.length, 8);
 
   const selfAccept = await request("/api/partner/accept", { method: "POST", cookie: alice.cookie, body: { code: invitation.pairing.invitation.code }, expectedStatus: 409 });
-  assert.match(selfAccept.error, /邀请无效/);
+  // No language in the request, the account or the browser: English, not Chinese (QA round 5).
+  assert.match(selfAccept.error, /This is your own invite/);
 
   const accepted = await request("/api/partner/accept", { method: "POST", cookie: bob.cookie, body: { code: invitation.pairing.invitation.code } });
   assert.equal(accepted.pairing.status, "active");

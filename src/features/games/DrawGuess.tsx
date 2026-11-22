@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowCounterClockwise, ArrowsClockwise, Check, Eraser, PaperPlaneRight, Shuffle, StopCircle } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { localized, bareName, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import type { Act, Opponent } from "./MatchScreen";
 import type { DrawRound, DrawState, MatchView, Stroke } from "./types";
@@ -44,7 +44,7 @@ function Picture({ strokes, replay = "", label, small = false }: { strokes: Stro
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
   }, [strokes, replay]);
-  return <canvas ref={ref} className={`draw-canvas ${small ? "is-small" : ""}`} role="img" aria-label={label} />;
+  return <canvas ref={ref} className={`draw-canvas ${small ? "is-small" : ""}`} role="img" aria-label={bareName(label)} />;
 }
 
 /** The drawing pad: pointer strokes in a 0..1000 space, six inks, three widths, undo and clear. */

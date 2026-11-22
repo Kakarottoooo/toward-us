@@ -36,6 +36,12 @@ export function isolate(name: string) {
   return name ? `⁨${name}⁩` : name;
 }
 
+/** The same name without isolate marks: for initials, lengths, comparisons and accessible names (aria-label), where the
+ * invisible U+2066–U+2069 characters would become the "initial" or be read out (QA round 5). */
+export function bareName(name: string) {
+  return String(name || "").replace(/[⁦-⁩]/g, "");
+}
+
 export function brandLabel(language: Language) {
   return "Ourever";
 }
@@ -63,12 +69,21 @@ const KNOWN_ERRORS: Record<string, [en: string, es: string]> = {
   "没有获得麦克风权限，仍可使用文字。": ["No microphone permission. You can still type.", "Sin permiso de micrófono. Puedes seguir escribiendo."],
 };
 
+/** "Too many tries, wait N seconds/minutes" in `language` (sign-in, sign-up and recovery limits, QA round 5). */
+export function tooManyTries(language: Language, seconds: number) {
+  const [count, zh, en, es] = seconds < 60 ? [Math.ceil(seconds), "秒", "second", "segundo"] : [Math.ceil(seconds / 60), "分钟", "minute", "minuto"];
+  const plural = count === 1 ? "" : "s";
+  return localized(language, `尝试次数过多，请 ${count} ${zh}后再试。`, `Too many tries. Try again in ${count} ${en}${plural}.`, `Demasiados intentos. Vuelve a intentarlo en ${count} ${es}${plural}.`);
+}
+
 /** A message to show on an `language` screen: Chinese text never reaches an English or Spanish screen (known messages are
  * translated, anything else becomes a plain "something went wrong"). */
 export function inInterfaceLanguage(message: string, language: Language) {
   if (language === "zh" || !CJK.test(message)) return message;
   const known = KNOWN_ERRORS[message.trim()];
   if (known) return language === "es" ? known[1] : known[0];
+  const wait = message.trim().match(/^尝试次数过多，请 (\d+) (秒|分钟)后再试。$/);
+  if (wait) return tooManyTries(language, Number(wait[1]) * (wait[2] === "秒" ? 1 : 60));
   return localized(language, message, "Something went wrong. Please try again.", "Algo salió mal. Inténtalo de nuevo.");
 }
 
@@ -102,8 +117,11 @@ export function apiErrorCode(payload: { code?: string; error?: string }, status:
   return (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
 }
 
-export function apiErrorText(payload: { code?: string; error?: string }, status: number, language: Language) {
+export function apiErrorText(payload: { code?: string; error?: string; retryAfterSeconds?: number }, status: number, language: Language) {
   const code = apiErrorCode(payload, status);
+  // Sign-in, sign-up and recovery limits say how long to wait (QA round 5).
+  const wait = payload.retryAfterSeconds;
+  if (code === "rate_limited" && typeof wait === "number" && wait > 0) return tooManyTries(language, wait);
   const fallback = (statusCodes as Record<string, string>)[String(status)] || "service_unavailable";
   // Legacy routes can already supply a specific translated explanation. Keep it over the HTTP category.
   const message = typeof payload.error === "string" ? payload.error : "";

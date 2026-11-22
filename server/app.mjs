@@ -10,6 +10,7 @@ import {
   issueSession,
   normalizeEmail,
   publicUser,
+  signupLanguage,
   readDemoToken,
   readSessionToken,
   sessionId,
@@ -73,18 +74,19 @@ import { sendblue } from "./sendblue.mjs";
 import { AI_LIMIT, aiUserMiddleware, guardMediator } from "./ai-budget.mjs";
 import { installAiLedger, meterMediator, runAiLedgerMaintenance } from "./ai-ledger.mjs";
 import { createAiCostRouter } from "./ai-cost-router.mjs";
+import { createAuthLimits, DEFAULT_AUTH_LIMITS, tooManyTries, trustProxySetting } from "./auth-limits.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const LANGUAGES = new Set(["zh", "en", "es"]);
-const LOGIN_WINDOW_MS = 10 * 60 * 1000;
-const loginAttempts = new Map();
 const DEMO_CREATE_WINDOW_MS = 10 * 60 * 1000;
 const DEMO_JOIN_WINDOW_MS = 15 * 60 * 1000;
 const DEMO_ROOM_MS = 60 * 60 * 1000;
 const demoCreates = new Map();
 
-export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming }) {
+export function createApiApp({ store, mediator: rawMediator, production = false, memoryContext = buildMemoryContext, reminderService, email, oauthProviders = createOAuthProviders(), requestTiming, authLimits = DEFAULT_AUTH_LIMITS, trustProxy = process.env.TRUST_PROXY }) {
   const app = express();
+  const limits = createAuthLimits(authLimits);
+  const rateLimited = (req, res, seconds) => res.status(429).set("Retry-After", String(seconds)).json({ code: "rate_limited", retryAfterSeconds: seconds, error: tooManyTries(languageOf(req), seconds) });
   // First, so the time measured covers every middleware and route a request passes through (server/timing.mjs).
   if (requestTiming) app.use(requestTiming);
   // Every model call below is counted and capped per person and couple per day (server/ai-budget.mjs).
@@ -108,7 +110,8 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.locals.runMaintenance = reminders.runDue;
 
   app.disable("x-powered-by");
-  app.set("trust proxy", 1);
+  // Only a proxy we run behind may set the client address (TRUST_PROXY=1 on Render); otherwise X-Forwarded-For is ignored.
+  app.set("trust proxy", trustProxySetting(trustProxy));
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) res.setHeader("Cache-Control", "no-store");
@@ -247,12 +250,17 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api/auth/oauth", createOAuthRouter({ store, production, register: registerWithInvitation, providers: oauthProviders, ...(email ? { email } : {}) }));
   app.post("/api/auth/register", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
-    const name = cleanName(req.body?.name, "我");
+    const name = cleanName(req.body?.name, "");
     const password = req.body?.password;
     if (!validEmail(email)) return res.status(400).json({ code: "invalid_email", error: "请输入有效邮箱。" });
     if (!validPassword(password)) return res.status(400).json({ code: "invalid_password_length", error: "密码需要 10–128 个字符。" });
     if (req.body?.adultConfirmed !== true) return res.status(400).json({ code: "adult_confirmation_required", error: "Ourever requires confirmation that you are 18 or older." });
-    const user = createUser({ email, name, passwordHash: await hashPassword(password) });
+    // Counted before the work, so a burst can't slip past; "already registered" counts too (it reveals an account).
+    const registerWait = limits.register(req.ip);
+    if (registerWait) return rateLimited(req, res, registerWait);
+    // An empty name stays a placeholder the first-run screen asks to replace (QA round 5), and the sign-up's interface
+    // language is saved at once so both partners' holidays show before either opens Settings.
+    const user = createUser({ email, name: name || "我", nameSource: name ? "user" : "fallback", language: signupLanguage(req), passwordHash: await hashPassword(password) });
     const { referralCode, partnerInviteCode, installId = req.get("x-install-id") } = req.body || {};
     let created;
     if (referralCode || installId || partnerCode(partnerInviteCode)) {
@@ -265,7 +273,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
     } else {
       created = await store.createUser(user);
     }
-    if (!created) return res.status(409).json({ code: "email_registered", error: "这个邮箱已经注册。" });
+    if (!created) return res.status(409).json({ code: "email_registered", error: localText(languageOf(req), "这个邮箱已经注册，请直接登录，或用“忘记密码”重设密码。", "This email is already registered. Sign in, or reset your password.", "Este correo ya está registrado. Inicia sesión o restablece tu contraseña.") });
 
     const { token } = await issueSession(store, created.id);
     setSessionCookie(res, token, production);
@@ -274,16 +282,16 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
 
   app.post("/api/auth/login", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
-    const key = `${req.ip}:${email}`;
-    if (isRateLimited(key)) return res.status(429).json({ code: "rate_limited", error: "尝试次数过多，请稍后再试。" });
+    const wait = limits.loginWait(req.ip, email);
+    if (wait) return rateLimited(req, res, wait);
     const candidate = await store.getUserByEmail(email);
     const authenticated = candidate && await store.transaction(`user:${candidate.id}`, async (tx) => {
       const user = await tx.getUserForUpdate(candidate.id);
       if (!user || user.email !== email || !await verifyPassword(String(req.body?.password || ""), user.passwordHash)) return null;
       return { user, ...(await issueSession(tx, user.id)) };
     });
-    if (!authenticated) { recordFailedAttempt(key); return res.status(401).json({ code: "invalid_credentials", error: "邮箱或密码不正确。" }); }
-    loginAttempts.delete(key);
+    if (!authenticated) { limits.loginFailed(req.ip, email); return res.status(401).json({ code: "invalid_credentials", error: "邮箱或密码不正确。" }); }
+    limits.loginSucceeded(req.ip, email);
     const { token, user } = authenticated;
     setSessionCookie(res, token, production);
     res.json(await appState(store, user));
@@ -702,7 +710,7 @@ export function createApiApp({ store, mediator: rawMediator, production = false,
   app.use("/api", voiceCalls);
   imessage = createIMessageChannel({ store, assistant: assistantRouter.assistant, mediator, emit, activity });
   app.use(imessage.router);
-  app.use("/api", createPrivacyRouter({ store, production, closeConnections, onPairingEnded: (userIds, relationshipId) => pairingChanged(userIds, relationshipId, "ended"), onAiWithdrawal: voiceCalls.withdrawPermission, oauthProviders, ...(email ? { email } : {}) }));
+  app.use("/api", createPrivacyRouter({ store, production, closeConnections, authLimits: limits, onPairingEnded: (userIds, relationshipId) => pairingChanged(userIds, relationshipId, "ended"), onAiWithdrawal: voiceCalls.withdrawPermission, oauthProviders, ...(email ? { email } : {}) }));
   app.use("/api", createReminderRouter({ service: reminders }));
   app.use("/api", createMemoryRouter({ store, emit }));
   app.use("/api", createTogetherRouter({ store, mediator, emit, activity, promises: promiseKeeper, profile: profileKeeper }));
@@ -860,16 +868,6 @@ function cleanName(value, fallback) { return String(value || "").trim().replace(
 function cleanText(value) { return String(value || "").trim().replace(/\0/g, "").slice(0, 1200); }
 function cleanRealtimeItemId(value) { return String(value || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 120); }
 
-function isRateLimited(key) {
-  const entry = loginAttempts.get(key);
-  if (!entry || Date.now() - entry.startedAt > LOGIN_WINDOW_MS) return false;
-  return entry.count >= 10;
-}
-function recordFailedAttempt(key) {
-  const current = loginAttempts.get(key);
-  if (!current || Date.now() - current.startedAt > LOGIN_WINDOW_MS) loginAttempts.set(key, { count: 1, startedAt: Date.now() });
-  else current.count += 1;
-}
 
 
 function isDemoCreateLimited(key) {
@@ -897,7 +895,7 @@ function normalizeLanguage(value) { return LANGUAGES.has(value) ? value : "zh"; 
 // The reader's language for an error: what the request says, else the member's saved interface language, else the browser's.
 function languageOf(req) {
   const hint = [req.body?.language, req.query?.language, req.auth?.user?.language].find((value) => LANGUAGES.has(value));
-  return hint || normalizeLanguage(String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1]);
+  return hint || String(req.headers?.["accept-language"] || "").toLowerCase().match(/^\s*(zh|en|es)(?![a-z])/)?.[1] || "en";
 }
 function localText(language, zh, en, es) { return language === "zh" ? zh : language === "es" ? es : en; }
 function safetyBoundaryMessage(language) { return localText(language, "对话仍在可调解边界内。", "Conversation is within the mediation boundary.", "La conversación se mantiene dentro de los límites de la mediación."); }

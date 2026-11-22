@@ -12,6 +12,7 @@ import { deleteReferralAccount } from "./referrals.mjs";
 import { COLLECTION as MATCHES, viewMatch } from "./matches/index.mjs";
 import { REWARD_LOCK } from "./reward-ledger.mjs";
 import { createEmailSender, resetMessage } from "./email.mjs";
+import { createAuthLimits, tooManyTries } from "./auth-limits.mjs";
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
@@ -32,7 +33,7 @@ export async function setAiConsent(tx, userId, agree, at = new Date().toISOStrin
   return agree ? at : null;
 }
 
-export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onPairingEnded = async () => {}, onAiWithdrawal = async () => {}, email = createEmailSender(), oauthProviders }) {
+export function createPrivacyRouter({ store, production = false, closeConnections = () => {}, onPairingEnded = async () => {}, onAiWithdrawal = async () => {}, email = createEmailSender(), oauthProviders, authLimits = createAuthLimits() }) {
   const router = express.Router(); const attempts = new Map();
   const limited = (key) => {
     const now = Date.now(); const recent = (attempts.get(key) || []).filter((at) => at > now - 15 * 60_000);
@@ -72,15 +73,14 @@ export function createPrivacyRouter({ store, production = false, closeConnection
   };
   // A recovery code is hex, shown in dashed groups of 8; typed back with any case, spaces or dashes it still matches (QA round 3).
   // Limited per account from one network (QA round 4: one IP-wide limit locked out a second person on the same Wi-Fi), with
-  // looser caps per account and per network against spraying; the answer says how long to wait.
+  // a looser cap per network against spraying; the answer says how long to wait.
+  // QA round 5: a too-short new password is refused before anything counts, and guesses on one account from rotating
+  // networks back off exponentially (with the wait shown) instead of a fixed lock; email reset stays open throughout.
   router.post("/auth/recover", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
-    const wait = waitFor([[`recovery:${req.ip}:${hash(email)}`, 6], [`recovery-account:${hash(email)}`, 20], [`recovery-ip:${req.ip}`, 30]]);
-    if (wait) {
-      const minutes = Math.ceil(wait / 60);
-      return res.status(429).set("Retry-After", String(wait)).json({ retryAfter: wait, error: local(req, `尝试次数过多，请 ${minutes} 分钟后再试。`, `Too many tries. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`, `Demasiados intentos. Vuelve a intentarlo en ${minutes} minuto${minutes === 1 ? "" : "s"}.`) });
-    }
     if (!validPassword(req.body?.password)) throw fail(400, local(req, "新密码需要10–128个字符。", "Use 10–128 characters for the new password.", "Usa entre 10 y 128 caracteres para la nueva contraseña."));
+    const wait = authLimits.recoveryWait(email) || waitFor([[`recovery:${req.ip}:${hash(email)}`, 6], [`recovery-ip:${req.ip}`, 30]]);
+    if (wait) return res.status(429).set("Retry-After", String(wait)).json({ code: "rate_limited", retryAfter: wait, retryAfterSeconds: wait, error: tooManyTries(local(req, "zh", "en", "es"), wait) });
     const user = await store.getUserByEmail(email);
     const result = user && await store.transaction(`user:${user.id}`, async (tx) => {
       const liveUser = await tx.getUserForUpdate(user.id); if (!liveUser || liveUser.email !== email || liveUser.passwordHash === "deleted") return false;
@@ -94,6 +94,7 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       await updateSettings(user.id, (record) => { delete record.recoveryCodeHash; delete record.widgetToken; record.recoveryUsedAt = new Date().toISOString(); }, tx);
       await audit(tx, user.id, "account.recovered"); return true;
     });
+    if (!result) authLimits.recoveryFailed(email); else authLimits.passwordReset(email);
     if (!result) throw fail(401, local(req, "邮箱或恢复码不正确，或恢复码已被使用。", "Email or recovery code is invalid, or the code was already used.", "El correo o código es incorrecto, o el código ya se utilizó."));
     closeConnections([user.id]); clearSessionCookie(res, production); res.status(204).end();
   });
@@ -150,9 +151,11 @@ export function createPrivacyRouter({ store, production = false, closeConnection
       await tx.deleteUnverifiedGoogleIdentity(userId);
       await tx.deleteUserSessions(userId);
       await updateSettings(userId, (record) => { delete record.passwordReset; delete record.widgetToken; }, tx);
-      await audit(tx, userId, "account.password_reset"); return true;
+      await audit(tx, userId, "account.password_reset"); return liveUser.email;
     });
     if (!done) throw invalid();
+    // Proving the mailbox clears any sign-in or recovery backoff on this account.
+    authLimits.passwordReset(done);
     closeConnections([userId]); clearSessionCookie(res, production); res.status(204).end();
   });
   router.use("/privacy", (req, res, next) => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Drop, Heart, LockKey, PencilSimple, Trash } from "@phosphor-icons/react";
-import { counted, languageTag, localized, type Language } from "../../i18n";
+import { counted, isolate, languageTag, localized, type Language } from "../../i18n";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { KeyboardInput } from "../../mobile";
 
@@ -38,7 +38,7 @@ export function CycleCard({ language, view, onChanged, showEmpty = false }: { la
   </form>;
   const undoBar = undo && <p className="cycle-undo" role="status">{t("已删除这条记录。", "Log deleted.", "Registro borrado.")}<button type="button" onClick={restore} data-testid="cycle-undo">{t("撤销", "Undo", "Deshacer")}</button></p>;
   const medicalNote = <p>{t("周期预测仅供记录，不能用于避孕、诊断或医疗决策。", "Cycle estimates are for tracking only. Do not use them for contraception, diagnosis or medical decisions.", "Las estimaciones solo sirven de registro. No las uses para anticoncepción, diagnóstico ni decisiones médicas.")}</p>;
-  const care = view.care && <section className="cycle-care" data-testid="care-note"><Heart size={18} weight="fill" />{t(`这几天多照顾 ${view.care.name} 一点`, `Be extra caring with ${view.care.name} these days`, `Cuida un poco más a ${view.care.name} estos días`)}</section>;
+  const care = view.care && <section className="cycle-care" data-testid="care-note"><Heart size={18} weight="fill" />{t(`这几天多照顾 ${isolate(view.care.name)} 一点`, `Be extra caring with ${isolate(view.care.name)} these days`, `Cuida un poco más a ${isolate(view.care.name)} estos días`)}</section>;
   // Opened from the drawer before anything is logged: say how to start, and start it in one tap (in Just me).
   if (!view.mine) return showEmpty ? <>{care}<section className="cycle-card" data-testid="cycle-card" ref={(node) => node?.scrollIntoView({ block: "start" })}>
     <small className="cycle-private"><LockKey size={13} />{t("只有你能看到", "Only you can see this", "Solo tú lo ves")}</small>

@@ -48,7 +48,7 @@ const json = async <T,>(path: string, body: unknown) => {
 };
 const upload = async (base64: string) => {
   const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-  const response = await fetch("/api/photos?scope=shared", { method: "POST", credentials: "same-origin", headers: { "content-type": "image/jpeg" }, body: bytes });
+  const response = await fetch(`/api/photos?scope=shared&language=${currentLanguage()}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "image/jpeg" }, body: bytes });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(apiErrorText(payload, response.status, currentLanguage()));
   return payload.photo.id as string;

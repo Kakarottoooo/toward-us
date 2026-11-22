@@ -101,8 +101,25 @@ export function buildJointDecisionContext(snapshot, issueId, userId) {
   };
 }
 
-export function buildRelationshipHome(snapshot, userId, now = new Date()) {
-  const graph = projectGraph(snapshot, userId);
+// Collections the shared home never renders and that grow without bound (QA: 501 consent events and 701 memories made
+// one home load ~1 MB). Each has its own on-demand endpoint — /api/memories, /api/checkins, /api/privacy (consent
+// history), /api/together, /api/spaces — so home carries only the newest few of each, plus each one's visible total.
+export const HOME_RECENT_LIMIT = 20;
+const HOME_TRIMMED_COLLECTIONS = ["memories", "checkins", "consentEvents", "notifications", "togetherConversations", "spaces", "spaceItems", "photos"];
+
+// Trims an already-projected graph, so it can only ever narrow what this member may see, never widen it.
+export function trimHomeGraph(graph, limit = HOME_RECENT_LIMIT) {
+  const trimmed = { ...graph }; const totals = {};
+  for (const collection of HOME_TRIMMED_COLLECTIONS) {
+    const records = graph[collection] || []; totals[collection] = records.length;
+    if (records.length <= limit) continue;
+    const newest = new Set([...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, limit));
+    trimmed[collection] = records.filter((record) => newest.has(record));
+  }
+  return { graph: trimmed, totals };
+}
+
+export function buildRelationshipHome(snapshot, userId, now = new Date(), graph = projectGraph(snapshot, userId)) {
   const approvalKeys = new Set(graph.approvals.filter((item) => item.ownerUserId === userId && !item.withdrawnAt).map((item) => `${item.agreementId}:${item.approvedVersion}`));
   const responseKeys = new Set(graph.outcomeResponses.filter((item) => item.ownerUserId === userId).map((item) => item.outcomeId));
   const perspectiveIssueIds = new Set(graph.perspectives.filter((item) => item.ownerUserId === userId).map((item) => item.issueId));
