@@ -47,7 +47,7 @@ export function AccountRecovery({ language, onBack, onRecovered }: { language: L
       <div className="reset-link">
         <h3><EnvelopeSimple size={20} /> {t("给我发重设链接", "Send me a reset link", "Envíame un enlace para restablecer")}</h3>
         <form onSubmit={(event) => { event.preventDefault(); void sendLink(); }}>
-          {linkSent ? <p className="privacy-success" role="status">{t(`如果 ${address} 有账号，你将收到一封重设邮件。链接 30 分钟内有效。`, `If ${address} has an account, you’ll receive a reset email. The link works for 30 minutes.`, `Si ${address} tiene una cuenta, recibirás un correo para restablecer la contraseña. El enlace dura 30 minutos.`)}</p> :
+          {linkSent ? <p className="privacy-success" role="status">{t(`如果有账号使用 ${address}，我们已发送重设链接。请也看看垃圾邮件，可能要几分钟才到。链接 30 分钟内有效。`, `If an account uses ${address}, we sent a link. Check spam; it can take a few minutes. The link works for 30 minutes.`, `Si una cuenta usa ${address}, enviamos un enlace. Revisa el correo no deseado; puede tardar unos minutos. El enlace dura 30 minutos.`)}</p> :
             <label><span>{t("注册邮箱", "Account email", "Correo de la cuenta")}</span><KeyboardInput type="email" disabled={linkBusy} required autoComplete="email" maxLength={254} value={linkEmail} onChange={(event) => setLinkEmail(event.target.value)} onBlur={() => keyboard.hide()} /></label>}
           <button disabled={linkBusy || !!remaining || !address} type="submit" aria-busy={linkBusy}>{linkBusy && <SpinnerGap className="signin-spinner" aria-hidden="true" />} {sendLabel}</button>
           {linkSent && <button type="button" className="privacy-quiet" disabled={linkBusy} onClick={() => { setLinkSent(false); setLinkNotice(""); }}>{t("更改邮箱地址", "Change email address", "Cambiar dirección de correo")}</button>}
@@ -65,6 +65,8 @@ export function AccountRecovery({ language, onBack, onRecovered }: { language: L
       </form>
       <button className="privacy-quiet" disabled={busy} onClick={() => { keyboard.hide(); setPassword(""); setRepeat(""); setRecoveryCode(""); onBack(); }}>{t("返回登录", "Back to sign in", "Volver al inicio de sesión")}</button>
       {notice && <p className="privacy-notice" role="alert">{notice}</p>}
+      {/* QA round 4 P8: no code and no mailbox left? The support page has the address to write to. */}
+      <button type="button" className="privacy-quiet" onClick={() => { keyboard.hide(); location.assign(`/support?lang=${language}`); }} data-testid="recovery-support">{t("联系客服", "Contact support", "Contactar con soporte")}</button>
     </>}
   </section>;
 }

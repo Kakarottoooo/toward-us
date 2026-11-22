@@ -13,7 +13,7 @@ import "./personal.css";
 type View = "memories" | "reminders" | "plans";
 
 /** The private pages the drawer opens before a partner joins. New things are asked for in the conversation. */
-export function PersonalHome({ user, relationshipId, language, onShared, onBack, onAsk }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; onShared: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
+export function PersonalHome({ user, relationshipId, language, aiOff = false, onShared, onBack, onAsk }: { user: { id: string; name: string }; relationshipId?: string | null; language: Language; aiOff?: boolean; onShared: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
   const [view] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return requested === "reminders" ? "reminders" : requested === "plans" ? "plans" : "memories"; });
   const [selectedPlan] = useState(() => new URLSearchParams(location.search).get("thread") || "");
   const [threads, setThreads] = useState<GraphRecord[]>([]); const [error, setError] = useState("");
@@ -25,7 +25,7 @@ export function PersonalHome({ user, relationshipId, language, onShared, onBack,
     <main className="relationship-main">
       {error && <p role="alert">{error}</p>}
       {view === "plans" && <PrivateAgentWorkspace key={selectedPlan} language={language} userId={user.id} intentType="plan" threads={[...threads].sort((a, b) => Number(b.id === selectedPlan) - Number(a.id === selectedPlan))} onChanged={refresh} canShare={Boolean(relationshipId)} onShared={onShared} />}
-      {view === "memories" && <MomentsPage language={language} userId={user.id} paired={false} onAsk={onAsk} />}
+      {view === "memories" && <MomentsPage language={language} userId={user.id} paired={false} onAsk={onAsk} aiOff={aiOff} />}
       {view === "reminders" && <UpcomingPage language={language} onAsk={(text) => onAsk(text, "me")} />}
     </main>
   </div>;

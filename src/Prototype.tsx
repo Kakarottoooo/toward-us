@@ -196,6 +196,13 @@ function AccountPrototype() {
   const keyboard = useKeyboard();
   const t = copy[language];
 
+  // The device chrome (src/mobile, protected) names itself in English; give its two labels the interface language from here
+  // (QA round 4).
+  useEffect(() => {
+    const picker = document.querySelector<HTMLElement>("[data-testid=device-picker]");
+    if (picker) picker.setAttribute("aria-label", localized(language, `预览设备：${picker.innerText.trim()}`, `Preview device: ${picker.innerText.trim()}`, `Dispositivo de vista previa: ${picker.innerText.trim()}`));
+    document.querySelector(".status-bar")?.setAttribute("aria-label", localized(language, "设备状态栏", "Device status bar", "Barra de estado del dispositivo"));
+  }, [language, screen]);
   useEffect(() => { try { localStorage.setItem("toward-us.language", language); } catch { /* keep the selection for this visit */ } document.documentElement.lang = languageTag(language); document.title = pageTitle(language); }, [language]);
   useEffect(() => {
     const returning = restoreSignInNavigation();
@@ -364,6 +371,7 @@ function AccountPrototype() {
   // Pages with a Back get their own history entry, so the phone's or browser's Back returns inside Ourever (popstate below)
   // instead of leaving it. The address a page set for itself stays; the page it came from keeps its own entry beneath.
   const fromHistory = useRef(false);
+  const returnTo = useRef("");
   const shownScreen = useRef(screen);
   // The address before this step's setUrl calls: the page being left keeps it in its own entry.
   const urlBefore = useRef<string | null>(null);
@@ -374,6 +382,14 @@ function AccountPrototype() {
     shownScreen.current = screen; urlBefore.current = null;
     if (fromHistory.current) { fromHistory.current = false; return; }
     if (previous === screen) return;
+    // A link opened in a fresh tab straight onto a page (/?view=moments, a notification): put the conversation under it, so
+    // Back stays in Ourever as it does after ?game=hall (QA round 4). A reload keeps its entries as they are.
+    if (previous === "booting" && user && screen !== "pairing" && signedInScreens.includes(screen) && !historyDepth(history.state) && location.search) {
+      const url = location.href;
+      history.replaceState(null, "", location.pathname);
+      history.pushState({ ourever: screen, depth: 1 }, "", url);
+      return;
+    }
     if (stackedScreens.includes(screen) && !["booting", "identity-error"].includes(previous)) {
       const url = location.href;
       history.replaceState(history.state, "", before);
@@ -385,6 +401,8 @@ function AccountPrototype() {
       keyboard.hide();
       fromHistory.current = true;
       const stacked = (event.state as { ourever?: Screen } | null)?.ourever;
+      // Back from Settings after AI was turned on there: the sentence the member had tapped waits in the conversation.
+      if (returnTo.current) { history.replaceState(history.state, "", returnTo.current); returnTo.current = ""; }
       setScreen(stacked && stackedScreens.includes(stacked) && (user || !signedInScreens.includes(stacked)) ? stacked : user ? accountLanding(user, pairing) : hasInvite() ? "invite" : "home");
       setVisit((value) => value + 1);
     };
@@ -395,7 +413,12 @@ function AccountPrototype() {
   const goBack = (fallback: () => void) => { keyboard.hide(); if (historyDepth(history.state)) history.back(); else fallback(); };
   const backToConversation = () => goBack(() => { setUrl(location.pathname); setScreen("conversation"); });
   // Pages hand a starting sentence back to the conversation, in the channel the page belongs to.
-  const askPinky = (text: string, channel: "me" | "us") => { keyboard.hide(); setUrl(`/?channel=${channel}${channel === "us" ? "&recipient=assistant" : ""}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
+  const askPinky = (text: string, channel: "me" | "us") => {
+    keyboard.hide();
+    // AI off (QA round 4): whatever needed Ourever lands on Just me's "Turn on AI" card with the reason, not on a composer
+    // that sends nowhere. The sentence is kept for when AI is turned on there.
+    if (aiOff) { aiAsk.current = `/?channel=${channel}${channel === "us" ? "&recipient=assistant" : ""}&say=${encodeURIComponent(text)}`; setAiOffReason(localized(language, "这件事要用到 Ourever 的 AI。", "This needs Ourever's AI.", "Esto necesita la IA de Ourever.")); setUrl("/?channel=me"); setScreen("conversation"); return; }
+    setUrl(`/?channel=${channel}${channel === "us" ? "&recipient=assistant" : ""}&say=${encodeURIComponent(text)}`); setScreen("conversation"); };
   // No AI work for anyone who hasn't agreed to third-party AI yet: they see the consent screen first (accounts made before
   // sign-up asked for it). Declining signs them out; Settings can withdraw it later, which brings this screen back.
   const openFeedback = (from: string, image?: File) => {
@@ -412,6 +435,10 @@ function AccountPrototype() {
   // Declining third-party AI opens the app with AI off (Just me explains it; Us works); Settings can turn it on later.
   const [, setAiChoice] = useState(0);
   const aiOff = !!user && !user.aiConsentAt && aiDeclined(user.id);
+  // What a tap that needed AI wanted to say, and where to go back to once AI is turned on from the AI-off card (QA round 4).
+  const [aiOffReason, setAiOffReason] = useState("");
+  const aiAsk = useRef("");
+  const aiReturn = useRef<string | null>(null);
   const declineAi = () => { if (!user) return; keyboard.hide(); rememberAiDeclined(user.id, true); setAiChoice((value) => value + 1); setScreen("conversation"); };
   const feedbackEntry = user && <FeedbackEntry key={user.id} userId={user.id} language={language} hidden={screen === "feedback" || !!resetToken} open={image => openFeedback(screen, image)} />;
   const renderScreen = () => {
@@ -427,22 +454,22 @@ function AccountPrototype() {
       onAgreed={at => { setUser({ ...user, aiConsentAt: at }); setScreen("conversation"); }}
       onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} onDeclineAi={declineAi} />;
     if (user && !user.aiConsentAt && !aiOff && !["booting", "home", "auth", "recovery", "privacy", "pairing"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={declineAi} />;
-    if (screen === "conversation" && user) return <><ScreenBoundary fallback={null}><Suspense fallback={null}><InstallHint language={language} userId={user.id} /></Suspense></ScreenBoundary><ConversationHome user={user} pairing={pairing} language={language} aiOff={aiOff} onPrivacy={(page) => { setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
+    if (screen === "conversation" && user) return <><ScreenBoundary fallback={null}><Suspense fallback={null}><InstallHint language={language} userId={user.id} /></Suspense></ScreenBoundary><ConversationHome user={user} pairing={pairing} language={language} aiOff={aiOff} aiOffReason={aiOffReason} onPrivacy={(page) => { aiReturn.current = page === "processors" && aiOff ? aiAsk.current : null; setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
     if (screen === "import" && user) return <ImportsPage key={location.search} id={new URLSearchParams(location.search).get("import") || ""} user={{ id: user.id, name: user.name }} paired={pairing?.status === "active"} language={language} onBack={backToConversation} onOpen={(url) => { setUrl(url); setScreen("import"); }} onAsk={askPinky} />;
     if (screen === "people" && user) return <PeoplePage key={location.search} language={language} initialPerson={new URLSearchParams(location.search).get("person") || ""} archived={new URLSearchParams(location.search).get("archived") === "1"} backLabel={new URLSearchParams(location.search).get("archived") === "1" ? settingsLabel(language) : undefined} onBack={new URLSearchParams(location.search).get("archived") === "1" ? () => goBack(() => { setUrl(location.pathname); setScreen("privacy"); }) : backToConversation} onAsk={askPinky} onChat={(personId) => { keyboard.hide(); setUrl(`/?channel=me&person=${encodeURIComponent(personId)}`); setScreen("conversation"); }} />;
     if (screen === "space" && user) return <SpacePage key={location.search} id={new URLSearchParams(location.search).get("space") || ""} language={language} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "booting") return <BootSplash language={language} testId="booting" />;
     if (screen === "recovery") return <MobileScroll className="paper-screen recovery-screen"><main className="recovery-content"><AccountRecovery language={language} onBack={() => goBack(() => setScreen("auth"))} onRecovered={() => { setNotice(localized(language, "密码已更新，请重新登录并生成新的恢复码。", "Password updated. Sign in and generate a new recovery code.", "Contraseña actualizada. Inicia sesión y genera un nuevo código de recuperación.")); setScreen("auth"); }} /></main></MobileScroll>;
-    if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
+    if (screen === "personal" && user) return <PersonalHome user={user} relationshipId={pairing?.status === "active" ? pairing.id : null} language={language} aiOff={aiOff} onShared={() => setScreen("dashboard")} onBack={backToConversation} onAsk={askPinky} />;
     if (screen === "capabilities" && user) return <CapabilitiesPage language={language} paired={pairing?.status === "active"} onBack={backToConversation} onAsk={askPinky} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onProfile={() => { setSettingsPage("profile"); setScreen("privacy"); }} />;
-    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { setUrl("/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await (await import("./features/feedback/feedbackQueue")).clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => { rememberAiDeclined(user.id, !at); setUser({ ...user, aiConsentAt: at }); }} />;
+    if (screen === "privacy" && user) return <SettingsPage onName={(name, addedPassword) => setUser({ ...user, name, passwordless: addedPassword ? false : user.passwordless })} key={settingsPage || "main"} onFeedback={() => openFeedback("settings")} initialPage={settingsPage} onAsk={(text) => askPinky(text, "me")} onEarlierPeople={() => { setUrl("/?view=people&archived=1"); setScreen("people"); }} user={user}relationshipId={pairing?.status === "active" ? pairing.id : null} partnerName={pairing?.status === "active" ? pairing.members.find((member) => member.id !== user.id)?.name || null : null} language={language} onLanguage={selectLanguage} onBack={backToConversation} onLogout={logout} onLeft={reloadIdentity} onDeleted={async () => { try { await (await import("./features/feedback/feedbackQueue")).clearFeedbackForDeletedAccount(user.id); } finally { await reloadIdentity(); } }} onAiConsent={(at) => { rememberAiDeclined(user.id, !at); setUser({ ...user, aiConsentAt: at }); if (at && aiReturn.current !== null) { const say = aiReturn.current; aiReturn.current = null; aiAsk.current = ""; setAiOffReason(""); returnTo.current = say; goBack(() => { returnTo.current = ""; setUrl(say || location.pathname); setScreen("conversation"); }); } }} />;
     if (screen === "invite") return <PartnerJoin language={language} onLanguage={selectLanguage} onAuth={(mode) => { rememberInvite(); openAuth(mode); }} />;
     if (screen === "home") return <HomeScreen language={language} onLanguage={selectLanguage} onProvider={(provider) => user ? setScreen(landing(pairing)) : openAuth("register", provider)} onEmail={() => user ? setScreen(landing(pairing)) : openAuth("register")} onSignIn={() => user ? setScreen(landing(pairing)) : openAuth("login")} t={t} />;
     if (screen === "auth") return <AuthScreen key={autoProvider || "form"} autoProvider={autoProvider} onAutoCancel={() => { setAutoProvider(null); setScreen(hasInvite() ? "invite" : "home"); }} initialError={signInReturn} mode={authMode} onModeChange={setAuthMode} language={language} onLanguage={selectLanguage} onBack={() => goBack(() => setScreen(hasInvite() ? "invite" : "home"))} onAuth={acceptAuth} onRecover={() => setScreen("recovery")} notice={notice} setNotice={setNotice} busy={busy} setBusy={setBusy} t={t} />;
     if (screen === "pairing" && user) return <PartnerJoin language={language} onLanguage={selectLanguage} account={{ pairing, onJoined: (next) => {
       forgetInvite(); setUrl("/?channel=us"); setPairing(next); setScreen("conversation");
     }, onBack: () => { forgetInvite(); backToConversation(); } }} />;
-    if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
+    if (screen === "dashboard" && user && pairing) return <RelationshipHome user={{ id: user.id, name: user.name }} language={language} aiOff={aiOff} onNotice={setNotice} onAccessChanged={reloadIdentity} onBack={backToConversation} onAsk={askPinky} />;
     return <div className="loading-screen"><Wordmark language={language} /><p>{localized(language, "正在进入共同空间…", "Opening your shared space…", "Abriendo su espacio compartido…")}</p></div>;
   };
   const showArrivals = user?.aiConsentAt && pairing?.status === "active" && !resetToken &&

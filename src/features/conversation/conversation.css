@@ -346,3 +346,16 @@
 .composer-count { position: absolute; right: 14px; bottom: 100%; margin-bottom: 4px; padding: 1px 8px; border-radius: 10px; background: var(--jian-paper-bright, #fffaf3); color: #6f655d; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none; }
 /* Right-to-left text (Arabic, Hebrew…) reads and aligns its own way in every bubble, like dir="auto". */
 .conversation-message :is(p, li) { unicode-bidi: plaintext; }
+
+/* Message times like iMessage (QA round 4): a centered time where half an hour passed; a tapped message shows its time. */
+.conversation-time { margin: 14px 0 6px; text-align: center; color: #7a716b; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.message-time { display: block; margin: 2px 6px 4px; color: #7a716b; font-size: 12px; }
+.shared-reportable:has(> .us-row.from-me) > .message-time, .conversation-turn:has(> .from-me) > .message-time { text-align: end; }
+.shared-reportable > .message-time { grid-column: 1; }
+.shared-reportable:has(> .us-row:not(.from-me)) > .message-time { padding-inline-start: 40px; }
+/* Reply coach first (QA round 4): someone here only to answer a message sees that entry above the reflective prompt. */
+.reply-coach-entry { display: grid; gap: 6px; margin: 0 0 22px; padding: 14px 16px; border: 1px solid rgba(143,68,88,.22); border-radius: 18px; background: rgba(255,255,255,.6); }
+.reply-coach-entry strong { font-size: 17px; color: #2b2622; }
+.reply-coach-entry p { font-size: 15px; line-height: 1.5; }
+.reply-coach-entry .card-actions { margin-top: 6px; flex-wrap: wrap; }
+.ai-off-card .ai-off-why { display: block; margin-bottom: 6px; color: #8f4458; font-weight: 600; }

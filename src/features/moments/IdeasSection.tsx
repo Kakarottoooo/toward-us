@@ -29,21 +29,22 @@ export function IdeasSection({ language, done, onDid, onPlan, onChanged }: { lan
   const [aiOn, setAiOn] = useState(false);
   useEffect(() => { void relationshipApi<{ user: { aiConsentAt?: string | null } | null }>("/api/auth/me").then((state) => setAiOn(Boolean(state.user?.aiConsentAt))).catch(() => {}); }, []);
   const [marking, setMarking] = useState(false), [markError, setMarkError] = useState("");
-  const [justDid, setJustDid] = useState<{ idea: number; id: string; version: number } | null>(null);
+  const [justDid, setJustDid] = useState<{ idea: number; id: string } | null>(null);
   const today = () => new Date().toLocaleDateString("en-CA");
   const markDone = async (idea: Idea) => {
     setMarking(true); setMarkError("");
     try {
-      const { record } = await relationshipApi<{ record: { id: string; version: number } }>(`/api/spaces/moments/ideas/${idea.number}`, jsonBody({ title: ideaText(idea, language), date: today() }));
-      setJustDid({ idea: idea.number, id: record.id, version: record.version });
+      const { record } = await relationshipApi<{ record: { id: string } }>(`/api/spaces/moments/ideas/${idea.number}`, jsonBody({ title: ideaText(idea, language), date: today(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || undefined, language }));
+      setJustDid({ idea: idea.number, id: record.id });
       await onChanged?.();
-    } catch { setMarkError(t("没有保存，请重试。", "That wasn't saved. Try again.", "No se guardó. Inténtalo de nuevo.")); }
+    } catch (error) { setMarkError((error as Error).message || t("没有保存，请重试。", "That wasn't saved. Try again.", "No se guardó. Inténtalo de nuevo.")); }
     finally { setMarking(false); }
   };
   const undoMark = async () => {
     if (!justDid) return;
     setMarking(true); setMarkError("");
-    try { await relationshipApi(`/api/space-items/${encodeURIComponent(justDid.id)}/moment/archive`, jsonBody({ version: justDid.version })); setJustDid(null); await onChanged?.(); }
+    // Either partner can take back the shared memory, and one already taken back is fine.
+    try { await relationshipApi(`/api/spaces/moments/ideas/${justDid.idea}/undo`, jsonBody({ id: justDid.id, language })); setJustDid(null); await onChanged?.(); }
     catch { setMarkError(t("没有撤销，请重试。", "That wasn't undone. Try again.", "No se deshizo. Inténtalo de nuevo.")); }
     finally { setMarking(false); }
   };

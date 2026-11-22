@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CaretRight, FilmSlate, LockSimple, PencilSimple, ShareFat, Sparkle, Trash, Users } from "@phosphor-icons/react";
-import { localized, type Language } from "../../i18n";
+import { isolate, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -69,7 +69,7 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
     return () => events.close();
   }, [load]);
 
-  const partner = partnerName || t("TA", "Your partner", "Tu pareja");
+  const partner = partnerName ? isolate(partnerName) : t("TA", "Your partner", "Tu pareja");
   // Before a partner joins, what Ourever learned about TA privately still shows here, to see, correct or remove (11-08).
   const has = (subject: "partner" | "us") => (facts || []).some((fact) => fact.subject === subject);
   const tabs: Array<["me" | "partner" | "us", string]> = partnerName ? [["partner", partner], ["me", t("我", "Me", "Yo")], ["us", t("我们", "Us", "Nosotros")]]

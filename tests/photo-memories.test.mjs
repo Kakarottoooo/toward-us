@@ -9,6 +9,7 @@ import { createFileStore } from "../server/store.mjs";
 import { createPhotoRouter } from "../server/photo-store.mjs";
 import { createSpaceRouter } from "../server/space-router.mjs";
 import { createPhotoMemoryRouter, groupPhotoEvents } from "../server/photo-memories.mjs";
+import { setTogetherSince } from "../server/together-domain.mjs";
 
 const photo = (id, day, time, lat = null, lon = null) => ({ id, day, takenAt: `${day}T${time}:00Z`, lat, lon });
 
@@ -133,4 +134,26 @@ test("100 little things: We did it by hand ticks the card for both, once, and ar
   assert.equal((await call("/spaces/moments/ideas/101", "POST", {})).status, 400);
   assert.equal((await call(`/space-items/${did.body.record.id}/moment/archive`, "POST", { version: did.body.record.version })).status, 200, "undo");
   assert.deepEqual(await ticked(ids[0]), []);
+
+  // QA round 4 D3: no future days, nothing before they got together; both tap → one memory, both succeed; either can Undo, twice is fine.
+  const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const future = await call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: day(3), language: "en" });
+  assert.equal(future.status, 400); assert.equal(future.body.error, "Pick today or an earlier date.");
+  assert.equal((await call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: day(1), timezone: "UTC" })).status, 400, "with the zone known, tomorrow is the future");
+  assert.equal((await call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: "1949-12-31" })).status, 400, "an implausible date");
+  assert.equal((await call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: "2026-02-30" })).status, 400, "not a real day");
+  await store.transaction(`relationship:${relationshipId}`, (tx) => setTogetherSince(tx, { relationshipId, userId: ids[1], date: day(-100), title: "Together" }));
+  const early = await call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: day(-101), language: "en" });
+  assert.equal(early.status, 400); assert.match(early.body.error, /before you got together/);
+  const [first, second] = await Promise.all([call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: day(-1) }), call("/spaces/moments/ideas/8", "POST", { title: "Bake bread", date: day(0) }, ids[1])]);
+  assert.deepEqual([first.status, second.status].sort(), [200, 201], "both taps succeed");
+  assert.equal(first.body.record.id, second.body.record.id, "one shared memory");
+  assert.deepEqual(await ticked(ids[0]), [8]);
+  const made = [first, second].find((result) => result.status === 201).body.record;
+  const other = made.ownerUserId === ids[0] ? ids[1] : ids[0];
+  const undone = await call("/spaces/moments/ideas/8/undo", "POST", { id: made.id }, other);
+  assert.equal(undone.status, 200, JSON.stringify(undone.body)); assert.ok(undone.body.record.archivedAt, "the partner who didn't make it can undo it");
+  assert.deepEqual(await ticked(ids[0]), []); assert.deepEqual(await ticked(ids[1]), []);
+  const twice = await call("/spaces/moments/ideas/8/undo", "POST", { id: made.id }, made.ownerUserId);
+  assert.equal(twice.status, 200); assert.equal(twice.body.record, null, "undoing again is a no-op");
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Brain, CaretRight, Crown, Check, ClockCounterClockwise, DownloadSimple, Eye, FileText, Flag, Heart, Key, Lifebuoy, LinkBreak, ListChecks, ShieldCheck, SignOut, Sticker, Translate, Trash, UserMinus, UsersThree } from "@phosphor-icons/react";
-import { counted, languageTag, localized, type Language } from "../../i18n";
+import { counted, isolate, languageTag, localized, type Language } from "../../i18n";
 import { KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
 import { PageHeader, readUsHidden, usHiddenKey } from "../conversation/ConversationHome";
@@ -177,14 +177,14 @@ export function SettingsPage({ onName, onFeedback, initialPage, onAsk, onEarlier
   const main = <>
     <section className="settings-profile">
       <span className="settings-avatar" aria-hidden="true">{(user.name || "?").trim().slice(0, 1).toUpperCase()}</span>
-      <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${partnerName} 连接`, `Connected with ${partnerName}`, `Conectado con ${partnerName}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
+      <div><strong>{user.name}</strong><span>{user.email}</span><em className={partnerName ? "connected" : ""}><Heart size={13} weight="fill" />{partnerName ? t(`已和 ${isolate(partnerName)} 连接`, `Connected with ${isolate(partnerName)}`, `Conectado con ${isolate(partnerName)}`) : t("还没连接另一半", "Not connected with your partner yet", "Aún sin conectar con tu pareja")}</em></div>
     </section>
     <Group>
       <Row icon={<Key size={18} />} label={titles.account} onClick={() => open("account")} />
       <Row icon={<Crown size={18} weight="fill" />} tone="pink" label={titles.membership} value={plan === "member" ? t("已开通", "Active", "Activa") : plan === "free" ? t("免费版", "Free", "Gratis") : ""} onClick={() => open("membership")} testId="settings-membership" />
       <Row icon={<UsersThree size={18} weight="bold" />} tone="green" label={titles.referrals} onClick={() => open("referrals")} testId="settings-referrals" />
       {founder && <Row icon={<ListChecks size={18} weight="bold" />} tone="green" label={titles.founder} onClick={() => open("founder")} testId="settings-founder" />}
-      <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${partnerName}和你们俩`, `You, ${partnerName} and you two`, `Tú, ${partnerName} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
+      <Row icon={<Heart size={18} weight="fill" />} tone="pink" label={titles.profile} value={partnerName ? t(`你、${isolate(partnerName)}和你们俩`, `You, ${isolate(partnerName)} and you two`, `Tú, ${isolate(partnerName)} y ustedes`) : ""} onClick={() => open("profile")} testId="settings-profile" />
     </Group>
     <Group title={t("通用", "General", "General")}>
       <Row icon={<Translate size={18} weight="bold" />} label={t("语言", "Language", "Idioma")}>

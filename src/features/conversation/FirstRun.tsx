@@ -27,6 +27,8 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The name given at sign-up is not asked again (QA round 4): those members start on the invite step, one step fewer.
+  const named = Boolean(user.name.trim());
   useEffect(() => {
     if (readDraft(key)) return;
     let active = true;
@@ -34,7 +36,7 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
     relationshipApi<Preferences>(endpoint, { signal: AbortSignal.timeout(12000) }).then(prefs => {
       if (!active) return;
       setReturning(prefs.completed);
-      setDraft({ step: prefs.completed ? 3 : 1, name: prefs.preferredName || user.name });
+      setDraft({ step: prefs.completed ? 3 : named ? 2 : 1, name: prefs.preferredName || user.name });
     }).catch(() => { if (active) setError(true); });
     return () => { active = false; };
   }, [key, user.name, attempt]);
@@ -55,8 +57,8 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
     finally { setSaving(false); }
   };
   const progress = draft && <nav className="first-run-progress" aria-label={t("设置进度", "Setup progress", "Progreso de configuración")}>
-    <button type="button" aria-label={t("返回", "Back", "Volver")} disabled={saving} onClick={() => draft.step === 1 ? onDecline() : go(draft.step === 3 ? 2 : 1)}><ArrowLeft size={21} /></button>
-    <span role="status">{t(`第 ${draft.step} 步，共 3 步`, `Step ${draft.step} of 3`, `Paso ${draft.step} de 3`)}</span>
+    <button type="button" aria-label={t("返回", "Back", "Volver")} disabled={saving} onClick={() => draft.step === 1 || (named && draft.step === 2) ? onDecline() : go(draft.step === 3 ? 2 : 1)}><ArrowLeft size={21} /></button>
+    <span role="status">{(() => { const at = named ? draft.step - 1 : draft.step, of = named ? 2 : 3; return t(`第 ${at} 步，共 ${of} 步`, `Step ${at} of ${of}`, `Paso ${at} de ${of}`); })()}</span>
   </nav>;
   const header = <div className="first-run-top">{!returning && progress}{feedback}</div>;
   const problem = t("暂时连不上 Ourever。检查网络后重试。", "Ourever couldn’t connect. Check your connection and try again.", "No se pudo conectar con Ourever. Comprueba tu conexión y vuelve a intentarlo.");
@@ -74,7 +76,9 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
         </label>
         <button type="button" className="primary-action" disabled={!draft.name.trim()} onClick={() => go(2)}>{t("继续", "Continue", "Continuar")}</button>
       </> : <>
-        <h1>{t("你们的共同空间", "A space for the two of you", "Un espacio para los dos")}</h1>
+        {named ? <><h1>{t("欢迎来到 Ourever", "Welcome to Ourever", "Te damos la bienvenida a Ourever")}</h1>
+          <p>{t("你可以先私下聊聊感情里的小事，也可以邀请伴侣一起聊。", "Talk through a moment in your relationship privately, or invite your partner to talk together.", "Habla en privado sobre un momento de tu relación o invita a tu pareja para conversar juntos.")}</p></>
+          : <h1>{t("你们的共同空间", "A space for the two of you", "Un espacio para los dos")}</h1>}
         {pairing?.status === "active" ? <p role="status">{t("伴侣已加入。", "Your partner has joined.", "Tu pareja ya se ha unido.")}</p> :
           <PartnerInvite userId={user.id} language={language} pairing={pairing} onPairingChange={onPairingChange} onRefreshPairing={onRefreshPairing} />}
         {error && <p role="alert">{problem}</p>}

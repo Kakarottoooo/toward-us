@@ -66,6 +66,26 @@ test("recovery codes are private, single-use, rotated and invalidate every old s
   await request("/api/auth/login", { method: "POST", body: { email: "recovery-a@example.test", password: "new-synthetic-password" } });
 }));
 
+// QA round 4 D4: a code typed on a full-width keyboard still works, and the limit is per account from one network and says how long.
+test("recovery codes: full-width input matches; too many tries lock only that account and say how long to wait", () => fixture(async ({ register, request, base }) => {
+  const a = await register("wide-a"); await register("wide-b"); await register("wide-c");
+  const { recoveryCode } = await request("/api/privacy/recovery-code", { cookie: a.cookie, method: "POST", body: { password } });
+  const wide = recoveryCode.toUpperCase().replace(/[0-9A-Z]/g, (char) => String.fromCharCode(char.charCodeAt(0) + 0xfee0)).replaceAll("-", "－");
+  assert.notEqual(wide.normalize("NFKC"), wide);
+  await request("/api/auth/recover", { method: "POST", body: { email: "wide-a@example.test", recoveryCode: `　${wide}　`, password: "new-synthetic-password" }, status: 204 });
+  const guess = { email: "wide-b@example.test", recoveryCode: "0000-0000", password: "new-synthetic-password", language: "en" };
+  for (let index = 0; index < 6; index += 1) await request("/api/auth/recover", { method: "POST", body: guess, status: 401 });
+  const blocked = await fetch(`${base}/api/auth/recover`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(guess) });
+  const body = await blocked.json();
+  assert.equal(blocked.status, 429);
+  assert.ok(body.retryAfter > 0 && body.retryAfter <= 900, JSON.stringify(body));
+  assert.equal(blocked.headers.get("retry-after"), String(body.retryAfter));
+  assert.match(body.error, /^Too many tries\. Try again in 15 minutes\.$/);
+  const zh = await fetch(`${base}/api/auth/recover`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...guess, language: "zh" }) });
+  assert.match((await zh.json()).error, /15 分钟后再试/);
+  await request("/api/auth/recover", { method: "POST", body: { ...guess, email: "wide-c@example.test" }, status: 401 });
+}));
+
 test("leaving ends shared access, export excludes partner secrets, and private deletion preserves shared records", () => fixture(async ({ store, register, request }) => {
   const a = await register("leaving-a"); const b = await register("leaving-b"); const c = await register("next-c");
   const invite = await request("/api/partner/invitations", { cookie: a.cookie, method: "POST", body: {}, status: 201 });

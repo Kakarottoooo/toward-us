@@ -15,7 +15,7 @@ export type RelationshipGraph = {
 export type CoupleStreak = { days: number; me: boolean; partner: boolean };
 
 export type RelationshipHomePayload = {
-  relationship: { id: string; members: Array<{ id: string; name: string; role: "A" | "B" }> };
+  relationship: { id: string; members: Array<{ id: string; name: string; role: "A" | "B"; language?: "zh" | "en" | "es" | null }> };
   home: { pending: Array<{ type: string; id: string; title: string }>; upcoming: Array<{ type: string; id: string; title: string; at: string }>; plans: Array<{ type: string; id: string; title: string; status: string; dueAt?: string }>; recentMoment: null; notifications: GraphRecord[] };
   graph: RelationshipGraph;
   capabilities: Record<string, boolean>;

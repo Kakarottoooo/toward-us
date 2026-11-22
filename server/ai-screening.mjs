@@ -5,7 +5,7 @@ import { checkCurrentAiPermission, servingAiAccounts } from "./ai-ledger.mjs";
 import { currentAiUser } from "./ai-budget.mjs";
 
 const errors = {
-  ai_screening_unavailable: ["内容安全检查暂时不可用，请稍后重试。", "Safety screening is unavailable. Try again shortly.", "La revisión de seguridad no está disponible. Vuelve a intentarlo."],
+  ai_screening_unavailable: ["Ourever 暂时没法检查这条消息，请稍后再试。", "Ourever can't check this message right now — try again in a moment.", "Ourever no puede revisar este mensaje ahora mismo. Inténtalo de nuevo en un momento."],
   ai_content_blocked: ["这段内容未通过安全检查。请调整内容，或在设置中联系支持。", "This content did not pass safety screening. Revise it or contact Support in Settings.", "El contenido no pasó la revisión de seguridad. Edítalo o contacta con soporte en Ajustes."],
 };
 function failure(code) {

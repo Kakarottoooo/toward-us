@@ -44,6 +44,14 @@ test("either partner sets the day they got together; setting it again moves the 
   assert.deepEqual(started.map((item) => [item.date, item.recurringRule, item.title]), [["2025-05-21", "yearly", "在一起纪念日"]]);
 }));
 
+test("Coming up learns each partner's interface language, so a couple with different languages sees both sets of holidays", () => couple(async ({ request, a, b }) => {
+  const members = async () => (await request("/api/relationship/home", { cookie: a })).body.relationship.members.map((member) => member.language);
+  assert.deepEqual(await members(), [null, null], "a member who never chose a language has none");
+  assert.equal((await request("/api/me/language", { method: "POST", body: { language: "zh" }, cookie: a })).status, 200);
+  assert.equal((await request("/api/me/language", { method: "POST", body: { language: "en" }, cookie: b })).status, 200);
+  assert.deepEqual(await members(), ["zh", "en"]);
+}));
+
 test("an old shared list becomes a checklist space once, with its items", () => couple(async ({ request, a, b, store }) => {
   const { user, pairing } = (await request("/api/auth/me", { cookie: a })).body;
   const list = createRelationshipRecord({ relationshipId: pairing.id, userId: user.id, visibility: "shared", aiAccessScope: "joint", approvalPolicy: "both", title: "Date ideas", type: "custom" });
