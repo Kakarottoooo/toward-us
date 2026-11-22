@@ -7,20 +7,12 @@ import { AiConsentScreen } from "../privacy/AiConsent";
 import { relationshipApi } from "../relationship/api";
 import { PartnerInvite } from "./PartnerInvite";
 import "./first-run.css";
+import { draftKey, readDraft, type Draft } from "./firstRunDraft";
 
-type Draft = { step: 1 | 2 | 3; name: string };
+export { firstRunInProgress } from "./firstRunDraft";
+
 type Preferences = { preferredName: string; completed: boolean };
 const endpoint = "/api/privacy/first-run";
-
-const draftKey = (id: string) => "ourever:first-run:" + id;
-export const firstRunInProgress = (id: string) => Boolean(readDraft(draftKey(id)));
-
-function readDraft(key: string): Draft | null {
-  try {
-    const draft = JSON.parse(localStorage.getItem(key) || "null");
-    return draft && [1, 2, 3].includes(draft.step) && typeof draft.name === "string" ? draft : null;
-  } catch { return null; }
-}
 
 export function FirstRun({ user, feedback, language, pairing, onPairingChange, onRefreshPairing, onAgreed, onDecline }: {
   user: { id: string; name: string }; feedback: ReactNode; language: Language; pairing: Pairing | null;
