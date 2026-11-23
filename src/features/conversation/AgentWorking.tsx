@@ -1,8 +1,8 @@
 import { localized, type Language } from "../../i18n";
 import "./agent-working.css";
 
-// What Ourever is doing while it prepares a reply (server/agent-activity.mjs gives the step code). Shown as a small pill under
-// the couple's character and as a typing bubble in the thread (the founder, 11-03, after Meta Muse).
+// What Ourever is doing while it prepares a reply (server/agent-activity.mjs gives the step code). Shown once, as a typing bubble in
+// the thread (the founder, 11-03, after Meta Muse); a second pill at the top showed "Thinking" twice (QA round 8).
 export type AgentActivity = { step: string; detail?: string | null } | null;
 
 export function agentStepLabel(step: string, language: Language) {
@@ -21,11 +21,6 @@ export function agentStepLabel(step: string, language: Language) {
 
 function Dots() {
   return <span className="agent-dots" aria-hidden="true"><i /><i /><i /></span>;
-}
-
-/** The pill under the character: the step only, short enough to sit under it at phone width. */
-export function AgentStatusPill({ activity, language }: { activity: NonNullable<AgentActivity>; language: Language }) {
-  return <span className="agent-pill" data-testid="agent-pill"><Dots /><span>{agentStepLabel(activity.step, language)}</span></span>;
 }
 
 /** Ourever's typing bubble at the end of the thread; in Us it sits in Ourever's row with its avatar, like its replies. */

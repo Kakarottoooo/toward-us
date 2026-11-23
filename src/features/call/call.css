@@ -1,9 +1,11 @@
 /* Live call: a calm panel in place of the composer, with large controls like a phone call. */
 .call-panel { display: grid; gap: 12px; padding: 14px 16px 12px; border-radius: 22px; background: #fffaf2; box-shadow: 0 8px 28px rgba(37,37,37,.12), 0 0 0 1px rgba(37,37,37,.06); }
-.call-panel header { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.call-panel header strong { flex: 1; min-width: 0; color: var(--jian-ink); font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.call-panel header > span:last-child { color: #6f6860; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.call-dot { width: 10px; height: 10px; border-radius: 50%; background: #c9c2b8; }
+/* The title and the status each stay whole: at 375–393pt "Connecting to Ourever…" drops under the title instead of cutting
+ * both to "On a call with Ou…" / "Connecting to Our…" (QA round 8). */
+.call-panel header { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.call-panel header strong { flex: 1 1 auto; min-width: 0; color: var(--jian-ink); font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.call-panel header > span:last-child { margin-left: auto; color: #6f6860; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.call-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #c9c2b8; }
 .call-dot.is-connected { background: #2f9a68; box-shadow: 0 0 0 4px rgba(47,154,104,.18); animation: call-pulse 1.8s ease-in-out infinite; }
 .call-dot.is-connecting, .call-dot.is-idle { background: #e0a43b; }
 @keyframes call-pulse { 50% { box-shadow: 0 0 0 7px rgba(47,154,104,.08); } }

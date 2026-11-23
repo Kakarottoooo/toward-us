@@ -49,7 +49,8 @@ export function FloatingPet({ userId, language, pet, character, onOpen }: { user
     press.current = null; setDrag(null);
   };
   const image = broken && character?.visible ? character.image?.still || null : petImage(character);
-  const style = drag ? { left: drag.x - 36, top: drag.y - 40, right: "auto" } : { top: `clamp(150px, ${spot.y * 100}%, calc(100% - 220px))` };
+  // Measured in the message stream (QA round 8): the bottom stop keeps it off the composer and the call card.
+  const style = drag ? { left: drag.x - 36, top: drag.y - 40, right: "auto" } : { top: `max(4px, min(${spot.y * 100}%, calc(100% - 90px)))` };
   return <button ref={ref} type="button" className={`floating-pet is-${spot.side} is-${pet.mood}${drag ? " is-dragging" : ""}${keyboard.visible ? " is-away" : ""}`} style={style}
     onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={() => { if (!moved.current) onOpen(); moved.current = false; }}
     aria-label={t(`我们的小家伙 Lv.${pet.level}，打开它的小窝`, `Our little one, Lv.${pet.level}. Open its room`, `Nuestro pequeño, Nv.${pet.level}. Abrir su cuarto`)} data-testid="floating-pet">

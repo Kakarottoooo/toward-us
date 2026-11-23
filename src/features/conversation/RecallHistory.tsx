@@ -58,7 +58,7 @@ export function useConversationRecall({ channel, sessionId, language, userId, me
   const browse = (messageId: string, direction: "before" | "after") => { if (page) void jump({ channel: page.channel, conversationId: page.conversationId, messageId, date: "" }, direction); };
   const controls = <>
     {picker && <form className="recall-date-picker" onSubmit={(event) => { event.preventDefault(); void jump(); }}>
-      <label>{t("跳到日期", "Jump to date", "Ir a una fecha")}<KeyboardInput type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label={t("对话日期", "Conversation date", "Fecha de conversación")} data-testid="recall-date" /></label>
+      <label>{t("跳到日期", "Jump to date", "Ir a una fecha")}<span className={`recall-date-field${date ? "" : " is-empty"}`} data-placeholder={t("选个日期", "Pick a date", "Elige una fecha")}><KeyboardInput type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label={t("对话日期", "Conversation date", "Fecha de conversación")} data-testid="recall-date" /></span></label>
       <button type="submit" disabled={!date || busy} data-testid="recall-date-go">{t("跳转", "Go", "Ir")}</button>
     </form>}
     {page && <div className="recall-toolbar"><span>{page.channel === "us" ? t("我们俩 · 历史对话", "Us · Earlier conversation", "Nosotros · Conversación anterior") : t("只有我 · 历史对话", "Just me · Earlier conversation", "Solo yo · Conversación anterior")}</span><button type="button" onClick={close} data-testid="recall-latest">{t("回到最新", "Back to latest", "Volver al presente")}</button></div>}
