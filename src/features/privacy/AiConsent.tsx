@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ShieldCheck, WifiSlash } from "@phosphor-icons/react";
+import { ArrowCircleUp, ShieldCheck, WifiSlash, X } from "@phosphor-icons/react";
+import { buildIsOlder, iosAppBuild, IOS_UPDATE_URL, LATEST_IOS_BUILD } from "../membership/platform";
 import { localized, type Language } from "../../i18n";
 import { MobileScroll } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
@@ -51,6 +52,29 @@ export function AiConsentScreen({ language, onAgreed, onDecline, header }: { lan
   </MobileScroll>;
 }
 
+// The banners sit outside the language state; the page's lang attribute follows the chosen interface language.
+function pageLanguage(): Language {
+  const lang = document.documentElement.lang || "en";
+  return lang.startsWith("en") ? "en" : lang.startsWith("es") ? "es" : "zh";
+}
+
+/** An older iPhone app asks to update: web pages update themselves, but sign-in and other native parts need the new app.
+ * Closing it hides it until the app opens again. */
+function UpdateBanner() {
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void iosAppBuild().then(build => { if (live && build && buildIsOlder(build, LATEST_IOS_BUILD)) setStale(true); });
+    return () => { live = false; };
+  }, []);
+  if (!stale) return null;
+  const language = pageLanguage();
+  return <div className="offline-banner update-banner" role="status" data-testid="update-banner">
+    <a href={IOS_UPDATE_URL}><ArrowCircleUp size={16} weight="bold" />{localized(language, "有新版本，点这里在 TestFlight 更新", "A new version is ready. Tap to update in TestFlight", "Hay una versión nueva. Toca para actualizar en TestFlight")}</a>
+    <button type="button" aria-label={localized(language, "关闭", "Close", "Cerrar")} onClick={() => setStale(false)}><X size={16} weight="bold" /></button>
+  </div>;
+}
+
 /** A quiet line at the top while the phone has no network; requests made meanwhile fail with their own message. */
 export function OfflineBanner() {
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine !== false);
@@ -59,9 +83,7 @@ export function OfflineBanner() {
     window.addEventListener("online", update); window.addEventListener("offline", update);
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
   }, []);
-  if (online) return null;
-  // The banner sits outside the language state; the page's lang attribute follows the chosen interface language.
-  const lang = document.documentElement.lang || "en";
-  const language: Language = lang.startsWith("en") ? "en" : lang.startsWith("es") ? "es" : "zh";
+  if (online) return <UpdateBanner />;
+  const language = pageLanguage();
   return <div className="offline-banner" role="status" data-testid="offline-banner"><WifiSlash size={16} weight="bold" />{localized(language, "没有网络连接，联网后会自动恢复", "No connection. Ourever picks up again once you're online", "Sin conexión. Ourever sigue en cuanto vuelva la red")}</div>;
 }
