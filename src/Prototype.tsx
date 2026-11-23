@@ -726,7 +726,9 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
       </div>}
       {providerError && providerError !== "cancelled" && <p className="form-notice" role="alert">{signInMessage(providerError, language)}</p>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }}>
-      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} aria-describedby="register-name-count" data-testid="register-name" /><small id="register-name-count" className="field-count" aria-live="polite">{name.length >= 18 ? `${name.length}/24` : ""}</small></label>}
+      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} aria-describedby="register-name-count" data-testid="register-name" /><small id="register-name-count" className="field-count" aria-live="polite">{name.length >= 18 ? `${name.length}/24` : ""}</small>
+        {/* Create account stays off until there is a name; once the rest is typed, say so here instead of leaving it a mystery (QA round 8). */}
+        {!name.trim() && (email || password) && <small className="field-required" role="status" data-testid="register-name-required">{localized(language, "填上你的名字才能注册", "Add your name to create your account", "Escribe tu nombre para crear la cuenta")}</small>}</label>}
       <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <div className="editorial-field auth-password-field">
         <label htmlFor="auth-password">{t.password}</label>

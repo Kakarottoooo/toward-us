@@ -25,7 +25,7 @@ import { GameCard, type GameAnswers, type GameRound } from "./GameCard";
 import { DistanceBar } from "./DistanceBar";
 import { FloatingPet, PetRoom, petHiddenKey, type PetView } from "../character/PetPanel";
 import { defaultMascot, useCoupleCharacter } from "../character/character";
-import { AgentStatusPill, AgentTyping, type AgentActivity } from "./AgentWorking";
+import { AgentTyping, type AgentActivity } from "./AgentWorking";
 import { PromiseNudge } from "../promises/PromiseNudge";
 import { promiseToMention, type PromiseItem } from "../promises/promises";
 // The games open on demand, so their code loads after the conversation is on screen (fetched in the background once it
@@ -1197,7 +1197,7 @@ ${text}` : text, target);
   }, [conversationVisible, channel, currentThread, recall.active, reopenedAt, Boolean(emptyPrivateChat)]);
 
   if (!conversationVisible) return <div className="loading-screen" aria-busy="true" data-testid="booting" role="status">{t("正在打开对话…", "Opening your conversation…", "Abriendo tu conversación…")}</div>;
-  return <div className={`paper-screen conversation-home ${working ? "is-agent-working" : ""}`} data-testid="conversation-screen" data-layer-open={gameHall || playTogether || interaction || petRoom ? "" : undefined} data-feedback-view={gameHall ? "games" : playTogether || openQuestionId ? "questions" : petRoom ? "pet" : call ? "call" : "conversation-" + channel}>
+  return <div className="paper-screen conversation-home" data-testid="conversation-screen" data-layer-open={gameHall || playTogether || interaction || petRoom ? "" : undefined} data-feedback-view={gameHall ? "games" : playTogether || openQuestionId ? "questions" : petRoom ? "pet" : call ? "call" : "conversation-" + channel}>
     {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
       {/* One row: menu, the two channels, and a live voice call with Ourever (privately in Just me, for everyone in the room in Us). */}
@@ -1220,7 +1220,6 @@ ${text}` : text, target);
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
       {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
       {recall.controls}
-      {working && <div className="agent-status-top"><AgentStatusPill activity={working} language={language} /></div>}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main ref={conversationContent} className={`conversation-thread${channel === "me" && emptyPrivateChat && !aiOff ? " has-reply-coach" : ""}`} aria-live="polite">{recall.active ? recall.history : <>
       {channel === "me" ? <>{session && (session.earlierPages || 0) > shownEarlier.page && <button type="button" className="conversation-earlier" disabled={loadingEarlierMe} onClick={() => void loadEarlierMe()} data-testid="earlier-me">{loadingEarlierMe ? t("正在找…", "Loading…", "Cargando…") : t("更早的消息", "Earlier messages", "Mensajes anteriores")}</button>}{sessionLoadFailed && !session && <div role="alert" className="conversation-retry"><span>{t("暂时无法打开私人对话。", "Your private conversation couldn’t load.", "No se pudo abrir tu conversación privada.")}</span><button onClick={() => setLoadAttempt(n => n + 1)}>{t("重试", "Retry", "Reintentar")}</button></div>}{emptyPrivateChat && !aiOff && meEmpty}{privateMessages.map((message, index) => {
@@ -1249,7 +1248,10 @@ ${text}` : text, target);
           <button type="button" key={text} onClick={() => { setDraft(text, "me"); composerRef.current?.querySelector("textarea")?.focus(); }}>{text}</button>)}
       </div>}
       <div aria-hidden="true" />
-    </>}</main></MobileScroll>{newBelow && channel === "us" && !recall.active && <button type="button" className="conversation-new-below" onClick={toLatest} data-testid="new-messages">{t("新消息 ↓", "New messages ↓", "Mensajes nuevos ↓")}</button>}</div>
+    </>}</main></MobileScroll>{newBelow && channel === "us" && !recall.active && <button type="button" className="conversation-new-below" onClick={toLatest} data-testid="new-messages">{t("新消息 ↓", "New messages ↓", "Mensajes nuevos ↓")}</button>}
+      {/* Inside the stream, between the header and the composer, so it never sits on either; during a call it steps aside
+        * like it does for games, since the call card and its captions take the room it would stand in (QA round 8). */}
+      {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && !call && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}</div>
     <TogetherSheet language={language} person={settledOn} others={putAway} onClose={() => setTogetherPerson(null)} onInvite={() => { setTogetherPerson(null); switchChannel("us"); }} />
     {call && <footer className="conversation-composer conversation-call-footer"><CallPanel language={language} started={call} partnerName={partnerName} onEnded={(message) => { setCall(null); if (message) setNotice(message); void reloadSession(); }} /></footer>}
     {aiOff && channel === "me" && <footer className="conversation-composer ai-off-card" data-testid="ai-off">
@@ -1302,7 +1304,6 @@ ${text}` : text, target);
     {importDialog}
     {offerCharacter && !mascot && !joinedHere.current && <CharacterOffer language={language} userId={user.id} onCharacter={() => { keyboard.hide(); onPrivacy("character"); }} onDone={() => setOfferCharacter(false)} />}
     {openStory && <StoryView language={language} story={openStory} onClose={() => setOpenStory(null)} />}
-    {paired && together?.pet && !petHidden && !petRoom && !gameHall && !playTogether && !interaction && <FloatingPet userId={user.id} language={language} pet={together.pet} character={mascot} onOpen={openPetRoom} />}
     {petRoom && together?.pet && <PetRoom language={language} pet={together.pet} character={mascot} members={together.members} userId={user.id} hidden={petHidden} onHiddenChange={hidePet} onPetted={(pet) => { setHearts((count) => count + 1); setTogether((current) => current && { ...current, pet }); }} onMakeCharacter={() => { setPetRoom(false); onPrivacy("character"); }} onMembership={() => { setPetRoom(false); onPrivacy("membership"); }} onClose={() => setPetRoom(false)} />}
     {gameHall && paired && <Suspense fallback={null}><GameHall language={language} userId={user.id} initialMatch={gameHall.match} petPicture={mascot?.image ? (mascot.visible ? mascot.image.still : null) : defaultMascot} onClose={closeGames} onPlayCard={(type) => { closeGames(); switchChannel("us"); void playAgain(type); }}
       onQuestions={() => { closeGames(); keyboard.hide(); setPlayTogether({ fromGames: true }); }} /></Suspense>}

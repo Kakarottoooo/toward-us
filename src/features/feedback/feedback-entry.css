@@ -23,3 +23,8 @@ body.layer-open .feedback-launch { display: none; }
 .mobile-app-viewport:has(> .offline-banner):has(> .relationship-shell > .page-header) > .feedback-launch { top: calc(env(safe-area-inset-top) + 34px + max(12px, env(safe-area-inset-top)) + 2px); }
 /* The AI consent screen is all text: the button waits in its empty top right corner, clear of the bullets (QA round 3). */
 .mobile-app-viewport:has(> .ai-consent-screen) > .feedback-launch { top: calc(max(12px, env(safe-area-inset-top)) + 2px); right: 10px; }
+/* Phones on their side (QA round 8): the message stream is only ~160px tall, so 58% put the button on the pet, which rests at
+ * the bottom of the stream; it waits at the top of the thread's right gutter instead, just under the conversation header. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .mobile-app-viewport:has(.conversation-home) > .feedback-launch { top: calc(env(safe-area-inset-top, 0px) + 116px); }
+}
