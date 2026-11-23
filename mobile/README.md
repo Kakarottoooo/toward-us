@@ -141,3 +141,32 @@ TOWARD_US_APP_URL=https://node.tail3f720f.ts.net npm run ios   # 生成配置、
 4. iPhone 第一次要：设置 → 隐私与安全性 → 开发者模式 打开（会重启）；设置 → 通用 → VPN 与设备管理 → 信任自己的开发者证书。
 
 免费签名的包 7 天后失效，到期重新点一次运行即可；不能收原生推送。图标文件为（`AppIcon-512@2x.png`，1024×1024）。
+
+## App 内购买（PinkyStore，StoreKit 2；PR #111）
+
+桌面和锁屏小组件已随 main 上线（令牌存在 App 与 Widget 共享的设备钥匙串里，见本文开头），这一节只讲 App 内购买。代码已写进 iOS 工程并在模拟器里测过；正式上架前还要在 App Store Connect 建好商品（见下面"创始人要做的事"）。
+
+- 网页调用 `Capacitor.Plugins.PinkyStore`：`products({ ids })`、`purchase({ id, appAccountToken })`（`appAccountToken` 是登录用户的 id，必须是 UUID）、`restore({ sync })`，以及事件 `transaction`（续费、家长批准、在别的设备买的）。买到后把 `signedTransaction` 交给服务器 `POST /api/membership/apple/verify` 验证；会员按情侣算，一个人付，两个人都是会员。
+- 商品：会员订阅（同一订阅组“Pinky 会员”）`us.toward.pinky.member.monthly` $9.99 / 月、`us.toward.pinky.member.yearly` $59.99 / 年；装扮（买断）`us.toward.pinky.outfit.<bow|crown|scarf|glasses|flower|santa>` 各 $1.99。
+- 本地测试：`ios/App/Pinky.storekit` 里是这些商品，已挂在共享 Scheme `App` 的 Run 上（Xcode 里 Product → Scheme → Edit Scheme → Run → Options → StoreKit Configuration 应显示 `Pinky.storekit`），模拟器里点运行就能假装购买，不花钱、不连 App Store。
+- 代码：`ios/App/App/PinkyStorePlugin.swift`，在 `SceneDelegate.swift` 的 `PinkyBridgeViewController` 里注册。
+
+### 自动测试（模拟器，不需要签名）
+
+`AppTests` 跑在真的 App 里：页面上的 JavaScript 通过 Capacitor 调插件，StoreKit 用 `Pinky.storekit` 应答（列商品、带 `appAccountToken` 购买、恢复、`transaction` 事件）。原来针对旧版小组件实现（App Group 存令牌）的测试已随 main 的钥匙串实现一并移除。
+
+```sh
+cd mobile
+npm ci --ignore-scripts
+TOWARD_US_APP_URL=https://example.com npm run sync   # 测试只需要一个能打开的网页让 Capacitor 注入桥
+cd ios/App
+xcodebuild -project App.xcodeproj -scheme App -sdk iphonesimulator   -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' test
+```
+
+2026-11-06 在 iOS 18.3 模拟器上 StoreKit 测试全过；iOS 26.4 模拟器经 SSH 跑时 `SKTestSession` 报 `SKInternalErrorDomain Code=3`，StoreKit 测试拿不到商品，在 Xcode 图形界面里跑是否正常还没试过。
+
+### 创始人要做的事
+
+1. 开发者后台：给 `us.toward.app` 打开 In-App Purchase。
+2. App Store Connect：按上面的商品 id 和价格建订阅组“Pinky 会员”和 6 个装扮，签付费 App 协议、填银行和税务信息；建沙盒测试账号。
+3. 服务器配好 Apple 的验证（另一个 PR 负责），之后在真机上用沙盒账号走一遍：买会员 → 两个人都变成会员；恢复购买。
