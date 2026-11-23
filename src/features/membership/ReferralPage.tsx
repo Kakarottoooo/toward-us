@@ -66,7 +66,8 @@ export function ReferralPage({ language }: { language: Language }) {
   const share = async () => {
     setNotice("");
     if (!navigator.share) { await copy(); return; }
-    try { await navigator.share({ title: "Ourever", text: t("邀请你一起试试 Ourever。", "Join me on Ourever.", "Te invito a probar Ourever."), url: link.href }); }
+    // Link inside the text: iOS share-sheet Copy keeps only the text of a { text, url } share.
+    try { await navigator.share({ title: "Ourever", text: t("邀请你一起试试 Ourever。", "Join me on Ourever.", "Te invito a probar Ourever.") + "\n" + link.href }); }
     catch (err) { if ((err as Error).name !== "AbortError") setNotice(t("分享未完成，可以复制链接。", "Sharing didn’t finish. You can copy the link instead.", "No se compartió. Puedes copiar el enlace.")); }
   };
   const status = (item: NonNullable<ReferralAccount["received"]>) => {

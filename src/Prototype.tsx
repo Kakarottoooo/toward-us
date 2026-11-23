@@ -797,7 +797,10 @@ function accountLanding(user: User, pairing: Pairing | null): Screen {
 }
 
 const aiDeclinedKey = (userId: string) => "ourever:ai-declined:" + userId;
-function aiDeclined(userId: string) { try { return localStorage.getItem(aiDeclinedKey(userId)) === "1"; } catch { return false; } }
-function rememberAiDeclined(userId: string, declined: boolean) { try { if (declined) localStorage.setItem(aiDeclinedKey(userId), "1"); else localStorage.removeItem(aiDeclinedKey(userId)); } catch { /* asked again next time */ } }
+// Kept in memory too: when storage refuses the write (a full iPhone, a locked-down WebView), "Not now" must still let the
+// person in for this session instead of showing the consent screen again and again (iPhone QA 11-22).
+const aiDeclinedHere = new Set<string>();
+function aiDeclined(userId: string) { if (aiDeclinedHere.has(userId)) return true; try { return localStorage.getItem(aiDeclinedKey(userId)) === "1"; } catch { return false; } }
+function rememberAiDeclined(userId: string, declined: boolean) { if (declined) aiDeclinedHere.add(userId); else aiDeclinedHere.delete(userId); try { if (declined) localStorage.setItem(aiDeclinedKey(userId), "1"); else localStorage.removeItem(aiDeclinedKey(userId)); } catch { /* asked again next launch */ } }
 
 function signedInHere(value?: boolean) { try { if (value === undefined) return localStorage.getItem("ourever.signed-in") === "1"; if (value) localStorage.setItem("ourever.signed-in", "1"); else localStorage.removeItem("ourever.signed-in"); } catch { /* not remembered */ } return false; }
