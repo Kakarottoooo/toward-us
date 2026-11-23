@@ -46,6 +46,8 @@ html.plum-entry {
   .plum-welcome .welcome-sign-in { min-height: 44px; border: 0; background: transparent; color: var(--cream); font: 650 18px/1.35 var(--jian-sans); cursor: pointer; }
   :is(.plum-auth, .plum-welcome) .language-switch {
     position: static; display: inline-flex; align-self: center; justify-self: center; margin: 0 auto;
+    /* Never shrinks: on a short screen (iPhone SE in Safari) the column squeezed it to a 2px line with the buttons clipped. */
+    flex: none;
     gap: 0; border: 1px solid #c7a782; border-radius: 999px; overflow: hidden; color: var(--apricot); background: #300e29;
   }
   :is(.plum-auth, .plum-welcome) .language-switch > span { display: block; }
