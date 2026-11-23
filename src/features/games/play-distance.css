@@ -103,3 +103,21 @@
 .distance-recent time, .distance-recent > p { font-size: .83rem; color: #6b5361; }
 .distance-recent li > p { font-size: .96rem; white-space: pre-wrap; }
 .distance-recent img { display: block; max-width: 100%; max-height: 160px; border-radius: 10px; object-fit: contain; }
+/* Both views share one cell, so switching Touch / Little cards never changes the sheet's height (founder 11-22). */
+.distance-views { display: grid; }
+.distance-views > * { grid-area: 1 / 1; min-width: 0; }
+.distance-views > [hidden] { display: block; visibility: hidden; pointer-events: none; }
+.distance-views > .distance-touch { align-content: center; }
+.distance-cards { display: grid; gap: 12px; align-content: start; }
+.distance-presence { margin: -4px 0 0; font-size: .84rem; color: #7a6d60; }
+.distance-presence[data-online="true"]::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #3f9a5b; vertical-align: 1px; }
+.distance-touch .distance-presence { min-height: 0; max-width: none; }
+/* Meeting is the moment of this feature: the heart fills and sends out two rings. */
+.distance-touch.is-matched .distance-heart { width: 72px; height: 72px; color: #fff; background: var(--distance-action); animation: distance-meet .9s ease-out, distance-ring 1.6s ease-out 2; }
+@keyframes distance-ring {
+  0% { box-shadow: 0 0 0 0 rgba(165, 58, 48, .45); }
+  100% { box-shadow: 0 0 0 26px rgba(165, 58, 48, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .distance-touch.is-matched .distance-heart { animation: none; }
+}

@@ -54,6 +54,11 @@ export function FeedbackEntry({ userId, language, hidden, open }: {
     return () => { void registration.then(handle => handle?.remove()); };
   }, []);
   useEffect(() => { if (hidden) setScreenshot(false); }, [hidden, screenshot]);
+  useEffect(() => {
+    if (!screenshot) return;
+    const timer = window.setTimeout(() => setScreenshot(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [screenshot]);
   if (hidden) return null;
   const label = t("反馈", "Feedback", "Comentarios");
   return <>

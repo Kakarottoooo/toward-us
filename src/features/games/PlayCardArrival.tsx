@@ -5,6 +5,7 @@ import { languageTag, localized, type Language } from "../../i18n";
 import { useKeyboard, useScreenPortal } from "../../mobile";
 import { jsonBody, relationshipApi } from "../relationship/api";
 import { Sketch, type Stroke } from "./PlayDrawing";
+import { TouchArrival } from "./TouchArrival";
 import "./play-card-arrival.css";
 
 type Gift = {
@@ -18,7 +19,12 @@ type Gift = {
 type Inbox = { cards: Gift[]; remaining: number; partner: string };
 const inboxPath = "/api/play-distance/deliveries";
 
-export function PlayCardArrival({ language }: { language: Language }) {
+/** Everything that arrives from the partner while Ourever is open: a touch to return, and little cards. */
+export function PlayCardArrival({ language, userId }: { language: Language; userId: string }) {
+  return <><TouchArrival language={language} userId={userId} /><CardArrival language={language} /></>;
+}
+
+function CardArrival({ language }: { language: Language }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const { screenRef } = useScreenPortal();
   const keyboard = useKeyboard();

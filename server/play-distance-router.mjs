@@ -9,7 +9,8 @@ import { readPlayDrawing } from "./play-drawing.mjs";
 const PATH = "/play-distance";
 const CARD_LIMIT = 20;
 const DELIVERY_LIMIT = 60;
-const TOUCH_MS = 10_000;
+// One minute to touch back (founder 11-22): the partner is told at once, so the window only has to cover picking up the phone.
+const TOUCH_MS = 60_000;
 const TOUCH_RESULT_MS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const writable = (context) => context?.relationship.status === "active" && context.members.length === 2;
@@ -40,12 +41,16 @@ function partnerName(context) {
   return context.members.find((member) => member.userId !== context.viewerId)?.user?.name || "";
 }
 
+function memberName(context, userId) {
+  return String(context.members.find((member) => member.userId === userId)?.user?.name || "").slice(0, 40);
+}
+
 function deliveries(conversation, context) {
   const cards = (conversation?.playDistance?.cards || []).filter((card) => card.showOnOpen && card.userId !== context.viewerId);
   return { cards: cards.slice(0, CARD_LIMIT).map(publicCard), remaining: cards.length, partner: partnerName(context) };
 }
 
-function view(conversation, context, now = Date.now()) {
+function view(conversation, context, now = Date.now(), partnerOnline = false) {
   const distance = conversation?.playDistance;
   const touch = activeTouch(distance?.touch, now);
   return {
@@ -55,11 +60,13 @@ function view(conversation, context, now = Date.now()) {
     touch: touch?.matched ? { id: touch.id, expiresAt: touch.expiresAt, matched: true, joinId: touch.joins[context.viewerId] } :
       touch ? { id: touch.id, userId: touch.userId, expiresAt: touch.expiresAt, matched: false } : null,
     partner: partnerName(context),
+    partnerOnline,
     readOnly: !writable(context),
   };
 }
 
-/** A bounded shared corner of the existing relationship conversation. Drafts and touch timers never reach push. */
+/** A bounded shared corner of the existing relationship conversation. Drafts never reach push; a touch tells the partner
+ * (in the app through the live event, otherwise by push) so it can be returned within the minute. */
 export function createPlayDistanceRouter({ store, emit = () => {}, notify = async () => {}, online = () => false }) {
   const router = express.Router();
   router.use(PATH, (req, res, next) => req.auth?.user?.id ? next() : sendError(req, res, err(401, "sign_in")));
@@ -90,10 +97,13 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
     return result;
   }
 
+  const partnerOf = (context, userId) => context.members.find((member) => member.userId !== userId)?.userId;
+  const isOnline = (userId) => { try { return Boolean(userId && online(userId)); } catch { return false; } };
+
   router.get(PATH, async (req, res) => {
     const userId = req.auth.user.id, context = await contextFor(userId);
     const conversation = await store.getRelationshipRecordForUser("togetherConversations", `together:${context.relationship.id}`, userId);
-    res.set("Cache-Control", "private, no-store").json(view(conversation, context));
+    res.set("Cache-Control", "private, no-store").json(view(conversation, context, Date.now(), isOnline(partnerOf(context, userId))));
   });
 
   router.get(`${PATH}/deliveries`, async (req, res) => {
@@ -164,7 +174,19 @@ export function createPlayDistanceRouter({ store, emit = () => {}, notify = asyn
       }
       return { touch: { id, userId, matched: false, expiresAt: now + TOUCH_MS } };
     });
-    res.json(view(result.conversation, result.context));
+    const userId = req.auth.user.id, partner = partnerOf(result.context, userId), touch = result.conversation?.playDistance?.touch;
+    if (result.changed && action === "join" && partner && !isOnline(partner)) {
+      const name = memberName(result.context, userId);
+      const message = touch?.matched ? {
+        body: { zh: `${name || "TA"}回碰了你，你们碰到了 💗`, en: `${name || "Your partner"} touched back. Your touches met 💗`, es: `${name || "Tu pareja"} te devolvió el toque. Se encontraron 💗` },
+        url: "/?channel=us", tag: "pinky-distance-touch-met",
+      } : {
+        body: { zh: `${name || "TA"}碰了你一下 💗 一分钟内回碰就能碰到彼此。`, en: `${name || "Your partner"} touched you 💗 Touch back within a minute to meet.`, es: `${name || "Tu pareja"} te tocó 💗 Devuélvele el toque en un minuto.` },
+        url: "/?channel=us&distance=touch", tag: "pinky-distance-touch",
+      };
+      void Promise.resolve().then(() => notify(partner, message)).catch(() => console.error("Distance touch push failed."));
+    }
+    res.json(view(result.conversation, result.context, Date.now(), isOnline(partner)));
   });
 
   router.use((error, req, res, next) => error?.distanceCode ? sendError(req, res, error) : next(error));
