@@ -12,7 +12,7 @@ const PATH = "/api/play-distance";
 type Kind = "note" | "doodle" | "photo";
 type Card = { id: string; userId: string; kind: Kind; at: string; text?: string; strokes?: Stroke[]; photoId?: string };
 type Touch = { id: string; userId?: string; expiresAt: number; matched: boolean; joinId?: string };
-type Board = { version: number; now: number; cards: Card[]; touch: Touch | null; partner: string; readOnly: boolean };
+type Board = { version: number; now: number; cards: Card[]; touch: Touch | null; partner: string; partnerOnline?: boolean; readOnly: boolean };
 type Draft = { text: string; strokes: Stroke[] };
 type Capacitor = { isPluginAvailable?: (name: string) => boolean; Plugins?: { Haptics?: { impact: (options: { style: "LIGHT" }) => Promise<void> } } };
 
@@ -86,15 +86,8 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
     };
     const onOnline = () => { setOffline(false); void load(); };
     const onOffline = () => setOffline(true);
-    const leaveOnThisDevice = () => {
-      const id = join.current;
-      join.current = "";
-      if (id && navigator.onLine) void relationshipApi(PATH + "/touch", { ...jsonBody({ action: "leave", id, language: state.current.language }), keepalive: true }).catch(() => {});
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && navigator.onLine) void load();
-      else leaveOnThisDevice();
-    };
+    // A touch stays for its minute when the panel or the app is left: the partner has been told and may touch back.
+    const onVisible = () => { if (document.visibilityState === "visible" && navigator.onLine) void load(); };
     events?.addEventListener("relationship", onEvent);
     events?.addEventListener("ready", onVisible);
     window.addEventListener("online", onOnline);
@@ -106,7 +99,6 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisible);
-      leaveOnThisDevice();
     };
   }, [load]);
   useEffect(() => { if (navigator.onLine) void load(); }, [load, revision]);
@@ -135,9 +127,10 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
     return () => window.clearInterval(timer);
   }, [board?.touch, skew]);
 
-  const seconds = board?.touch ? Math.max(0, Math.min(board.touch.matched ? 20 : 10, Math.ceil((board.touch.expiresAt - clock - skew) / 1000))) : 0;
+  const seconds = board?.touch ? Math.max(0, Math.min(board.touch.matched ? 20 : 60, Math.ceil((board.touch.expiresAt - clock - skew) / 1000))) : 0;
   const touch = seconds ? board?.touch : null;
   const holding = touch && !touch.matched && touch.userId === userId;
+  const name = board?.partner || t("TA", "Your partner", "Tu pareja");
   const partnerWaiting = touch && !touch.matched && touch.userId !== userId;
   const locked = offline || readOnly || (board?.readOnly ?? true);
   const canSend = kind === "note" ? draft.text.trim().length > 0 : kind === "doodle" ? draft.strokes.length > 0 : Boolean(photo);
@@ -161,9 +154,6 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
     setExpired(false); setWriteFailed(""); setTouchBusy(true); touchLock.current = true;
     try {
       const next = await relationshipApi<Board>(PATH + "/touch", jsonBody({ id, action, language }));
-      if ((!live.current || document.visibilityState !== "visible") && action === "join" && next.touch?.id === id) {
-        void relationshipApi(PATH + "/touch", jsonBody({ action: "leave", id, language })).catch(() => {});
-      }
       sync(next);
     }
     catch (error) { if (live.current) setWriteFailed((error as Error).message); void load(); }
@@ -214,19 +204,24 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
     {readFailed && <div className="distance-status" role="status">{t("暂时没连上。", "Couldn’t connect.", "No se pudo conectar.")} <button type="button" className="distance-text" disabled={offline} onClick={() => void load()}>{t("重试", "Retry", "Reintentar")}</button></div>}
     {!board && !readFailed && !offline && <p className="distance-status" role="status">{t("正在打开你们的小角落…", "Opening your space…", "Abriendo su espacio…")}</p>}
     {writeFailed && <p className="distance-status is-error" role="alert">{writeFailed}</p>}
-    {view === "touch" ? <div className={"distance-touch" + (touch?.matched ? " is-matched" : "")} data-testid="interaction-touch">
+    <div className="distance-views">
+    <div className={"distance-touch" + (touch?.matched ? " is-matched" : "")} data-testid="interaction-touch" hidden={view !== "touch"}>
       <div className="distance-heart" aria-hidden="true"><Heart size={26} weight={touch?.matched ? "fill" : "regular"} /></div>
       <p role="status">{touch?.matched ? t("你们碰到了。", "Your touches met.", "Sus toques se encontraron.") :
-        holding ? t("等 TA 也点一下。", "Waiting for your partner to tap.", "Esperando el toque de tu pareja.") :
-          partnerWaiting ? t("TA 已经在等你了。", "Your partner is waiting for you.", "Tu pareja te está esperando.") :
-            expired ? t("这次错过了，可以再碰一下。", "You missed each other. You can try again.", "Esta vez no coincidieron. Pueden reintentar.") :
-              t("你和 TA 在 10 秒内各点一次，就能碰到彼此。", "Tap within 10 seconds of each other to connect.", "Tóquense con menos de 10 segundos de diferencia.")}</p>
+        holding ? t(`已经告诉${name}了，等 TA 回碰…`, `${name} has been told. Waiting for a touch back…`, `Ya le avisamos a ${name}. Esperando su toque…`) :
+          partnerWaiting ? t(`${name}碰了你一下，点一下回碰！`, `${name} touched you. Tap to touch back!`, `${name} te tocó. ¡Toca para responder!`) :
+            expired ? t(`这次${name}没来得及回碰，可以再碰一下。`, `${name} didn’t touch back in time. You can try again.`, `${name} no respondió a tiempo. Puedes intentarlo de nuevo.`) :
+              t(`点一下，${name}会马上收到。TA 在一分钟内回碰，你们就碰到了。`, `Tap and ${name} is told right away. If they touch back within a minute, your touches meet.`, `Toca y ${name} lo sabrá al instante. Si responde en un minuto, sus toques se encuentran.`)}</p>
+      {board && !touch?.matched && <p className="distance-presence" data-online={board.partnerOnline ? "true" : "false"}>{board.partnerOnline
+        ? t(`${name}现在在 Ourever 里`, `${name} is in Ourever now`, `${name} está en Ourever ahora`)
+        : t(`${name}现在不在线，会收到通知`, `${name} isn’t in the app now and will get a notification`, `${name} no está en la app y recibirá un aviso`)}</p>}
       {touch && !touch.matched && <small aria-hidden="true">{seconds}s</small>}
       {touch?.matched ? <button type="button" className="distance-action" onClick={onClose}>{t("完成", "Done", "Listo")}</button>
         : <button type="button" className="distance-action" disabled={locked || touchBusy} onClick={() => void changeTouch(holding ? "leave" : "join")}>
           {holding ? t("取消等待", "Cancel waiting", "Dejar de esperar") : t("碰一下", "Tap", "Tocar")}
         </button>}
-    </div> : <>
+    </div>
+    <div className="distance-cards" hidden={view !== "cards"}>
     <article className="distance-composer">
       <h2>{t("给 TA 留张小卡", "Leave a little card", "Deja una tarjetita")}</h2>
       <div className="distance-modes" role="group" aria-label={t("小卡类型", "Card type", "Tipo de tarjeta")}>
@@ -260,9 +255,10 @@ export function PlayDistance({ language, userId, revision, readOnly = false, con
         <header><strong>{card.userId === userId ? t("你", "You", "Tú") : board.partner || t("TA", "Your partner", "Tu pareja")}</strong><time dateTime={card.at}>{new Intl.DateTimeFormat(languageTag(language), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(card.at))}</time></header>
         {card.kind === "note" ? <p>{card.text}</p> : card.kind === "doodle" ? <Sketch strokes={card.strokes || []} label={modeName("doodle")} /> :
           card.photoId && <RecentPhoto id={card.photoId} label={modeName("photo")} missing={t("这张照片暂时不能显示。", "This photo is unavailable.", "Esta foto no está disponible.")} />}
-      </li>)}</ul> : <p>{t("你们送出的小卡会留在这里。", "The cards you send appear here.", "Las tarjetas que envíen aparecerán aquí.")}</p>}
+      </li>)}</ul> : <p>{t(`你和${name}互相送的小卡都会留在这里。`, `Cards you and ${name} send each other appear here.`, `Las tarjetas que tú y ${name} se envíen aparecerán aquí.`)}</p>}
     </section>}
-    </>}
+    </div>
+    </div>
   </section>;
 }
 

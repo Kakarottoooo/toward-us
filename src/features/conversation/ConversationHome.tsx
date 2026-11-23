@@ -185,7 +185,7 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
     return params.get("play") === "today" ? {} : null;
   });
   const [interaction, setInteraction] = useState<"touch" | "cards" | null>(() =>
-    paired && !usHidden && new URLSearchParams(location.search).get("distance") === "1" ? "cards" : null);
+    { const asked = paired && !usHidden ? new URLSearchParams(location.search).get("distance") : null; return asked === "1" ? "cards" : asked === "touch" ? "touch" : null; });
   const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
   const [planQuestionId, setPlanQuestionId] = useState<string | null>(null);
   const openGames = (match: string | null = null) => {

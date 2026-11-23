@@ -9,7 +9,7 @@ const run = `work/couple-onboarding/${Date.now()}`;
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["**/couple-onboarding.spec.ts", "**/conversation-pages.spec.ts"],
+  testMatch: ["**/couple-onboarding.spec.ts", "**/conversation-pages.spec.ts", "**/touch-together.spec.ts"],
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 15_000 },
