@@ -148,7 +148,8 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
         const text = t("想和你在 Ourever 开个只属于我们俩的小空间。来吗？", "Want to make a little space for just us on Ourever?", "¿Creamos un espacio solo para los dos en Ourever?");
         let useCopy = action === "copy" || !navigator.share;
         if (!useCopy) {
-          try { await navigator.share({ title: "Ourever", text, url: inviteUrl.href }); }
+          // The link rides inside the text: iOS share-sheet Copy (and some chat apps) keep only the text and drop a separate url.
+          try { await navigator.share({ title: "Ourever", text: text + "\n" + inviteUrl.href }); }
           catch (error) {
             if ((error as Error).name === "AbortError") return;
             useCopy = true;

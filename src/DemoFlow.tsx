@@ -185,7 +185,7 @@ function DemoInvite({ language, room, qrUrl, joinUrl, t, onLanguage, onExit }: {
   const copy = async () => { await navigator.clipboard.writeText(joinUrl); setCopied(true); setTimeout(() => setCopied(false), 1400); };
   const share = async () => {
     if (!navigator.share) return copy();
-    try { await navigator.share({ title: brandLabel(language), text: t.shareText, url: joinUrl }); }
+    try { await navigator.share({ title: brandLabel(language), text: t.shareText + "\n" + joinUrl }); } // iOS share-sheet Copy drops a separate url
     catch (error) { if ((error as DOMException).name !== "AbortError") await copy(); }
   };
   return <MobileScroll className="paper-screen demo-screen demo-invite" data-testid="demo-invite"><DemoHeader language={language} onLanguage={onLanguage} onBack={onExit} /><div className="demo-red-corner" /><div className="demo-blue-side" /><main className="demo-centered"><Wordmark language={language} /><h1>{t.invite}</h1><PauseMark /><p>{t.inviteHint}</p>
