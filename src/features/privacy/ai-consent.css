@@ -24,3 +24,7 @@
 .report-form button[type="submit"] { min-height: 48px; border: 0; border-radius: 24px; background: #b03a33; color: #fff; font-size: 16px; font-weight: 600; }
 .report-form button[type="submit"]:disabled { opacity: 0.5; }
 .report-form p { margin: 0; font-size: 15px; line-height: 1.5; color: #4c443e; }
+.update-banner { display: flex; align-items: center; justify-content: center; gap: 4px; padding-right: 0; background: #5a2a4a; pointer-events: auto; }
+.update-banner a { flex: 1; min-width: 0; color: #fff; text-decoration: underline; text-underline-offset: 3px; overflow: hidden; text-overflow: ellipsis; }
+.update-banner button { flex: none; width: 44px; height: 34px; border: 0; background: none; color: #fff; }
+.update-banner button svg { margin: 0; }
