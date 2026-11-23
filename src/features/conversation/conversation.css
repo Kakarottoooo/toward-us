@@ -329,7 +329,9 @@
 .shared-question-meta, .shared-question-footer { color: #5d574f; font-size: 14px; line-height: 1.45; }
 .shared-question-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
 .shared-question-footer b { display: inline-flex; align-items: center; gap: 4px; color: var(--jian-blue); }
-.shared-partner-name { display: inline-flex; min-width: 0; align-items: center; gap: 7px; color: var(--jian-ink); overflow-wrap: anywhere; }
+.shared-partner-name { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 7px; color: var(--jian-ink); }
+/* One line, cut with an ellipsis: "anywhere" wrapping let iPhone Safari squeeze the name to one character per line (founder 11-22). */
+.shared-partner-name > bdi { flex: none; max-width: 16ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .shared-partner-name > span { display: grid; flex: 0 0 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--jian-blue-soft); color: var(--jian-blue); }
 .distance-bar:has(.shared-partner-name) { align-items: center; }
 .shared-recipient { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; margin-inline: 4px; }
