@@ -30,6 +30,16 @@ export function createFeedbackRouter({ store, mediator, notify, now = () => new 
     const { intent = "report" } = req.body;
     if (intent !== "report" && intent !== "unhelpful") return res.status(400).json({ error: "invalid_feedback_intent" });
     const isReport = intent === "report";
+    const id = (isReport ? "report:" : "unhelpful:") + createHash("sha256").update(JSON.stringify([userId, conversationId, messageId])).digest("hex");
+    if (!isReport && req.body.action === "status") {
+      return res.json({ recorded: Boolean(await store.getRelationshipRecordForUser("feedback", id, userId)) });
+    }
+    if (!isReport && req.body.action === "undo") {
+      await store.transaction(`user:${userId}`, async tx => {
+        if (await tx.getRelationshipRecordForUser("feedback", id, userId)) await tx.deleteRelationshipRecordForUser("feedback", id, userId);
+      });
+      return res.json({ recorded: false });
+    }
     let messages;
     if (channel === "private-workspace" || channel === "decision") {
       const record = projectRecord(await store.getRelationshipRecordForUser(channel === "decision" ? "issues" : "privateAgentThreads", conversationId, userId), userId);
@@ -47,7 +57,6 @@ export function createFeedbackRouter({ store, mediator, notify, now = () => new 
     const lang = ["en", "es"].includes(req.body.language) ? req.body.language : "zh";
     const text = reply.i18n?.[lang] || reply.translations?.[lang]?.text || reply.text || (reply.call?.rows || []).filter((r) => r.role === "agent").map((r) => r.text).join("\n") || reply.kind || "Ourever reply";
     const qualityLabel = { zh: "这条回复没帮到我", en: "This reply wasn’t helpful", es: "Esta respuesta no me ayudó" }[lang];
-    const id = (isReport ? "report:" : "unhelpful:") + createHash("sha256").update(JSON.stringify([userId, conversationId, messageId])).digest("hex");
     await store.transaction(`user:${userId}`, async (tx) => {
       if (await tx.getRelationshipRecordForUser("feedback", id, userId)) return;
       await consumeFeedbackQuota(tx, userId, now);

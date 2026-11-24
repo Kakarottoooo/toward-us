@@ -24,12 +24,15 @@ async function copyPhotos(ids: string[]) {
   })]);
 }
 
-type MessageActions = { photoIds?: string[]; canReport?: boolean; onRegenerate?: () => void; onUnsend?: () => void };
+type RatingAction = "status" | "undo";
+type SendFeedback = (intent?: Intent, action?: RatingAction) => Promise<{ recorded?: boolean }>;
+type RewriteResult = "done" | "stopped" | "failed";
+type MessageActions = { photoIds?: string[]; canReport?: boolean; onRegenerate?: () => Promise<RewriteResult>; rewriteBusy?: boolean; onStop?: () => void; onUnsend?: () => void };
 type Props = MessageActions & { channel?: "me" | "us" | "private-workspace" | "decision"; conversationId?: string; messageId: string; language: Language; demoRoom?: string; messageMenu?: boolean; replyText?: string };
 
 export function ReportReply({ channel, conversationId, messageId, language, demoRoom, messageMenu = false, replyText, ...actions }: Props) {
-  const send = (intent?: Intent) => relationshipApi(demoRoom ? `/api/demo/rooms/${encodeURIComponent(demoRoom)}/report` : "/api/feedback/reply",
-    jsonBody({ channel, conversationId, messageId, language, ...(intent ? { intent } : {}) }));
+  const send: SendFeedback = (intent, action) => relationshipApi(demoRoom ? `/api/demo/rooms/${encodeURIComponent(demoRoom)}/report` : "/api/feedback/reply",
+    jsonBody({ channel, conversationId, messageId, language, intent, action }));
   return messageMenu && !demoRoom
     ? <ReplyFeedbackMenu key={messageId} language={language} replyText={replyText} send={send} {...actions} />
     : <InlineReport language={language} send={send} />;
@@ -51,11 +54,14 @@ function InlineReport({ language, send }: { language: Language; send: () => Prom
   </div>;
 }
 
-function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = true, onRegenerate, onUnsend }: MessageActions & { language: Language; replyText?: string; send: (intent: Intent) => Promise<unknown> }) {
+function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = true, onRegenerate, rewriteBusy, onStop, onUnsend }: MessageActions & { language: Language; replyText?: string; send: SendFeedback }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const [view, setView] = useState<"closed" | "menu" | "confirm" | "unsend">("closed");
   const [delivery, setDelivery] = useState<Record<Intent, Delivery>>({ unhelpful: "idle", report: "idle" });
   const claimed = useRef(new Set<Intent>());
+  const [rated, setRated] = useState(false);
+  const [rewrite, setRewrite] = useState<"idle" | "working" | RewriteResult>("idle");
+  const ratingVersion = useRef(0);
   const initialItem = useRef<Intent>("unhelpful");
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   // The bubble holding this menu contains its float (conversation.css .has-report-menu), marked here rather than with a
@@ -67,7 +73,26 @@ function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = tr
   const panelId = useId();
   const [copyStatus, setCopyStatus] = useState("");
   const close = () => { setView("closed"); trigger.current?.focus(); };
-  const open = (first: Intent) => { initialItem.current = first; setView("menu"); };
+  const open = (first: Intent) => {
+    initialItem.current = first;
+    setView("menu");
+    if (canReport && !claimed.current.has("unhelpful")) {
+      const version = ++ratingVersion.current;
+      void send("unhelpful", "status").then(result => {
+        if (version === ratingVersion.current) setRated(Boolean(result.recorded));
+      }).catch(() => {});
+    }
+  };
+  const rewriteReply = async () => {
+    if (!onRegenerate || rewriteBusy || rewrite === "working") return;
+    setRewrite("working");
+    const result = await onRegenerate();
+    setRewrite(result);
+    if (result === "done") {
+      if (root.current?.contains(document.activeElement)) close();
+      else setView("closed");
+    }
+  };
   useEffect(() => {
     if (view === "closed") return;
     if (view === "menu") (initialItem.current === "report" && canReport ? report.current : root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]'))?.focus();
@@ -82,10 +107,16 @@ function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = tr
   const submit = async (intent: Intent) => {
     if (claimed.current.has(intent)) return;
     claimed.current.add(intent);
+    if (intent === "unhelpful") ratingVersion.current++;
     setDelivery(old => ({ ...old, [intent]: "sending" }));
     try {
-      await send(intent);
-      setDelivery(old => ({ ...old, [intent]: "sent" }));
+      const undo = intent === "unhelpful" && rated;
+      await send(intent, undo ? "undo" : undefined);
+      if (intent === "unhelpful") {
+        setRated(!undo);
+        claimed.current.delete(intent);
+      }
+      setDelivery(old => ({ ...old, [intent]: undo ? "idle" : "sent" }));
       if (intent === "report") {
         initialItem.current = "report";
         setView(old => old === "confirm" ? "menu" : old);
@@ -105,7 +136,8 @@ function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = tr
       : t("反馈未能提交，请再点一次重试。", "Feedback couldn’t be sent. Select it again to retry.", "No se pudo enviar el comentario. Vuelve a seleccionarlo.");
     if (delivery[intent] === "sending") return sending;
     if (delivery[intent] !== "sent") return "";
-    return intent === "report" ? t("已提交举报", "Report received", "Denuncia recibida") : t("已收到你的反馈", "Feedback received", "Comentario recibido");
+    if (intent === "report") return t("已提交举报", "Report received", "Denuncia recibida");
+    return onRegenerate ? t("已收到评价。可以换个回答。", "Feedback received. You can ask for a different answer.", "Valoración recibida. Puedes pedir otra respuesta.") : t("已收到你的反馈", "Feedback received", "Comentario recibido");
   };
   return <div ref={root} className="reply-report reply-report-menu"
     onBlur={(event) => { if (view !== "closed" && event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setView("closed"); }}
@@ -131,17 +163,22 @@ function ReplyFeedbackMenu({ language, replyText, send, photoIds, canReport = tr
           try { if (replyText) await navigator.clipboard.writeText(replyText); else await copyPhotos(photoIds!); setCopyStatus(t("已复制", "Copied", "Copiado")); }
           catch { setCopyStatus(t("长按文字即可复制", "Touch and hold the text to copy it.", "Mantén pulsada la burbuja para copiar el texto.")); }
         }}>{t("复制", "Copy", "Copiar")}</button>}
-        {onRegenerate && <button role="menuitem" tabIndex={-1} type="button" onClick={() => { close(); onRegenerate(); }}>{t("重新生成", "Regenerate", "Volver a generar")}</button>}
+        {rewrite === "working" ? <button role="menuitem" tabIndex={-1} type="button" onClick={onStop}>{t("停止", "Stop", "Detener")}</button> :
+          onRegenerate && <button role="menuitem" tabIndex={-1} type="button" disabled={rewriteBusy} onClick={() => void rewriteReply()}>
+            {rewrite === "failed" ? t("重试", "Try again", "Reintentar") : t("换个回答", "Answer differently", "Responder de otra manera")}
+          </button>}
         {onUnsend && <button role="menuitem" tabIndex={-1} type="button" onClick={() => setView("unsend")}>{t("撤回", "Undo send", "Anular envío")}</button>}
-        {canReport && <><button ref={unhelpful} role="menuitem" tabIndex={-1} type="button" aria-disabled={delivery.unhelpful === "sending" || delivery.unhelpful === "sent"} onClick={() => void submit("unhelpful")}>
-          {delivery.unhelpful === "sent" ? <Check size={16} /> : <ThumbsDown size={16} />}{t("这条回复没帮到我", "This reply wasn’t helpful", "Esta respuesta no me ayudó")}
+        {canReport && <><button ref={unhelpful} role="menuitem" tabIndex={-1} type="button" aria-disabled={delivery.unhelpful === "sending"} onClick={() => void submit("unhelpful")}>
+          {rated ? <Check size={16} /> : <ThumbsDown size={16} />}{rated ? t("撤销评价", "Undo rating", "Deshacer valoración") : t("这条回复没帮到我", "This reply wasn’t helpful", "Esta respuesta no me ayudó")}
         </button>
         <button ref={report} role="menuitem" tabIndex={-1} type="button" aria-disabled={delivery.report === "sending" || delivery.report === "sent"} onClick={() => { if (!claimed.current.has("report")) setView("confirm"); }}>
           {delivery.report === "sent" ? <Check size={16} /> : <Flag size={16} />}{t("举报不当内容", "Report inappropriate content", "Denunciar contenido inapropiado")}
         </button>
         </>}
       </div>
-      <span role="status" className="reply-report-receipt">{[copyStatus, receipt("unhelpful"), receipt("report")].filter(Boolean).join(" · ")}</span>
+      <span role="status" className="reply-report-receipt">{[rewrite === "working" ? t("正在换个角度回答…", "Writing another answer…", "Preparando otra respuesta…") :
+        rewrite === "failed" ? t("没能生成新回答，原回答已保留。", "Couldn’t write a new answer. Your original is still here.", "No se pudo generar otra respuesta. La original sigue aquí.") :
+        rewrite === "stopped" ? t("已停止，原回答已保留。", "Stopped. Your original is still here.", "Se detuvo. La respuesta original sigue aquí.") : "", copyStatus, receipt("unhelpful"), receipt("report")].filter(Boolean).join(" · ")}</span>
     </div>}
     {view === "unsend" && <div id={panelId} className="reply-report-panel is-confirming">
       <p>{t("从你们两人的对话中撤回这条消息？", "Remove this message for both of you?", "¿Retirar este mensaje para ambos?")}</p>

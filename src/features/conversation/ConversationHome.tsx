@@ -597,21 +597,29 @@ ${text}` : text, target);
   }, []);
   const sendShared = (text: string, photoIds: string[] = [], speaker: SharedSend["speaker"] = "me", recipient?: SharedRecipient) =>
     deliverShared({ text, itemId: crypto.randomUUID(), photoIds, speaker, recipient });
-  const regenerate = async (target: Channel, messageId: string) => {
-    if (running.current[target] || (target === "me" && !session)) return;
+  const regenerate = async (target: Channel, messageId: string): Promise<"done" | "stopped" | "failed"> => {
+    if (running.current[target] || (target === "me" && !session)) return "stopped";
     const controller = beginReply(target);
     setNotice("");
     try {
-      const options = { ...jsonBody({ messageId, language }), signal: controller.signal };
+      const options = { ...jsonBody({ messageId, language }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(90000)]) };
       if (target === "me") {
         const result = await relationshipApi<{ session: Session }>(`/api/assistant/sessions/${session!.id}/regenerate`, options);
         if (sessionRef.current?.id === result.session.id) current(result.session);
       } else {
-        await relationshipApi("/api/together/regenerate", options);
-        await loadTogether();
+        const result = await relationshipApi<{ conversationId: string; text: string; version: number }>("/api/together/regenerate", options);
+        setTogether(previous => {
+          if (!previous || previous.conversation.id !== result.conversationId || (previous.conversation.version ?? 0) > result.version) return previous;
+          const messages = previous.conversation.messages.map(line => line.id === messageId ? { ...line, text: result.text, i18n: undefined, translations: undefined } : line);
+          return { ...previous, conversation: { ...previous.conversation, version: result.version, messages } };
+        });
       }
-    } catch (error) { if (!controller.signal.aborted) setNotice(errorText(error as ApiError)); }
-    finally { endReply(target, controller); }
+      return "done";
+    } catch (error) {
+      if (controller.signal.aborted) return "stopped";
+      setNotice(errorText(error as ApiError));
+      return "failed";
+    } finally { endReply(target, controller); }
   };
   const unsend = async (id: string) => {
     try { await relationshipApi(`/api/together/messages/${encodeURIComponent(id)}/unsend`, jsonBody({ language })); await loadTogether(); }
@@ -1029,10 +1037,9 @@ ${text}` : text, target);
     if (!body || !together || message.removedAt) return gap && body ? <Fragment key={message.id}>{gap}{body}</Fragment> : body;
     const own = message.role === "member" && message.actorUserId === user.id;
     const removable = own && !readOnly && !message.recordedByUserId && message.kind === "text" && Date.now() - Date.parse(message.createdAt) <= 120_000;
-    const latest = together.conversation.messages.at(-1);
-    const canRegenerate = !readOnly && !generating.us && latest?.id === message.id && message.kind === "text" && message.role === "agent" && sharedMessages.some(line => line.id === message.replyTo && line.actorUserId === user.id && !line.removedAt);
+    const canRegenerate = !readOnly && index >= olderMessages.length && message.kind === "text" && message.role === "agent" && Boolean(message.replyTo && ownRequestIds.has(message.replyTo));
     return <Fragment key={message.id}>{gap}<div className={`shared-reportable${own ? " from-me" : ""}`} data-shared-id={message.id} onClick={showTime(message.id)}>
-      {body}<ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "agent"} onUnsend={removable ? () => void unsend(message.id) : undefined} onRegenerate={canRegenerate ? () => void regenerate("us", message.id) : undefined} replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? (message.text || message.call?.rows.map(row => row.text).join("\n"))} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
+      {body}<ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "agent"} onUnsend={removable ? () => void unsend(message.id) : undefined} onRegenerate={canRegenerate ? () => regenerate("us", message.id) : undefined} rewriteBusy={generating.us} onStop={() => stopReply("us")} replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? (message.text || message.call?.rows.map(row => row.text).join("\n"))} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
       {timeOf === message.id && <time className="message-time" dateTime={message.createdAt}>{stampLabel(message.createdAt)}</time>}
       {own && latestOwn?.id === message.id && <small className="message-receipt">{message.readAt ? t("已读", "Read", "Leído") : message.deliveredAt ? t("已送达", "Delivered", "Entregado") : t("已发送", "Sent", "Enviado")}</small>}
     </div></Fragment>;
@@ -1128,6 +1135,7 @@ ${text}` : text, target);
   const liveMessageIds = new Set(liveMessages.map((message) => message.id));
   const olderMessages = (older?.messages || []).filter((message) => !liveMessageIds.has(message.id));
   const sharedMessages = [...olderMessages, ...liveMessages];
+  const ownRequestIds = new Set(sharedMessages.filter(line => line.actorUserId === user.id && !line.removedAt).map(line => line.id));
   const openQuestion = openQuestionId ? sharedMessages.find((message) => message.id === openQuestionId) : null;
   const hasOlder = Boolean(paired && together) && (older ? older.more : (together?.conversation.archived?.messages || 0) > 0);
   const wantIdeas = !started;
@@ -1227,8 +1235,9 @@ ${text}` : text, target);
         if (message.role === "assistant" && !message.text?.trim() && !message.photoIds?.length && !message.call && !message.dateCheck && !message.kind) {
           return <Fragment key={message.id}><RecallLinks sources={message.sources} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />{cards}</Fragment>;
         }
-        const canRegenerate = !generating.me && session?.messages.at(-1)?.id === message.id && message.role === "assistant" && (!session.messages.at(-2) || session.messages.at(-2)?.role === "user") && Boolean(message.text) && !message.screenshotPending && !message.stopped && !message.call && !message.kind;
-        const actions = session ? <ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "assistant"} onRegenerate={canRegenerate ? () => void regenerate("me", message.id) : undefined} replyText={message.text || message.call?.rows.map(row => row.text).join("\n")} language={language} channel="me" conversationId={session.id} messageId={message.id} /> : null;
+        const previous = privateMessages[index - 1];
+        const canRegenerate = index >= shownEarlier.messages.length && message.role === "assistant" && ((index > shownEarlier.messages.length && previous?.role === "user") || (!previous && !session?.earlierPages)) && Boolean(message.text) && !message.screenshotPending && !message.stopped && !message.call && !message.kind;
+        const actions = session ? <ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "assistant"} onRegenerate={canRegenerate ? () => regenerate("me", message.id) : undefined} rewriteBusy={generating.me} onStop={() => stopReply("me")} replyText={message.text || message.call?.rows.map(row => row.text).join("\n")} language={language} channel="me" conversationId={session.id} messageId={message.id} /> : null;
         return <Fragment key={message.id}>{timeGap(privateMessages[index - 1]?.createdAt, message.createdAt)}{message.kind === "together_ask" ? <article key={message.id} className="conversation-message from-pinky together-ask" data-testid="together-ask">{actions}<p>{message.text}</p>{stage === "dating" && message.personId && !answered.includes(message.id) && <div className="together-ask-actions"><button type="button" className="card-primary" onClick={() => void answerTogether(message.id, message.personId!, true)} data-testid="together-yes">{t("是的", "Yes", "Sí")}</button><button type="button" className="card-secondary" onClick={() => void answerTogether(message.id, message.personId!, false)} data-testid="together-no">{t("还没有", "Not yet", "Aún no")}</button></div>}</article> : message.kind === "noted" ? (() => { const about = message.personId ? people.find((item) => item.id === message.personId) : null; return <div className="private-note-actions">{actions}<button key={message.id} type="button" className={`conversation-noted ${about ? "person-noted" : ""}`} onClick={() => { keyboard.hide(); if (about && thread !== about.id) openThread(about.id); else if (about) open(`/?view=people&person=${encodeURIComponent(about.id)}`); else onPrivacy("profile"); }} data-testid={about ? "person-noted" : "profile-noted"}><Heart size={14} weight="fill" /><span>{message.text}</span>{about && <span className="noted-open">{thread !== about.id ? t("去对话", "Open chat", "Ir al chat") : t("档案", "Page", "Ficha")}</span>}</button></div>; })() : <div key={message.id} className={`conversation-turn${message.role === "user" ? " from-me" : ""}`} onClick={showTime(message.id)}><article className={`conversation-message ${message.role === "user" ? "from-me" : "from-agent"}`}>{actions}{message.call && <CallRecord language={language} title="" call={message.call} />}{message.role === "assistant" && !message.call && <span className="assistant-byline">Ourever</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{message.text && <p>{message.role === "assistant" ? <Linked text={message.text} /> : message.text}</p>}
           {message.copyableReply && <button type="button" className="card-secondary" onClick={async () => {
             try { await navigator.clipboard.writeText(message.copyableReply!); setNotice(t("已复制建议回复", "Suggested reply copied", "Respuesta sugerida copiada")); }

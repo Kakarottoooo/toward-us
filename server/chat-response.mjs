@@ -17,7 +17,7 @@ export async function withChatRequest(res, action) {
 export async function regenerateChatReply(mediator, request, reply, language, scope = "me") {
   const result = await mediator.rewriteReply({ request: request.text, reply: reply.text,
     sources: [{ kind: "previous_reply", text: reply.text }],
-    issues: ["Give a fresh response to the original request, retaining factual details, existing action receipts and boundaries."] }, language, scope);
+    issues: ["Answer the original request from a different angle. Offer a concrete alternative instead of paraphrasing the rejected advice. Preserve facts, existing action receipts and boundaries."] }, language, scope);
   const text = renderReply(result).trim();
   if (!text) throw Object.assign(new Error("No reply was produced."), { statusCode: 502 });
   chatSignal()?.throwIfAborted();
