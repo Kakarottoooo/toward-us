@@ -180,7 +180,8 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const userId = req.auth.user.id;
     const { conversation, reply, request } = await transaction(req, async (tx, context, relationshipId) => {
       const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
-      const reply = conversation.messages.at(-1), request = conversation.messages.find(item => item.id === reply?.replyTo);
+      const reply = conversation.messages.find(item => item.id === req.body?.messageId);
+      const request = conversation.messages.find(item => item.id === reply?.replyTo);
       if (!reply || reply.id !== req.body?.messageId || reply.role !== "agent" || reply.kind !== "text" || request?.actorUserId !== userId || request.removedAt) throw decisionError(409, "conversation_changed");
       return { conversation, reply, request };
     });
@@ -189,16 +190,16 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     const updated = await transaction(req, async (tx, context, relationshipId) => {
       if (relationshipId !== conversation.relationshipId) throw decisionError(409, "relationship_changed");
       const current = (await ensureTogetherConversation(tx, { relationshipId, userId })).conversation;
-      if (current.messages.at(-1)?.id !== reply.id || current.messages.at(-1).text !== reply.text || current.messages.find(item => item.id === request.id)?.removedAt) throw decisionError(409, "conversation_changed");
+      if (current.id !== conversation.id || current.messages.find(line => line.id === reply.id)?.text !== reply.text || current.messages.find(item => item.id === request.id)?.removedAt) throw decisionError(409, "conversation_changed");
       chatSignal()?.throwIfAborted();
       return tx.updateRelationshipRecordForUser("togetherConversations", current.id, userId, draft => {
-        const line = draft.messages.at(-1);
+        const line = draft.messages.find(item => item.id === reply.id);
         line.text = text; delete line.i18n; delete line.translations;
         draft.version += 1;
       });
     });
     emit(updated, "together.updated", null, userId);
-    res.sendStatus(204);
+    res.json({ conversationId: updated.id, version: updated.version, text });
   }));
 
   router.post("/together/agreements/draft", async (req, res) => {

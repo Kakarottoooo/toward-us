@@ -569,17 +569,18 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
   router.post("/assistant/sessions/:id/regenerate", async (req, res) => withChatRequest(res, async () => {
     const userId = req.auth.user.id;
     const session = await owned(store, req.params.id, userId);
-    const reply = session.messages.at(-1), request = session.messages.at(-2);
+    const index = session.messages.findIndex(line => line.id === req.body?.messageId);
+    const reply = session.messages[index], request = session.messages[index - 1];
     const changed = () => Object.assign(fail(409, say(session.language, "对话已更新，请查看最新回复。", "The conversation changed. Open the latest reply.", "La conversación cambió. Abre la última respuesta.")), { code: "conversation_changed" });
-    if (!reply || reply.id !== req.body?.messageId || reply.role !== "assistant" || (request && request.role !== "user") || !reply.text || reply.call || reply.kind || screenshotPending(reply) || reply.screenshotOutcome === "stopped") throw changed();
+    if (!reply || (!request && (index !== 0 || session.earlier?.length)) || reply.role !== "assistant" || (request && request.role !== "user") || !reply.text || reply.call || reply.kind || screenshotPending(reply) || reply.screenshotOutcome === "stopped") throw changed();
     const text = await regenerateChatReply(mediator, request || { text: "" }, reply, session.language);
     const saved = await store.transaction("reminder-delivery", async (tx) => {
       const latest = await owned(tx, session.id, userId);
       if (latest.version !== session.version) throw changed();
       chatSignal()?.throwIfAborted();
       return tx.updateRelationshipRecordForUser("privateAgentThreads", session.id, userId, (draft) => {
-        draft.messages.at(-1).text = text;
-        delete draft.messages.at(-1).copyableReply;
+        draft.messages[index].text = text;
+        delete draft.messages[index].copyableReply;
         draft.version += 1;
       });
     });
