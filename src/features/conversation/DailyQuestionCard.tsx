@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CalendarBlank, ChatCircleDots, LockKey, Microphone, StopCircle } from "@phosphor-icons/react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { KeyboardTextarea, useKeyboard } from "../../mobile";
 import { Drawing, Sketch, type Stroke } from "../games/PlayDrawing";
+import { jsonBody, relationshipApi } from "../relationship/api";
 import "./daily-drawing.css";
+
+const DailyHistory = lazy(() => import("./DailyHistory"));
 
 export type DailyAnswerInput = { text?: string; choice?: number; drawing?: Stroke[] };
 export type DailyAnswers = Record<string, DailyAnswerInput & { text: string; at: string }>;
@@ -13,11 +16,11 @@ export type DailyPlay = {
   aboutUserId?: string;
 };
 
-export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, onContinue, onOpenPlan, readOnly = false, offline = false, inPlay = false, openForAnswer = false }: {
+export function DailyQuestionCard({ questionId, question, answers, userId, members, language, current, askedAt, listening, onVoice, onAnswer, dailyPlay, nudgedAt, partnerAnswered, onContinue, onOpenPlan, readOnly = false, offline = false, openForAnswer = false }: {
   questionId: string; question: string; answers: DailyAnswers; userId: string; members: Array<{ id: string; name: string }>; language: Language;
   current: boolean; askedAt: string; listening: boolean; onVoice: (append: ((text: string) => void) | null) => void;
   onAnswer: (answer: DailyAnswerInput) => Promise<boolean>; dailyPlay?: DailyPlay; onContinue?: (followup?: string) => void; onOpenPlan?: () => void;
-  readOnly?: boolean; offline?: boolean; inPlay?: boolean; openForAnswer?: boolean;
+  nudgedAt?: string; partnerAnswered?: boolean; readOnly?: boolean; offline?: boolean; openForAnswer?: boolean;
 }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
@@ -60,6 +63,14 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
     } catch { /* Keep the in-memory answer usable. */ }
   }, [richDraftKey, dailyPlay, editing, revealed, choice, sketch]);
 
+  const [nudge, setNudge] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const sendNudge = async () => {
+    setNudge("sending");
+    try {
+      await relationshipApi(`/api/together/daily/${encodeURIComponent(questionId)}/nudge`, { ...jsonBody({ language }), signal: AbortSignal.timeout(15000) });
+      setNudge("sent");
+    } catch { setNudge("failed"); }
+  };
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const partner = members.find((member) => member.id !== userId);
@@ -104,6 +115,9 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
       ? t("这题关于你。选你真的会做的事。", "This one's about you. Pick what you'd actually do.", "Esta va sobre ti. Elige lo que harías.")
       : t(`猜猜${partnerName}会怎么选。`, `Guess what ${partnerName} would choose.`, `Adivina qué elegiría ${partnerName}.`)}</small>}
     <strong>{question}</strong>
+    {partnerAnswered && !mine && <small role="status">{nudgedAt
+      ? t(`${partnerName} 邀请你来回答。答完就能看到彼此的答案。`, `${partnerName} nudged you. Answer to reveal both answers.`, `${partnerName} te invita a responder. Responde para ver ambas respuestas.`)
+      : t(`${partnerName} 已经答好了，等你一起揭晓。`, `${partnerName} has answered. Answer to reveal both answers.`, `${partnerName} ya respondió. Responde para ver ambas respuestas.`)}</small>}
     {revealed ? <>
       {revealText && <small role="status">{revealText}</small>}
       <ul className="daily-answers">{[userId, partner?.id || ""].map((id) => answers[id] &&
@@ -121,6 +135,10 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
       <small><LockKey size={14} />{onOpenPlan && !readOnly
         ? t(`等${partnerName}也回答，就能一起翻牌、看约会点子。`, `Once ${partnerName} answers, reveal the card and see date ideas.`, `Cuando ${partnerName} responda, podrán revelar la carta y ver ideas para una cita.`)
         : t(`等${partnerName}也回答，你们的答案会一起揭晓`, `Your answers appear together once ${partnerName} answers too`, `Sus respuestas aparecen juntas cuando ${partnerName} también responda`)}</small>
+      {current && !readOnly && (nudgedAt || nudge === "sent" ? <small role="status">{t("已在「我们俩」提醒对方", "Nudge sent in Us", "Aviso enviado en Nosotros")}</small> :
+        <div className="card-actions"><button type="button" disabled={offline || nudge === "sending"} onClick={() => void sendNudge()}>
+          {nudge === "sending" ? t("正在提醒…", "Sending…", "Enviando…") : t("轻轻提醒 TA", "Nudge partner", "Avisar a mi pareja")}</button>
+          {nudge === "failed" && <small role="alert">{t("提醒未送达，点一下重试。", "Nudge didn’t send. Tap to retry.", "No se envió el aviso. Toca para reintentar.")}</small>}</div>)}
       {!readOnly && <div className="card-actions"><button type="button" onClick={() => {
         setDraft(mine.choice === undefined && !mine.drawing ? mine.text : "");
         setChoice(mine.choice); setSketch(mine.drawing || []); setUseWords(drawing && !mine.drawing); setEditing(true);
@@ -153,11 +171,14 @@ export function DailyQuestionCard({ questionId, question, answers, userId, membe
       <small><LockKey size={14} />{onOpenPlan
         ? t("两个人都回答后，才会揭晓答案和约会点子。", "Once you both answer, reveal your answers and see date ideas.", "Cuando ambos respondan, verán sus respuestas e ideas para una cita.")
         : t("两个人都回答后才揭晓。", "Answers appear once you both answer.", "Las respuestas se revelan cuando ambos respondan.")}</small>
-      {inPlay && failed && <small role="alert">{t("答案没发出去，草稿还在。", "Your answer wasn't sent. Your draft is still here.", "No se envió tu respuesta. Tu borrador sigue aquí.")}</small>}
+      {failed && <small role="alert">{t("答案没发出去，草稿还在。", "Your answer wasn't sent. Your draft is still here.", "No se envió tu respuesta. Tu borrador sigue aquí.")}</small>}
       <div className="card-actions">
-        <button className="card-primary" type="button" disabled={busy || offline || !answered} onClick={() => void submit()}>{dailyPlay ? t("锁好我的答案", "Seal my answer", "Sellar mi respuesta") : t("回答", "Answer", "Responder")}</button>
+        <button className="card-primary" type="button" disabled={busy || offline || !answered} onClick={() => void submit()}>{busy ? t("正在保存…", "Saving…", "Guardando…") : failed ? t("重试", "Retry", "Reintentar") : dailyPlay ? t("锁好我的答案", "Seal my answer", "Sellar mi respuesta") : t("回答", "Answer", "Responder")}</button>
         {dailyPlay && !mine && <button type="button" disabled={busy} onClick={() => defer(true)}>{t("暂时不答", "Not now", "Ahora no")}</button>}
       </div>
     </>}
+    <Suspense fallback={<small role="status">{t("正在读取…", "Loading…", "Cargando…")}</small>}>
+      <DailyHistory key={`${language}-${revealed}`} language={language} userId={userId} partner={partnerName} currentId={current ? questionId : undefined} />
+    </Suspense>
   </article>;
 }

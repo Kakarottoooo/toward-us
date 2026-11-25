@@ -19,3 +19,15 @@
 @media (prefers-reduced-motion: reduce) {
   .daily-card .daily-answers { animation: none; }
 }
+
+.daily-entry, .daily-history button {
+  min-height: 44px; background: transparent; color: var(--jian-blue); border: 0; font: inherit; cursor: pointer;
+}
+.daily-entry { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 6px 14px; overflow-wrap: anywhere; }
+.daily-entry svg { flex: none; }
+.daily-history { display: grid; gap: 4px; min-width: 0; border-top: 1px solid var(--jian-line); padding-top: 10px; }
+.daily-history button { justify-self: start; text-align: start; }
+.daily-history summary { min-height: 44px; padding-block: 8px; cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.daily-history time { display: inline-block; margin-inline-end: 6px; font-weight: normal; }
+.daily-history details p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.daily-card .card-actions button, .daily-card .daily-mic { min-height: 44px; min-width: 44px; }

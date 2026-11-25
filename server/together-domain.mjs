@@ -220,10 +220,10 @@ export async function olderTogetherMessages(store, { relationshipId, userId, bef
 
 /** The daily questions asked so far, oldest first: those still in the working set, then as many archive chunks back as it
  * takes to reach `limit`, so a question is never repeated just because the conversation moved past it. */
-export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120, since = 0, withDetails = false, conversation: existing }) {
+export async function previousDailyQuestions(store, { relationshipId, userId, limit = 120, since = 0, before = null, withDetails = false, conversation: existing }) {
   const conversation = existing ?? await store.getRelationshipRecordForUser("togetherConversations", togetherId(relationshipId), userId);
   if (!conversation) return [];
-  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question" && (!since || Date.parse(item.createdAt) >= since));
+  const asked = (list) => (list || []).filter((item) => item.kind === "daily_question" && (!before || item.createdAt < before) && (!since || Date.parse(item.createdAt) >= since));
   let found = asked(conversation.messages);
   for (let seq = conversation.archived?.chunks || 0; seq >= 1 && found.length < limit; seq -= 1) {
     const archive = await store.getRelationshipRecordForUser("togetherArchives", archiveId(relationshipId, seq), userId);

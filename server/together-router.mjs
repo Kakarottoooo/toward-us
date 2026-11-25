@@ -13,11 +13,12 @@ import { visiblePhoto } from "./photo-store.mjs";
 import { planToCalendar } from "./plan-to-calendar.mjs";
 import { memberTimezone } from "./reminder-service.mjs";
 import { celebrationOn, composeStory, lastWeek, occasionLabel } from "./story.mjs";
+import { coupleStreak } from "./streak.mjs";
 import { answerDailyQuestion, askDailyQuestion } from "./daily-question.mjs";
 import { answerGame, answerPlayCard, GAME_TYPES, playTogetherView, replyToPlayCard, startGame } from "./games.mjs";
 import { careNoteFor } from "./cycle.mjs";
 import { petIt, syncPet } from "./pet.mjs";
-import { announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, findTogetherMessage, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
+import { previousDailyQuestions, announceAgreement, appendTogetherMessage, buildTogetherContext, togetherI18n, continueTogetherTurn, draftAgreementFromTogether, ensureTogetherConversation, findTogetherMessage, olderTogetherMessages, recallOnThisDay } from "./together-domain.mjs";
 import { followThroughAgreement } from "./agreement-followup.mjs";
 import { createSharedTranslator } from "./shared-translate.mjs";
 const say = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
@@ -263,6 +264,46 @@ export function createTogetherRouter({ store, mediator, emit = () => {}, activit
     });
     emit(result.agreement, "agreement.updated"); if (result.conversation) emit(result.conversation, "together.updated", null, userId);
     res.json({ agreement: result.agreement });
+  });
+
+  router.get("/together/daily/history", async (req, res) => {
+    const userId = req.auth.user.id, context = await pairing(req), relationshipId = context.relationship.id;
+    const before = req.query.before;
+    if (before !== undefined && (typeof before !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(before))) throw decisionError(400, "invalid_date");
+    const size = 12, lang = language(req);
+    const [questions, streak] = await Promise.all([
+      previousDailyQuestions(store, { userId, relationshipId, before, limit: size + 1, withDetails: true }),
+      before ? null : coupleStreak(store, relationshipId, { userId, timezone: req.query.timezone }),
+    ]);
+    const page = questions.reverse().slice(0, size);
+    const rows = page.map(question => {
+      const revealed = context.members.length === 2 && context.members.every(member => question.answers?.[member.userId]);
+      return { id: question.id, day: question.day || question.createdAt.slice(0, 10),
+        question: question.i18n?.[lang] || question.translations?.[lang]?.text || question.text,
+        answers: revealed ? context.members.map(({ userId: id }) => {
+          const answer = question.answers[id];
+          return { userId: id, text: question.dailyPlay?.variants?.[lang]?.options?.[answer.choice] || answer.text, drawing: answer.drawing };
+        }) : [] };
+    });
+    res.set("Cache-Control", "private, no-store").json({ rows, next: questions.length > size ? page.at(-1).createdAt : null, days: streak?.days });
+  });
+
+  router.post("/together/daily/:id/nudge", async (req, res) => {
+    const userId = req.auth.user.id;
+    const updated = await transaction(req, async (tx, context, relationshipId) => {
+      const { conversation } = await ensureTogetherConversation(tx, { relationshipId, userId });
+      const question = conversation.messages.find(line => line.id === req.params.id && line.kind === "daily_question");
+      if (!question) throw decisionError(404, "not_found");
+      if (!question.answers?.[userId] || Object.keys(question.answers).length !== 1 ||
+          Date.now() - Date.parse(question.createdAt) >= 86_400_000) throw decisionError(409, "question_changed");
+      if (question.nudgedAt) return null;
+      return tx.updateRelationshipRecordForUser("togetherConversations", conversation.id, userId, draft => {
+        draft.messages.find(line => line.id === question.id).nudgedAt = new Date().toISOString();
+        draft.version += 1;
+      });
+    });
+    if (updated) emit(updated, "together.updated", null, userId);
+    res.sendStatus(204);
   });
 
   router.post("/together/daily/:id/answer", async (req, res) => {
