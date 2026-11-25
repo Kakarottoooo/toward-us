@@ -67,7 +67,10 @@ export function projectRecord(record, userId) {
 /** A daily-question answer stays with its author until both partners have answered; then both see both. Mutates a copy. */
 export function hideUnrevealedAnswers(record, userId) {
   for (const message of Array.isArray(record?.messages) ? record.messages : []) {
-    if (message.answers && Object.keys(message.answers).length < 2) message.answers = message.answers[userId] ? { [userId]: message.answers[userId] } : {};
+    if (message.answers && Object.keys(message.answers).length < 2) {
+      if (message.kind === "daily_question" && Object.keys(message.answers).some(id => id !== userId)) message.partnerAnswered = true;
+      message.answers = message.answers[userId] ? { [userId]: message.answers[userId] } : {};
+    }
   }
   return record;
 }

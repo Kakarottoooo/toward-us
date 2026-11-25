@@ -52,7 +52,7 @@ type PrivateMessage = { stopped?: boolean; copyableReply?: string; screenshotPen
 type Attachment = { key: string; preview: string; id: string | null; failed?: boolean };
 type Session = { id: string; language: Language; timezone: string; version: number; messages: PrivateMessage[]; earlierPages?: number };
 type Ref = Partial<ConversationSource> & { type: string; id: string; version?: number; title?: string; url?: string; requestFor?: string; system?: string; openOn?: string };
-type SharedMessage = { removedAt?: string; deliveredAt?: string; readAt?: string; replyTo?: string; id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
+type SharedMessage = { nudgedAt?: string; partnerAnswered?: boolean; removedAt?: string; deliveredAt?: string; readAt?: string; replyTo?: string; id: string; role: "member" | "agent"; actorUserId: string | null; recordedByUserId?: string; kind: "text" | "relay" | "agreement_card" | "reminder" | "review" | "call" | "story" | "daily_question" | "nudge" | "letter_sealed" | "letter" | "game" | "match_invite" | "watch_check"; watch?: { title: string; date: string }; watchAnswer?: { by: string; finished: boolean } | null; game?: GameRound; match?: { id: string; game: string; invitedBy: string }; call?: CallTranscript; story?: Story; answers?: DailyAnswers & GameAnswers; dailyPlay?: DailyPlay; day?: string; text: string; i18n?: Partial<Record<Language, string>>; translations?: Partial<Record<Language, { text: string; options?: string[] }>>; refs: Ref[]; createdAt: string; photoIds?: string[] };
 type Draft = { title: string; summary: string; terms: string[]; unresolvedPoints?: string[] };
 type Together = { pet?: PetView | null; care?: { name: string } | null; nextMeeting?: { id: string; date: string; title: string } | null; conversation: { id: string; version?: number; messages: SharedMessage[]; draftAgreement: Draft | null; zones?: Record<string, string>; archived?: { chunks: number; messages: number } }; pendingAgreement: (Draft & { id: string; version: number; status: string; approvedBy?: string[] }) | null; readOnly: boolean; members: Array<{ id: string; name: string }> };
 type ApiError = Error & { status?: number; code?: string };
@@ -897,8 +897,11 @@ ${text}` : text, target);
   const playAgain = async (type?: "choice" | "guess" | "truth") => { setNotice(""); try { await relationshipApi("/api/together/games", jsonBody({ language, ...(type ? { type } : {}) })); await loadTogether(); } catch (error) { setNotice((error as Error).message); } };
   const answerDaily = async (id: string, answer: DailyAnswerInput) => {
     setNotice("");
-    try { await relationshipApi(`/api/together/daily/${encodeURIComponent(id)}/answer`, jsonBody({ ...answer, language })); await loadTogether(); return true; }
-    catch (error) { setNotice(errorText(error as ApiError)); await loadTogether(); return false; }
+    try {
+      const { conversation } = await relationshipApi<Pick<Together, "conversation">>(`/api/together/daily/${encodeURIComponent(id)}/answer`, { ...jsonBody({ ...answer, language }), signal: AbortSignal.timeout(20000) });
+      setTogether(previous => previous?.conversation.id === conversation.id && (previous.conversation.version ?? 0) <= (conversation.version ?? 0) ? { ...previous, conversation } : previous);
+      return true;
+    } catch (error) { setNotice(errorText(error as ApiError)); void loadTogether(); return false; }
   };
   // Today's question still waits for this member's answer.
   const latestDaily = together?.conversation.messages.filter((message) => message.kind === "daily_question").at(-1);
@@ -938,13 +941,13 @@ ${text}` : text, target);
     return <DailyQuestionCard key={message.id} questionId={message.id} question={text} answers={message.answers || {}} userId={user.id}
       members={together?.members || []} language={language} current={message.id === todayQuestion?.id}
       askedAt={message.createdAt} listening={dictating === voiceId && voiceActive} onVoice={(append) => dictate(voiceId, append)}
-      dailyPlay={message.dailyPlay} openForAnswer={!inPlay} onAnswer={(answer) => answerDaily(message.id, answer)}
+      dailyPlay={message.dailyPlay} partnerAnswered={message.partnerAnswered} nudgedAt={message.nudgedAt} openForAnswer={!inPlay} onAnswer={(answer) => answerDaily(message.id, answer)}
       onOpenPlan={paired && !together?.readOnly ? () => { if (!inPlay) closeQuestion(); keyboard.hide(); setPlanQuestionId(message.id); } : undefined}
       onContinue={inPlay && !usHidden ? (followup) => {
         closePlayTogether(); switchChannel("us"); setAskAgent(false);
         const prompt = followup || t(`刚才这道题「${text}」，我想和你接着聊聊。`, `I'd like to talk a little more about “${text}”.`, `Me gustaría seguir hablando de «${text}».`);
         setDraft((value) => value.trim() ? `${value}\n\n${prompt}` : prompt, "us");
-      } : undefined} inPlay={inPlay} offline={offline} readOnly={together?.readOnly} />;
+      } : undefined} offline={offline} readOnly={together?.readOnly} />;
   };
   const dailyWaiting = Boolean(todayQuestion && !todayQuestion.answers?.[user.id] && Object.keys(todayQuestion.answers || {}).length < 2);
   // Something in Us waits for this member: an agreement they have not approved yet, or a new line from the partner or Ourever.
@@ -1219,6 +1222,13 @@ ${text}` : text, target);
         {recall.dateButton}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Ourever 通话", "Call Ourever", "Llamar a Ourever")} title={t("和 Ourever 通话", "Call Ourever", "Llamar a Ourever")} data-testid="start-call"><Phone size={22} /></button>
       </div>
+      {channel === "us" && paired && !readOnly && <button type="button" className="daily-entry" data-testid="daily-entry" onClick={() => {
+        keyboard.hide(); if (todayQuestion) setOpenQuestionId(todayQuestion.id); else setPlayTogether({});
+      }}>
+        <ChatCircleDots size={17} aria-hidden="true" />
+        {todayQuestion?.nudgedAt && !todayQuestion.answers?.[user.id] ? t(`${partnerName} 邀你回答今日一问`, `${partnerName} nudged you to answer today’s question`, `${partnerName} te invita a responder la pregunta de hoy`) : t("今日一问", "Today’s question", "Pregunta de hoy")}
+        <ArrowRight size={16} aria-hidden="true" />
+      </button>}
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
       {channel === "me" && !paired && !inviteBarHidden && <InviteBar state={invitation} onEnterCode={enterPartnerCode} onDismiss={hideInviteBar} />}
       {channel === "me" && askName && user.nameSet === false && <NamePrompt userId={user.id} language={language} onHide={() => setAskName(false)} onSaved={() => accessChanged.current()} />}
