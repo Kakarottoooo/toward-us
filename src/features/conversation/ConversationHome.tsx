@@ -40,6 +40,7 @@ import { RecallLinks, useConversationRecall, type ConversationSource } from "./R
 import { OlderWindow } from "./OlderWindow";
 import { NamePrompt, namePromptHidden } from "./NamePrompt";
 import "./conversation.css";
+import { readView, saveView } from "./savedView";
 import { lazyScreen } from "../../lazyScreen";
 import { outbox } from "./outbox";
 import { relationshipEvents } from "../relationship/events";
@@ -76,10 +77,6 @@ const UNDOABLE = new Set(["reminder", "checkin", "memory", "space_item"]);
 // Back after this long away counts as opening the app again, so the fresh-start suggestions may show once more.
 const REOPEN_AFTER = 30 * 60_000;
 
-// The conversation last shown on this page, kept in memory only (never stored), so coming back from Settings or any other
-// page draws it at once while it refreshes underneath instead of a "正在打开对话…" screen (founder 11-26: "不能秒切吗").
-let lastView: { userId: string; session: unknown; together: unknown } | null = null;
-
 export function ConversationHome({ user, pairing, language, aiOff = false, aiOffReason = "", onOpen, onPrivacy, onFeedback, onPair, onRefreshPairing, onPairingChange, onAccessChanged }: { user: { id: string; name: string; nameSet?: boolean }; pairing: Pairing | null; language: Language; aiOff?: boolean; aiOffReason?: string; onPrivacy: (page?: "character" | "profile" | "membership" | "referrals" | "processors") => void; onFeedback: (from: string) => void; onLogout: () => void; onOpen: (url: string) => void; onPair: () => void; onRefreshPairing: () => Promise<void>; onPairingChange: (next: Pairing | null) => void; onAccessChanged: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const paired = pairing?.status === "active";
@@ -96,7 +93,8 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
   const [inviteBarHidden, setInviteBarHidden] = useState(() => { try { return localStorage.getItem(inviteBarKey) === "1"; } catch { return false; } });
   const hideInviteBar = () => { setInviteBarHidden(true); try { localStorage.setItem(inviteBarKey, "1"); } catch { /* hidden for this visit */ } };
   const [channel, setChannel] = useState<Channel>(() => { if (usHidden) return "me"; try { const asked = new URLSearchParams(location.search).get("channel"); return asked === "us" || (!asked && (history.state as { channel?: string } | null)?.channel === "us") ? "us" : "me"; } catch { return "me"; } });
-  const cached = lastView?.userId === user.id ? lastView : null;
+  // The conversation last shown (savedView.ts) is drawn at once, opening the App or coming back from another page.
+  const cached = readView(user.id);
   const [session, setSession] = useState<Session | null>(() => (cached?.session as Session | null) ?? null);
   const [noSavedSession, setNoSavedSession] = useState(false);
   const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
@@ -210,8 +208,8 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
   // Present the restored conversation and its character together, with a bounded wait.
   const [firstLook, setFirstLook] = useState({ session: false, together: !paired, grace: false, cap: false });
   const shown = useRef(Boolean(cached?.session && (!paired || cached.together)));
-  useEffect(() => { if (session) lastView = { userId: user.id, session, together: lastView?.userId === user.id ? lastView.together : null }; }, [session, user.id]);
-  useEffect(() => { if (together) lastView = { userId: user.id, session: lastView?.userId === user.id ? lastView.session : null, together }; }, [together, user.id]);
+  useEffect(() => { if (session) saveView(user.id, { session }); }, [session, user.id]);
+  useEffect(() => { if (together) saveView(user.id, { together }); }, [together, user.id]);
   useEffect(() => { const grace = window.setTimeout(() => setFirstLook((current) => ({ ...current, grace: true })), 1500), cap = window.setTimeout(() => setFirstLook((current) => ({ ...current, cap: true })), 5000); return () => { window.clearTimeout(grace); window.clearTimeout(cap); }; }, []);
   // The drawer's rows and counts are fetched with the conversation, so opening the menu shows them at once (11-08).
   const [drawerData, setDrawerData] = useState<DrawerData>(() => drawerCache?.key === `${user.id}:${paired}` ? drawerCache.data : { home: null, spaces: [], chats: 0 });
