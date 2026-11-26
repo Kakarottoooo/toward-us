@@ -6,7 +6,7 @@ import { extname } from "node:path";
 import { createClaudeCliClient } from "./claude-cli-client.mjs";
 import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
-import { assistantInstructions, assistantTurnSchema, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
+import { assistantInstructions, assistantTurnSchema, leanScreenshotInstructions, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
 import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
 import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mjs";
 import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
@@ -149,7 +149,7 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       const response = await client.responses.create({
         model, store: false, max_output_tokens: 2600,
         text: { format: { type: "json_schema", name: "private_screenshot_advice", strict: true, schema: screenshotAnswerSchema } },
-        input: [{ role: "developer", content: screenshotAdviceInstructions(language) }, { role: "user", content: JSON.stringify(context) }],
+        input: [{ role: "developer", content: process.env.LEAN_SCREENSHOT_ANSWER === "1" ? leanScreenshotInstructions(language) : screenshotAdviceInstructions(language) }, { role: "user", content: JSON.stringify(context) }],
       }, INTERACTIVE);
       return JSON.parse(response.output_text);
     },
