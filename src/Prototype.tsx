@@ -477,7 +477,7 @@ function AccountPrototype() {
     </InviteFrame>;
     if (screen === "invite-first" && user) return <FirstRun key={user.id} feedback={feedbackEntry} user={user} language={language} pairing={pairing}
       onPairingChange={setPairing} onRefreshPairing={refreshPairing}
-      onAgreed={at => { setUser({ ...user, aiConsentAt: at }); setScreen("conversation"); }}
+      onAgreed={at => { setUser({ ...user, aiConsentAt: at }); if (pairing?.status === "active") setUrl("/?channel=us"); setScreen("conversation"); }}
       onDecline={() => { setSettingsPage(undefined); setScreen("privacy"); }} onDeclineAi={declineAi} />;
     if (user && !user.aiConsentAt && !aiOff && !["booting", "home", "auth", "recovery", "privacy", "pairing"].includes(screen)) return <AiConsentScreen language={language} onAgreed={(at) => setUser({ ...user, aiConsentAt: at })} onDecline={declineAi} />;
     if (screen === "conversation" && user) return <><ScreenBoundary fallback={null}><Suspense fallback={null}><InstallHint language={language} userId={user.id} /></Suspense></ScreenBoundary><ConversationHome user={user} pairing={pairing} language={language} aiOff={aiOff} aiOffReason={aiOffReason} onPrivacy={(page) => { aiReturn.current = page === "processors" && aiOff ? aiAsk.current : null; setSettingsPage(page); setScreen("privacy"); }} onFeedback={openFeedback} onLogout={logout} onOpen={(url) => { setUrl(url); setScreen(screenFor(url)); }} onPair={() => setScreen("pairing")} onRefreshPairing={refreshPairing} onPairingChange={setPairing} onAccessChanged={reloadIdentity} /></>;
@@ -714,10 +714,10 @@ function AuthScreen({ autoProvider, onAutoCancel, initialError, mode, onModeChan
       </div>}
       {providerError && providerError !== "cancelled" && <p className="form-notice" role="alert">{signInMessage(providerError, language)}</p>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }}>
-      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} aria-describedby="register-name-count" data-testid="register-name" /><small id="register-name-count" className="field-count" aria-live="polite">{name.length >= 18 ? `${name.length}/24` : ""}</small>
+      {mode === "register" && <label className="editorial-field"><span>{t.displayName}</span><KeyboardInput required aria-label={t.displayName} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={24} aria-describedby="register-name-count" data-testid="register-name" /><small id="register-name-count" className="field-count" aria-live="polite">{name.length >= 18 ? `${name.length}/24` : ""}</small>
         {/* Create account stays off until there is a name; once the rest is typed, say so here instead of leaving it a mystery (QA round 8). */}
         {!name.trim() && (email || password) && <small className="field-required" role="status" data-testid="register-name-required">{localized(language, "填上你的名字才能注册", "Add your name to create your account", "Escribe tu nombre para crear la cuenta")}</small>}</label>}
-      <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
+      <label className="editorial-field"><span>{t.email}</span><KeyboardInput type="email" aria-label={t.email} required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" data-testid="auth-email" /></label>
       <div className="editorial-field auth-password-field">
         <label htmlFor="auth-password">{t.password}</label>
         <div className="password-input-wrap"><KeyboardInput id="auth-password" required minLength={10} maxLength={128} type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} data-testid="auth-password" />
