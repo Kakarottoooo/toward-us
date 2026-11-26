@@ -79,6 +79,14 @@ const analysisSchema = {
 export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4" } = {}) {
   // AI_PROVIDER=claude-cli sends text calls through the founder’s local Claude subscription (dogfooding only); audio stays on OpenAI.
   const openai = apiKey ? meterOpenAI(new OpenAI({ apiKey, fetch: aiProviderFetch })) : null; // every request recorded in the cost ledger
+  // gpt-5.4 answers with reasoning effort "none" unless told otherwise (OpenAI model page), while ChatGPT thinks before it
+  // answers; the main model's answers get OPENAI_REASONING_EFFORT (founder 11-26: answers must beat asking ChatGPT).
+  // The cheap background model keeps its default.
+  if (openai && process.env.OPENAI_REASONING_EFFORT) {
+    const create = openai.responses.create.bind(openai.responses);
+    // Reasoning tokens count against max_output_tokens, so the budget grows with it and the visible answer is never squeezed out.
+    openai.responses.create = (params, options) => create(params?.model === model && !params.reasoning ? { ...params, reasoning: { effort: process.env.OPENAI_REASONING_EFFORT }, ...(params.max_output_tokens ? { max_output_tokens: params.max_output_tokens + 12000 } : {}) } : params, options);
+  }
   if (openai) {
     openai.readImages = async ({ paths, system, prompt, schema, model: imageModel }) => {
       const mimeTypes = { ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
