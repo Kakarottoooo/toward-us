@@ -377,7 +377,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           const answer = screenshotAdvice?.language === record.language && usable(screenshotAdvice) ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (!usable(answer)) throw new Error("No substantive screenshot answer");
           // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
-          const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+          // SKIP_SCREENSHOT_REWRITE=1 (measurement): no source-check/format-repair rewrite of the answer (11-26 research: rewriting
+          // without an external signal often turns right answers wrong; here the check's source is the cheap transcript).
+          const reply = process.env.SKIP_SCREENSHOT_REWRITE === "1" ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
           text = finishReply(reply, { request: request.text, language: record.language });
           const draft = activityDraft(answer)?.trim();
@@ -452,7 +454,12 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // Reading and answering in one call stays the default: answering in a separate call did not measure better in the
     // 11-26 ChatGPT comparison. SCREENSHOT_ONE_CALL=0 switches to the separate call for measurement.
     const oneCall = process.env.SCREENSHOT_ONE_CALL !== "0";
-    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
+    // Coach mode (measurement, off by default): the main model answers from the screenshots themselves in free text,
+    // while the transcript for storage is read separately.
+    const coach = question && process.env.COACH_SCREENSHOT === "1"
+      ? (async () => mediator.coachScreenshot({ paths: photos.map(photoFile), question, language, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, known: await knownAbout(user.id, null) }))().catch(() => null)
+      : null;
+    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall && !coach ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
     const result = await read().catch((error) => {
       chatSignal()?.throwIfAborted();
       if (!question || isAiLimit(error) || error?.statusCode === 503) throw error;
@@ -464,7 +471,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
     chatSignal()?.throwIfAborted();
-    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
+    const coached = coach ? await coach : null;
+    const advice = typeof coached === "string" && coached.trim() ? { observations: [], uncertainties: [], reply: coached.trim(), sendableDraft: null, activityDescription: null } : result.advice;
+    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: advice ? { ...advice, language } : null });
   }
   router.importScreenshots = importScreenshots;
 
