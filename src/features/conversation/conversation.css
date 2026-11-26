@@ -435,3 +435,16 @@
 .shared-retry > span:first-child > strong { color: #963c32; font-size: 13px; font-weight: 600; }
 .conversation-retry.shared-retry .conversation-retry-actions { margin-left: 0; display: flex; flex-direction: row; flex-wrap: nowrap; gap: 8px; }
 .shared-retry .conversation-retry-actions button { min-height: 36px; padding: 0 12px; font-size: 13px; }
+
+/* First open on a phone: the conversation's frame with placeholder lines while the first messages arrive (founder 11-26). */
+.conversation-skeleton .conversation-segments span { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; border: 3px solid transparent; border-radius: 14px; color: #514c46; font-size: 15px; font-weight: 600; }
+.conversation-skeleton .conversation-segments span.active { background: var(--jian-paper-bright); color: var(--jian-ink); }
+.conversation-skeleton .conversation-thread { gap: 16px; padding-top: 28px; }
+.skeleton-line { display: block; width: 58%; height: 18px; border-radius: 9px; background: linear-gradient(90deg, #ebe4da 0%, #f6f1ea 50%, #ebe4da 100%); background-size: 200% 100%; animation: skeleton-sheen 1.4s ease-in-out infinite; }
+.skeleton-line.is-wide { width: 86%; }
+.skeleton-line.is-mine { align-self: flex-end; width: 44%; height: 40px; border-radius: 18px 18px 4px 18px; }
+.skeleton-composer { height: 56px; margin: 0 16px max(16px, env(safe-area-inset-bottom)); border-radius: 28px; background: var(--jian-paper-bright); border: 1px solid rgba(37,37,37,.1); }
+.conversation-skeleton { display: flex; flex-direction: column; }
+.conversation-skeleton .conversation-stream { flex: 1 1 auto; }
+@keyframes skeleton-sheen { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
