@@ -65,7 +65,7 @@ export async function createHarness(directory, { requestContext, mediator, clien
   let accounts = 0;
   async function call(path, body, cookie, method = body ? "POST" : "GET", mime = "application/json") {
     const tag = requestContext?.getStore();
-    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}), ...(tag?.clock ? { "x-parity-clock": JSON.stringify(tag.clock) } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
+    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(path.startsWith("/imports") && method === "POST" ? { "x-pinky-import-disclosure": "1" } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}), ...(tag?.clock ? { "x-parity-clock": JSON.stringify(tag.clock) } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${path.split("?")[0]}: HTTP ${response.status} ${JSON.stringify(result).slice(0, 160)}`);
     return { result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
