@@ -45,9 +45,8 @@ export function summarize(results, layers) {
   for (const [layer, definition] of Object.entries(layers)) {
     const items = results.filter((item) => item.layer === layer);
     const comparisons = {};
-    // A ChatGPT-only run has no Claude rival: only rivals that were actually run are scored.
-    const run = ["claude", "codex"].filter((rival) => results.some((item) => item.rivals?.[rival]));
-    for (const rival of run.length ? run : ["claude", "codex"]) {
+    // A ChatGPT-only run has no Claude rival; its column stays, every comparison pending (not run), so it never counts as met.
+    for (const rival of ["claude", "codex"]) {
       let loss = 0, notLose = 0, disagreement = 0, pending = 0;
       for (const item of items) {
         const pair = item.comparisons?.[rival], votes = pair?.judges || [];

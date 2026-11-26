@@ -69,6 +69,20 @@ process.env.TOWARD_US_MEDIA_DIR = join(directory, "media");
 process.env.TOWARD_US_DATA_FILE = join(directory, "state.json");
 process.env.TEMP = process.env.TMP = join(directory, "tmp");
 if (options["product-provider"] === "codex") register(new URL("./codex-loader.mjs", import.meta.url));
+// The loader's screening key is a placeholder: answer only the moderation request here (nothing flagged), and refuse any
+// other call to a paid model API so an evaluation can never spend money.
+if (options["product-provider"] === "codex") {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input?.url || input);
+    if (url.startsWith("https://api.openai.com/v1/moderations")) {
+      const body = JSON.parse(init?.body || "{}"), count = Array.isArray(body.input) && typeof body.input[0] === "string" ? body.input.length : 1;
+      return new Response(JSON.stringify({ results: Array.from({ length: count }, () => ({ flagged: false, categories: {} })) }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.startsWith("https://api.openai.com/") || url.startsWith("https://api.anthropic.com/")) throw new Error(`Paid model API blocked in evaluation: ${url}`);
+    return realFetch(input, init);
+  };
+}
 const { createHarness, visibleContext } = await import("./fixture.mjs");
 const { usageListeners } = await import("../../server/claude-cli-client.mjs");
 const context = new AsyncLocalStorage(), usage = [];
