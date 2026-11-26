@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 export const corpusHash = (cases) => createHash("sha256").update(JSON.stringify(cases)).digest("hex");
 
 // Fail closed: reusing an answer is only meaningful with the exact same question and visible material.
-export function frozenCase(item, baseline, hash) {
+export function frozenCase(item, baseline, hash, rivals = ["claude", "codex"]) {
   if (!baseline) return null;
   if (baseline.caseHash !== hash) throw new Error("Frozen opponent corpus hash differs");
   const rows = baseline.results.filter((row) => row.id === item.id);
@@ -12,7 +12,7 @@ export function frozenCase(item, baseline, hash) {
   if (!Number.isFinite(at) || !row.question) throw new Error(`Frozen case lacks time/question: ${item.id}`);
   const question = item.probe.text.replace(/\{date:(-?\d+)\}/g, (_, days) => new Date(at + Number(days) * 86400000).toISOString().slice(0, 10));
   if (question !== row.question) throw new Error(`Frozen question differs: ${item.id}`);
-  for (const provider of ["claude", "codex"]) {
+  for (const provider of rivals) {
     if (row.rivals?.[provider]?.error || !row.rivals?.[provider]?.answer) throw new Error(`Frozen answer unavailable: ${item.id}/${provider}`);
   }
   return row;

@@ -56,7 +56,7 @@ if (options.round2) {
 }
 if (baseline && (!baseline.endedAt || baseline.results?.length !== baseline.selected?.length)) throw new Error("Frozen baseline is not complete");
 if (options.economy && (!readonlySite && (!baseline || !wanted) || options.concurrency !== "1")) throw new Error("Economy replay requires frozen opponents, an explicit affected-case list and concurrency 1");
-const frozen = new Map(selected.map((item) => [item.id, frozenCase(item, baseline, caseHash)]));
+const frozen = new Map(selected.map((item) => [item.id, frozenCase(item, baseline, caseHash, RIVALS)]));
 const startedAt = new Date().toISOString(), seed = randomUUID();
 const directory = resolve("work", "parity-eval", `${options.label}-${startedAt.replace(/[:.]/g, "-")}`);
 await mkdir(join(directory, "tmp"), { recursive: true });
