@@ -1,6 +1,8 @@
 // The conversation last shown, kept so opening Ourever (or coming back from another page) draws it at once and refreshes
 // underneath, like any messaging app (founder 11-26: "把软件关掉重新开启的时候还是会这个样子"). It lives in memory and,
 // trimmed to the latest lines, on this device only for the signed-in member; signing out or deleting the account clears it.
+import { forgetApiCache } from "../relationship/api";
+
 const PREFIX = "ourever.view:";
 const KEEP = 60, MAX_CHARS = 1_500_000, MAX_AGE_MS = 30 * 86_400_000;
 
@@ -55,6 +57,6 @@ if (typeof window !== "undefined") {
 
 /** Signing out or deleting the account: nothing of the conversation stays on this device. */
 export function forgetViews() {
-  memory = null; window.clearTimeout(timer); timer = undefined; quietUntil = Date.now() + 5000;
+  memory = null; window.clearTimeout(timer); timer = undefined; quietUntil = Date.now() + 5000; forgetApiCache();
   try { for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX)) localStorage.removeItem(key); } catch { /* nothing stored */ }
 }
