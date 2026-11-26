@@ -46,6 +46,8 @@ const localTime = (value, timezone) => {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
 
+const hurting = (value) => /难受|难过|伤心|委屈|想哭|哭了|心痛|心碎|崩溃|分手|好累|撑不住|upset|it hurts|heartbroken|broke up|so sad|crying|triste|me duele|lloro|rompimos/i.test(String(value || ""));
+
 export function createAssistantRouter({ store, mediator, reminderService, emit = () => {}, chatImports = null, activity = null, promises = null, profile = null }) {
   const router = express.Router();
   const liveUser = async (db, userId, lock = false) => {
@@ -481,7 +483,11 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
           else { record = privateRecord(userId, patch); await tx.createRelationshipRecord(collection, record); }
         }
         await tx.createRelationshipRecord("consentEvents", privateRecord(userId, { status: "recorded", objectId: record.id, objectType: action.kind, eventType: `assistant.${action.kind}.${action.operation}`, sourceVersion: record.version }));
-        cards.push(card(action.kind, record, session.language)); changes.push({ kind: action.kind, record });
+        changes.push({ kind: action.kind, record });
+        // Someone who is hurting gets comfort, not paperwork (QA 11-26: a breakup answer ended in "已保存私人记录" and the
+        // diary card). Their mood is still kept, as the founder wants; it just isn't announced under this answer.
+        if (action.kind === "checkin" && hurting(text)) continue;
+        cards.push(card(action.kind, record, session.language));
         if (action.kind === "reminder") {
           const at = `${localTime(record.dueAt, record.timezone).replace("T", " ")} (${record.timezone})`;
           replies.push(action.operation === "archive" ? say(session.language, "已暂停这条个人提醒。", "This personal reminder is paused.", "Este recordatorio personal está pausado.") : record.occurrenceOriginalDueAt ? say(session.language, `已保存个人提醒：${record.title}。仅下次为 ${at}，后续仍按原来的每周安排。`, `Saved personal reminder: ${record.title}. Only the next occurrence is ${at}; later reminders keep the original weekly schedule.`, `Recordatorio personal guardado: ${record.title}. Solo la próxima vez será ${at}; las siguientes mantienen el horario semanal original.`) : say(session.language, `已保存个人提醒：${record.title}，${at}${record.frequency === "weekly" ? "，每周重复" : ""}。`, `Saved personal reminder: ${record.title}, ${at}${record.frequency === "weekly" ? ", every week" : ""}.`, `Recordatorio personal guardado: ${record.title}, ${at}${record.frequency === "weekly" ? ", cada semana" : ""}.`));

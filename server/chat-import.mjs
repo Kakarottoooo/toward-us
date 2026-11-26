@@ -30,6 +30,10 @@ const CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
 // The synced history is read once it has this many messages, and read again only after a week with this many new ones.
 export const SYNC_FIRST = 50, SYNC_MORE = 300, SYNC_EVERY_MS = 7 * 86_400_000;
+const FAMILY = /妈|爸|婆婆|公公|岳父|岳母|舅|姨|姑|叔|伯|爷|奶|外公|外婆|姥|(?<!小)哥哥|(?<!小)姐姐|弟弟|(?<!小)妹妹|我哥|我姐|我弟|我妹|儿子|女儿|侄|甥|亲戚|家人|家庭|群聊|.群$|\bmom\b|\bmum\b|\bdad\b|mother|father|grand(?:ma|pa|mother|father)|\bsis(?:ter)?\b|\bbro(?:ther)?\b|\baunt|\buncle\b|cousin|in-law|family|\bgroup\b|mamá|papá|abuel|suegr|herman|\bt[ií]a\b|\bt[ií]o\b|\bprim[oa]\b|familia|grupo/i;
+/** A chat name that is a relative or a group rather than someone the user may be dating. */
+export const familyOrGroup = (name) => FAMILY.test(String(name || ""));
+
 export function dueForAnalysis(record, now = Date.now()) {
   if (!record?.sync || record.status !== "ready" || record.rawDeleted) return false;
   if (!["me", "partner"].every((role) => record.people?.some((person) => person.role === role))) return false;
@@ -296,6 +300,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         const pairing = await tx.getRelationshipContext(user.id);
         const partnerName = pairing?.relationship?.status === "active" ? pairing.members?.find((member) => member.userId !== user.id)?.user?.name : null;
         if (partnerName && norm(partnerName) === norm(name)) return current;
+        // 「在了解的人」 are people they may be dating. Family and groups ("魏妈妈", "婆婆", "Mom", "家庭群") get no card
+        // (QA 11-26: a mother-in-law's chat was filed as someone the user is getting to know).
+        if (familyOrGroup(name)) return current;
         person = await personFor(tx, user.id, name);
       }
       if (!person) return current;
@@ -427,7 +434,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
     // Reading and answering in one call failed about one time in ten in the 11-15 practice runs (the user then got
     // "截图没能读出来"). Then read only; the import answers the question in its own call (answerScreenshot).
-    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
+    // Read only, then answer in its own call with the full craft (answerScreenshot). Reading and advising in one vision call
+    // gave thin answers in the 11-26 ChatGPT comparison (a bare "今天怎么样？" after a fight, a congratulation without the
+    // apology the chat called for); the one-call path stays available behind SCREENSHOT_ONE_CALL for comparison.
+    const oneCall = process.env.SCREENSHOT_ONE_CALL === "1";
+    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
     const result = await read().catch((error) => {
       chatSignal()?.throwIfAborted();
       if (!question || isAiLimit(error) || error?.statusCode === 503) throw error;
