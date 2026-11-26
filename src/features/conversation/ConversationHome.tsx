@@ -205,12 +205,13 @@ export function ConversationHome({ user, pairing, language, aiOff = false, aiOff
     const timer = window.setTimeout(() => { void GameHall.preload(); void PlayTogether.preload(); void PlayDistance.preload(); void PlayPlans.preload(); }, gameHall || playTogether || interaction ? 0 : 3000);
     return () => clearTimeout(timer);
   }, []);
-  // Present the restored conversation and its character together, with a bounded wait.
+  // Present the restored conversation and its character together, waiting at most 200ms for the character (founder 11-26:
+  // even a first open must be instant; the pet floats in a moment later if its art is slower).
   const [firstLook, setFirstLook] = useState({ session: false, together: !paired, grace: false, cap: false });
   const shown = useRef(Boolean(cached?.session && (!paired || cached.together)));
   useEffect(() => { if (session) saveView(user.id, { session }); }, [session, user.id]);
   useEffect(() => { if (together) saveView(user.id, { together }); }, [together, user.id]);
-  useEffect(() => { const grace = window.setTimeout(() => setFirstLook((current) => ({ ...current, grace: true })), 1500), cap = window.setTimeout(() => setFirstLook((current) => ({ ...current, cap: true })), 5000); return () => { window.clearTimeout(grace); window.clearTimeout(cap); }; }, []);
+  useEffect(() => { const grace = window.setTimeout(() => setFirstLook((current) => ({ ...current, grace: true })), 200), cap = window.setTimeout(() => setFirstLook((current) => ({ ...current, cap: true })), 5000); return () => { window.clearTimeout(grace); window.clearTimeout(cap); }; }, []);
   // The drawer's rows and counts are fetched with the conversation, so opening the menu shows them at once (11-08).
   const [drawerData, setDrawerData] = useState<DrawerData>(() => drawerCache?.key === `${user.id}:${paired}` ? drawerCache.data : { home: null, spaces: [], chats: 0 });
   useEffect(() => { void loadDrawerData(paired, user.id, 30_000).then(setDrawerData); }, [paired]);
@@ -1223,7 +1224,19 @@ ${text}` : text, target);
     };
   }, [conversationVisible, channel, currentThread, recall.active, reopenedAt, Boolean(emptyPrivateChat)]);
 
-  if (!conversationVisible) return <div className="loading-screen" aria-busy="true" data-testid="booting" role="status">{t("正在打开对话…", "Opening your conversation…", "Abriendo tu conversación…")}</div>;
+  // The very first open on a phone (nothing kept yet): the conversation's frame at once, with quiet placeholder lines
+  // where messages arrive, instead of a page of "正在打开对话…" (founder 11-26: even a first download opens instantly).
+  if (!conversationVisible) return <div className="paper-screen conversation-home conversation-skeleton" aria-busy="true" data-testid="booting">
+    <span className="visually-hidden" role="status">{t("正在打开对话…", "Opening your conversation…", "Abriendo tu conversación…")}</span>
+    <header className="conversation-header" aria-hidden="true"><div className="conversation-topline">
+      <span className="conversation-menu"><List size={24} /></span>
+      <div className="conversation-segments"><span className={channel === "me" || !paired ? "active" : ""}>{t("只有我", "Just me", "Solo yo")}</span><span className={paired && channel === "us" ? "active" : ""}>{paired ? t("我们俩", "Us", "Nosotros") : t("在了解的人", "People", "Personas")}</span></div>
+    </div></header>
+    <div className="conversation-stream" aria-hidden="true"><div className="conversation-thread">
+      <i className="skeleton-line is-wide" /><i className="skeleton-line" /><i className="skeleton-line is-mine" /><i className="skeleton-line is-wide" />
+    </div></div>
+    <footer className="conversation-composer" aria-hidden="true"><div className="skeleton-composer" /></footer>
+  </div>;
   return <div className="paper-screen conversation-home" data-testid="conversation-screen" data-layer-open={gameHall || playTogether || interaction || petRoom ? "" : undefined} data-feedback-view={gameHall ? "games" : playTogether || openQuestionId ? "questions" : petRoom ? "pet" : call ? "call" : "conversation-" + channel}>
     {!!hearts && <div key={hearts} className="miss-you-hearts" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <Heart key={index} size={22 + (index % 3) * 8} weight="fill" style={{ left: `${12 + index * 12}%`, animationDelay: `${index * 0.09}s` }} />)}</div>}
     <header className="conversation-header">
