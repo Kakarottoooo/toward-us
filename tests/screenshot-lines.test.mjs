@@ -19,3 +19,10 @@ test("relatives and groups are not filed as someone the user is getting to know"
   for (const name of ["魏妈妈", "婆婆", "我哥", "家庭群", "Mom", "Brother Tom", "Tía Rosa"]) assert.equal(familyOrGroup(name), true, name);
   for (const name of ["小满", "钟哲", "王哥", "小姐姐", "小哥哥", "River", "Ana", "Sandra"]) assert.equal(familyOrGroup(name), false, name);
 });
+
+// QA 11-26: "给我一句" cut the drafted message to its first full stop and dropped the apology; the line is kept whole.
+test("a drafted line to send is joined into one sentence, never cut", async () => {
+  const { joinSentences } = await import("../server/reply-contract.mjs");
+  assert.equal(joinSentences("昨天我不想一直僵着。我说“你根本不考虑我”太重了，对不起。养狗的事先放放。"), "昨天我不想一直僵着，我说“你根本不考虑我”太重了，对不起，养狗的事先放放。");
+  assert.equal(joinSentences("就一句。"), "就一句。");
+});

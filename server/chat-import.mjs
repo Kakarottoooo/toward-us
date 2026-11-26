@@ -4,7 +4,7 @@ import { chatSignal } from "./chat-response.mjs";
 import { withoutScreenshotPreamble, screenshotTurnMessages } from "./screenshot-turn.mjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
-import { activityDraft, finishReply, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
+import { activityDraft, finishReply, joinSentences, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
@@ -381,7 +381,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           // without an external signal often turns right answers wrong; here the check's source is the cheap transcript).
           const reply = process.env.SKIP_SCREENSHOT_REWRITE === "1" ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
-          text = finishReply(reply, { request: request.text, language: record.language });
+          // One line asked for and the model gave the message to send separately: that message is the answer, all of it, as
+          // one sentence (QA 11-26: cutting it to its first full stop dropped the apology bare ChatGPT gave). Otherwise the
+          // reply keeps only its first sentence, dropping unasked commentary (11-15).
+          const sendLine = wantsOneSentence(request.text) && answer.sendableDraft?.trim();
+          text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language });
           const draft = activityDraft(answer)?.trim();
           if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
         } catch (error) {
