@@ -100,6 +100,28 @@ test("the daily question and Pinky's line after it are always in the couple's la
   assert.ok(!(await f.conversation()).messages.some((item) => item.handle === `daily-reaction:${question.id}`), "a Chinese reaction is not posted for a Spanish couple");
 });
 
+// Production QA 11-26: a Chinese member's Us showed the model's Chinese question to an English partner. With mixed
+// interface languages the fixed question (all three languages) is posted instead, so each partner reads their own.
+test("a couple who read different languages each get the daily question in their own", async (t) => {
+  const f = await fixture(t);
+  await f.store.updateUserLanguage(f.a, "zh"); await f.store.updateUserLanguage(f.b, "en");
+  let asked = 0;
+  const model = { structured: async () => { asked += 1; return { question: "你们最近一次一起大笑是因为什么？" }; } };
+  assert.equal(await askDailyQuestion({ store: f.store, mediator: model, relationshipId: f.relationshipId, userId: f.a, language: "zh", today: "2026-11-05" }), true);
+  const question = (await f.conversation()).messages.findLast((item) => item.kind === "daily_question");
+  assert.ok(question.i18n?.zh && question.i18n?.en && question.i18n?.es, "the posted question carries every language");
+  assert.equal(question.text, question.i18n.zh);
+  const seen = (await f.request("/together?language=en", "GET", null, f.b)).body.conversation.messages.find((item) => item.id === question.id);
+  assert.equal(seen.i18n.en, question.i18n.en);
+  assert.ok(!/[㐀-鿿]/.test(seen.i18n.en));
+  // Same-language couples keep the model's question written for them.
+  const g = await fixture(t);
+  await g.store.updateUserLanguage(g.a, "en"); await g.store.updateUserLanguage(g.b, "en");
+  assert.equal(await askDailyQuestion({ store: g.store, mediator: { structured: async () => ({ question: "What made you both laugh this week?" }) }, relationshipId: g.relationshipId, userId: g.a, language: "en", today: "2026-11-05" }), true);
+  assert.equal((await g.conversation()).messages.findLast((item) => item.kind === "daily_question").text, "What made you both laugh this week?");
+  void asked;
+});
+
 test("shared recall and HTTP jump use the same membership boundary, including archived messages and unrevealed answers", async (t) => {
   const f = await fixture(t);
   const question = await f.say(f.a, "Pinky，蓝色风筝的约定是什么？");
