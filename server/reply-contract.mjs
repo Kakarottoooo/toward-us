@@ -147,6 +147,14 @@ export function finishReply(reply, { request = "", language = "zh", receipts = [
   return text;
 }
 
+/** One message as one sentence: inner full stops become commas (zh) or semicolons, so nothing the line says is lost. */
+export function joinSentences(text, language = "zh") {
+  const parts = segments(String(text || "").replace(/\s*\n+\s*/g, " ").trim(), language).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return parts[0] || "";
+  const zh = language === "zh";
+  return parts.map((part, index) => index === parts.length - 1 ? part : part.replace(zh ? /[。！!；;]+$/u : /[.!;]+$/u, zh ? "，" : ";")).join(zh ? "" : " ");
+}
+
 // Reminder promises also duplicate a committed receipt without saying "created".
 const confirmsReminder = text => /^(?:(?:好的|好|没问题)[，,]?\s*)?(?:我会|我将|我来|会在|将在|今天|明天|后天|下周|周[一二三四五六日天]|\d{1,4}年|\d{1,2}月).{0,80}提醒(?:你|您)|\b(?:I(?:'ll| will) remind you|te recordar[eé])\b/iu.test(text);
 

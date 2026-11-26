@@ -16,6 +16,7 @@ import { tidyMemory } from "../../server/memory-tidy.mjs";
 import { FILLER } from "../memory-eval/cases.mjs";
 import { recordChecks } from "./evidence.mjs";
 import { AI_NOTICE_VERSION } from "../../server/ai-permission.mjs";
+import { asAiUser } from "../../server/ai-budget.mjs";
 import { fixtureValue, writeChecks } from "./external-cases.mjs";
 import { appendTogetherMessage } from "../../server/together-domain.mjs";
 import { agreementFlow } from "./agreement-flow.mjs";
@@ -65,7 +66,7 @@ export async function createHarness(directory, { requestContext, mediator, clien
   let accounts = 0;
   async function call(path, body, cookie, method = body ? "POST" : "GET", mime = "application/json") {
     const tag = requestContext?.getStore();
-    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}), ...(tag?.clock ? { "x-parity-clock": JSON.stringify(tag.clock) } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
+    const response = await fetch(`${base}/api${path}`, { method, signal: AbortSignal.timeout(660_000), headers: { "content-type": mime, ...(cookie ? { cookie } : {}), ...(path.startsWith("/imports") && method === "POST" ? { "x-pinky-import-disclosure": "1" } : {}), ...(tag?.case ? { "x-parity-case": tag.case, "x-parity-phase": tag.phase } : {}), ...(tag?.clock ? { "x-parity-clock": JSON.stringify(tag.clock) } : {}) }, ...(body ? { body: mime === "application/json" ? JSON.stringify(body) : body } : {}) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`${path.split("?")[0]}: HTTP ${response.status} ${JSON.stringify(result).slice(0, 160)}`);
     return { result, cookie: response.headers.get("set-cookie")?.split(";")[0] };
@@ -97,9 +98,10 @@ async function seed(userId, sessionId, lines) {
       if (!draft.profileScan) draft.profileScan = { at: new Date(0).toISOString() };
       keepMessages(draft, [...draft.messages, ...chunk]); draft.version += 1;
     }));
-    for (let round = 0; round < 4; round += 1) { const changed = await scanPrivateProfile({ store, mediator: model, userId, sessionId }); if (!changed?.more) break; }
+    // As this synthetic member, the way the App runs these after a turn: AI calls need a consenting member (11-18).
+    for (let round = 0; round < 4; round += 1) { const changed = await asAiUser({ userId, language: "zh" }, () => scanPrivateProfile({ store, mediator: model, userId, sessionId })); if (!changed?.more) break; }
   }
-  await summarizeEarlier({ store, mediator: model, userId, sessionId });
+  await asAiUser({ userId, language: "zh" }, () => summarizeEarlier({ store, mediator: model, userId, sessionId }));
 }
 
 async function setupCase(item, withHistory) {

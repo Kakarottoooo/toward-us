@@ -1,3 +1,4 @@
+import { screeningSource } from "./eval-moderation.mjs";
 // Evaluation process only: serialize every real transport, including background work.
 export async function resolve(specifier, context, nextResolve) {
   const result = await nextResolve(specifier, context);
@@ -35,6 +36,9 @@ export function runCliProcess(command, args, ...rest) {
 
 export async function load(url, context, nextLoad) {
   const result = await nextLoad(url, context);
+  // Content screening needs the paid key evaluations never carry: see eval-moderation.mjs.
+  const screening = screeningSource(url, result.source);
+  if (screening !== null) return { ...result, source: screening, shortCircuit: true };
   if (!url.endsWith("/server/model-call-budget.mjs")) return result;
   const needle = "activeBudget?.reserve(provider, maxTurns)";
   if (!String(result.source).includes(needle)) throw Error("Unknown model budget boundary");
@@ -42,3 +46,4 @@ export async function load(url, context, nextLoad) {
   // before the call and still charge the exact returned num_turns; no post-hoc reset.
   return { ...result, source: String(result.source).replace(needle, "activeBudget?.reserve(provider, Math.max(maxTurns, 10))") };
 }
+

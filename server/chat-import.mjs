@@ -4,7 +4,7 @@ import { chatSignal } from "./chat-response.mjs";
 import { withoutScreenshotPreamble, screenshotTurnMessages } from "./screenshot-turn.mjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mediaDirectory } from "./media-dir.mjs";
-import { activityDraft, finishReply, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
+import { activityDraft, finishReply, joinSentences, wantsDraftOnly, wantsOneSentence } from "./reply-contract.mjs";
 import { prepareSourceReply } from "./source-reply.mjs";
 import { sourceChronology } from "./source-chronology.mjs";
 import { mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
@@ -30,6 +30,24 @@ const CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
 // The synced history is read once it has this many messages, and read again only after a week with this many new ones.
 export const SYNC_FIRST = 50, SYNC_MORE = 300, SYNC_EVERY_MS = 7 * 86_400_000;
+const FAMILY = /妈|爸|婆婆|公公|岳父|岳母|舅|姨|姑|叔|伯|爷|奶|外公|外婆|姥|(?<!小)哥哥|(?<!小)姐姐|弟弟|(?<!小)妹妹|我哥|我姐|我弟|我妹|儿子|女儿|侄|甥|亲戚|家人|家庭|群聊|.群$|\bmom\b|\bmum\b|\bdad\b|mother|father|grand(?:ma|pa|mother|father)|\bsis(?:ter)?\b|\bbro(?:ther)?\b|\baunt|\buncle\b|cousin|in-law|family|\bgroup\b|mamá|papá|abuel|suegr|herman|\bt[ií]a\b|\bt[ií]o\b|\bprim[oa]\b|familia|grupo/i;
+// A screenshot of a chat laid out as labelled lines ("钟哲 21:03: …", "我 21:05: …": a merged-forward record, an export, a
+// list view) came back as ONE bubble from the other person, so every line the user wrote was attributed to them (QA 11-26:
+// Ourever then never owned "你根本不考虑我" in the reply it drafted). Split such a block by its labels; "我 / Me / Yo" lines
+// are the user's own.
+const LABELLED = /^\s*([^\s:：]{1,24})\s+(\d{1,2}:\d{2})\s*[:：]\s*(.+)$/;
+const SELF = /^(我|me|yo|i)$/i;
+export function splitLabeledLines(messages) {
+  return messages.flatMap((message) => {
+    const lines = String(message.text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const labelled = lines.filter((line) => LABELLED.test(line));
+    if (labelled.length < 2 || labelled.length < lines.length * 0.6) return [message];
+    return labelled.map((line) => { const [, name, time, text] = line.match(LABELLED); return { mine: SELF.test(name), name: SELF.test(name) ? null : name, time, text }; });
+  });
+}
+/** A chat name that is a relative or a group rather than someone the user may be dating. */
+export const familyOrGroup = (name) => FAMILY.test(String(name || ""));
+
 export function dueForAnalysis(record, now = Date.now()) {
   if (!record?.sync || record.status !== "ready" || record.rawDeleted) return false;
   if (!["me", "partner"].every((role) => record.people?.some((person) => person.role === role))) return false;
@@ -296,6 +314,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         const pairing = await tx.getRelationshipContext(user.id);
         const partnerName = pairing?.relationship?.status === "active" ? pairing.members?.find((member) => member.userId !== user.id)?.user?.name : null;
         if (partnerName && norm(partnerName) === norm(name)) return current;
+        // 「在了解的人」 are people they may be dating. Family and groups ("魏妈妈", "婆婆", "Mom", "家庭群") get no card
+        // (QA 11-26: a mother-in-law's chat was filed as someone the user is getting to know).
+        if (familyOrGroup(name)) return current;
         person = await personFor(tx, user.id, name);
       }
       if (!person) return current;
@@ -356,9 +377,15 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           const answer = screenshotAdvice?.language === record.language && usable(screenshotAdvice) ? screenshotAdvice : await mediator.answerScreenshot({ question: request.text, names, ...(await knownAbout(record.ownerUserId, record.personId || null)), transcript: messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000) }, record.language);
           if (!usable(answer)) throw new Error("No substantive screenshot answer");
           // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
-          const reply = await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+          // SKIP_SCREENSHOT_REWRITE=1 (measurement): no source-check/format-repair rewrite of the answer (11-26 research: rewriting
+          // without an external signal often turns right answers wrong; here the check's source is the cheap transcript).
+          const reply = process.env.SKIP_SCREENSHOT_REWRITE === "1" ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
-          text = finishReply(reply, { request: request.text, language: record.language });
+          // One line asked for and the model gave the message to send separately: that message is the answer, all of it, as
+          // one sentence (QA 11-26: cutting it to its first full stop dropped the apology bare ChatGPT gave). Otherwise the
+          // reply keeps only its first sentence, dropping unasked commentary (11-15).
+          const sendLine = wantsOneSentence(request.text) && answer.sendableDraft?.trim();
+          text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language });
           const draft = activityDraft(answer)?.trim();
           if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
         } catch (error) {
@@ -371,7 +398,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         // they read as paperwork). The person's file is still kept and shows in their people list.
         const quietNotes = wantsOneSentence(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text)
           || /难受|难过|伤心|委屈|想哭|心痛|安慰|崩溃|upset|it hurts|so sad|comfort me|triste|me duele/i.test(request.text);
-        if (record.personNew && record.personId && !quietNotes) {
+        // Founder 11-26 floor: nothing extra under an answer. The new card shows in their people list, not as a line here.
+        if (record.personNew && record.personId && !quietNotes && process.env.SCREENSHOT_FILING_NOTE === "1") {
           await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
           await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
         }
@@ -427,19 +455,29 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
     // Reading and answering in one call failed about one time in ten in the 11-15 practice runs (the user then got
     // "截图没能读出来"). Then read only; the import answers the question in its own call (answerScreenshot).
-    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
+    // Reading and answering in one call stays the default: answering in a separate call did not measure better in the
+    // 11-26 ChatGPT comparison. SCREENSHOT_ONE_CALL=0 switches to the separate call for measurement.
+    const oneCall = process.env.SCREENSHOT_ONE_CALL !== "0";
+    // Coach mode (measurement, off by default): the main model answers from the screenshots themselves in free text,
+    // while the transcript for storage is read separately.
+    const coach = question && process.env.COACH_SCREENSHOT === "1"
+      ? (async () => mediator.coachScreenshot({ paths: photos.map(photoFile), question, language, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, known: await knownAbout(user.id, null) }))().catch(() => null)
+      : null;
+    const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall && !coach ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
     const result = await read().catch((error) => {
       chatSignal()?.throwIfAborted();
       if (!question || isAiLimit(error) || error?.statusCode === 503) throw error;
       console.warn("[screenshots] read-and-answer failed; reading only:", String(error?.message || error).slice(0, 120));
       return mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
     });
-    const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
+    const messages = splitLabeledLines(result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
     // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
     if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
     chatSignal()?.throwIfAborted();
-    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: result.advice ? { ...result.advice, language } : null });
+    const coached = coach ? await coach : null;
+    const advice = typeof coached === "string" && coached.trim() ? { observations: [], uncertainties: [], reply: coached.trim(), sendableDraft: null, activityDescription: null } : result.advice;
+    return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: advice ? { ...advice, language } : null });
   }
   router.importScreenshots = importScreenshots;
 
