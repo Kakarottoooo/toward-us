@@ -38,7 +38,9 @@
 .floating-pet-dot { position: absolute; top: 4px; right: 10px; width: 10px; height: 10px; border: 2px solid var(--jian-paper); border-radius: 50%; background: #e0566f; }
 .floating-pet-z { position: absolute; top: -6px; left: 8px; color: #6e675f; font-size: 14px; font-style: italic; animation: pet-doze 2.4s ease-in-out infinite; }
 .floating-pet.is-happy .floating-pet-figure { animation: pet-sway 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
-.floating-pet.is-sleepy .floating-pet-figure { filter: saturate(.55); opacity: .85; }
+/* Sleepy keeps its full colours (founder 11-26: a washed-out squirrel looked broken); a small "z" says it is dozing. */
+.floating-pet.is-sleepy .floating-pet-figure { position: relative; }
+.floating-pet.is-sleepy .floating-pet-figure::after { content: "z"; position: absolute; top: -4px; right: -2px; color: #8a6aa8; font: italic 700 14px/1 var(--jian-sans); }
 @keyframes pet-sway { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
 @keyframes pet-doze { 0%, 100% { opacity: .2; transform: translateY(2px); } 50% { opacity: 1; transform: translateY(-4px); } }
 
@@ -66,7 +68,7 @@
 .pet-figure.is-hop { animation: pet-hop .5s cubic-bezier(.3,.7,.4,1.4); }
 @keyframes pet-hop { 0%, 100% { transform: none; } 40% { transform: translateY(-18px) scale(1.04); } }
 .pet-room.is-happy .pet-figure:not(.is-hop) { animation: pet-sway 3.6s ease-in-out infinite; transform-origin: 50% 100%; }
-.pet-room.is-sleepy .pet-figure { filter: saturate(.6); }
+.pet-room.is-sleepy .pet-figure { filter: none; }
 .pet-rug { position: absolute; bottom: 8px; left: 50%; width: 260px; height: 46px; border-radius: 50%; background: radial-gradient(closest-side, #fffaf3 0%, #fbf3e8 70%, rgba(251,243,232,0) 100%); transform: translateX(-50%); }
 .pet-room-stream { position: relative; flex: 1 1 auto; min-height: 0; }
 .pet-bubble { position: absolute; top: 40px; left: 6px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; animation: pet-float 3s ease-in-out infinite; }

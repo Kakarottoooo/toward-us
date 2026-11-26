@@ -957,6 +957,13 @@ ${text}` : text, target);
   // While dating, the second segment is a link to People, not a tab: then the pair is a plain group, not a tablist whose
   // children must all be tabs (QA round 5 axe aria-required-children).
   const peopleLink = stage === "dating" && channel !== "us";
+  const nudgedToday = Boolean(todayQuestion?.nudgedAt && !todayQuestion.answers?.[user.id]);
+  const dailyChip = <button type="button" className={`daily-entry${nudgedToday ? " is-nudged" : ""}`} data-testid="daily-entry" aria-label={nudgedToday ? t(`${partnerName} 邀你回答今日一问`, `${partnerName} nudged you to answer today’s question`, `${partnerName} te invita a responder la pregunta de hoy`) : undefined} onClick={() => {
+        keyboard.hide(); if (todayQuestion) setOpenQuestionId(todayQuestion.id); else setPlayTogether({});
+      }}>
+        <ChatCircleDots size={17} aria-hidden="true" />
+        {nudgedToday ? t(`${partnerName}邀你回答`, `${partnerName} asked you`, `${partnerName} te espera`) : t("今日一问", "Today’s question", "Pregunta de hoy")}{nudgedToday && <i className="daily-entry-dot" aria-hidden="true" />}
+        </button>;
   const placeholder = channel === "me" ? revising ? t("说说想怎么改…", "Tell me what to change…", "Dime qué cambiar…") : t("贴上 TA 的话，或问我…", "Paste their words or ask…", "Pega lo que dijo…") : askingInUs ? t("问 Ourever…", "Ask Ourever…", "Pregúntale a Ourever…") : t(`发消息给${partnerName}…`, `Message ${partnerName}…`, `Mensaje para ${partnerName}…`);
   const audience = channel === "me" ? t("只有我 · 与 Ourever 私聊", "Just me · Private with Ourever", "Solo yo · En privado con Ourever") : t(`我们俩 · ${partnerName}也能看到`, `Us · ${partnerName} can see this too`, `Nosotros · ${partnerName} también lo verá`);
   const sendLabel = channel === "me" ? t("私下发送给 Ourever", "Send privately to Ourever", "Enviar en privado a Ourever") : askingInUs ? t("在我们俩问 Ourever", "Ask Ourever in Us", "Preguntar a Ourever en Nosotros") : t(`发送给${partnerName}`, `Send to ${partnerName}`, `Enviar a ${partnerName}`);
@@ -1035,19 +1042,22 @@ ${text}` : text, target);
     ? <p className="conversation-time" role="separator" data-testid="message-time-gap"><time dateTime={current}>{stampLabel(current)}</time></p> : null;
   const showTime = (id: string) => (event: { target: EventTarget }) => { if ((event.target as HTMLElement).closest("button, a, input, textarea, select, [role=menu], [role=dialog]")) return; setTimeOf((shown) => shown === id ? null : id); };
   const sharedMessage = (message: SharedMessage, index: number) => {
-    const body = sharedBody(message, index);
-    const gap = timeGap(sharedMessages[index - 1]?.createdAt, message.createdAt);
-    if (!body || !together || message.removedAt) return gap && body ? <Fragment key={message.id}>{gap}{body}</Fragment> : body;
     const own = message.role === "member" && message.actorUserId === user.id;
     const removable = own && !readOnly && !message.recordedByUserId && message.kind === "text" && Date.now() - Date.parse(message.createdAt) <= 120_000;
     const canRegenerate = !readOnly && index >= olderMessages.length && message.kind === "text" && message.role === "agent" && Boolean(message.replyTo && ownRequestIds.has(message.replyTo));
-    return <Fragment key={message.id}>{gap}<div className={`shared-reportable${own ? " from-me" : ""}`} data-shared-id={message.id} onClick={showTime(message.id)}>
-      {body}<ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "agent"} onUnsend={removable ? () => void unsend(message.id) : undefined} onRegenerate={canRegenerate ? () => regenerate("us", message.id) : undefined} rewriteBusy={generating.us} onStop={() => stopReply("us")} replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? (message.text || message.call?.rows.map(row => row.text).join("\n"))} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} />
+    // The "…" sits inside the bubble it belongs to (founder 11-19 and 11-26); cards that do not take it keep it at their corner.
+    const menu = together && !message.removedAt ? <ReportReply messageMenu photoIds={message.photoIds} canReport={message.role === "agent"} onUnsend={removable ? () => void unsend(message.id) : undefined} onRegenerate={canRegenerate ? () => regenerate("us", message.id) : undefined} rewriteBusy={generating.us} onStop={() => stopReply("us")} replyText={message.i18n?.[language] ?? message.translations?.[language]?.text ?? (message.text || message.call?.rows.map(row => row.text).join("\n"))} language={language} channel="us" conversationId={together.conversation.id} messageId={message.id} /> : null;
+    const slot = { menu, used: false };
+    const body = sharedBody(message, index, slot);
+    const gap = timeGap(sharedMessages[index - 1]?.createdAt, message.createdAt);
+    if (!body || !together || message.removedAt) return gap && body ? <Fragment key={message.id}>{gap}{body}</Fragment> : body;
+    return <Fragment key={message.id}>{gap}<div className={`shared-reportable${own ? " from-me" : ""}${slot.used ? " menu-inside" : ""}`} data-shared-id={message.id} onClick={showTime(message.id)}>
+      {body}{!slot.used && menu}
       {timeOf === message.id && <time className="message-time" dateTime={message.createdAt}>{stampLabel(message.createdAt)}</time>}
       {own && latestOwn?.id === message.id && <small className="message-receipt">{message.readAt ? t("已读", "Read", "Leído") : message.deliveredAt ? t("已送达", "Delivered", "Entregado") : t("已发送", "Sent", "Enviado")}</small>}
     </div></Fragment>;
   };
-  const sharedBody = (message: SharedMessage, index: number) => {
+  const sharedBody = (message: SharedMessage, index: number, slot?: { menu: ReactNode; used: boolean }) => {
     const mine = message.role === "member" && message.actorUserId === user.id;
     if (message.removedAt) return <p key={message.id} className="conversation-nudge">{t("消息已撤回", "Message removed", "Mensaje retirado")}</p>;
     // Like a group chat: the avatar and name show once at the start of each run of lines from the same speaker.
@@ -1093,7 +1103,8 @@ ${text}` : text, target);
     const chatRequest = message.refs.find((ref) => ref.type === "chat_import_request"), chatShared = message.refs.find((ref) => ref.type === "chat_import");
     const handoffs = message.role === "agent" ? message.refs.filter((ref) => ref.type === "link" && ref.url) : [];
     const from = message.role === "agent" ? "from-agent" : mine ? "from-me" : "from-partner";
-    const article = <article className={`conversation-message ${from}`}>{!continued && (author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{text && <p dir="auto">{message.role === "agent" ? <Linked text={text} /> : text}</p>}
+    if (slot?.menu) slot.used = true;
+    const article = <article className={`conversation-message ${from}`}>{slot?.menu}{!continued && (author || message.kind === "relay") && <span>{author}{message.kind === "relay" && <em><LockKey size={13} />{t("本人确认后分享", "Shared after review", "Compartido tras revisarlo")}</em>}</span>}{!!message.photoIds?.length && <Photos ids={message.photoIds} language={language} />}{text && <p dir="auto">{message.role === "agent" ? <Linked text={text} /> : text}</p>}
       <RecallLinks sources={message.refs.filter((ref) => ref.type === "conversation" && ref.channel === "us" && ref.conversationId && ref.messageId) as ConversationSource[]} language={language} busy={recall.busy} onJump={(source) => void recall.jump(source)} />
       {!!links.length && <div className="message-links">{links.map((ref) => <button key={`${ref.type}:${ref.id}`} onClick={() => open(ref.system === "watched" ? "/?view=moments&watched=1" : ref.system === "moments" ? "/?view=moments" : ref.type === "space" ? `/?view=space&space=${encodeURIComponent(ref.id)}` : "/?view=upcoming")}>{ref.system === "watched" ? t("一起看过的", "Watched together", "Vistos juntos") : ref.system === "moments" ? t("回忆", "Moments", "Momentos") : ref.type === "space" ? ref.title || t("打开空间", "Open space", "Abrir espacio") : t(`日期：${ref.title || ""}`, `Date: ${ref.title || ""}`, `Fecha: ${ref.title || ""}`)}<ArrowRight size={15} /></button>)}</div>}
       {!!handoffs.length && <div className="message-handoffs">{handoffs.map((ref) => <Handoff key={ref.id} title={ref.title || ""} url={ref.url!} language={language} onOpen={open} />)}</div>}
@@ -1222,13 +1233,6 @@ ${text}` : text, target);
         {recall.dateButton}
         <button className="conversation-call" onClick={() => void startCall()} disabled={Boolean(call) || (channel === "us" && !paired)} aria-label={t("和 Ourever 通话", "Call Ourever", "Llamar a Ourever")} title={t("和 Ourever 通话", "Call Ourever", "Llamar a Ourever")} data-testid="start-call"><Phone size={22} /></button>
       </div>
-      {channel === "us" && paired && !readOnly && <button type="button" className="daily-entry" data-testid="daily-entry" onClick={() => {
-        keyboard.hide(); if (todayQuestion) setOpenQuestionId(todayQuestion.id); else setPlayTogether({});
-      }}>
-        <ChatCircleDots size={17} aria-hidden="true" />
-        {todayQuestion?.nudgedAt && !todayQuestion.answers?.[user.id] ? t(`${partnerName} 邀你回答今日一问`, `${partnerName} nudged you to answer today’s question`, `${partnerName} te invita a responder la pregunta de hoy`) : t("今日一问", "Today’s question", "Pregunta de hoy")}
-        <ArrowRight size={16} aria-hidden="true" />
-      </button>}
       {channel === "me" && stage !== "together" && <PeopleRow language={language} people={people} current={thread} unread={people.filter((item) => item.id !== thread && item.thread?.lastFrom === "assistant" && item.thread.updatedAt > (seen[item.id] || "")).map((item) => item.id)} brainUnread={brainUnread} onBrain={() => openThread(null)} onOpen={(item) => openThread(item.id)} onAdd={() => fileRef.current?.click()} />}
       {channel === "me" && !paired && !inviteBarHidden && <InviteBar state={invitation} onEnterCode={enterPartnerCode} onDismiss={hideInviteBar} />}
       {channel === "me" && askName && user.nameSet === false && <NamePrompt userId={user.id} language={language} onHide={() => setAskName(false)} onSaved={() => accessChanged.current()} />}
@@ -1236,7 +1240,7 @@ ${text}` : text, target);
       {former && former.reason !== "left" && !former.seen && !paired && <p className="partner-joined" role="status" data-testid="former-notice">{t(`${former.name || "TA"}删除了账号。你们以前在“我们俩”的聊天记录会在这里保留，只能查看。`, `${former.name || "Your partner"} deleted their account. Your shared history in Us is kept here, read-only.`, `${former.name || "Tu pareja"} borró su cuenta. Su historial compartido en Nosotros se conserva aquí, solo para leer.`)}<button type="button" onClick={() => { seeFormer(); if (!usHidden) { switchChannel("us"); setFormerOpen(true); } }}>{t("查看", "View", "Ver")}</button><button type="button" onClick={seeFormer}>{t("知道了", "OK", "Entendido")}</button></p>}
       {welcomePartner && <p className="partner-joined" role="status" data-testid="partner-joined"><Heart size={18} weight="fill" aria-hidden="true" />{t("你的伴侣加入了，你们的共同空间已开启。", "Your partner joined. Welcome to your shared space.", "Tu pareja se ha unido. Este es su espacio compartido.")}{channel === "me" && !usHidden && <button type="button" disabled={!!attachments.length || voiceActive || !!call} onClick={() => switchChannel("us")}>{t("打开我们俩", "Open Us", "Abrir Nosotros")}</button>}</p>}
       {channel === "me" && thread && (() => { const about = people.find((item) => item.id === thread); return about ? <div className="thread-bar" data-testid="thread-bar"><span>{t(`只聊${plainName(about.name)}`, `Just about ${plainName(about.name)}`, `Solo sobre ${plainName(about.name)}`)}</span><button type="button" onClick={() => open(`/?view=people&person=${encodeURIComponent(about.id)}`)}>{t("完整档案", "Full page", "Ficha")}</button></div> : null; })()}
-      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
+      {channel === "us" && paired && together && (() => { const partner = together.members.find((member) => member.id !== user.id); return partner ? <DistanceBar language={language} partnerName={partner.name || t("TA", "Your partner", "Tu pareja")} partnerZone={together.conversation.zones?.[partner.id] || null} daily={readOnly ? undefined : dailyChip} nextMeeting={together.nextMeeting || null} care={Boolean(together.care)} onInteract={() => { keyboard.hide(); setInteraction("touch"); }} /> : null; })()}
       {recall.controls}
     </header>
     <div className="conversation-stream"><MobileScroll className="conversation-scroll"><main ref={conversationContent} className={`conversation-thread${channel === "me" && emptyPrivateChat && !aiOff ? " has-reply-coach" : ""}`} aria-live="polite">{recall.active ? recall.history : <>

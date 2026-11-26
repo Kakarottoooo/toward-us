@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AirplaneTilt, HandHeart, Heart, Moon, Sun } from "@phosphor-icons/react";
 import { counted, initialOf, isolate, languageTag, localized, bareName, type Language } from "../../i18n";
 
@@ -16,7 +16,7 @@ export const daysUntil = (date: string, today = new Date().toLocaleDateString("e
 
 /** 异地 (founder 11-06): under the top of Us, the partner's own time when it differs from yours, and how long until you meet.
  * The optional interaction shortcut stays available across time zones. */
-export function DistanceBar({ language, partnerName: rawName, partnerZone, nextMeeting, care = false, onInteract }: { language: Language; partnerName: string; partnerZone: string | null; nextMeeting: { date: string; title: string } | null; care?: boolean; onInteract?: () => void }) {
+export function DistanceBar({ language, partnerName: rawName, partnerZone, nextMeeting, care = false, onInteract, daily }: { daily?: ReactNode; language: Language; partnerName: string; partnerZone: string | null; nextMeeting: { date: string; title: string } | null; care?: boolean; onInteract?: () => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   // The caller passes the raw name: isolate it only where it sits inside a sentence, never for the avatar initial.
   const raw = bareName(rawName), partnerName = isolate(raw);
@@ -28,7 +28,7 @@ export function DistanceBar({ language, partnerName: rawName, partnerZone, nextM
   const days = nextMeeting ? daysUntil(nextMeeting.date) : null;
   // 经期 care note: only when the partner chose to share it, and only these words.
   const caring = care ? <span className="distance-care" data-testid="care-pill"><Heart size={14} weight="fill" />{t(`这几天多照顾${partnerName}一点`, `Be extra caring with ${partnerName} these days`, `Cuida un poco más a ${partnerName} estos días`)}</span> : null;
-  if (!apart && days === null && !caring && !onInteract) return null;
+  if (!apart && days === null && !caring && !onInteract && !daily) return null;
   let clock = null;
   if (apart && partnerZone) {
     const time = now.toLocaleTimeString(languageTag(language), { timeZone: partnerZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -38,9 +38,12 @@ export function DistanceBar({ language, partnerName: rawName, partnerZone, nextM
     clock = <span className="distance-clock" data-testid="partner-clock">{night ? <Moon size={14} weight="fill" /> : <Sun size={14} weight="fill" />}{t(`${partnerName}那边 ${time}`, `${partnerName}'s time ${time}`, `Hora de ${partnerName}: ${time}`)}<small>{diff > 0 ? t(`比你早 ${hours} 小时`, `${hours}h ahead`, `${hours} h más`) : t(`比你晚 ${hours} 小时`, `${hours}h behind`, `${hours} h menos`)}</small></span>;
   }
   const meet = days !== null ? <span className="distance-meet" data-testid="meet-countdown"><AirplaneTilt size={14} weight="fill" />{days === 0 ? t("今天见面！", "You meet today!", "¡Hoy se ven!") : days === 1 ? t("明天见面", "You meet tomorrow", "Se ven mañana") : t(`还有 ${days} 天见面`, `${counted(days, "day", "days")} until you meet`, `${counted(days, "día", "días")} para verse`)}</span> : null;
+  // One compact line (founder 11-26: two rows above the chat took too much room): who, their clock, then today's question
+  // and touch & cards as small buttons at the end.
   return <div className="distance-bar">{onInteract && <strong className="shared-partner-name"><span aria-hidden="true">{initialOf(raw, "")}</span><bdi>{raw}</bdi></strong>}{caring}{clock}{meet}
-    {onInteract && <button className="distance-interact" type="button" onClick={onInteract} data-testid="conversation-interaction">
-      <HandHeart size={16} aria-hidden="true" />{t("碰一碰和小卡", "Touch & cards", "Toques y tarjetas")}
-    </button>}
+    {(daily || onInteract) && <span className="distance-actions">{daily}
+      {onInteract && <button className="distance-interact" type="button" onClick={onInteract} data-testid="conversation-interaction" aria-label={t("碰一碰和小卡", "Touch & cards", "Toques y tarjetas")}>
+        <HandHeart size={16} aria-hidden="true" />{t("碰一碰", "Touch", "Toques")}
+      </button>}</span>}
   </div>;
 }
