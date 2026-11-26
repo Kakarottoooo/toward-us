@@ -180,7 +180,10 @@ function AccountPrototype() {
   const [feedbackFile, setFeedbackFile] = useState<File>();
   const [feedbackReturn, setFeedbackReturn] = useState<Screen>("conversation");
   // Settings can open straight on one page, such as the couple's character from the welcome tour.
-  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | "processors" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } return params.get("view") === "referrals" ? "referrals" : params.get("view") === "membership" ? "membership" : undefined; });
+  const [settingsPage, setSettingsPage] = useState<"character" | "profile" | "membership" | "referrals" | "processors" | undefined>(() => { const params = new URLSearchParams(location.search); const beta = params.get("beta"); if (beta && !inIosApp()) { try { localStorage.setItem(BETA_KEY, beta.trim().toUpperCase().slice(0, 20)); } catch { /* private mode */ } } if (params.get("view") === "referrals") return "referrals"; if (params.get("view") === "membership") return "membership";
+    // A reload of a settings page opened from the menu ("关于我们") reopens that page, not the top of Settings (QA 11-26).
+    const page = (history.state as { page?: string } | null)?.page;
+    return page === "profile" || page === "character" || page === "processors" ? page : undefined; });
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get("reset") || new URLSearchParams(location.search).get("reset") || "");
   const [signInReturn, setSignInReturn] = useState(() => new URLSearchParams(location.search).get("signin") || "");
   const [user, setUser] = useState<User | null>(null);
@@ -401,6 +404,10 @@ function AccountPrototype() {
       history.pushState({ ourever: screen, depth: historyDepth(history.state) + 1 }, "", url);
     } else if (!stackedScreens.includes(screen) && historyDepth(history.state)) history.replaceState(null, "", location.href);
   });
+  useEffect(() => {
+    if (screen !== "privacy" || !historyDepth(history.state)) return;
+    history.replaceState({ ...(history.state as object), page: settingsPage ?? null }, "", location.href);
+  }, [screen, settingsPage]);
   // A new screen (QA round 5): unless a field already took focus, its page heading does, so a keyboard or screen-reader
   // user starts at the top of what just opened instead of on the body. Lazy screens get a moment to arrive.
   // The page is plum until the app first draws (index.html #boot-plum); after that the screens paint their own background.
