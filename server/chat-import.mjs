@@ -378,7 +378,8 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
         // they read as paperwork). The person's file is still kept and shows in their people list.
         const quietNotes = wantsOneSentence(request.text) || /(?:写|给|回|改).{0,12}(?:一句|回复|邀约)|reply|draft|rewrite|respuesta|redact/i.test(request.text)
           || /难受|难过|伤心|委屈|想哭|心痛|安慰|崩溃|upset|it hurts|so sad|comfort me|triste|me duele/i.test(request.text);
-        if (record.personNew && record.personId && !quietNotes) {
+        // Founder 11-26 floor: nothing extra under an answer. The new card shows in their people list, not as a line here.
+        if (record.personNew && record.personId && !quietNotes && process.env.SCREENSHOT_FILING_NOTE === "1") {
           await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
           await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
         }
