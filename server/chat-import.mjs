@@ -37,7 +37,7 @@ const FAMILY = /妈|爸|婆婆|公公|岳父|岳母|舅|姨|姑|叔|伯|爷|奶|
 // are the user's own.
 const LABELLED = /^\s*([^\s:：]{1,24})\s+(\d{1,2}:\d{2})\s*[:：]\s*(.+)$/;
 const SELF = /^(我|me|yo|i)$/i;
-function splitLabeledLines(messages) {
+export function splitLabeledLines(messages) {
   return messages.flatMap((message) => {
     const lines = String(message.text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
     const labelled = lines.filter((line) => LABELLED.test(line));
@@ -449,10 +449,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     for (const id of photoIds) { const photo = await visiblePhoto(store, id, user.id); if (photo.ownerUserId !== user.id) throw fail(400, "Send your own screenshots."); photos.push(photo); }
     // Reading and answering in one call failed about one time in ten in the 11-15 practice runs (the user then got
     // "截图没能读出来"). Then read only; the import answers the question in its own call (answerScreenshot).
-    // Read only, then answer in its own call with the full craft (answerScreenshot). Reading and advising in one vision call
-    // gave thin answers in the 11-26 ChatGPT comparison (a bare "今天怎么样？" after a fight, a congratulation without the
-    // apology the chat called for); the one-call path stays available behind SCREENSHOT_ONE_CALL for comparison.
-    const oneCall = process.env.SCREENSHOT_ONE_CALL === "1";
+    // Reading and answering in one call stays the default: answering in a separate call did not measure better in the
+    // 11-26 ChatGPT comparison. SCREENSHOT_ONE_CALL=0 switches to the separate call for measurement.
+    const oneCall = process.env.SCREENSHOT_ONE_CALL !== "0";
     const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
     const result = await read().catch((error) => {
       chatSignal()?.throwIfAborted();

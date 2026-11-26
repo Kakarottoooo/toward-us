@@ -637,7 +637,8 @@ test("a screenshot chat with someone other than the partner goes on that person'
   assert.deepEqual(await listPeople(f.store, f.people[1].id), [], "the partner has none of these");
   const all = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session.messages;
   const notes = all.filter((message) => message.kind === "noted" && message.personId);
-  assert.deepEqual(notes.map((message) => message.text), ["已为 Lily 建档", "已为 阿杰 建档"], "each new card is announced once, after its answer");
+  // Founder 11-26 floor: nothing extra under an answer; the new cards show in the people list (checked above).
+  assert.deepEqual(notes, [], "no filing line is added under the answer");
 });
 
 test("a screenshot sent in a person's own conversation goes on that person, whatever name the chat shows", async (t) => {
