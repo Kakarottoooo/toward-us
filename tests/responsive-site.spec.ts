@@ -5,11 +5,13 @@ test("desktop gets a website and mobile gets the approved full-screen experience
   const desktopPage = await desktop.newPage();
   await desktopPage.goto("/");
 
-  await expect(desktopPage.getByTestId("desktop-home")).toBeVisible();
-  await expect(desktopPage.getByRole("navigation", { name: "主导航" })).toBeVisible();
+  // A computer browser shows the same plum welcome as the phone (founder 11-26), centred, not the old website landing.
+  await expect(desktopPage.getByTestId("desktop-home")).toBeHidden();
+  await expect(desktopPage.getByTestId("home-screen")).toBeVisible();
+  await expect(desktopPage.getByTestId("start-button")).toBeVisible();
+  await expect(desktopPage.locator("html")).toHaveClass(/plum-entry/);
   await expect(desktopPage.getByTestId("phone-frame")).toHaveCSS("width", "1440px");
   await expect(desktopPage.locator(".phone-bezel")).toBeHidden();
-  await expect(desktopPage.getByRole("heading", { name: "不知道怎么回 TA，先问问 Pinky。" })).toBeVisible();
 
   await desktopPage.goto("/demo");
   const desktopSharedChoice = desktopPage.getByRole("button", { name: "共用一台手机 一起使用，简单快捷" });

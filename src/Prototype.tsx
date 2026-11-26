@@ -55,7 +55,7 @@ import { FeedbackEntry } from "./features/feedback/FeedbackEntry";
 import { feedbackView, recentFeedbackActivity } from "./features/feedback/feedbackDiagnostics";
 import { providerSignInAvailable, restoreSignInNavigation, startProviderSignIn, type SignInProvider } from "./features/privacy/providerSignIn";
 import { firstRunInProgress } from "./features/conversation/firstRunDraft";
-import { disableNativePush, inNativeApp, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
+import { disableNativePush, listenNativeInviteLinks, listenNativePushTaps, restoreNativePush } from "./features/reminders/nativePush";
 import { connectHomeWidget, disconnectHomeWidget } from "./features/widget/homeWidget";
 import { closeRelationshipEvents, relationshipEvents } from "./features/relationship/events";
 import { disableWebPush, registerAppWorker, restoreWebPush } from "./features/reminders/webPush";
@@ -93,11 +93,9 @@ const screenCode: Partial<Record<Screen, { preload: () => Promise<void> }>> = {
 /** Fetches the code a screen needs, so it can be shown without a loading step. */
 const preloadScreen = (screen: Screen) => screenCode[screen]?.preload() ?? Promise.resolve();
 
-// The plum welcome and sign-in design applies on phones and everywhere inside the native app, including a full-screen iPad.
-const narrowScreen = window.matchMedia("(max-width: 899px)");
-const syncEntryDesign = () => document.documentElement.classList.toggle("plum-entry", inNativeApp() || narrowScreen.matches);
-syncEntryDesign();
-narrowScreen.addEventListener("change", syncEntryDesign);
+// The plum welcome and sign-in design applies at every width, in the app and in a computer browser alike (founder 11-26:
+// the web welcome must match the phone one, and Apple/Google sign-in only lives on the plum welcome).
+document.documentElement.classList.add("plum-entry");
 
 type Screen = "booting" | "identity-error" | "invite-first" | "home" | "invite" | "conversation" | "space" | "import" | "people" | "capabilities" | "personal" | "privacy" | "feedback" | "recovery" | "auth" | "pairing" | "dashboard";
 export type AuthMode = "login" | "register";
@@ -532,9 +530,14 @@ function HomeScreen({ language, onLanguage, onProvider, onEmail, onSignIn, t }: 
   }, []);
   return <div className="home-screen" data-testid="home-screen">
     <div className="mobile-home-composition plum-welcome">
+      {/* Wordmark, support line, the "how it works" strip and the soft glows show only on a computer screen (ourever-plum.css). */}
+      <p className="welcome-wordmark" aria-hidden="true"><img src="/assets/brand/ourever-mascot.webp" width={36} height={36} alt="" draggable={false} />Ourever</p>
       <LanguageSwitch language={language} onLanguage={onLanguage} />
       <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" width={384} height={384} alt="" draggable={false} />
-      <h1>{language === "en" ? <>Not sure how to<br />reply to them?<br />Ask Ourever first.</> : t.homeLine}</h1>
+      <h1>{language === "en" ? <>Not sure how to<br />reply to them?<br />Ask Ourever first.</>
+        : language === "es" ? <>¿No sabes qué responderle?<br className="wide-break" /> Pregúntale a Ourever.</>
+        : <>不知道怎么回 TA，<br className="wide-break" />先问问 Ourever。</>}</h1>
+      <p className="welcome-support">{localized(language, "把 TA 的话或聊天截图发给 Ourever，它帮你看懂 TA 的意思，写一句你可以直接发的回复。一个人就能用；想两个人一起用时，再邀请 TA。", "Send Ourever what they said, or a screenshot of the chat. It helps you read what they mean and writes a reply you can send as is. It works on your own; invite your partner when you want to use it together.", "Envía a Ourever lo que te dijo, o una captura del chat. Te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Funciona a solas; invita a tu pareja cuando quieran usarlo juntos.")}</p>
       <div className="welcome-entry-actions">
         {providersReady && <>
           <button type="button" className="entry-method entry-apple" data-testid="welcome-apple" onClick={() => onProvider("apple")}><AppleLogo weight="fill" />{localized(language, "使用 Apple 继续", "Continue with Apple", "Continuar con Apple")}</button>
@@ -544,22 +547,7 @@ function HomeScreen({ language, onLanguage, onProvider, onEmail, onSignIn, t }: 
         <p className="entry-consent">{localized(language, "继续即表示你已满 18 岁，并同意", "By continuing, you confirm you are 18 or older and agree to the", "Al continuar, confirmas que tienes 18 años o más y aceptas la")} <LegalLinks language={language} />{localized(language, "。", ".", ".")}</p>
         <button type="button" className="welcome-sign-in" onClick={onSignIn}>{localized(language, "已有邮箱账号？登录", "Have an email account? Sign in", "¿Ya tienes cuenta con correo? Inicia sesión")}</button>
       </div>
-    </div>
-    <div className="desktop-home-composition" data-testid="desktop-home">
-      <DesktopBrandHeader language={language} onLanguage={onLanguage} onLogin={onSignIn} />
-      <div className="desktop-color-field desktop-color-field-red" aria-hidden="true" />
-      <div className="desktop-color-field desktop-color-field-blue" aria-hidden="true" />
-      <main className="desktop-home-hero">
-        <p className="desktop-kicker">{localized(language, "两个人的关系助手", "YOUR RELATIONSHIP ASSISTANT", "SU ASISTENTE DE PAREJA")}</p>
-        <h1>{t.homeLine}</h1>
-        <PauseMark />
-        <p className="desktop-home-support">{localized(language, "把 TA 的话或聊天截图发给 Ourever，它帮你看懂 TA 的意思，写一句你可以直接发的回复。一个人就能用；想两个人一起用时，再邀请 TA。", "Send Ourever what they said, or a screenshot of the chat. It helps you read what they mean and writes a reply you can send as is. It works on your own; invite your partner when you want to use it together.", "Envía a Ourever lo que te dijo, o una captura del chat. Te ayuda a entender lo que quiere decir y escribe una respuesta que puedes enviar tal cual. Funciona a solas; invita a tu pareja cuando quieran usarlo juntos.")}</p>
-        <div className="desktop-home-actions">
-          <button className="desktop-primary-cta" onClick={onEmail}>{localized(language, "开始", "Get started", "Comenzar")}<ArrowRight size={24} /></button>
-          <button className="desktop-secondary-cta" onClick={() => location.assign("/demo")}>{localized(language, "两个人当面试一次（不用注册）", "Try it together in person (no sign-up)", "Pruébenlo juntos en persona (sin registro)")}</button>
-        </div>
-      </main>
-      <footer className="desktop-home-footer" id="how-it-works"><span>{localized(language, "看懂 TA 的话", "Read what they mean", "Entender lo que quiere decir")}</span><i /><span>{localized(language, "写一句能发的回复", "Get a reply you can send", "Una respuesta lista para enviar")}</span><i /><span>{localized(language, "两个人说好就算数", "It counts once you both agree", "Cuenta cuando los dos aceptan")}</span></footer>
+      <p className="welcome-points" aria-hidden="true"><span>{localized(language, "看懂 TA 的话", "Read what they mean", "Entender lo que quiere decir")}</span><i /><span>{localized(language, "写一句能发的回复", "Get a reply you can send", "Una respuesta lista para enviar")}</span><i /><span>{localized(language, "两个人说好就算数", "It counts once you both agree", "Cuenta cuando los dos aceptan")}</span></p>
     </div>
   </div>;
 }
@@ -775,7 +763,17 @@ function settingsLabel(language: Language) { return localized(language, "设置"
 export function InviteFrame({ language, onLanguage, title, children, signedOut }: {
   language: Language; onLanguage: (value: Language) => void; title: string; children: ReactNode; signedOut?: boolean;
 }) {
-  return <MobileScroll className="paper-screen pairing-screen invite-landing" data-testid={signedOut ? "invite-landing" : "pairing-screen"}>
+  // Signed out, this is the partner's first look at Ourever, so it wears the plum entry design with the squirrel (founder 11-26).
+  if (signedOut) return <MobileScroll className="paper-screen pairing-screen invite-landing plum-invite" data-testid="invite-landing">
+    <main className="plum-invite-content">
+      <LanguageSwitch language={language} onLanguage={onLanguage} />
+      <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" width={384} height={384} alt="" draggable={false} />
+      <p className="plum-invite-brand">Ourever</p>
+      <h1 data-testid="invite-landing-title">{title}</h1>
+      <div className="pairing-actions">{children}</div>
+    </main>
+  </MobileScroll>;
+  return <MobileScroll className="paper-screen pairing-screen invite-landing" data-testid="pairing-screen">
     <header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
     <main className="pairing-content">
       <div className="vertical-title"><h1 data-testid="invite-landing-title">{title}</h1><PauseMark /></div>

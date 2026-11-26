@@ -96,12 +96,12 @@ html.plum-entry {
 }
 
 /* Fill the whole window, including the safe areas the native shell insets, with plum while an entry screen is shown. */
-html.plum-entry:has(.plum-welcome, .plum-auth),
-html.plum-entry:has(.plum-welcome, .plum-auth) body,
-html.plum-entry:has(.plum-welcome, .plum-auth) #root { background: #300e29; }
+html.plum-entry:has(.plum-welcome, .plum-auth, .plum-invite),
+html.plum-entry:has(.plum-welcome, .plum-auth, .plum-invite) body,
+html.plum-entry:has(.plum-welcome, .plum-auth, .plum-invite) #root { background: #300e29; }
 /* The feedback button sat over the welcome headline; on the plum welcome it lives in the top corner instead. */
 html.plum-entry .home-screen:has(.plum-welcome) ~ .feedback-launch,
-html.plum-entry:has(.plum-welcome) .feedback-launch { top: max(22px, env(safe-area-inset-top)); right: 16px; }
+html.plum-entry:has(.plum-welcome, .plum-invite) .feedback-launch { top: max(22px, env(safe-area-inset-top)); right: 16px; }
 
 /* Welcome = sign-in (like Mengmoon): Apple, Google and email as light buttons on plum, consent in one line below. */
 html.plum-entry .plum-welcome .welcome-squirrel { width: min(44vw, 20dvh, 200px); }
@@ -173,4 +173,117 @@ html.plum-entry .plum-auth.recovery-screen {
   .account-recovery button.privacy-quiet:hover:not(:disabled) { background: #ffffff14; }
   .account-recovery .reset-link { border-color: #ffffff26; }
   .account-recovery :is(.privacy-notice, .privacy-success, .privacy-success h3) { color: #ffd6df; }
+}
+
+/* Computer browser welcome (founder 11-26: same plum style as the phone, made to look good on a big screen).
+   Phones and the iPad app keep the single centred column; these pieces only appear with a mouse on a wide window. */
+.plum-welcome :is(.welcome-wordmark, .welcome-support, .welcome-points) { display: none; }
+.plum-welcome br.wide-break { display: none; }
+@media (min-width: 1024px) and (min-height: 600px) and (hover: hover) and (pointer: fine) {
+  html.plum-entry .home-screen .mobile-home-composition.plum-welcome {
+    display: grid; align-items: center; justify-content: stretch;
+    grid-template-columns: minmax(0, 1fr) minmax(400px, 520px);
+    grid-template-rows: auto minmax(28px, 1fr) auto auto auto minmax(28px, 1fr) auto;
+    column-gap: clamp(48px, 7vw, 120px); row-gap: 0;
+    padding: 28px max(56px, calc((100vw - 1200px) / 2)) 30px;
+    overflow: auto;
+    background:
+      radial-gradient(42vw 42vw at 27% 52%, #8a3f5a55, #8a3f5a00 70%),
+      radial-gradient(30vw 30vw at 92% 108%, #ff95af22, #ff95af00 70%),
+      radial-gradient(26vw 26vw at 4% -6%, #ffdaa014, #ffdaa000 70%),
+      var(--plum);
+  }
+  html.plum-entry .plum-welcome .welcome-wordmark {
+    grid-area: 1 / 1; display: flex; align-items: center; gap: 10px; margin: 0;
+    color: var(--cream); font: 700 22px/1 var(--jian-sans); letter-spacing: -.01em;
+  }
+  .plum-welcome .welcome-wordmark img { width: 36px; height: 36px; }
+  html.plum-entry .plum-welcome .language-switch { grid-area: 1 / 2; justify-self: end; align-self: center; margin: 0 60px 0 0; }
+  html.plum-entry .home-screen .plum-welcome .language-switch button { min-width: 60px; height: 40px; font-size: 15px; }
+  html.plum-entry .plum-welcome .welcome-squirrel {
+    grid-area: 2 / 1 / 7 / 2; justify-self: center; align-self: center;
+    width: min(30vw, 50vh, 420px); padding: clamp(28px, 4vw, 56px);
+    background: radial-gradient(closest-side, #f0b070 0%, #e4a064d0 34%, #b86a3866 62%, #b86a3800 100%);
+  }
+  html.plum-entry .plum-welcome h1 {
+    grid-area: 3 / 2; width: auto; margin: 0;
+    font-size: clamp(40px, 3.9vw, 60px); line-height: 1.1; letter-spacing: -.04em; text-wrap: balance;
+  }
+  .plum-welcome br.wide-break { display: inline; }
+  html.plum-entry .plum-welcome .welcome-support {
+    grid-area: 4 / 2; display: block; max-width: 30em; margin: 22px 0 32px; text-wrap: pretty;
+    color: var(--soft-ink); font: 400 17px/1.6 var(--jian-sans);
+  }
+  html.plum-entry .plum-welcome .welcome-entry-actions { grid-area: 5 / 2; width: min(100%, 400px); gap: 12px; }
+  html.plum-entry .plum-welcome .entry-method { transition: background-color .15s ease, transform .15s ease; }
+  html.plum-entry .plum-welcome .entry-method:hover { background: #fff; transform: translateY(-1px); }
+  html.plum-entry .plum-welcome .entry-consent { text-align: start; }
+  html.plum-entry .plum-welcome .welcome-sign-in { justify-self: start; padding: 0; text-decoration: underline; text-decoration-color: #fff3de55; text-underline-offset: 4px; }
+  html.plum-entry .plum-welcome .welcome-sign-in:hover { opacity: 1; text-decoration-color: currentColor; }
+  html.plum-entry .plum-welcome .welcome-points {
+    grid-area: 7 / 1 / 8 / 3; display: flex; justify-content: center; align-items: center; gap: 18px; margin: 0;
+    padding-top: 22px; border-top: 1px solid #ffffff14; color: #e4cbd9b3; font: 500 14px/1.4 var(--jian-sans);
+  }
+  @media (max-height: 760px) {
+    html.plum-entry .plum-welcome .welcome-support { margin: 14px 0 22px; font-size: 15px; line-height: 1.5; }
+    html.plum-entry .plum-welcome h1 { font-size: clamp(34px, 3.2vw, 46px); }
+    html.plum-entry .plum-welcome .entry-method { min-height: 50px; }
+    html.plum-entry .plum-welcome .welcome-entry-actions { gap: 10px; }
+    html.plum-entry .plum-welcome .welcome-points { display: none; }
+  }
+  .plum-welcome .welcome-points i { width: 4px; height: 4px; border-radius: 50%; background: #ffdaa080; }
+}
+@media (min-width: 1024px) and (min-height: 600px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  html.plum-entry .plum-welcome .entry-method { transition: none; }
+  html.plum-entry .plum-welcome .entry-method:hover { transform: none; }
+}
+
+/* The partner's invite link, signed out: the same plum, squirrel and light buttons as the welcome screen (founder 11-26). */
+.paper-screen.plum-invite {
+  --plum: #300e29; --cream: #fff3de; --apricot: #ffdaa0; --mauve: #57344e; --soft-ink: #e4cbd9; --rose: #ff95af;
+  background: radial-gradient(70vmax 70vmax at 50% 30%, #8a3f5a40, #8a3f5a00 60%), var(--plum); color: var(--cream); color-scheme: dark;
+}
+.plum-invite::after, .plum-invite .pause-mark { display: none; }
+.plum-invite .plum-invite-content {
+  min-height: 100%; box-sizing: border-box; width: min(100%, 460px); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center;
+  padding: max(22px, env(safe-area-inset-top)) clamp(20px, 5vw, 28px) max(24px, env(safe-area-inset-bottom));
+}
+.paper-screen.plum-invite .plum-invite-content .language-switch {
+  position: static; inset: auto; transform: none; box-shadow: none;
+  display: inline-flex; flex: none; margin: 0 0 clamp(8px, 3vh, 28px); border: 1px solid #c7a782; border-radius: 999px; overflow: hidden;
+  color: var(--apricot); background: var(--plum);
+}
+.plum-invite .language-switch > span { display: block; }
+.plum-invite .language-switch i { display: none; }
+.paper-screen.plum-invite .plum-invite-content .language-switch button {
+  box-shadow: none; outline-offset: -3px;
+  display: block; min-width: 60px; height: 40px; padding: 0 12px; border: 0; border-radius: 999px;
+  color: inherit; background: transparent; font: 650 15px/1 var(--jian-sans); letter-spacing: 0; cursor: pointer;
+}
+.paper-screen.plum-invite .plum-invite-content .language-switch button.active { color: #311527; background: var(--apricot); }
+.plum-invite .welcome-squirrel {
+  width: min(42vw, 22dvh, 190px); height: auto; aspect-ratio: 1; padding: 16px; box-sizing: content-box;
+  background: radial-gradient(closest-side, #f0b070 0%, #e4a064e0 38%, #b86a3870 66%, #b86a3800 100%);
+}
+.plum-invite .plum-invite-brand { margin: 4px 0 0; color: var(--apricot); font: 700 13px/1 var(--jian-sans); letter-spacing: .28em; text-transform: uppercase; }
+.plum-invite h1 { margin: 0; color: var(--cream); font: 730 clamp(28px, 7.4vw, 40px)/1.15 var(--jian-sans); letter-spacing: -.03em; text-wrap: balance; overflow-wrap: anywhere; }
+.plum-invite .pairing-actions { width: 100%; display: grid; gap: 12px; margin-top: 6px; }
+.plum-invite .pairing-lead { margin: 0 0 6px; color: var(--soft-ink); font: 400 16px/1.5 var(--jian-sans); }
+.plum-invite .form-notice { margin: 0; padding: 10px 12px; text-align: start; color: #ffd6df; background: #ffffff14; border: 1px solid #ff95af66; border-radius: 10px; font: 400 14px/1.45 var(--jian-sans); }
+.plum-invite [role="status"] { color: var(--soft-ink); }
+.plum-invite :is(.primary-action, .secondary-action) {
+  width: 100%; min-height: 54px; margin: 0; border-radius: 15px; font: 650 18px/1.3 var(--jian-sans); letter-spacing: 0; text-transform: none; cursor: pointer;
+}
+.plum-invite .primary-action { border: 0; background: var(--apricot); color: #301125; }
+.plum-invite .secondary-action { border: 0; background: #fffaf3; color: #1d1418; }
+.plum-invite :is(.primary-action, .secondary-action):disabled { opacity: .65; cursor: default; }
+.plum-invite .auth-switch { min-height: 44px; margin: 0; border: 0; background: transparent; color: var(--rose); font: 500 15px/1.3 var(--jian-sans); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.plum-invite :focus-visible { outline: 2px solid var(--apricot); outline-offset: 2px; }
+.plum-invite .editorial-field { width: 100%; display: grid; gap: 5px; text-align: start; }
+.plum-invite .editorial-field input { height: 48px; background: var(--mauve); color: var(--cream); border: 1px solid #98718a; border-radius: 10px; }
+@media (min-width: 1024px) and (min-height: 600px) {
+  .plum-invite .plum-invite-content { justify-content: center; gap: 16px; }
+  .plum-invite .welcome-squirrel { width: min(24vh, 220px); }
+  .plum-invite h1 { font-size: 44px; }
 }
