@@ -31,6 +31,20 @@ const CHUNK_CHARS = 40_000, MAX_CHUNKS = 60, PARALLEL = 3;
 // The synced history is read once it has this many messages, and read again only after a week with this many new ones.
 export const SYNC_FIRST = 50, SYNC_MORE = 300, SYNC_EVERY_MS = 7 * 86_400_000;
 const FAMILY = /妈|爸|婆婆|公公|岳父|岳母|舅|姨|姑|叔|伯|爷|奶|外公|外婆|姥|(?<!小)哥哥|(?<!小)姐姐|弟弟|(?<!小)妹妹|我哥|我姐|我弟|我妹|儿子|女儿|侄|甥|亲戚|家人|家庭|群聊|.群$|\bmom\b|\bmum\b|\bdad\b|mother|father|grand(?:ma|pa|mother|father)|\bsis(?:ter)?\b|\bbro(?:ther)?\b|\baunt|\buncle\b|cousin|in-law|family|\bgroup\b|mamá|papá|abuel|suegr|herman|\bt[ií]a\b|\bt[ií]o\b|\bprim[oa]\b|familia|grupo/i;
+// A screenshot of a chat laid out as labelled lines ("钟哲 21:03: …", "我 21:05: …": a merged-forward record, an export, a
+// list view) came back as ONE bubble from the other person, so every line the user wrote was attributed to them (QA 11-26:
+// Ourever then never owned "你根本不考虑我" in the reply it drafted). Split such a block by its labels; "我 / Me / Yo" lines
+// are the user's own.
+const LABELLED = /^\s*([^\s:：]{1,24})\s+(\d{1,2}:\d{2})\s*[:：]\s*(.+)$/;
+const SELF = /^(我|me|yo|i)$/i;
+function splitLabeledLines(messages) {
+  return messages.flatMap((message) => {
+    const lines = String(message.text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const labelled = lines.filter((line) => LABELLED.test(line));
+    if (labelled.length < 2 || labelled.length < lines.length * 0.6) return [message];
+    return labelled.map((line) => { const [, name, time, text] = line.match(LABELLED); return { mine: SELF.test(name), name: SELF.test(name) ? null : name, time, text }; });
+  });
+}
 /** A chat name that is a relative or a group rather than someone the user may be dating. */
 export const familyOrGroup = (name) => FAMILY.test(String(name || ""));
 
@@ -446,7 +460,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
       console.warn("[screenshots] read-and-answer failed; reading only:", String(error?.message || error).slice(0, 120));
       return mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language });
     });
-    const messages = (result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
+    const messages = splitLabeledLines(result?.messages || []).filter((message) => clean(message.text, 4000)).map((message) => ({ at: null, sender: message.mine ? user.name || "Me" : clean(message.name, 60) || say(language, "TA", "Partner", "Pareja"), fromMe: message.mine, text: clean(message.text, 4000), media: false }));
     // One line from TA ("今天好冷啊") is the most common thing to ask about; it used to need two (use-case test, 11-08).
     if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
