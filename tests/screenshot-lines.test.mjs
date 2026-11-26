@@ -26,3 +26,10 @@ test("a drafted line to send is joined into one sentence, never cut", async () =
   assert.equal(joinSentences("昨天我不想一直僵着。我说“你根本不考虑我”太重了，对不起。养狗的事先放放。"), "昨天我不想一直僵着，我说“你根本不考虑我”太重了，对不起，养狗的事先放放。");
   assert.equal(joinSentences("就一句。"), "就一句。");
 });
+
+// QA 11-26: a one-line invitation came back as "去美术馆{{activityDescription}}" because the line skipped the placeholder fill.
+test("a drafted line never shows the activity placeholder", async () => {
+  const { activityDraft } = await import("../server/reply-contract.mjs");
+  assert.equal(activityDraft({ sendableDraft: "周六下午要不要一起去{{activityDescription}}？", activityDescription: "看莫奈展" }), "周六下午要不要一起去看莫奈展？");
+  assert.equal(activityDraft({ sendableDraft: "周六下午要不要一起去美术馆{{activityDescription}}？", activityDescription: null }), "周六下午要不要一起去美术馆？");
+});

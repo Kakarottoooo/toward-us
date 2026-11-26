@@ -198,7 +198,7 @@ test("background work and chat import run on the cheaper model; what the person 
     await asAiUser({ userId: modelUser.id }, () => mediator.structured({ name: "daily_question", schema: {}, instructions: "x", input: "{}" }));
     await asAiUser({ userId: modelUser.id }, () => mediator.summarizePerspective({ goal: "g" }, "en"));
     assert.deepEqual(seen, [
-      { host: "api.openai.com", model: "gpt-5.4-mini" }, { host: "api.openai.com", model: "gpt-5.4" },
+      { host: "api.openai.com", model: "gpt-5.4-mini" }, { host: "api.openai.com", model: "gpt-6.2-sol" },
       { host: "api.anthropic.com", model: "claude-haiku-5-5" }, { host: "api.anthropic.com", model: "claude-opus-5-5" },
     ]);
   } finally {

@@ -76,7 +76,7 @@ const analysisSchema = {
   },
 };
 
-export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4" } = {}) {
+export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-6.2-sol" } = {}) {
   // AI_PROVIDER=claude-cli sends text calls through the founder’s local Claude subscription (dogfooding only); audio stays on OpenAI.
   const openai = apiKey ? meterOpenAI(new OpenAI({ apiKey, fetch: aiProviderFetch })) : null; // every request recorded in the cost ledger
   // gpt-5.4 answers with reasoning effort "none" unless told otherwise (OpenAI model page), while ChatGPT thinks before it

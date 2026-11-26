@@ -30,7 +30,7 @@ services:
       - key: DB_POOL_SIZE
         value: "5"
       - key: OPENAI_MODEL
-        value: gpt-5.4
+        value: gpt-6.2-sol
       - key: OPENAI_API_KEY
         sync: false
       # With a key, text and image work runs on Claude; OpenAI stays for live calls and voice.

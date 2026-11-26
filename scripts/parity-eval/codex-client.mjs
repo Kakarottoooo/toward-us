@@ -16,7 +16,8 @@ export function configureCodexProduct({ directory, context, file, maxCalls, onSt
 
 const textOf = (content) => typeof content === "string" ? content : Array.isArray(content) ? content.map(part => part?.text || "").join("\n") : String(content ?? "");
 export function createClaudeCliClient({ model = "sonnet" } = {}) {
-  const selected = model === "haiku" ? "gpt-5.6-luna" : "gpt-5.6-sol";
+  // EVAL_PRODUCT_MODEL measures the product on another main model (11-26: the bare-ChatGPT rival runs the codex default).
+  const selected = model === "haiku" ? "gpt-5.6-luna" : process.env.EVAL_PRODUCT_MODEL || "gpt-5.6-sol";
   async function call({ input, instructions, schema, images, search, name, timeout }) {
     if (!settings) throw Error("Product budget must be configured before use");
     // Reject paid credentials and provider overrides without inspecting values.

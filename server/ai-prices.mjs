@@ -25,6 +25,8 @@ export const MODEL_PRICES = Object.freeze({
   // OpenAI, standard tier. gpt-5.4 above 272K context is priced higher.
   "gpt-5.4": openai(2.5, 0.25, 15, { longPrompt: { aboveTokens: 272_000, inputPerMTok: 5, cacheReadPerMTok: 0.5, outputPerMTok: 22.5 } }),
   "gpt-5.4-mini": openai(0.75, 0.075, 4.5),
+  // Main model since 11-26 (founder: answers must beat asking ChatGPT, which runs this generation). Read on the pricing page 11-26.
+  "gpt-6.2-sol": openai(2, 0.1, 10, { checked: "2026-11-26" }),
   // Audio tokens in, text out; OpenAI also publishes about $0.006 per minute as an estimate.
   "gpt-4o-transcribe-diarize": openai(2.5, null, 10, { perAudioMinute: 0.006 }),
   // Realtime: text-token prices; audio is priced separately but the server never sees the session's token counts.

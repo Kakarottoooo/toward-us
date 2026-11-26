@@ -9,7 +9,7 @@ const list = (value) => Array.isArray(value) ? value.slice(0, 8).map((item) => c
 const pick = (language, zh, en, es) => language === "en" ? en : language === "es" ? es : zh;
 
 /** This module receives only a server-built joint context, never a relationship snapshot. */
-export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-5.4", client = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : apiKey ? meterOpenAI(new OpenAI({ apiKey, fetch: aiProviderFetch })) : null } = {}) {
+export function createDecisionAgent({ apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || "gpt-6.2-sol", client = process.env.AI_PROVIDER === "claude-cli" ? createClaudeCliClient() : apiKey ? meterOpenAI(new OpenAI({ apiKey, fetch: aiProviderFetch })) : null } = {}) {
   const screened = screenedClient(client);
   return {
     async discuss(context, language = "zh") {

@@ -384,7 +384,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           // One line asked for and the model gave the message to send separately: that message is the answer, all of it, as
           // one sentence (QA 11-26: cutting it to its first full stop dropped the apology bare ChatGPT gave). Otherwise the
           // reply keeps only its first sentence, dropping unasked commentary (11-15).
-          const sendLine = wantsOneSentence(request.text) && answer.sendableDraft?.trim();
+          const sendLine = wantsOneSentence(request.text) && activityDraft(answer)?.trim();
           text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language });
           const draft = activityDraft(answer)?.trim();
           if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
