@@ -92,7 +92,8 @@ export function renderReply(reply) {
 
 export function activityDraft(reply) {
   const draft = reply?.sendableDraft?.trim(), description = reply?.activityDescription?.trim();
-  if (!draft || !description) return draft;
+  // Without a description the placeholder must never reach the user (QA 11-26: "去美术馆{{activityDescription}}").
+  if (!draft || !description) return draft?.replaceAll("{{activityDescription}}", "").replace(/\s{2,}/g, " ").trim();
   return draft.includes("{{activityDescription}}") ? draft.replaceAll("{{activityDescription}}", description) : `${description}：${draft}`;
 }
 
