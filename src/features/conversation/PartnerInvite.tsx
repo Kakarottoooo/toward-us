@@ -186,6 +186,8 @@ export function usePartnerInvite({ userId, language, pairing, onPairingChange, o
   const status = !online ? t("你已离线。联网后可继续邀请。", "You're offline. Reconnect to continue.", "Sin conexión. Vuelve a conectarte para continuar.")
     : failure === "receipt" ? t("链接已准备分享，发送状态尚未保存。", "The link is ready to send. Its sharing status couldn't be saved.", "El enlace está listo para enviar. No se pudo guardar el estado.")
     : failure === "cancel" ? t("未能确认取消结果，请重试。", "Couldn't confirm cancellation. Try again.", "No se pudo confirmar la cancelación. Inténtalo de nuevo.")
+    // The link exists; only the share sheet or clipboard was refused (QA 11-26: "didn't finish, try again" alarmed and retry rarely helps).
+    : (failure === "share" || failure === "copy") && usable ? t("链接已生成，但没能自动复制。", "Your link is ready, but it couldn't be copied automatically.", "Tu enlace está listo, pero no se pudo copiar automáticamente.")
     : failure ? t("邀请操作未完成，请重试。", "Couldn't finish this invitation. Try again.", "No se pudo completar la invitación. Inténtalo de nuevo.")
     : pollFailed ? t("暂时无法更新伴侣状态。", "Couldn't refresh your partner's status.", "No se pudo actualizar el estado de tu pareja.")
     : copied ? t("已复制", "Copied", "Copiado") : "";
@@ -205,7 +207,7 @@ type InviteState = ReturnType<typeof usePartnerInvite>;
 function Feedback({ state }: { state: InviteState }) {
   const { status, failure, pollFailed, retry, disabled, t } = state;
   return status ? <div className="partner-invite-feedback"><span role="status">{status}</span>
-    {(failure === "share" || failure === "copy") && state.usable && <p className="invite-manual-link">{t("也可以长按复制链接", "Or press and hold to copy the link", "También puedes mantener pulsado para copiar el enlace")}<br /><span>{state.inviteUrl?.href}</span></p>}
+    {(failure === "share" || failure === "copy") && state.usable && <p className="invite-manual-link">{t("长按或选中下面的链接，复制后发给 TA", "Press and hold or select the link below to copy it", "Mantén pulsado o selecciona el enlace para copiarlo")}<br /><span>{state.inviteUrl?.href}</span></p>}
     {(failure || pollFailed) && <button type="button" onClick={retry} disabled={disabled}>{t("重试", "Retry", "Reintentar")}</button>}
   </div> : null;
 }

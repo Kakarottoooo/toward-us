@@ -30,6 +30,8 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
   // The name given at sign-up is not asked again (QA round 4): those members start on the invite step, one step fewer. A name
   // the server made up ("我" for an empty one, an email's local part) is not theirs, so it is still asked (QA round 5).
   const named = user.nameSet !== false && Boolean(user.name.trim());
+  // Once the partner has joined, this step names them and leads to Us (the AI choice still comes first) instead of "my private space".
+  const partner = pairing?.status === "active" ? pairing.members.find(member => member.id !== user.id)?.name?.trim() || t("伴侣", "Your partner", "Tu pareja") : "";
   useEffect(() => {
     if (readDraft(key)) return;
     let active = true;
@@ -80,11 +82,12 @@ export function FirstRun({ user, feedback, language, pairing, onPairingChange, o
         {named ? <><h1>{t("欢迎来到 Ourever", "Welcome to Ourever", "Te damos la bienvenida a Ourever")}</h1>
           <p>{t("你可以先私下聊聊感情里的小事，也可以邀请伴侣一起聊。", "Talk through a moment in your relationship privately, or invite your partner to talk together.", "Habla en privado sobre un momento de tu relación o invita a tu pareja para conversar juntos.")}</p></>
           : <h1>{t("你们的共同空间", "A space for the two of you", "Un espacio para los dos")}</h1>}
-        {pairing?.status === "active" ? <p role="status">{t("伴侣已加入。", "Your partner has joined.", "Tu pareja ya se ha unido.")}</p> :
+        {partner ? <p role="status" className="first-run-joined">{t(`${partner}已加入，你们可以在「我们俩」里一起聊了。`, `${partner} has joined. You can talk together in Us.`, `${partner} ya se unió. Pueden hablar juntos en Nosotros.`)}</p> :
           <PartnerInvite userId={user.id} language={language} pairing={pairing} onPairingChange={onPairingChange} onRefreshPairing={onRefreshPairing} />}
         {error && <p role="alert">{problem}</p>}
-        <button className="secondary-action" type="button" disabled={saving} onClick={() => void next()}>
-          {saving ? t("正在保存…", "Saving…", "Guardando…") : error ? t("重试", "Retry", "Reintentar") : t("进入我的私人空间", "Continue to my private space", "Ir a mi espacio privado")}
+        <button className={partner ? "primary-action" : "secondary-action"} type="button" disabled={saving} onClick={() => void next()}>
+          {saving ? t("正在保存…", "Saving…", "Guardando…") : error ? t("重试", "Retry", "Reintentar")
+            : partner ? t(`去和${partner}聊`, `Go to Us with ${partner}`, `Ir a Nosotros con ${partner}`) : t("进入我的私人空间", "Continue to my private space", "Ir a mi espacio privado")}
         </button>
       </>}
   </main></MobileScroll>;
