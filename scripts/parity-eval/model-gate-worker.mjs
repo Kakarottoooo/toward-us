@@ -18,6 +18,7 @@ Object.assign(process.env, { AI_PROVIDER: "claude-cli", CLAUDE_CLI_MODEL: input.
   MODEL_GATE_MODEL: input.model, MODEL_GATE_CHANNEL: input.channel, MODEL_GATE_DIRECTORY: directory,
   TOWARD_US_DATA_FILE: join(directory, "state.json"), TOWARD_US_MEDIA_DIR: join(directory, "media"), TEMP: join(directory, "tmp"), TMP: join(directory, "tmp") });
 register(new URL("./model-gate-loader.mjs", import.meta.url));
+(await import("./eval-moderation.mjs")).installLocalModeration();
 const { createHarness, visibleContext } = await import("./fixture.mjs");
 const { createMediator } = await import("../../server/mediator.mjs");
 const { createReadonlyWeb } = await import("../../server/readonly-web.mjs");
