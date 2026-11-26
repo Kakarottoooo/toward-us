@@ -65,7 +65,8 @@ export function petView(pet, conversation, userId, today) {
   const level = levelFor(pet?.points || 0);
   const days = [...Object.values(pet?.seen || {}).map((entry) => entry.day), ...(conversation?.messages || []).filter((message) => message.role === "member").map((message) => String(message.createdAt).slice(0, 10))].filter(Boolean).sort();
   const last = days.at(-1);
-  const quiet = last ? between(last, today) : 99;
+  // A new couple's pet has no history yet: it starts happy, not "sleepy" (founder 11-26: it looked faded on day one).
+  const quiet = last ? between(last, today) : 0;
   const petted = conversation?.pets?.[today] || [];
   return { outfit: conversation?.petOutfit || null, points: pet?.points || 0, level, floor: floorOf(level), next: floorOf(level + 1), mood: quiet <= 1 ? "happy" : quiet <= 3 ? "calm" : "sleepy", pettedByMe: petted.includes(userId), pettedByPartner: petted.some((id) => id !== userId), gains: (pet?.gains || []).slice(-6).reverse() };
 }

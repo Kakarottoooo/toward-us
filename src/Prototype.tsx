@@ -763,20 +763,14 @@ function settingsLabel(language: Language) { return localized(language, "设置"
 export function InviteFrame({ language, onLanguage, title, children, signedOut }: {
   language: Language; onLanguage: (value: Language) => void; title: string; children: ReactNode; signedOut?: boolean;
 }) {
-  // Signed out, this is the partner's first look at Ourever, so it wears the plum entry design with the squirrel (founder 11-26).
-  if (signedOut) return <MobileScroll className="paper-screen pairing-screen invite-landing plum-invite" data-testid="invite-landing">
+  // The partner's first look at Ourever (signed out) and the "accept" step right after signing up wear the plum entry design
+  // with the squirrel (founder 11-26), so joining is one continuous look from the link to Us.
+  return <MobileScroll className="paper-screen pairing-screen invite-landing plum-invite" data-testid={signedOut ? "invite-landing" : "pairing-screen"}>
     <main className="plum-invite-content">
       <LanguageSwitch language={language} onLanguage={onLanguage} />
       <img className="welcome-squirrel" src="/assets/brand/ourever-mascot.webp" width={384} height={384} alt="" draggable={false} />
       <p className="plum-invite-brand">Ourever</p>
       <h1 data-testid="invite-landing-title">{title}</h1>
-      <div className="pairing-actions">{children}</div>
-    </main>
-  </MobileScroll>;
-  return <MobileScroll className="paper-screen pairing-screen invite-landing" data-testid="pairing-screen">
-    <header className="simple-header"><span /><span>{brandLabel(language)}</span><LanguageSwitch language={language} onLanguage={onLanguage} compact /></header>
-    <main className="pairing-content">
-      <div className="vertical-title"><h1 data-testid="invite-landing-title">{title}</h1><PauseMark /></div>
       <div className="pairing-actions">{children}</div>
     </main>
   </MobileScroll>;

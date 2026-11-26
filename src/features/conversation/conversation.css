@@ -48,12 +48,12 @@
 .us-row { display: flex; align-items: flex-start; gap: 8px; width: 100%; }
 .us-row.from-me { justify-content: flex-end; }
 .us-row > .conversation-message { align-self: auto; }
-.us-row.from-partner > .conversation-message { max-width: calc(86% - 36px); }
+.us-row.from-partner > .conversation-message { max-width: calc(90% - 36px); }
 .us-row.from-agent > .conversation-message { max-width: calc(100% - 36px); }
 .us-row.is-continued { margin-top: -8px; }
 .us-avatar { flex: 0 0 28px; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 50%; background: var(--jian-red-soft); color: var(--jian-red-text); font-size: 13px; font-style: normal; font-weight: 700; }
-.us-avatar.is-pinky { background: #fce69f var(--ourever-avatar) center / cover no-repeat; }
-.conversation-message > .assistant-byline::before { content: ""; display: inline-block; width: 22px; height: 22px; margin-inline-end: 6px; vertical-align: middle; border-radius: 50%; background: #fce69f var(--ourever-avatar) center / cover no-repeat; }
+.us-avatar.is-pinky { background: #ffe4dc var(--ourever-avatar) center / 96% no-repeat; }
+.conversation-message > .assistant-byline::before { content: ""; display: inline-block; width: 22px; height: 22px; margin-inline-end: 6px; vertical-align: middle; border-radius: 50%; background: #ffe4dc var(--ourever-avatar) center / 96% no-repeat; }
 .us-row.is-continued .us-avatar { visibility: hidden; }
 .conversation-card { align-self: stretch; padding: 16px; border: 1px solid rgba(37,37,37,.14); border-radius: 16px; background: var(--jian-paper-bright); }
 .conversation-card > header { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: #5d574f; font-size: 14px; font-weight: 700; }
@@ -381,3 +381,48 @@
 .ai-off-card .ai-off-why { display: block; margin-bottom: 6px; color: #8f4458; font-weight: 600; }
 /* Reading earlier Us messages while new ones arrive below (QA round 6): one tap back to the newest. */
 .conversation-new-below { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 3; min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #252525; color: #fffdf8; font-size: 15px; font-weight: 650; box-shadow: 0 4px 14px rgba(0,0,0,.18); cursor: pointer; }
+
+/* Founder 11-26: the chat gets its width back. Messages use the same 16px margin on both sides; the "…" lives inside its
+   bubble or card instead of a 44px column beside it; the pet rests at the bottom of the stream (the end of the thread
+   leaves room for it) instead of a 56px gutter down the whole right side; the round feedback button stays out of the chat
+   unless it has a new reply to show (Feedback is in the menu). */
+@media (max-width: 879px) {
+  .conversation-home .conversation-thread,
+  .conversation-home:has(.floating-pet.is-left) .conversation-thread { padding-right: 16px; padding-left: 16px; padding-bottom: 84px; }
+  .conversation-home .floating-pet:not(.is-dragging) { top: auto !important; bottom: 6px; }
+  .mobile-app-viewport:has(.conversation-home) > .feedback-launch:not(:has(small)) { display: none; }
+}
+.shared-reportable { grid-template-columns: minmax(0, 1fr); position: relative; }
+.shared-reportable:not(.menu-inside) > .reply-report-menu { position: absolute; top: 4px; right: 4px; }
+.shared-reportable:not(.menu-inside) > .conversation-card > header { padding-inline-end: 30px; }
+.conversation-message > .reply-report-menu { width: 30px; flex-basis: 30px; margin: -6px -8px 0 6px; }
+.conversation-message > .reply-report-menu .reply-report-trigger,
+.shared-reportable > .reply-report-menu .reply-report-trigger { position: relative; width: 30px; height: 30px; color: #6e675f; }
+/* The visible dot row is small; the tap area around it stays 44pt. */
+.conversation-message > .reply-report-menu .reply-report-trigger::before,
+.shared-reportable > .reply-report-menu .reply-report-trigger::before { content: ""; position: absolute; inset: -7px; }
+.conversation-message > .reply-report-menu:has(.reply-report-panel) { width: auto; }
+.conversation-message.from-me { max-width: 82%; }
+
+/* Us: who, their clock, today's question and touch & cards in one compact line under the tabs. */
+.distance-bar { flex-wrap: nowrap; justify-content: flex-start; align-items: center; gap: 8px; width: 100%; margin: 2px 0 0; min-height: 40px; }
+.distance-bar > :is(.distance-clock, .distance-meet, .distance-care) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.distance-actions { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; flex: none; }
+.distance-bar .distance-actions :is(.daily-entry, .distance-interact) {
+  position: relative; display: inline-flex; align-items: center; gap: 5px; width: auto; min-height: 34px; padding: 0 11px;
+  border: 1px solid rgba(37,37,37,.12); border-radius: 999px; background: var(--jian-paper-bright); color: #3e3a35;
+  font: 600 13px/1 var(--jian-sans); white-space: nowrap; cursor: pointer;
+}
+.distance-bar .distance-actions .daily-entry svg { color: var(--jian-blue); }
+.distance-bar .distance-actions .distance-interact svg { color: #b5473b; }
+.distance-bar .distance-actions :is(.daily-entry, .distance-interact)::before { content: ""; position: absolute; inset: -5px -2px; }
+.distance-bar .daily-entry.is-nudged { border-color: #d9a441; background: #fff4dc; }
+.daily-entry-dot { width: 7px; height: 7px; border-radius: 50%; background: #e0412f; }
+@media (max-width: 359px) {
+  .distance-bar .shared-partner-name > bdi { display: none; }
+  .distance-bar .distance-actions :is(.daily-entry, .distance-interact) { padding: 0 8px; }
+}
+/* In a bubble the "…" takes its own narrow column at the top right, so a one-word line stays one line tall. */
+.conversation-message:is(.from-me, .from-partner).has-report-menu { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: start; }
+.conversation-message:is(.from-me, .from-partner).has-report-menu > * { grid-column: 1; }
+.conversation-message:is(.from-me, .from-partner).has-report-menu > .reply-report-menu { grid-column: 2; grid-row: 1 / span 12; float: none; margin: -5px -9px 0 0; }

@@ -1,8 +1,10 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 // QA round 8 (iPhone width, 375–393pt): the floating feedback button and the couple's pet sat over the right edge of the Us
-// thread, covering message text, the "…" message menus and the "Sent" receipt. Two synthetic accounts on the local test
-// server (playwright.couple.config.ts) fill the thread, then every message box is checked against both floating boxes.
+// thread. Founder 11-26 then asked for the width back: no right gutter, the "…" inside each bubble, the feedback button out
+// of the chat unless it has news, and the pet resting at the bottom where the end of the thread leaves it room. Two
+// synthetic accounts on the local test server (playwright.couple.config.ts) fill the thread; at the latest line nothing on
+// screen is under the pet, and every "…" sits inside its own bubble.
 const PASSWORD = "synthetic-couple-2026";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -47,7 +49,7 @@ async function say(page: Page, text: string) {
 }
 
 for (const viewport of [{ width: 375, height: 667 }, { width: 390, height: 844 }]) {
-  test(`floating feedback button and pet stay clear of messages at ${viewport.width}pt`, async ({ browser, baseURL }, testInfo) => {
+  test(`the pet stays clear of the latest messages and each "…" sits in its bubble at ${viewport.width}pt`, async ({ browser, baseURL }, testInfo) => {
     const { pageA, pageB, close } = await pairedCouple(browser, baseURL, viewport);
     const long = "This is a longer message that runs all the way across the bubble so it reaches the right edge of the thread";
     for (let index = 0; index < 4; index++) {
@@ -60,17 +62,17 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 390, height: 844 }
     await page.reload();
     await expect(page.getByTestId("conversation-interaction")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("floating-pet")).not.toHaveClass(/is-away/);
-    await expect(page.getByTestId("feedback-entry")).toBeVisible();
+    await expect(page.getByTestId("feedback-entry")).toBeHidden();
     await expect(page.getByTestId("floating-pet")).toBeVisible();
     await page.waitForTimeout(500);
     await page.screenshot({ path: testInfo.outputPath(`chat-${viewport.width}.png`) });
     const scroller = page.locator(".conversation-scroll");
     // Every scroll position: the top, the middle and the latest line.
-    for (const position of [0, 0.5, 1]) {
+    for (const position of [1]) {
       await scroller.evaluate((node, at) => { node.scrollTop = (node.scrollHeight - node.clientHeight) * at; }, position);
       await page.waitForTimeout(150);
-      const floating = [await page.getByTestId("feedback-entry").boundingBox(), await page.getByTestId("floating-pet").boundingBox()].filter(Boolean) as Box[];
-      expect(floating).toHaveLength(2);
+      const floating = [await page.getByTestId("floating-pet").boundingBox()].filter(Boolean) as Box[];
+      expect(floating).toHaveLength(1);
       const view = (await scroller.boundingBox())!;
       const content = await page.locator(".shared-reportable p, .shared-reportable button, .shared-reportable .message-receipt").evaluateAll((nodes) => nodes.map((node) => {
         const box = node.getBoundingClientRect();
@@ -82,6 +84,17 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 390, height: 844 }
         for (const box of floating) expect(overlaps(item, box), `${JSON.stringify(item)} under ${JSON.stringify(box)} at scroll ${position}`).toBe(false);
       }
     }
+    // Each bubble's "…" is drawn inside that bubble, and messages use the same margin on both sides of the thread.
+    const menus = await page.locator(".shared-reportable.menu-inside").evaluateAll((rows) => rows.map((row) => {
+      const bubble = row.querySelector(".conversation-message")!.getBoundingClientRect(), dots = row.querySelector(".reply-report-trigger")!.getBoundingClientRect();
+      return { inside: dots.left >= bubble.left - 0.5 && dots.right <= bubble.right + 0.5 && dots.top >= bubble.top - 0.5 && dots.bottom <= bubble.bottom + 0.5 };
+    }));
+    expect(menus.length).toBeGreaterThan(5);
+    for (const menu of menus) expect(menu.inside).toBe(true);
+    const thread = (await page.locator(".conversation-thread").boundingBox())!;
+    const mine = (await page.locator(".us-row.from-me .conversation-message").last().boundingBox())!;
+    const avatar = (await page.locator(".us-row:not(.from-me) .us-avatar").first().boundingBox())!;
+    expect(Math.abs((thread.x + thread.width) - (mine.x + mine.width) - (avatar.x - thread.x))).toBeLessThanOrEqual(1);
     await close();
   });
 }
