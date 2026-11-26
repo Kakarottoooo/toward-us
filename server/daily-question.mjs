@@ -98,7 +98,11 @@ export async function askDailyQuestion({ store, mediator, relationshipId, userId
       ? inLanguage(prepared.question, language) : "";
     const repeats = repeatFilter(recent);
     const format = rotate ? nextDailyFormat(recent) : "text";
-    const candidate = format !== "text" ? "" :
+    // A model writes one language. When the partners use different interface languages (one reads Chinese, the other
+    // English), the fixed question stands in: it carries all three, so each reads it in their own (QA 11-26, production).
+    const languages = await Promise.all(context.members.map(async (member) => (await store.getUserById(member.userId))?.language));
+    const mixed = languages.some((value) => ["zh", "en", "es"].includes(value) && value !== language);
+    const candidate = format !== "text" || mixed ? "" :
       preparedQuestion && !repeats(preparedQuestion) ? preparedQuestion : await writeQuestion(mediator, material, language);
     const result = await store.transaction(`relationship:${relationshipId}`, async (tx) => {
       const current = await tx.getRelationshipContext(userId);
