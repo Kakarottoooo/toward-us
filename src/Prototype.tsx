@@ -47,6 +47,7 @@ import { AppleLogo, ArrowLeft, ArrowRight, ChatCircleText, EnvelopeSimple, Eye, 
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { lazyScreen, ScreenBoundary } from "./lazyScreen";
 import { forgetViews } from "./features/conversation/savedView";
+import { prefetchPages, setApiCacheUser } from "./features/relationship/api";
 import { accountError, api, forgetInvite, hasInvite, inviteCode, inviteNetworkMessage, rememberInvite, retryLabel } from "./accountApi";
 import { KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 import { AiConsentScreen, LegalLinks, OfflineBanner } from "./features/privacy/AiConsent";
@@ -289,14 +290,26 @@ function AccountPrototype() {
     if (!booted || (!user && screen !== "auth")) return;
     const preloadAll = () => {
       if (!user) { void ConversationHome.preload(); return; }
-      void Object.values(screenCode).reduce<Promise<void>>((previous, code) => previous.then(() => code.preload()), Promise.resolve());
+      // All at once (founder 11-26: every page must open instantly, even right after the App starts).
+      for (const code of Object.values(screenCode)) void code.preload().catch(() => {});
       void PlayCardArrival.preload();
     };
-    const timer = window.setTimeout(preloadAll, 2500);
+    const timer = window.setTimeout(preloadAll, 300);
     // Screens that failed to arrive while offline are fetched again once the connection is back.
     window.addEventListener("online", preloadAll);
     return () => { clearTimeout(timer); window.removeEventListener("online", preloadAll); };
   }, [booted, user?.id, screen === "auth"]);
+  setApiCacheUser(user?.id ?? null);
+  // Right after the first screen is up, the menu's pages get their data in the background, so even a first tap opens at once.
+  const paired = pairing?.status === "active";
+  useEffect(() => {
+    if (!booted || !user?.aiConsentAt && !aiOff) return;
+    const timer = window.setTimeout(() => { prefetchPages([
+      ...(paired ? [`/api/relationship/home?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`, `/api/play-week?language=${language}`, `/api/profile?language=${language}`] : []),
+      "/api/spaces", "/api/checkins", "/api/feedback/mine",
+    ]); void import("./features/membership/referrals").then((module) => module.loadReferrals()).catch(() => {}); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [booted, user?.id, paired, language]);
   useEffect(() => { if (user) api("/api/me/language", { method: "POST", body: JSON.stringify({ language }) }).catch(() => {}); }, [language, user?.id]);
   // Opened from a push (its link carries from=push): count the open, content-free, then drop the marker from the address.
   useEffect(() => {

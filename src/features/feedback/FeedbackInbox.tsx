@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localized, type Language } from "../../i18n";
-import { relationshipApi, jsonBody } from "../relationship/api";
+import { onFresh, peekApi, relationshipApi, jsonBody } from "../relationship/api";
 
 type Sent = {
   id: string; text: string; kind: string | null; status: string; public_note: string | null;
@@ -11,8 +11,8 @@ type Sent = {
 
 export function FeedbackInbox({ language }: { language: Language }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [items, setItems] = useState<Sent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Sent[]>(() => peekApi<{ feedback: Sent[] }>("/api/feedback/mine")?.feedback ?? []);
+  const [loading, setLoading] = useState(() => !peekApi("/api/feedback/mine"));
   const [failure, setFailure] = useState(false);
   const [detail, setDetail] = useState<Sent | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -58,11 +58,13 @@ export function FeedbackInbox({ language }: { language: Language }) {
     refresh();
     window.addEventListener("feedback-updated", refresh);
     window.addEventListener("online", refresh);
+    const stopFresh = onFresh((path) => path === "/api/feedback/mine", refresh);
     const timer = window.setInterval(() => { if (!document.hidden && navigator.onLine) refresh(); }, 60_000);
     return () => {
       fetchSeq.current++; selected.current = "";
       window.removeEventListener("feedback-updated", refresh);
       window.removeEventListener("online", refresh);
+      stopFresh();
       window.clearInterval(timer);
     };
   }, [load]);

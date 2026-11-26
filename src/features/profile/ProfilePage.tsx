@@ -3,7 +3,7 @@ import { CaretRight, FilmSlate, LockSimple, PencilSimple, ShareFat, Sparkle, Tra
 import { isolate, localized, type Language } from "../../i18n";
 import { KeyboardInput, useKeyboard } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
-import { jsonBody, relationshipApi } from "../relationship/api";
+import { jsonBody, onFresh, peekApi, relationshipApi } from "../relationship/api";
 import { PlayWeek } from "../games/PlayWeek";
 import "./profile.css";
 import { relationshipEvents } from "../relationship/events";
@@ -17,14 +17,11 @@ type Shelf = { system?: string; visibility: string; items: Array<{ done?: boolea
  * tap from here. They used to sit among the photo stories in Memories, which is for photos. */
 function TogetherShelves({ language, relationshipId }: { language: Language; relationshipId: string | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [counts, setCounts] = useState<{ watched: number; watching: number; ideas: number } | null>(null);
+  const [counts, setCounts] = useState<{ watched: number; watching: number; ideas: number } | null>(() => shelfCounts(peekApi<{ spaces: Shelf[] }>("/api/spaces")?.spaces));
   useEffect(() => {
-    void relationshipApi<{ spaces: Shelf[] }>("/api/spaces").then(({ spaces }) => {
-      const shelf = spaces.find((space) => space.system === "watched");
-      if (!shelf) { setCounts(null); return; }
-      const ideas = new Set(spaces.filter((space) => space.system === "moments" && space.visibility === "shared").flatMap((space) => space.items.map((item) => item.idea).filter(Boolean)));
-      setCounts({ watched: shelf.items.filter((item) => item.done).length, watching: shelf.items.filter((item) => !item.done).length, ideas: ideas.size });
-    }).catch(() => setCounts(null));
+    const load = () => void relationshipApi<{ spaces: Shelf[] }>("/api/spaces").then(({ spaces }) => setCounts(shelfCounts(spaces))).catch(() => setCounts(null));
+    load();
+    return onFresh((path) => path === "/api/spaces", load);
   }, []);
   if (!counts && !relationshipId) return null;
   return <section className="settings-group profile-together" data-testid="profile-together">
@@ -52,8 +49,10 @@ function TogetherShelves({ language, relationshipId }: { language: Language; rel
 export function ProfilePage({ language, relationshipId }: { language: Language; relationshipId: string | null }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
   const keyboard = useKeyboard();
-  const [facts, setFacts] = useState<Fact[] | null>(null);
-  const [partnerName, setPartnerName] = useState<string | null>(null);
+  // Opens with what it showed last time (relationshipApi keeps it) and refreshes underneath (founder 11-26).
+  const [kept] = useState(() => peekApi<{ facts: Fact[]; partnerName: string | null }>(`/api/profile?language=${language}`));
+  const [facts, setFacts] = useState<Fact[] | null>(() => kept?.facts ?? null);
+  const [partnerName, setPartnerName] = useState<string | null>(() => kept?.partnerName ?? null);
   const [tab, setTab] = useState<"me" | "partner" | "us">("partner");
   const [open, setOpen] = useState<Fact | null>(null);
   const [editing, setEditing] = useState<string | null>(null); const [sharing, setSharing] = useState<{ text: string; digest: string } | null>(null);
@@ -63,6 +62,7 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
     catch (error) { setNotice((error as Error).message); setFacts([]); }
   }, [language]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => onFresh((path) => path.startsWith("/api/profile?"), () => void load()), [load]);
   useEffect(() => {
     const events = relationshipEvents();
     events.addEventListener("relationship", (event) => { try { if (JSON.parse((event as MessageEvent).data).eventType === "profile.updated") void load(); } catch { /* Ignore malformed events. */ } });
@@ -144,4 +144,11 @@ export function ProfilePage({ language, relationshipId }: { language: Language; 
     </BottomSheet>
     {removed && <div className="undo-snackbar" role="status" data-testid="profile-undo-bar"><span>{removed.source === "together" ? t("已删掉，两个人都看不到了", "Removed for both of you", "Quitado para los dos") : removed.source === "i_shared" ? t("已收回分享", "Share withdrawn", "Copia retirada") : t("已删掉这条记录", "Note removed", "Nota borrada")}</span><button type="button" onClick={undoRemoval} data-testid="profile-undo">{t("撤销", "Undo", "Deshacer")}</button></div>}
   </div>;
+}
+
+function shelfCounts(spaces: Shelf[] | undefined) {
+  const shelf = spaces?.find((space) => space.system === "watched");
+  if (!spaces || !shelf) return null;
+  const ideas = new Set(spaces.filter((space) => space.system === "moments" && space.visibility === "shared").flatMap((space) => space.items.map((item) => item.idea).filter(Boolean)));
+  return { watched: shelf.items.filter((item) => item.done).length, watching: shelf.items.filter((item) => !item.done).length, ideas: ideas.size };
 }

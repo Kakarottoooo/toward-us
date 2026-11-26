@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { languageTag, localized, type Language } from "../../i18n";
 import { DecisionWorkspace } from "../decisions/DecisionWorkspace";
 import { PrivateAgentWorkspace } from "../private-agent/PrivateAgentWorkspace";
-import { relationshipApi } from "../relationship/api";
+import { onFresh, peekApi, relationshipApi } from "../relationship/api";
 import type { RelationshipHomePayload } from "../relationship/types";
 
 import { RemindersPanel, type ReminderTarget } from "../reminders/RemindersPanel";
@@ -23,7 +23,7 @@ const ALIASES: Record<string, View> = { checkins: "moments", memories: "moments"
 
 /** The shared pages the drawer opens. Each shows what Ourever has done; new things are asked for in the conversation. */
 export function RelationshipHome({ user, language, aiOff = false, onNotice, onAccessChanged, onBack, onAsk }: { user: { id: string; name: string }; language: Language; aiOff?: boolean; onNotice: (value: string) => void; onAccessChanged: () => void; onBack: () => void; onAsk: (text: string, channel: "me" | "us") => void }) {
-  const [view, setView] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return VIEWS.includes(requested as View) ? requested as View : ALIASES[requested] || "upcoming"; }); const [parent, setParent] = useState<View | null>(null); const [payload, setPayload] = useState<RelationshipHomePayload | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const [view, setView] = useState<View>(() => { const requested = new URLSearchParams(location.search).get("view") || ""; return VIEWS.includes(requested as View) ? requested as View : ALIASES[requested] || "upcoming"; }); const [parent, setParent] = useState<View | null>(null); const [payload, setPayload] = useState<RelationshipHomePayload | null>(() => peekApi<RelationshipHomePayload>(homePath()) ?? null); const [loading, setLoading] = useState(() => !peekApi(homePath())); const [error, setError] = useState("");
   const [selection, setSelection] = useState(() => ({ issueId: new URLSearchParams(location.search).get("issue") || undefined, outcomeId: new URLSearchParams(location.search).get("outcome") || undefined }));
   const [reminderTarget, setReminderTarget] = useState<ReminderTarget | undefined>();
   const [reminderTitle, setReminderTitle] = useState("");
@@ -35,7 +35,8 @@ export function RelationshipHome({ user, language, aiOff = false, onNotice, onAc
     const agreement = item.type === "commitment" ? payload?.graph.agreements.find(a => a.id === payload.graph.commitments.find(c => c.id === item.id)?.agreementId) : payload?.graph.agreements.find(a => a.id === item.id);
     setSelection({ issueId: String(agreement?.sourceIssueId || (item.type === "perspective" ? item.id : "")) || undefined, outcomeId: item.type === "outcome_review" ? item.id : undefined }); go("decide");
   };
-  const refresh = useCallback(async () => { try { const result = await relationshipApi<RelationshipHomePayload>(`/api/relationship/home?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`); if (!result?.graph || !Array.isArray(result.graph.notifications)) throw new Error(localized(language, "共同空间返回了无效数据，请重试。", "The shared space returned invalid data. Please retry.", "El espacio compartido devolvió datos no válidos. Inténtalo de nuevo.")); setPayload(result); setError(""); onNotice(""); } catch (caught) { const message = (caught as Error).message; setError(message); onNotice(message); } finally { setLoading(false); } }, [language, onNotice]);
+  const refresh = useCallback(async () => { try { const result = await relationshipApi<RelationshipHomePayload>(homePath()); if (!result?.graph || !Array.isArray(result.graph.notifications)) throw new Error(localized(language, "共同空间返回了无效数据，请重试。", "The shared space returned invalid data. Please retry.", "El espacio compartido devolvió datos no válidos. Inténtalo de nuevo.")); setPayload(result); setError(""); onNotice(""); } catch (caught) { const message = (caught as Error).message; setError(message); onNotice(message); } finally { setLoading(false); } }, [language, onNotice]);
+  useEffect(() => onFresh((path) => path.startsWith("/api/relationship/home"), () => void refresh()), [refresh]);
   useEffect(() => { void refresh(); const events = relationshipEvents(); events.addEventListener("relationship", (event) => { try { if (JSON.parse((event as MessageEvent).data).eventType === "agent.activity") return; } catch { /* Refresh on malformed events, as before. */ } void refresh(); }); events.addEventListener("access-ended", () => { events.close(); setPayload(null); onAccessChanged(); }); return () => events.close(); }, [refresh, onAccessChanged]);
   if (loading) return <div className="relationship-loading" role="status"><Sparkle size={25} /><span>{localized(language, "正在整理你们的共同空间…", "Organizing your shared space…", "Organizando su espacio compartido…")}</span></div>;
   if (!payload) return <div className="relationship-loading"><Sparkle size={25} /><p role="alert">{error}</p><button className="secondary-action" onClick={() => { setLoading(true); void refresh(); }}>{localized(language, "重新加载", "Try again", "Reintentar")}</button></div>;
@@ -58,3 +59,6 @@ export function RelationshipHome({ user, language, aiOff = false, onNotice, onAc
     </main>
   </div>;
 }
+
+/** The shared space's data, kept by relationshipApi so the page opens with it at once (founder 11-26). */
+function homePath() { return `/api/relationship/home?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`; }

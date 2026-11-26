@@ -4,7 +4,7 @@ import { counted, languageTag, localized, type Language } from "../../i18n";
 import { BottomSheet } from "../navigation/Sheet";
 import { inIosApp } from "./MembershipPage";
 import { loadReferrals, referralInstallId, type ReferralAccount, type ReferralPreview, type Reward } from "./referrals";
-import { relationshipApi } from "../relationship/api";
+import { relationshipApi, onFresh, peekApi } from "../relationship/api";
 import "./referrals.css";
 
 export const inviteTitle = (language: Language) => localized(language, "邀请好友", "Invite friends", "Invitar a amigos");
@@ -37,7 +37,7 @@ export function SignupReferral({ code, language, remove }: { code: string; langu
 
 export function ReferralPage({ language }: { language: Language }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [data, setData] = useState<ReferralAccount | null>(null);
+  const [data, setData] = useState<ReferralAccount | null>(() => peekApi<ReferralAccount>("/api/referrals/me") ?? null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [notice, setNotice] = useState("");
@@ -52,7 +52,8 @@ export function ReferralPage({ language }: { language: Language }) {
     refresh();
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", refresh);
-    return () => { request.abort(); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
+    const stopFresh = onFresh((path) => path === "/api/referrals/me", refresh);
+    return () => { request.abort(); stopFresh(); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
   }, [attempt]);
   const retry = <div className="referral-error" role="alert">{t("暂时无法更新奖励，请检查网络后重试。", "Couldn’t refresh your rewards. Check your connection and try again.", "No se pudieron actualizar tus recompensas. Revisa tu conexión e inténtalo de nuevo.")} <button type="button" className="referral-text-button" onClick={() => setAttempt(n => n + 1)}>{t("重试", "Retry", "Reintentar")}</button></div>;
   if (!data) return failed ? retry : <p role="status">{t("正在读取邀请和奖励…", "Loading invitations and rewards…", "Cargando invitaciones y recompensas…")}</p>;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { GameController, Heart, Sparkle } from "@phosphor-icons/react";
 import { counted, languageTag, localized, type Language } from "../../i18n";
-import { relationshipApi } from "../relationship/api";
+import { onFresh, peekApi, relationshipApi } from "../relationship/api";
 import "./play-week.css";
 
 type Goal = "cards" | "games" | "notes";
@@ -17,7 +17,7 @@ const asDate = (day: string) => new Date(`${day}T12:00:00Z`);
 
 export function PlayWeek({ language }: { language: Language }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [week, setWeek] = useState<Week | null>(null);
+  const [week, setWeek] = useState<Week | null>(() => peekApi<Week>(`/api/play-week?language=${language}`) ?? null);
   const [failed, setFailed] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [request, setRequest] = useState(0);
@@ -41,6 +41,7 @@ export function PlayWeek({ language }: { language: Language }) {
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
   }, [language, online, request]);
+  useEffect(() => onFresh((path) => path.startsWith("/api/play-week?"), reload), [reload]);
 
   const today = week?.today;
   const timezone = week?.timezone;

@@ -4,7 +4,7 @@ import { KeyboardInput, KeyboardTextarea, useKeyboard } from "../../mobile";
 import { BottomSheet } from "../navigation/Sheet";
 import { PhotoViewer } from "./PhotoViewer";
 import { counted, languageTag, localized, type Language } from "../../i18n";
-import { jsonBody, relationshipApi } from "../relationship/api";
+import { jsonBody, onFresh, peekApi, relationshipApi } from "../relationship/api";
 import { anniversariesOf, firstsOf, holidaysOf, placesOf, tripsOf, yearsOf, type Milestone, type Moment, type Place, type Story } from "./browse";
 import { IdeasSection } from "./IdeasSection";
 import { WatchedShelf, type WatchedItem } from "./WatchedShelf";
@@ -28,7 +28,8 @@ type Focus = { title: string; detail?: string; moments: Moment[] };
  * photo at the bottom. Things are added by telling Ourever. */
 export function MomentsPage({ language, userId, paired, milestones = [], onAsk, aiOff = false }: { language: Language; userId: string; paired: boolean; milestones?: Milestone[]; aiOff?: boolean; onAsk: (text: string, channel: "me" | "us") => void }) {
   const t = (zh: string, en: string, es: string) => localized(language, zh, en, es);
-  const [moments, setMoments] = useState<Moment[] | null>(null);
+  const [kept] = useState(() => { const spaces = peekApi<{ spaces: Album[] }>("/api/spaces"), checkins = peekApi<{ checkins: Checkin[] }>("/api/checkins"); return spaces && checkins ? shapeMoments(spaces.spaces, checkins.checkins, userId) : null; });
+  const [moments, setMoments] = useState<Moment[] | null>(() => kept?.moments ?? null);
   // Photos first, like Google Photos (founder 11-05): a wall by month; the switch at the bottom zooms out to years or in to every photo.
   const [scale, setScale] = useState<Scale>("months");
   const [mapOpen, setMapOpen] = useState(false);
@@ -36,7 +37,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk, 
   const [ideasOpen, setIdeasOpen] = useState(() => new URLSearchParams(location.search).get("ideas") === "1");
   // 一起看过的 opens straight from Ourever's card (/?view=moments&watched=1).
   const [watchedOpen, setWatchedOpen] = useState(() => new URLSearchParams(location.search).get("watched") === "1");
-  const [watched, setWatched] = useState<WatchedItem[]>([]);
+  const [watched, setWatched] = useState<WatchedItem[]>(() => kept?.watched ?? []);
   const [playing, setPlaying] = useState<{ title: string; slides: Slide[] } | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [openYear, setOpenYear] = useState("");
@@ -56,7 +57,7 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk, 
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !kept);
   const requestId = useRef(0);
   useEffect(() => {
     if (!undo || busy) return;
@@ -65,31 +66,17 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk, 
   }, [undo, busy]);
   const load = useCallback(async () => {
     const sequence = ++requestId.current;
-    setLoading(true);
+    // A reload keeps what is on screen; only a page with nothing yet shows "正在加载回忆…" (its first state).
     try {
       const [{ spaces }, { checkins }] = await Promise.all([relationshipApi<{ spaces: Album[] }>("/api/spaces"), relationshipApi<{ checkins: Checkin[] }>("/api/checkins")]);
       if (sequence !== requestId.current) return;
-      setWatched(spaces.filter((space) => space.system === "watched").flatMap((space) => space.items.map((item) => ({ id: item.id, title: item.title, text: item.text, date: item.date, done: Boolean(item.done), createdAt: item.createdAt }))));
-      // Photos of one memory arrive as separate items with the same title and date; they read as one moment.
-      const grouped = new Map<string, Moment>();
-      for (const album of spaces.filter((space) => space.system === "moments")) for (const item of album.items) {
-        const date = item.date || item.createdAt.slice(0, 10), key = JSON.stringify([album.id, item.ownerUserId, item.momentGroup || [date, item.title || item.id]]);
-        const moment = grouped.get(key) || { key, date, version: item.version, title: item.title, text: "", photos: [], ids: [], shared: album.visibility === "shared", mine: item.ownerUserId === userId };
-        if (item.text && !moment.text) moment.text = item.text;
-        if (item.photoId) moment.photos.push(item.photoId);
-        if (item.idea && album.visibility === "shared") moment.idea = item.idea;
-        // A memory made from a phone album carries where it was taken in its key ("day|lat,lon").
-        const spot = /\|(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(item.photoEvent || "");
-        if (spot && moment.lat === undefined) { moment.lat = Number(spot[1]); moment.lon = Number(spot[2]); }
-        moment.ids.push(item.id); moment.mine = moment.mine && item.ownerUserId === userId; grouped.set(key, moment);
-      }
-      // Daily check-ins told to Ourever are private moments with a feeling.
-      for (const checkin of checkins.filter((item) => item.ownerUserId === userId && item.visibility === "private")) grouped.set(`checkin|${checkin.id}`, { key: `checkin|${checkin.id}`, date: checkin.createdAt.slice(0, 10), title: "", text: checkin.text, photos: [], ids: [], shared: false, mine: true, mood: checkin.mood });
-      setMoments([...grouped.values()].sort((a, b) => b.date.localeCompare(a.date))); setError(false);
+      const shaped = shapeMoments(spaces, checkins, userId);
+      setWatched(shaped.watched); setMoments(shaped.moments); setError(false);
     } catch { if (sequence === requestId.current) setError(true); }
     finally { if (sequence === requestId.current) setLoading(false); }
   }, [userId]);
   useEffect(() => { void load(); return () => { requestId.current += 1; }; }, [load]);
+  useEffect(() => onFresh((path) => path === "/api/spaces" || path === "/api/checkins", () => void load()), [load]);
   useEffect(() => {
     const events = relationshipEvents();
     events.addEventListener("relationship", (event) => { try { if (/^space/.test(JSON.parse((event as MessageEvent).data).eventType)) void load(); } catch { /* Ignore malformed events. */ } });
@@ -277,4 +264,25 @@ export function MomentsPage({ language, userId, paired, milestones = [], onAsk, 
     {!!all.length && <div className="moments-scale" role="tablist" aria-label={t("按时间看", "By time", "Por fecha")}>{scales.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={scale === value} className={scale === value ? "active" : ""} onClick={() => { setScale(value); setOpenYear(""); }}>{label}</button>)}</div>}
     {playing && <StoryViewer title={playing.title} slides={playing.slides} language={language} onClose={() => setPlaying(null)} />}
   </div>;
+}
+
+/** Albums and check-ins as the page shows them; also used for the first frame from the kept data (founder 11-26). */
+function shapeMoments(spaces: Album[], checkins: Checkin[], userId: string): { watched: WatchedItem[]; moments: Moment[] } {
+  const watched = (spaces.filter((space) => space.system === "watched").flatMap((space) => space.items.map((item) => ({ id: item.id, title: item.title, text: item.text, date: item.date, done: Boolean(item.done), createdAt: item.createdAt }))));
+  // Photos of one memory arrive as separate items with the same title and date; they read as one moment.
+  const grouped = new Map<string, Moment>();
+  for (const album of spaces.filter((space) => space.system === "moments")) for (const item of album.items) {
+    const date = item.date || item.createdAt.slice(0, 10), key = JSON.stringify([album.id, item.ownerUserId, item.momentGroup || [date, item.title || item.id]]);
+    const moment = grouped.get(key) || { key, date, version: item.version, title: item.title, text: "", photos: [], ids: [], shared: album.visibility === "shared", mine: item.ownerUserId === userId };
+    if (item.text && !moment.text) moment.text = item.text;
+    if (item.photoId) moment.photos.push(item.photoId);
+    if (item.idea && album.visibility === "shared") moment.idea = item.idea;
+    // A memory made from a phone album carries where it was taken in its key ("day|lat,lon").
+    const spot = /\|(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(item.photoEvent || "");
+    if (spot && moment.lat === undefined) { moment.lat = Number(spot[1]); moment.lon = Number(spot[2]); }
+    moment.ids.push(item.id); moment.mine = moment.mine && item.ownerUserId === userId; grouped.set(key, moment);
+  }
+  // Daily check-ins told to Ourever are private moments with a feeling.
+  for (const checkin of checkins.filter((item) => item.ownerUserId === userId && item.visibility === "private")) grouped.set(`checkin|${checkin.id}`, { key: `checkin|${checkin.id}`, date: checkin.createdAt.slice(0, 10), title: "", text: checkin.text, photos: [], ids: [], shared: false, mine: true, mood: checkin.mood });
+  return { watched, moments: [...grouped.values()].sort((a, b) => b.date.localeCompare(a.date)) };
 }
