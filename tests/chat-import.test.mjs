@@ -408,7 +408,9 @@ test("ambiguous screenshot advice separates reported promises and unknown chrono
     assert.match(prompt, /timing of learning about a conflict/);
     assert.match(prompt, /A quote reported INSIDE someone else's bubble is their claim/);
     assert.match(prompt, /unless you can name a supported harmful behavior by each/);
-    assert.match(prompt, /at most 5 short sentences/);
+    // Founder 11-26: no hard length cap (it lost to asking ChatGPT directly); length follows the question.
+    assert.match(prompt, /length follows the question/);
+    assert.doesNotMatch(prompt, /at most 5 short sentences/);
   }
 });
 
