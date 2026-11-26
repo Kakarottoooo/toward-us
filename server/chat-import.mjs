@@ -386,6 +386,14 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           // reply keeps only its first sentence, dropping unasked commentary (11-15).
           const sendLine = wantsOneSentence(request.text) && answer.sendableDraft?.trim();
           text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language, formatChecked: Boolean(answer.free) });
+          // best2 (measurement, founder 11-26 "要全部赢"): a second answer written freely from the same transcript, the way
+          // asking ChatGPT directly works; the main model picks, blind, the one that helps more.
+          if (process.env.SCREENSHOT_PIPELINE === "best2" && text?.trim()) {
+            const transcript = messages.map((message) => `${message.role === "me" ? "[you] " : "[partner] "}${line(message)}`).join("\n").slice(0, 40_000);
+            const other = await mediator.answerScreenshot({ bare: true, question: request.text, transcript, ...(await knownAbout(record.ownerUserId, record.personId || null)) }, record.language).catch(() => null);
+            const second = other?.reply ? finishReply(other.reply, { request: request.text, language: record.language, formatChecked: true }).trim() : "";
+            if (second && await mediator.pickScreenshotText({ question: request.text, transcript, first: text, second }).catch(() => null) === "second") text = second;
+          }
           const draft = activityDraft(answer)?.trim();
           if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
         } catch (error) {
