@@ -379,13 +379,13 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
           // SKIP_SCREENSHOT_REWRITE=1 (measurement): no source-check/format-repair rewrite of the answer (11-26 research: rewriting
           // without an external signal often turns right answers wrong; here the check's source is the cheap transcript).
-          const reply = process.env.SKIP_SCREENSHOT_REWRITE === "1" ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+          const reply = answer.free ? answer.reply.trim() : process.env.SKIP_SCREENSHOT_REWRITE === "1" ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
           // One line asked for and the model gave the message to send separately: that message is the answer, all of it, as
           // one sentence (QA 11-26: cutting it to its first full stop dropped the apology bare ChatGPT gave). Otherwise the
           // reply keeps only its first sentence, dropping unasked commentary (11-15).
           const sendLine = wantsOneSentence(request.text) && answer.sendableDraft?.trim();
-          text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language });
+          text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language, formatChecked: Boolean(answer.free) });
           const draft = activityDraft(answer)?.trim();
           if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
         } catch (error) {
@@ -460,7 +460,10 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const oneCall = process.env.SCREENSHOT_ONE_CALL !== "0";
     // Coach mode (measurement, off by default): the main model answers from the screenshots themselves in free text,
     // while the transcript for storage is read separately.
-    const coach = question && process.env.COACH_SCREENSHOT === "1"
+    // SCREENSHOT_PIPELINE (measurement, founder 11-26 "要全部赢"): refine = the coach answer gets a second look against the
+    // screenshots; pick = the main model then chooses, blind, between the first answer and the second look.
+    const pipeline = ["refine", "pick"].includes(process.env.SCREENSHOT_PIPELINE) ? process.env.SCREENSHOT_PIPELINE : null;
+    const coach = question && (process.env.COACH_SCREENSHOT === "1" || pipeline)
       ? (async () => mediator.coachScreenshot({ paths: photos.map(photoFile), question, language, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, known: await knownAbout(user.id, null) }))().catch(() => null)
       : null;
     const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall && !coach ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
@@ -475,8 +478,17 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     if (!messages.length) throw fail(422, say(language, "这些截图里没有读到聊天内容。", "I could not read a conversation in these screenshots.", "No pude leer una conversación en estas capturas."));
     const other = messages.find((message) => !message.fromMe)?.sender || "";
     chatSignal()?.throwIfAborted();
-    const coached = coach ? await coach : null;
-    const advice = typeof coached === "string" && coached.trim() ? { observations: [], uncertainties: [], reply: coached.trim(), sendableDraft: null, activityDescription: null } : result.advice;
+    let coached = coach ? await coach : null;
+    if (pipeline && typeof coached === "string" && coached.trim()) {
+      const ask = { paths: photos.map(photoFile), question, language, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") } };
+      const refined = await mediator.refineScreenshot({ ...ask, known: await knownAbout(user.id, null), draft: coached.trim() }).catch(() => null);
+      if (typeof refined === "string" && refined.trim()) {
+        const choice = pipeline === "pick" ? await mediator.pickScreenshotAnswer({ ...ask, first: coached.trim(), second: refined.trim() }).catch(() => null) : "second";
+        if (choice !== "first") coached = refined;
+      }
+    }
+    // free: the answer is the model's own text for the user, used as written (no rewrite, no first-sentence cut).
+    const advice = typeof coached === "string" && coached.trim() ? { observations: [], uncertainties: [], reply: coached.trim(), sendableDraft: null, activityDescription: null, free: true } : result.advice;
     return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: advice ? { ...advice, language } : null });
   }
   router.importScreenshots = importScreenshots;

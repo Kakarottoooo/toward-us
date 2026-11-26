@@ -6,7 +6,7 @@ import { extname } from "node:path";
 import { createClaudeCliClient } from "./claude-cli-client.mjs";
 import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
-import { assistantInstructions, assistantTurnSchema, coachInstructions, leanScreenshotInstructions, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
+import { assistantInstructions, assistantTurnSchema, coachInstructions, refineInstructions, pickInstructions, leanScreenshotInstructions, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
 import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
 import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mjs";
 import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
@@ -158,6 +158,22 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
       if (!client?.readImages) throw Object.assign(new Error("Reading screenshots is not available."), { statusCode: 503 });
       return client.readImages({ paths, model, schema: null, system: coachInstructions(language),
         prompt: JSON.stringify({ question, names, ...(known ? { known } : {}) }) });
+    },
+    /** Second look: the main model sees the screenshots again with the first answer and returns the improved answer. */
+    async refineScreenshot({ paths, question, names, known = null, draft, language = "zh" }) {
+      if (!client?.readImages) throw Object.assign(new Error("Reading screenshots is not available."), { statusCode: 503 });
+      return client.readImages({ paths, model, schema: null, system: refineInstructions(language),
+        prompt: JSON.stringify({ question, names, ...(known ? { known } : {}), draft }) });
+    },
+    /** Best of two: blind order, the main model returns which answer helps more. */
+    async pickScreenshotAnswer({ paths, question, names, first, second }) {
+      if (!client?.readImages) throw Object.assign(new Error("Reading screenshots is not available."), { statusCode: 503 });
+      const swap = Math.random() < 0.5;
+      const verdict = await client.readImages({ paths, model, schema: null, system: pickInstructions(),
+        prompt: JSON.stringify({ question, names, A: swap ? second : first, B: swap ? first : second }) });
+      const letter = String(verdict || "").trim().toUpperCase().match(/\b[AB]\b|^[AB]/)?.[0];
+      if (!letter) return null;
+      return (letter === "A") !== swap ? "first" : "second";
     },
     async answerScreenshot(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
