@@ -35,6 +35,7 @@ export function decodeVerdict(value, swap) {
 export function comparisonReady(pair) {
   const votes = pair?.judges || [];
   if (votes.some((vote) => vote.error)) return false;
+  if (pair?.policy === "chatgpt-only") return votes.length === 1 && votes[0].judge === "codex";
   if (pair?.policy === "codex-first" && votes.length === 1) return votes[0].judge === "codex" && votes[0].outcome === "win";
   return votes.length === 2;
 }
@@ -44,7 +45,9 @@ export function summarize(results, layers) {
   for (const [layer, definition] of Object.entries(layers)) {
     const items = results.filter((item) => item.layer === layer);
     const comparisons = {};
-    for (const rival of ["claude", "codex"]) {
+    // A ChatGPT-only run has no Claude rival: only rivals that were actually run are scored.
+    const run = ["claude", "codex"].filter((rival) => results.some((item) => item.rivals?.[rival]));
+    for (const rival of run.length ? run : ["claude", "codex"]) {
       let loss = 0, notLose = 0, disagreement = 0, pending = 0;
       for (const item of items) {
         const pair = item.comparisons?.[rival], votes = pair?.judges || [];
