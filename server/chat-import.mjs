@@ -404,8 +404,9 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           await appendAssistantMessage(record.ownerUserId, { sessionId: record.sessionId, language: record.language, kind: "noted", personId: record.personId, text: say(record.language, `已为 ${record.personNew} 建档`, `Made a card for ${record.personNew}`, `Ficha creada para ${record.personNew}`) }).catch(() => {});
           await update(record, record.ownerUserId, (draft) => { draft.personNew = null; }).catch(() => {});
         }
-        // After the answer: keep what this exchange shows about the two of them, privately (reply coach, founder 11-08).
-        void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages, personId: record.personId || null, quiet: quietNotes })
+        // After the answer: keep what this exchange shows about the two of them, privately (reply coach, founder 11-08). Quietly:
+        // the kept notes show in 关于我们, never as a line under the answer (founder 11-26 floor; h7 11-27: "已记进关于我们" lost).
+        void scanBroughtChat({ store, mediator, userId: record.ownerUserId, sessionId: record.sessionId, sourceId: record.id, messages, personId: record.personId || null, quiet: true })
           .catch((error) => console.error("Could not keep notes from the screenshots:", error?.message || error));
       }
     }
