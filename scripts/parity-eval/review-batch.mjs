@@ -5,7 +5,7 @@ import { blindPair, decodeVerdict, judgeInstructions, judgeSchema, comparisonRea
 
 // Transport batching only: each pair retains its own randomized order, records,
 // criterion and verdict. Never share the first judge's vote with the second.
-export async function reviewBatches({ packets, context, directory, seed, checkpoint, batchSize = 8, invokeJudge = invoke, rivals = ["claude", "codex"], judges = ["codex", "claude"] }) {
+export async function reviewBatches({ packets, context, directory, seed, checkpoint, batchSize = 8, invokeJudge = invoke, rivals = ["claude", "codex"], judges = ["codex", "claude"], independent = false }) {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 16) throw new Error("Review batches must contain 1–16 independent pairs");
   const schema = { type: "object", additionalProperties: false, required: ["verdicts"], properties: {
     verdicts: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "verdict"], properties: { id: { type: "string" }, verdict: judgeSchema } } },
@@ -15,8 +15,8 @@ export async function reviewBatches({ packets, context, directory, seed, checkpo
     // answer would reveal which candidate is the product.
     for (const provider of rivals) {
     const pairs = packets.flatMap(({ item, result }, index) => {
-      const comparison = result.comparisons[provider] ||= { policy: judges.includes("claude") ? "codex-first" : "chatgpt-only", judges: [] };
-      if (result.pinky.error || result.rivals[provider]?.error || judge === "claude" && !["tie", "loss"].includes(comparison.judges[0]?.outcome)) return [];
+      const comparison = result.comparisons[provider] ||= { policy: independent ? "dual" : judges.includes("claude") ? "codex-first" : "chatgpt-only", judges: [] };
+      if (result.pinky.error || result.rivals[provider]?.error || !independent && judge === "claude" && !["tie", "loss"].includes(comparison.judges[0]?.outcome)) return [];
       return [{ id: `packet-${index}`, comparison, pair: blindPair(item, result.pinky, result.rivals[provider], judge, seed) }];
     });
     for (let offset = 0; offset < pairs.length; offset += batchSize) {

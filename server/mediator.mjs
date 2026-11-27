@@ -6,7 +6,7 @@ import { extname } from "node:path";
 import { createClaudeCliClient } from "./claude-cli-client.mjs";
 import { createAnthropicClient } from "./anthropic-client.mjs";
 import { localDecisionOptions } from "./relationship-domain.mjs";
-import { assistantInstructions, assistantTurnSchema, coachInstructions, leanScreenshotInstructions, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
+import { assistantInstructions, assistantTurnSchema, coachInstructions, lightCoachInstructions, leanScreenshotInstructions, screenshotAdviceInstructions, routeAttachedScreenshots } from "./assistant-agent.mjs";
 import { planConstraintsSchema, planConstraintsInstructions, requiresPlanConstraints, planDeliveryInstructions, requiresPlanDelivery } from "./plan-constraints.mjs";
 import { replyContractInstructions, replyPartsSchema } from "./reply-contract.mjs";
 import { sourceCheckSchema, sourceCheckInstructions } from "./source-reply.mjs";
@@ -156,8 +156,15 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
      * short brief, the way asking ChatGPT directly works; the transcript is made separately for storage. */
     async coachScreenshot({ paths, question, names, known = null, language = "zh" }) {
       if (!client?.readImages) throw Object.assign(new Error("Reading screenshots is not available."), { statusCode: 503 });
-      return client.readImages({ paths, model, schema: null, system: coachInstructions(language),
+      return client.readImages({ paths, model, schema: null, system: process.env.LIGHT_COACH !== "0" ? lightCoachInstructions(language, { screenshots: true }) : coachInstructions(language),
         prompt: JSON.stringify({ question, names, ...(known ? { known } : {}) }) });
+    },
+    /** Light coach for a private conversation turn that needs no action (default; LIGHT_COACH=0 turns it off): free text. */
+    async coachText(context, language = "zh") {
+      if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });
+      const response = await client.responses.create({ model, store: false, max_output_tokens: 2600,
+        input: [{ role: "developer", content: lightCoachInstructions(language) }, { role: "user", content: JSON.stringify(context) }] }, INTERACTIVE);
+      return String(response.output_text || "").trim();
     },
     async answerScreenshot(context, language = "zh") {
       if (!client) throw Object.assign(new Error("The assistant model is not configured."), { statusCode: 503 });

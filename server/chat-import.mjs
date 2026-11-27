@@ -379,13 +379,14 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
           // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
           // SKIP_SCREENSHOT_REWRITE=1 (measurement): no source-check/format-repair rewrite of the answer (11-26 research: rewriting
           // without an external signal often turns right answers wrong; here the check's source is the cheap transcript).
-          const reply = process.env.SKIP_SCREENSHOT_REWRITE === "1" ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
+          const reply = process.env.SKIP_SCREENSHOT_REWRITE === "1" || answer.free ? [withoutScreenshotPreamble(answer.reply).trim(), answer.sendableDraft?.trim()].filter(Boolean).join("\n\n") : await prepareSourceReply(wantsDraftOnly(request.text) && answer.sendableDraft?.trim() ? "" : withoutScreenshotPreamble(answer.reply).trim(), { sendableDraft: answer.sendableDraft, activityDescription: answer.activityDescription, request: request.text, language: record.language,
             sources: [{ kind: "image_transcript", text: messages.map((message) => `${message.role} | ${message.sender} | ${message.at?.slice(0, 19).replace("T", " ") || "time not shown"}\n${message.text}`).join("\n\n") + sourceChronology(messages) }], context: { names }, mediator, check: false });
           // One line asked for and the model gave the message to send separately: that message is the answer, all of it, as
           // one sentence (QA 11-26: cutting it to its first full stop dropped the apology bare ChatGPT gave). Otherwise the
           // reply keeps only its first sentence, dropping unasked commentary (11-15).
           const sendLine = wantsOneSentence(request.text) && activityDraft(answer)?.trim();
-          text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language });
+          // The light coach's free-text answer is kept whole (h4light 11-27: "帮我回一句" was cut to half a sentence).
+          text = sendLine ? joinSentences(sendLine, record.language) : finishReply(reply, { request: request.text, language: record.language, formatChecked: Boolean(answer.free) });
           const draft = activityDraft(answer)?.trim();
           if (draft && (text === draft || text.endsWith(`\n\n${draft}`))) copyableReply = draft;
         } catch (error) {
@@ -458,10 +459,11 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     // Reading and answering in one call stays the default: answering in a separate call did not measure better in the
     // 11-26 ChatGPT comparison. SCREENSHOT_ONE_CALL=0 switches to the separate call for measurement.
     const oneCall = process.env.SCREENSHOT_ONE_CALL !== "0";
-    // Coach mode (measurement, off by default): the main model answers from the screenshots themselves in free text,
-    // while the transcript for storage is read separately.
-    const coach = question && process.env.COACH_SCREENSHOT === "1"
-      ? (async () => mediator.coachScreenshot({ paths: photos.map(photoFile), question, language, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, known: await knownAbout(user.id, null) }))().catch(() => null)
+    // Coach mode (default since 11-27; COACH_SCREENSHOT=0 turns it off): the main model answers from the screenshots
+    // themselves in free text under the light coach brief, while the transcript for storage is read separately. Its answer
+    // is not rewritten (answer.free).
+    const coach = question && process.env.COACH_SCREENSHOT !== "0" && mediator.coachScreenshot
+      ? (async () => mediator.coachScreenshot({ paths: photos.map(photoFile), question, language, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, known: (await knownAbout(user.id, null)).known }))().catch(() => null)
       : null;
     const read = async () => mediator.readScreenshots({ paths: photos.map(photoFile), schema: screenshotSchema, language, adviceFor: question && oneCall && !coach ? { question, names: { me: user.name, partner: say(language, "TA", "Partner", "Pareja") }, ...(await knownAbout(user.id, null)) } : null });
     const result = await read().catch((error) => {
@@ -476,7 +478,7 @@ export function createChatImportRouter({ store, mediator, appendAssistantMessage
     const other = messages.find((message) => !message.fromMe)?.sender || "";
     chatSignal()?.throwIfAborted();
     const coached = coach ? await coach : null;
-    const advice = typeof coached === "string" && coached.trim() ? { observations: [], uncertainties: [], reply: coached.trim(), sendableDraft: null, activityDescription: null } : result.advice;
+    const advice = typeof coached === "string" && coached.trim() ? { observations: [], uncertainties: [], reply: coached.trim(), sendableDraft: null, activityDescription: null, free: true } : result.advice;
     return createImport(user, { platform: "screenshots", conversations: [{ id: "0", title: other, participants: [...new Set(messages.map((message) => message.sender))], messages }] }, { sessionId, language, messageId, screenshotAdvice: advice ? { ...advice, language } : null });
   }
   router.importScreenshots = importScreenshots;
