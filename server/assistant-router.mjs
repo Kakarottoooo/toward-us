@@ -518,11 +518,20 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       const unrelated = !plan.unsupportedPremise && plan.sourceBased === false && !asksToRecall(text) && !requiresReplyScopeCheck(text) && !plan.actions.length;
       // Asked for just the line to send: the draft alone, no analysis around it (wantsDraftOnly).
       const draftOnly = wantsDraftOnly(text) && typeof plan.sendableDraft === "string" && plan.sendableDraft.trim();
-      const audited = await prepareSourceReply(draftOnly ? "" : plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
+      // Light coach (default; LIGHT_COACH=0 turns it off. Founder 11-27; holdout5 dual eval: 56% vs 8% for the planner reply): a turn that changed nothing is answered by the main model
+      // in free text under a short brief with what Ourever remembers, instead of the planner's reply and its rewrite layers.
+      // A check-in kept quietly from what they shared does not need the planner's reply; its card still shows (h4light: "已保存私人记录" read as noise).
+      const quietOnly = plan.actions.every((action) => action.kind === "checkin" && action.operation === "create");
+      const lightCoach = process.env.LIGHT_COACH !== "0" && quietOnly && !webTurn.results.length && !plan.unsupportedPremise
+        ? await mediator.coachText?.({ message: text, history: history.slice(-20).map(({ role, text: said, createdAt }) => ({ role, text: said, createdAt })), known: context.profile,
+          ...(context.focus ? { focus: context.focus } : {}), ...(recalled?.findings ? { memory: recalled.findings } : {}),
+          ...(context.screenshotConversation?.transcript ? { chat: context.screenshotConversation.transcript } : {}) }, language).catch(() => "")
+        : "";
+      const audited = lightCoach || await prepareSourceReply(draftOnly ? "" : plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),
           ...(unrelated ? [] : historySources),
           ...(delivery.replies.length || changes.length ? [{ kind: "execution_receipt", text: JSON.stringify(receipts) }] : [])], request: text, language, context, mediator, check: false });
-      const own = finishReply(audited, { request: text, language, receipts: delivery.writeReceipts,
+      const own = lightCoach || finishReply(audited, { request: text, language, receipts: delivery.writeReceipts,
         reminderWritten: changes.some(({ kind, record }) => kind === "reminder" && record.status === "active") }) || delivery.replies.join("\n");
       const reply = delivery.askBack && !delivery.cards.length ? delivery.askBack : [own, delivery.askBack].filter(Boolean).join("\n");
       const cited = citedReply([reply, webSourceText(webTurn.results, language)].filter(Boolean).join("\n\n"), recallSources);

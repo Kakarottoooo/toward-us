@@ -64,7 +64,7 @@ async function fixture(t, { planner = () => ({ reply: "", actions: [] }), shared
   };
   const files = async () => (await readdir(media).catch(() => [])).filter((name) => name.endsWith(".chat.json"));
   const session = (await request("/assistant/sessions", "POST", { language: "en", timezone: "UTC" })).body.session;
-  return { people, calls, request, upload, ready, files, session, url, store };
+  return { people, calls, request, upload, ready, files, session, url, store, mediator };
 }
 
 test("screenshot advice reads the actual exchange, answers the original question privately and executes no answer actions", async (t) => {
@@ -657,4 +657,29 @@ test("a screenshot sent in a person's own conversation goes on that person, what
   const chat = await f.ready(imports[0].id);
   assert.equal((await f.store.getRelationshipRecordForUser("chatImports", chat.id, f.people[0].id)).personId, jie.id);
   assert.deepEqual((await listPeople(f.store, f.people[0].id)).map((person) => person.name), ["阿杰"], "no card is made for the name on the screenshot");
+});
+
+test("the light coach answers a screenshot question from the images in free text, kept whole and never rewritten", async (t) => {
+  const f = await fixture(t, {
+    screenshots: [{ mine: false, name: "Blair", text: "I waited.", time: null }, { mine: true, name: null, text: "Sorry.", time: null }],
+    planner: () => ({ reply: "Reading.", actions: [action("chat_import", "create")] }),
+  });
+  const coached = [];
+  const whole = "You kept Blair waiting and only said sorry. Send: \"I'm sorry I kept you waiting. Next time I'll text before I'm late.\" It owns the wait and says what changes.";
+  f.mediator.coachScreenshot = async (context) => { coached.push(context); return whole; };
+  const photo = createRelationshipRecord({ userId: f.people[0].id, visibility: "private", aiAccessScope: "private", fileId: randomUUID(), mime: "image/png" });
+  await f.store.createRelationshipRecord("photos", photo);
+  await f.request(`/assistant/sessions/${f.session.id}/messages`, "POST", { text: "Give me only one sentence to apologize.", itemId: randomUUID(), photoIds: [photo.id] });
+  let session;
+  for (let index = 0; index < 100; index += 1) {
+    session = (await f.request(`/assistant/sessions/${f.session.id}`)).body.session;
+    if (session.messages.some((message) => message.text === whole)) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(session.messages.some((message) => message.text === whole), "a one-line request does not cut the coach's answer");
+  assert.equal(coached[0].question, "Give me only one sentence to apologize.");
+  assert.equal(coached[0].paths.length, 1, "the coach sees the screenshot itself");
+  assert.equal(f.calls.screenshots[0].adviceFor, null, "the transcript read only transcribes");
+  assert.equal(f.calls.rewrites.length, 0);
+  assert.equal(f.calls.sourceChecks.length, 0);
 });

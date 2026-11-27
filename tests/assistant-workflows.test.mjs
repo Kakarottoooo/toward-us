@@ -319,3 +319,35 @@ test("renaming an already delivered reminder does not requeue its occurrence", a
   await delivery.updateReminder(f.ids[0], reminder.id, { title: "Daily check-in" });
   assert.equal((await delivery.runDue()).accepted, 0);
 });
+
+test("a turn that changes nothing is answered by the light coach, with history and what Ourever remembers; a turn with a write is not", async (t) => {
+  const f = await fixture(t, (context) => context.messages.at(-1).text.startsWith("remind")
+    ? { reply: "Reminder set.", actions: [action("reminder", "create", { fields: fields({ title: "Call", localDateTime: "2026-09-11T20:00", timezone: "UTC", frequency: "once" }) })] }
+    : { reply: "Planner reply.", actions: [] });
+  const coached = [];
+  f.mediator.coachText = async (context) => { coached.push(context); return "Coach reply, whole and unrewritten. Send: \"I missed you today.\""; };
+  await f.store.updateRelationshipRecordForUser("privateAgentThreads", f.session.id, f.ids[0], (draft) => {
+    draft.messages.push({ id: randomUUID(), role: "user", text: "We fought about dishes again.", createdAt: "2026-09-01T08:00:00Z" },
+      { id: randomUUID(), role: "assistant", text: "That sounds tiring.", createdAt: "2026-09-01T08:01:00Z" });
+  });
+  const vent = await f.turn("ugh he did it again idk");
+  assert.equal(vent.status, 200, JSON.stringify(vent.body));
+  assert.equal(vent.body.session.messages.at(-1).text, "Coach reply, whole and unrewritten. Send: \"I missed you today.\"");
+  assert.equal(coached[0].message, "ugh he did it again idk");
+  assert.match(JSON.stringify(coached[0].history), /We fought about dishes again/);
+  assert.ok("known" in coached[0]);
+  const write = await f.turn("remind me to call");
+  assert.equal(write.status, 200);
+  assert.equal(coached.length, 1, "a turn that wrote something keeps the planner's receipt");
+  assert.match(write.body.session.messages.at(-1).text, /reminder/i);
+});
+
+test("without the light coach (LIGHT_COACH=0) the planner's reply is used", async (t) => {
+  const f = await fixture(t, () => ({ reply: "Planner reply.", actions: [] }));
+  let coached = 0; f.mediator.coachText = async () => { coached++; return "Coach reply."; };
+  process.env.LIGHT_COACH = "0"; t.after(() => { delete process.env.LIGHT_COACH; });
+  const result = await f.turn("ugh");
+  assert.equal(result.status, 200);
+  assert.equal(coached, 0);
+  assert.equal(result.body.session.messages.at(-1).text, "Planner reply.");
+});
