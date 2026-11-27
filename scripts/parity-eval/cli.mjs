@@ -44,7 +44,7 @@ export async function invoke(provider, { root, input, instructions, schema, imag
     "-c", "project_doc_max_bytes=0", "-c", "features.shell_tool=false", "-c", "features.memories=false", "-c", "features.multi_agent=false",
     "-c", `web_search=\"${search ? "live" : "disabled"}\"`, "-c", `model_instructions_file=${JSON.stringify(system.replaceAll("\\", "/"))}`, "-o", output];
   if (model) args.push("--model", model, "-c", 'forced_login_method="chatgpt"', "-c", 'model_provider="openai"',
-    "-c", `model_reasoning_effort="${process.env.EVAL_REASONING_EFFORT || "low"}"`, "-c", "features.apps=false");
+    "-c", `model_reasoning_effort="${process.env.EVAL_REASONING_EFFORT || "medium"}"`, "-c", "features.apps=false");
   if (schema) { const file = join(cwd, "schema.json"); await writeFile(file, JSON.stringify(schema)); args.push("--output-schema", file); }
   if (image) args.push("--image", image);
   for (const path of images) args.push("--image", path);
