@@ -252,6 +252,13 @@ export function createAssistantRouter({ store, mediator, reminderService, emit =
 
     const recalled = await prefetchRecall({ store, userId, personId: session.personId || null }, text).catch(() => null);
     if (recalled) { context.lookups = [...(context.lookups || []), recallLookup(recalled, text)]; recallSources.push(...recalled.sources); replySources.push({ kind: "recall", text: recalled.findings }); }
+    // The light coach starts with the planner, not after it (live 11-27: one after the other took 17.5 s). Its answer is
+    // used only when the planner's turn changes nothing; otherwise it is dropped.
+    const coachEarly = process.env.LIGHT_COACH !== "0" && !photoIds.length && mediator.coachText
+      ? mediator.coachText({ message: text, history: history.slice(-20).map(({ role, text: said, createdAt }) => ({ role, text: said, createdAt })), known: context.profile,
+        ...(context.focus ? { focus: context.focus } : {}), ...(recalled?.findings ? { memory: recalled.findings } : {}),
+        ...(context.screenshotConversation?.transcript ? { chat: context.screenshotConversation.transcript } : {}) }, language).catch(() => "")
+      : null;
     progress("thinking");
     try { plan = await mediator.planAssistantTurn(context, language); }
     catch (error) { if (isAiLimit(error)) throw error; throw unavailable(); }
@@ -523,9 +530,7 @@ ${openOn}` : text).digest("hex"), createdAt: new Date().toISOString(), sharedAt:
       // A check-in kept quietly from what they shared does not need the planner's reply; its card still shows (h4light: "已保存私人记录" read as noise).
       const quietOnly = plan.actions.every((action) => action.kind === "checkin" && action.operation === "create");
       const lightCoach = process.env.LIGHT_COACH !== "0" && quietOnly && !webTurn.results.length && !plan.unsupportedPremise
-        ? await mediator.coachText?.({ message: text, history: history.slice(-20).map(({ role, text: said, createdAt }) => ({ role, text: said, createdAt })), known: context.profile,
-          ...(context.focus ? { focus: context.focus } : {}), ...(recalled?.findings ? { memory: recalled.findings } : {}),
-          ...(context.screenshotConversation?.transcript ? { chat: context.screenshotConversation.transcript } : {}) }, language).catch(() => "")
+        ? (await coachEarly) || ""
         : "";
       const audited = lightCoach || await prepareSourceReply(draftOnly ? "" : plan.reply, { unsupportedPremise: plan.unsupportedPremise, sendableDraft: plan.sendableDraft, activityDescription: plan.activityDescription,
         sources: [...replySources.filter((source) => source.kind !== "import" || plan.sourceBased !== false),

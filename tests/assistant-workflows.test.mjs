@@ -338,7 +338,7 @@ test("a turn that changes nothing is answered by the light coach, with history a
   assert.ok("known" in coached[0]);
   const write = await f.turn("remind me to call");
   assert.equal(write.status, 200);
-  assert.equal(coached.length, 1, "a turn that wrote something keeps the planner's receipt");
+  assert.doesNotMatch(write.body.session.messages.at(-1).text, /Coach reply/, "a turn that wrote something keeps the planner's receipt");
   assert.match(write.body.session.messages.at(-1).text, /reminder/i);
 });
 
@@ -350,4 +350,17 @@ test("without the light coach (LIGHT_COACH=0) the planner's reply is used", asyn
   assert.equal(result.status, 200);
   assert.equal(coached, 0);
   assert.equal(result.body.session.messages.at(-1).text, "Planner reply.");
+});
+
+test("the light coach starts with the planner, not after it", async (t) => {
+  let coachStarted; const started = new Promise((resolve) => { coachStarted = resolve; });
+  const f = await fixture(t, async () => {
+    // The planner only finishes once the coach has begun: run one after the other, this turn would time out.
+    await Promise.race([started, new Promise((_, reject) => setTimeout(() => reject(new Error("coach waited for the planner")), 2000))]);
+    return { reply: "Planner reply.", actions: [] };
+  });
+  f.mediator.coachText = async () => { coachStarted(); return "Coach reply."; };
+  const result = await f.turn("ugh");
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.session.messages.at(-1).text, "Coach reply.");
 });
