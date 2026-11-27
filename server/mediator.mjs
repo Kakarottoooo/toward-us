@@ -81,11 +81,13 @@ export function createMediator({ apiKey = process.env.OPENAI_API_KEY, model = pr
   const openai = apiKey ? meterOpenAI(new OpenAI({ apiKey, fetch: aiProviderFetch })) : null; // every request recorded in the cost ledger
   // gpt-5.4 answers with reasoning effort "none" unless told otherwise (OpenAI model page), while ChatGPT thinks before it
   // answers; the main model's answers get OPENAI_REASONING_EFFORT (founder 11-26: answers must beat asking ChatGPT).
-  // The cheap background model keeps its default.
-  if (openai && process.env.OPENAI_REASONING_EFFORT) {
+  // The cheap background model keeps its default. Without the variable the main model thinks at "low", the effort every
+  // parity and dual evaluation measured (11-27: production had no OPENAI_REASONING_EFFORT, so it ran untested settings).
+  const effort = process.env.OPENAI_REASONING_EFFORT || "low";
+  if (openai && effort !== "default") {
     const create = openai.responses.create.bind(openai.responses);
     // Reasoning tokens count against max_output_tokens, so the budget grows with it and the visible answer is never squeezed out.
-    openai.responses.create = (params, options) => create(params?.model === model && !params.reasoning ? { ...params, reasoning: { effort: process.env.OPENAI_REASONING_EFFORT }, ...(params.max_output_tokens ? { max_output_tokens: params.max_output_tokens + 12000 } : {}) } : params, options);
+    openai.responses.create = (params, options) => create(params?.model === model && !params.reasoning ? { ...params, reasoning: { effort }, ...(params.max_output_tokens ? { max_output_tokens: params.max_output_tokens + 12000 } : {}) } : params, options);
   }
   if (openai) {
     openai.readImages = async ({ paths, system, prompt, schema, model: imageModel }) => {
